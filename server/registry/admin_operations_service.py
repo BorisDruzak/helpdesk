@@ -33,7 +33,6 @@ from app.db.models import (
     Ticket,
 )
 from app.repos.registration_repo import normalize_identifier
-from registry.account_session_service import AccountSessionService
 from registry.policy_service import RegistryPolicyService, build_registry_policy_response
 
 
@@ -140,7 +139,6 @@ TIMELINE_CANONICAL_EVENT_TYPES = {
     "bulk_device_location_assigned": "bulk_action_applied",
     "bulk_devices_department_assigned": "bulk_action_applied",
     "bulk_people_department_assigned": "bulk_action_applied",
-    "bulk_account_session_revoked": "bulk_action_applied",
 }
 
 
@@ -329,8 +327,6 @@ class RegistryAdminOperationsService:
             synthetic.append({"field": "status", "after": payload.get("status")})
         if "relationship_type" in payload:
             synthetic.append({"field": "relationship_type", "after": payload.get("relationship_type")})
-        if event_type.startswith("account_session_") and payload.get("revoked_at"):
-            synthetic.append({"field": "revoked_at", "after": payload.get("revoked_at")})
         return synthetic
 
     @staticmethod
@@ -1105,8 +1101,6 @@ class RegistryAdminOperationsService:
                 "identities_moved": moved_identities,
                 "identity_conflicts": conflicted_identities,
                 "bindings_moved": len(bindings),
-                "sessions_moved": len(sessions),
-                "login_requests_moved": len(login_requests),
                 "claims_moved": len(claims),
                 "tickets_moved": len(tickets),
                 "assets_moved": len(assets),
@@ -1128,14 +1122,6 @@ class RegistryAdminOperationsService:
             *[
                 {"id": row.binding_id, "entity_type": "binding", "status": "success"}
                 for row in bindings
-            ],
-            *[
-                {"id": row.session_id, "entity_type": "account_session", "status": "success"}
-                for row in sessions
-            ],
-            *[
-                {"id": row.request_id, "entity_type": "account_login_request", "status": "success"}
-                for row in login_requests
             ],
             *[
                 {"id": row.claim_id, "entity_type": "registration_claim", "status": "success"}
@@ -1164,8 +1150,6 @@ class RegistryAdminOperationsService:
                     "identities": moved_identities,
                     "identity_conflicts": conflicted_identities,
                     "bindings": len(bindings),
-                    "sessions": len(sessions),
-                    "login_requests": len(login_requests),
                     "claims": len(claims),
                     "tickets": len(tickets),
                     "assets": len(assets),
@@ -1178,8 +1162,6 @@ class RegistryAdminOperationsService:
                 "identities": moved_identities,
                 "identity_conflicts": conflicted_identities,
                 "bindings": len(bindings),
-                "sessions": len(sessions),
-                "login_requests": len(login_requests),
                 "claims": len(claims),
                 "tickets": len(tickets),
                 "assets": len(assets),
@@ -1210,23 +1192,6 @@ class RegistryAdminOperationsService:
         ]
         identities_to_move = [row for row in duplicate_identities if row not in identity_conflicts]
         bindings = (await self.session.execute(select(DeviceUserBinding).where(DeviceUserBinding.person_id == duplicate_id))).scalars().all()
-        sessions = (
-            await self.session.execute(
-                select(DeviceAccountSession).where(
-                    or_(DeviceAccountSession.person_id == duplicate_id, DeviceAccountSession.base_person_id == duplicate_id)
-                )
-            )
-        ).scalars().all()
-        login_requests = (
-            await self.session.execute(
-                select(DeviceAccountLoginRequest).where(
-                    or_(
-                        DeviceAccountLoginRequest.matched_person_id == duplicate_id,
-                        DeviceAccountLoginRequest.base_person_id == duplicate_id,
-                    )
-                )
-            )
-        ).scalars().all()
         claims = (await self.session.execute(select(DeviceRegistrationClaim).where(DeviceRegistrationClaim.person_id == duplicate_id))).scalars().all()
         tickets = (await self.session.execute(select(Ticket).where(Ticket.requester_person_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.assigned_person_id == duplicate_id))).scalars().all()
@@ -1280,8 +1245,6 @@ class RegistryAdminOperationsService:
         )
         for kind, rows, object_attr in (
             ("binding", bindings, "binding_id"),
-            ("account_session", sessions, "session_id"),
-            ("account_login_request", login_requests, "request_id"),
             ("registration_claim", claims, "claim_id"),
             ("ticket", tickets, "ticket_id"),
             ("registry_asset", assets, "asset_id"),
@@ -1319,8 +1282,6 @@ class RegistryAdminOperationsService:
                 "identities_to_move": len(identities_to_move),
                 "identity_conflicts": len(identity_conflicts),
                 "bindings_to_move": len(bindings),
-                "sessions_to_move": len(sessions),
-                "login_requests_to_move": len(login_requests),
                 "claims_to_move": len(claims),
                 "tickets_to_move": len(tickets),
                 "assets_to_move": len(assets),
@@ -1347,7 +1308,7 @@ class RegistryAdminOperationsService:
         }
         if result.get("entity_type"):
             item["entity_type"] = result.get("entity_type")
-        for key in ("error_code", "error", "message", "affected_sessions"):
+        for key in ("error_code", "error", "message"):
             if key in result:
                 item[key] = result.get(key)
         return item
@@ -1452,75 +1413,6 @@ class RegistryAdminOperationsService:
         await self.session.flush()
         return self._bulk_response(operation=f"{target}.assign_department", selected_ids=ids, results=results)
 
-    async def bulk_revoke_sessions(self, data: dict[str, Any], *, actor_id: str | None = None, by_device: bool = False) -> dict[str, Any]:
-        reason = _require_reason(data.get("reason"))
-        ids = self._validate_bulk_ids(data)
-        account_service = AccountSessionService(self.session)
-        results = []
-        session_ids: list[str] = []
-        if by_device:
-            rows = (
-                await self.session.execute(
-                    select(DeviceAccountSession).where(
-                        DeviceAccountSession.device_id.in_(ids),
-                        DeviceAccountSession.verification_status.in_(["verified", "pending_verification"]),
-                    )
-                )
-            ).scalars().all()
-            existing_devices = {
-                str(device_id)
-                for device_id in (
-                    await self.session.execute(select(Device.device_id).where(Device.device_id.in_(ids)))
-                ).scalars().all()
-            }
-            for device_id in ids:
-                if device_id not in existing_devices:
-                    results.append({"id": device_id, "success": False, "error_code": "NOT_FOUND"})
-                    continue
-                device_rows = [row for row in rows if row.device_id == device_id]
-                revoked_count = 0
-                for row in device_rows:
-                    try:
-                        session = await account_service.revoke_session(session_id=row.session_id, revoked_by=actor_id or "admin", reason=reason)
-                        await self.append_event(
-                            object_type="account_session",
-                            object_id=row.session_id,
-                            event_type="bulk_account_session_revoked",
-                            actor_id=actor_id,
-                            reason=reason,
-                            related_device_id=session.get("device_id"),
-                            related_person_id=session.get("person_id"),
-                        )
-                        revoked_count += 1
-                    except ValueError as exc:
-                        results.append({"id": device_id, "success": False, "error_code": "SESSION_REVOKE_FAILED", "error": str(exc)})
-                        break
-                else:
-                    results.append({"id": device_id, "success": True, "affected_sessions": revoked_count})
-        else:
-            session_ids = ids
-            for session_id in session_ids:
-                try:
-                    session = await account_service.revoke_session(session_id=session_id, revoked_by=actor_id or "admin", reason=reason)
-                    await self.append_event(
-                        object_type="account_session",
-                        object_id=session_id,
-                        event_type="bulk_account_session_revoked",
-                        actor_id=actor_id,
-                        reason=reason,
-                        related_device_id=session.get("device_id"),
-                        related_person_id=session.get("person_id"),
-                    )
-                    results.append({"id": session_id, "success": True})
-                except ValueError as exc:
-                    results.append({"id": session_id, "success": False, "error_code": "NOT_FOUND", "error": str(exc)})
-        await self.session.flush()
-        return self._bulk_response(
-            operation="devices.revoke_account_sessions" if by_device else "account_sessions.revoke",
-            selected_ids=ids,
-            results=results,
-        )
-
     async def preview_bulk(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         operation = str(data.get("operation") or "").strip()
         ids = self._validate_bulk_ids(data)
@@ -1565,46 +1457,6 @@ class RegistryAdminOperationsService:
             await self._preview_bulk_assign_department(ids, payload, results, changes, target="devices")
         elif operation == "people.assign_department":
             await self._preview_bulk_assign_department(ids, payload, results, changes, target="people")
-        elif operation == "devices.revoke_account_sessions":
-            rows = (
-                await self.session.execute(
-                    select(DeviceAccountSession).where(
-                        DeviceAccountSession.device_id.in_(ids),
-                        DeviceAccountSession.verification_status.in_(["verified", "pending_verification"]),
-                    )
-                )
-            ).scalars().all()
-            for device_id in ids:
-                device_rows = [row for row in rows if row.device_id == device_id]
-                results.append({"id": device_id, "success": True, "affected_sessions": len(device_rows)})
-                changes.extend(
-                    {
-                        "kind": "account_session",
-                        "action": "revoke",
-                        "object_id": row.session_id,
-                        "before": {"verification_status": row.verification_status},
-                        "after": {"verification_status": "revoked", "revoked_at": "now"},
-                        "severity": "destructive",
-                    }
-                    for row in device_rows
-                )
-        elif operation == "account_sessions.revoke":
-            for session_id in ids:
-                row = await self.session.get(DeviceAccountSession, session_id)
-                if row is None:
-                    results.append({"id": session_id, "success": False, "error_code": "NOT_FOUND"})
-                    continue
-                results.append({"id": session_id, "success": True})
-                changes.append(
-                    {
-                        "kind": "account_session",
-                        "action": "revoke",
-                        "object_id": row.session_id,
-                        "before": {"verification_status": row.verification_status},
-                        "after": {"verification_status": "revoked", "revoked_at": "now"},
-                        "severity": "destructive",
-                    }
-                )
         else:
             raise ValueError("unsupported bulk preview operation")
 
@@ -2509,9 +2361,6 @@ class RegistryAdminOperationsService:
             elif export_type == "bindings":
                 rows = snapshot.get("bindings") or []
                 columns = ["binding_id", "device_id", "person_id", "relationship_type", "status", "confirmed_at", "valid_from", "valid_to"]
-            elif export_type == "sessions":
-                rows = snapshot.get("account_sessions") or []
-                columns = ["session_id", "device_id", "person_id", "account_mode", "verification_status", "verification_method", "base_binding_id", "created_at", "expires_at", "revoked_at"]
             elif export_type == "quality":
                 rows = snapshot.get("data_quality") or []
                 columns = ["kind", "severity", "object_type", "object_id", "device_id", "person_id", "binding_id", "claim_id", "title", "description"]
@@ -2541,16 +2390,7 @@ class RegistryAdminOperationsService:
                     select(DeviceRegistrationEvent).where(DeviceRegistrationEvent.device_id == object_id).order_by(desc(DeviceRegistrationEvent.event_at)).limit(limit)
                 )
             ).scalars().all()
-            account_rows = (
-                await self.session.execute(
-                    select(DeviceAccountEvent)
-                    .where(DeviceAccountEvent.device_id == object_id)
-                    .order_by(desc(DeviceAccountEvent.event_at))
-                    .limit(limit)
-                )
-            ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
-            items.extend(self.serialize_event(row) for row in account_rows)
         elif object_type == "person":
             admin_stmt = select(RegistryAdminEvent).where(or_(RegistryAdminEvent.object_id == object_id, RegistryAdminEvent.related_person_id == object_id))
             registration_rows = (
@@ -2559,24 +2399,6 @@ class RegistryAdminOperationsService:
                 )
             ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
-            session_rows = (
-                await self.session.execute(
-                    select(DeviceAccountSession)
-                    .where(or_(DeviceAccountSession.person_id == object_id, DeviceAccountSession.base_person_id == object_id))
-                    .limit(limit)
-                )
-            ).scalars().all()
-            session_ids = [row.session_id for row in session_rows]
-            if session_ids:
-                account_rows = (
-                    await self.session.execute(
-                        select(DeviceAccountEvent)
-                        .where(DeviceAccountEvent.session_id.in_(session_ids))
-                        .order_by(desc(DeviceAccountEvent.event_at))
-                        .limit(limit)
-                    )
-                ).scalars().all()
-                items.extend(self.serialize_event(row) for row in account_rows)
         elif object_type == "binding":
             registration_rows = (
                 await self.session.execute(
@@ -2584,34 +2406,6 @@ class RegistryAdminOperationsService:
                 )
             ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
-            session_rows = (
-                await self.session.execute(
-                    select(DeviceAccountSession)
-                    .where(or_(DeviceAccountSession.binding_id == object_id, DeviceAccountSession.base_binding_id == object_id))
-                    .limit(limit)
-                )
-            ).scalars().all()
-            session_ids = [row.session_id for row in session_rows]
-            if session_ids:
-                account_rows = (
-                    await self.session.execute(
-                        select(DeviceAccountEvent)
-                        .where(DeviceAccountEvent.session_id.in_(session_ids))
-                        .order_by(desc(DeviceAccountEvent.event_at))
-                        .limit(limit)
-                    )
-                ).scalars().all()
-                items.extend(self.serialize_event(row) for row in account_rows)
-        elif object_type == "account_session":
-            rows = (
-                await self.session.execute(
-                    select(DeviceAccountEvent)
-                    .where(DeviceAccountEvent.session_id == object_id)
-                    .order_by(desc(DeviceAccountEvent.event_at))
-                    .limit(limit)
-                )
-            ).scalars().all()
-            items.extend(self.serialize_event(row) for row in rows)
         elif object_type == "claim":
             registration_rows = (
                 await self.session.execute(

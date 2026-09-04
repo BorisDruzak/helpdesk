@@ -118,20 +118,9 @@ export function CapabilityDetailDrawer({ capability, deviceId, onClose }: Capabi
             <div className="grid gap-4 md:grid-cols-2">
               <DetailField label="Где выполняется" value={label(capability.execution_target)} />
               <DetailField label="Requires device" value={capability.requires_device} />
-              <DetailField label="Requires agent online" value={capability.requires_agent_online} />
-              <DetailField label="Supports auto-install" value={capability.supports_auto_install} />
               <DetailField label="Requires integration" value={capability.requires_integration} />
               <DetailField label="Integration key" value={capability.integration_key} />
-              <DetailField label="Install required on agent" value={capability.install_required_on_agent} />
               <DetailField label="Platforms" value={capability.platforms?.join(", ") || "any"} />
-              {capability.execution_target === "agent_recipe" ? (
-                <>
-                  <DetailField label="Runner provider" value={capability.runner_provider_id} />
-                  <DetailField label="Min runner version" value={capability.min_runner_version} />
-                  <DetailField label="Primitive" value={capability.primitive_id} />
-                  <DetailField label="Recipe version" value={capability.recipe_version_id} />
-                </>
-              ) : null}
             </div>
           </Section>
 

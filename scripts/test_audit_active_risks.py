@@ -6,17 +6,7 @@ from pathlib import Path
 from scripts import audit_active_risks
 
 
-REQUIRED_SOURCE_IDS = {
-    "archive.1.1.outbox_ack",
-    "archive.1.2.command_idempotency",
-    "archive.1.3.scheduler_rpc",
-    "archive.1.4.consent_orchestrator",
-    "archive.1.5.module_manager_handshake",
-    "archive.2.2.device_outbox_dispatch",
-    "archive.2.3.sync_run_tool_wait",
-    "archive.2.4.run_tool_entry_paths",
-    "archive.3.3.server_public_base_url",
-}
+REQUIRED_SOURCE_IDS = {"cutover.acceptance"}
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -104,5 +94,4 @@ def test_audit_active_risks_reports_missing_active_gate_fields_and_refs(tmp_path
         "active_risk_missing_owner",
         "active_risk_missing_acceptance",
         "missing_test_node",
-        "active_archive_source_not_registered",
     }

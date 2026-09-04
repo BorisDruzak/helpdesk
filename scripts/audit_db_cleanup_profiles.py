@@ -33,13 +33,6 @@ LAYER_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        "registration",
-        (
-            "test_account_session_service.py",
-            "test_registration_api.py",
-        ),
-    ),
-    (
         "web_support",
         (
             "test_p0_workbench_update_contracts.py",

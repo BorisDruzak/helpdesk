@@ -11,7 +11,6 @@ import config as config_module
 from app.api.serializers import ticket_to_dict
 from app.db.models import (
     Device,
-    DeviceAccountSession,
     DeviceRegistrationClaim,
     DeviceUserBinding,
     RegistryAsset,
@@ -244,33 +243,9 @@ class RequesterIdentityResolver:
             return []
         return await self.registration_repo.list_bindings_for_person(person_id, active_only=True)
 
-    async def list_owned_sessions(self, person_id: str | None, binding_ids: list[str]) -> list[DeviceAccountSession]:
-        clauses = []
-        if person_id:
-            clauses.append(DeviceAccountSession.person_id == str(person_id))
-        if binding_ids:
-            clauses.append(DeviceAccountSession.binding_id.in_(binding_ids))
-        if not clauses:
-            return []
-        result = await self.session.execute(
-            select(DeviceAccountSession)
-            .where(or_(*clauses))
-            .where(DeviceAccountSession.verification_status.in_(["verified", "pending_verification"]))
-            .order_by(desc(DeviceAccountSession.created_at))
-        )
-        return list(result.scalars().all())
-
     def _device_online(self, device_id: str | None, *, state: Any | None = None) -> bool | None:
-        if not device_id:
-            return None
-        runtime_state = state if state is not None else self.state
-        checker = getattr(runtime_state, "is_agent_online", None)
-        if not callable(checker):
-            return None
-        try:
-            return bool(checker(str(device_id)))
-        except Exception:
-            return None
+        del device_id, state
+        return None
 
     async def list_allowed_devices(self, person_id: str | None, *, state: Any | None = None) -> list[dict[str, Any]]:
         devices: list[dict[str, Any]] = []
@@ -877,8 +852,6 @@ class RequesterIdentityResolver:
         person = await self.resolve_person_for_web_user(actor_id)
         bindings = await self.list_active_bindings(person.person_id if person else None)
         binding_ids = [binding.binding_id for binding in bindings]
-        sessions = await self.list_owned_sessions(person.person_id if person else None, binding_ids)
-        session_ids = [session.session_id for session in sessions]
         legacy_scope = requester_legacy_scope_clause(Ticket)
         clauses = [and_(legacy_scope, Ticket.requester_id == str(actor_id))]
         if person is not None:
@@ -896,13 +869,6 @@ class RequesterIdentityResolver:
         if binding_ids:
             clauses.append(
                 and_(legacy_scope, Ticket.requester_binding_id.in_(binding_ids))
-            )
-        if session_ids:
-            clauses.append(
-                and_(
-                    legacy_scope,
-                    Ticket.requester_account_session_id.in_(session_ids),
-                )
             )
         result = await self.session.execute(
             select(Ticket)

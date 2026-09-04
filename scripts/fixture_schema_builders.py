@@ -8,7 +8,6 @@ from typing import Any
 
 REGISTRY_SCHEMA = "pc_client.fixture_builders.v1"
 WEB_FIRST_PHASE_E_SCHEMA = "web_first_phase_e_test_data_pack_v1"
-CRITICAL_BEHAVIOR_SCHEMA = "pc_client.critical_behavior_data_pack.v1"
 
 
 def _string() -> dict[str, Any]:
@@ -42,7 +41,7 @@ def fixture_registry_schema() -> dict[str, Any]:
                     {
                         "id": _string(),
                         "path": _string(),
-                        "schema_builder": {"enum": [WEB_FIRST_PHASE_E_SCHEMA, "critical_behavior_data_pack_v1"]},
+                        "schema_builder": {"const": WEB_FIRST_PHASE_E_SCHEMA},
                         "owner": _string(),
                         "secret_free": {"type": "boolean"},
                     },
@@ -148,80 +147,7 @@ def web_first_phase_e_test_data_pack_v1() -> dict[str, Any]:
     )
 
 
-def critical_behavior_data_pack_v1() -> dict[str, Any]:
-    return _object(
-        [
-            "schema",
-            "purpose",
-            "version",
-            "pack_version",
-            "run_id_prefix",
-            "requires_manifest_schema",
-            "source_packs",
-            "domains",
-        ],
-        {
-            "$schema": {"type": "string"},
-            "schema": {"const": CRITICAL_BEHAVIOR_SCHEMA},
-            "purpose": {"const": "critical_behavior_live_gate"},
-            "version": {"type": "integer", "minimum": 1},
-            "pack_version": _string(),
-            "run_id_prefix": _string(),
-            "requires_manifest_schema": {"const": "pc_client.live_evidence.v2"},
-            "source_packs": _string_array(),
-            "shared_data_refs": {"type": "object"},
-            "domains": {
-                "type": "array",
-                "minItems": 1,
-                "items": _object(
-                    ["key", "owner", "priority", "critical_invariants", "automated_layers", "live_scenarios"],
-                    {
-                        "key": _string(),
-                        "owner": _string(),
-                        "priority": {"enum": ["critical", "high"]},
-                        "critical_invariants": _string_array(),
-                        "automated_layers": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": _object(
-                                ["kind", "test_refs"],
-                                {
-                                    "kind": _string(),
-                                    "test_refs": _string_array(),
-                                },
-                            ),
-                        },
-                        "live_scenarios": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": _object(
-                                [
-                                    "key",
-                                    "surface",
-                                    "data_refs",
-                                    "required_evidence",
-                                    "manifest_requirements",
-                                    "expected_outcomes",
-                                ],
-                                {
-                                    "key": _string(),
-                                    "surface": _string(),
-                                    "data_refs": {"type": "object"},
-                                    "required_evidence": _string_array(),
-                                    "manifest_requirements": _string_array(),
-                                    "expected_outcomes": _string_array(),
-                                },
-                            ),
-                        },
-                    },
-                ),
-            },
-        },
-    )
-
-
 def schema_builders() -> dict[str, dict[str, Any]]:
     return {
         WEB_FIRST_PHASE_E_SCHEMA: web_first_phase_e_test_data_pack_v1(),
-        "critical_behavior_data_pack_v1": critical_behavior_data_pack_v1(),
     }

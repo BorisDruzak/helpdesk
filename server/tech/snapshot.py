@@ -15,15 +15,10 @@ import config
 from app.db import get_session
 from app.db.models import (
     AgentRuntimeAudit,
-    AgentToken,
-    ConnectionRequest,
     Device,
-    DeviceOutbox,
     Operation,
-    ServerConfig,
 )
 from app.repos.observer_integrity_repo import ObserverIntegrityRepo
-from app.repos.connection_requests_repo import CONNECTION_POLICY_KEY, POLICY_ACCEPT_ALL, POLICY_MANUAL, POLICY_REJECT_ALL
 import auth.middleware as auth_middleware
 from config import OPERATION_ACCEPTED_TIMEOUT, OPERATION_DELIVERY_TIMEOUT, OPERATION_EXECUTION_TIMEOUT
 
@@ -312,8 +307,6 @@ def build_readiness_gates(
             "critical" if baseline_status == "blocked" else ("warning" if baseline_status != "ok" else "info"),
             "Пилот должен понимать, сколько агентов ниже минимальной версии.",
             evidence=evidence,
-            action_label="Открыть agent updates",
-            action_href="/app/admin/agent-updates",
         )
     )
 
@@ -447,28 +440,6 @@ def _runtime_state_name(value: bool | None) -> str:
 
 def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], config_values: dict[str, Any]) -> dict[str, Any]:
     service_health = overview.get("service_health") if isinstance(overview.get("service_health"), dict) else {}
-    inventory_runtime = request.app.get("inventory_refresh_runtime")
-    inventory_enabled = bool(config_values.get("INVENTORY_REFRESH_SCHEDULER_ENABLED"))
-    inventory_runtime_snapshot = None
-    if inventory_runtime is not None and callable(getattr(inventory_runtime, "status_snapshot", None)):
-        try:
-            inventory_runtime_snapshot = inventory_runtime.status_snapshot()
-        except Exception:
-            inventory_runtime_snapshot = None
-    inventory_running = (
-        bool(inventory_runtime_snapshot.get("running"))
-        if isinstance(inventory_runtime_snapshot, dict)
-        else (bool(getattr(inventory_runtime, "_running", False)) if inventory_runtime is not None else False)
-    )
-    if not inventory_enabled:
-        inventory_status = "disabled"
-    elif inventory_running:
-        inventory_status = "running"
-    elif inventory_runtime is None:
-        inventory_status = "unknown"
-    else:
-        inventory_status = "enabled_not_running"
-
     def service(key: str, title: str, status: str | None, details: str | None = None) -> dict[str, Any]:
         mapped = str(status or "unknown").lower()
         if mapped in {"ok", "running", "healthy", "success"}:
@@ -485,70 +456,33 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
         "operation_watchdog": _runtime_state_name(bool(getattr(request.app.get("operation_watchdog"), "_running", False))),
         "ticket_sla_watchdog": _runtime_state_name(bool(getattr(request.app.get("ticket_sla_watchdog"), "_running", False))),
         "ticket_auto_close_watchdog": _runtime_state_name(bool(getattr(request.app.get("ticket_auto_close_watchdog"), "_running", False))),
-        "inventory_scheduler": inventory_status,
         "observer_refresh_runtime": str(service_health.get("observer_refresh_runtime") or "unknown"),
     }
-    if not isinstance(inventory_runtime_snapshot, dict):
-        inventory_runtime_snapshot = {
-            "enabled": inventory_enabled,
-            "running": inventory_running,
-            "active_task_count": 0,
-            "duplicate_task_detected": False,
-            "last_tick_at": None,
-            "last_error": None,
-        }
     return {
         "services": [
             service("api", "API", str(service_health.get("api") or "unknown")),
             service("ws_ui", "UI WebSocket", str(service_health.get("ws_ui") or "unknown")),
-            service("agent_ws", "Agent WebSocket", "ok" if _safe_int(service_health.get("agent_ws_connections")) >= 0 else "unknown"),
-            service("device_dispatch", "Device dispatch", str(service_health.get("device_dispatch") or "unknown")),
             service("operation_watchdog", "Operation watchdog", schedulers["operation_watchdog"]),
             service("ticket_sla_watchdog", "Ticket SLA watchdog", schedulers["ticket_sla_watchdog"]),
             service("ticket_auto_close_watchdog", "Ticket auto-close watchdog", schedulers["ticket_auto_close_watchdog"]),
-            service("inventory_scheduler", "Inventory scheduler", inventory_status),
             service("observer_refresh_runtime", "Observer refresh runtime", schedulers["observer_refresh_runtime"]),
         ],
         "web_sockets": {
             "ui_connections": _safe_int(service_health.get("ui_ws_connections")),
-            "agent_connections": _safe_int(service_health.get("agent_ws_connections")),
         },
         "schedulers": schedulers,
-        "scheduler_details": {"inventory_scheduler": inventory_runtime_snapshot},
+        "scheduler_details": {},
     }
 
 
 async def _connection_policy_snapshot(database_reachable: bool) -> dict[str, Any]:
-    mode: str | None = None
-    pending = 0
-    stale = 0
-    if database_reachable:
-        try:
-            now = datetime.now(timezone.utc)
-            async with get_session() as session:
-                row = await session.scalar(select(ServerConfig.value).where(ServerConfig.key == CONNECTION_POLICY_KEY))
-                mode = str(row or POLICY_ACCEPT_ALL)
-                pending = _safe_int(
-                    await session.scalar(select(func.count()).select_from(ConnectionRequest).where(ConnectionRequest.status == "pending"))
-                )
-                stale = _safe_int(
-                    await session.scalar(
-                        select(func.count()).select_from(ConnectionRequest).where(
-                            and_(ConnectionRequest.status == "pending", ConnectionRequest.last_request_at < (now - timedelta(minutes=5)))
-                        )
-                    )
-                )
-        except SQLAlchemyError:
-            mode = None
-    if mode in {POLICY_MANUAL, POLICY_REJECT_ALL, "controlled"}:
-        status = "ok"
-    elif mode == POLICY_ACCEPT_ALL:
-        status = "warning"
-    elif mode:
-        status = "warning"
-    else:
-        status = "unknown"
-    return {"mode": mode, "status": status, "pending_requests": pending, "stale_pending_requests": stale}
+    del database_reachable
+    return {
+        "mode": "endpoint_platform",
+        "status": "unavailable",
+        "pending_requests": 0,
+        "stale_pending_requests": 0,
+    }
 
 
 async def build_security_snapshot(overview: dict[str, Any], config_values: dict[str, Any], database_reachable: bool) -> dict[str, Any]:
@@ -625,9 +559,7 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
                         Device.deleted_at.is_(None),
                         or_(
                             Device.last_seen_at < stale_cutoff,
-                            ~select(AgentToken.token_hash)
-                            .where(and_(AgentToken.device_id == Device.device_id, AgentToken.revoked_at.is_(None)))
-                            .exists(),
+                            Device.last_seen_at.is_(None),
                         ),
                     )
                 )
@@ -649,7 +581,7 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
                         "last_seen_at": _iso(last_seen_at),
                         "agent_version": agent_version,
                         "reasons": reasons or ["requires attention"],
-                        "href": f"/app/admin/device-operations/{device_id}",
+                        "href": f"/app/admin/device?device={device_id}",
                     }
                 )
             if min_version:
@@ -671,7 +603,7 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
                                     "last_seen_at": _iso(last_seen_at),
                                     "agent_version": agent_version,
                                     "reasons": ["below baseline"],
-                                    "href": f"/app/admin/device-operations/{device_id}",
+                                    "href": f"/app/admin/device?device={device_id}",
                                 }
                             )
     except SQLAlchemyError:
@@ -728,9 +660,6 @@ async def build_operations_snapshot(overview: dict[str, Any], database_reachable
                             and_(Operation.status.in_(["failed", "timed_out"]), Operation.finished_at >= (now - timedelta(hours=24)))
                         )
                     )
-                )
-                outbox_backlog = _safe_int(
-                    await session.scalar(select(func.count()).select_from(DeviceOutbox).where(DeviceOutbox.status.in_(["pending", "sent"])))
                 )
                 rows = (
                     await session.execute(
@@ -825,8 +754,7 @@ def _links() -> dict[str, Any]:
     return {
         "observer": "/app/admin/observer",
         "inventory": "/app/admin/inventory",
-        "device_operations": "/app/admin/device-operations",
-        "agent_updates": "/app/admin/agent-updates",
+        "device_operations": "/app/admin/device",
         "command_center": "/app/support",
         "approval_center": "/app/support/approvals",
         "logs": "/app/admin/tech?tab=logs",

@@ -75,7 +75,6 @@ async def test_retired_shell_assets_and_workbenches_are_unregistered():
         "/web_shared.js",
         "/admin_modules_workbench.html",
         "/admin_modules_workbench.js",
-        "/endpoint_module_workbench.js",
         "/admin_ticket_forms_builder.html",
         "/admin_ticket_forms_builder.js",
     ):

@@ -7,7 +7,6 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, RegistryAdminEvent, RegistryPerson
-from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.registration_service import RegistrationService
 
@@ -37,7 +36,6 @@ async def test_registry_policy_api_reads_defaults_and_rejects_invalid_values(tes
     response = await test_client.get("/api/web/admin/registry/policies", headers=ADMIN_HEADERS)
     assert response.status == 200
     payload = await response.json()
-    assert payload["data"]["effective"]["account_sessions"]["verified_other_account_ttl_hours"] == 24
     assert payload["data"]["defaults"]["registration"]["require_admin_confirmation"] is False
     assert payload["data"]["defaults"]["registration"]["auto_approve_first_binding"] is True
     assert payload["data"]["requires_restart"] is False
@@ -50,7 +48,7 @@ async def test_registry_policy_api_reads_defaults_and_rejects_invalid_values(tes
 
     invalid = await test_client.patch(
         "/api/web/admin/registry/policies",
-        json={"reason": "invalid", "policies": {"account_sessions": {"verified_other_account_ttl_hours": -1}}},
+        json={"reason": "invalid", "policies": {"registration": {"stale_after_days": -1}}},
         headers=ADMIN_HEADERS,
     )
     assert invalid.status == 400
@@ -108,35 +106,4 @@ async def test_registry_policy_preview_and_reset_are_audited(test_client, test_e
         ).all()
 
     assert len(events) >= 2
-
-
-@pytest.mark.asyncio
-async def test_account_session_service_uses_patched_ttl(test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-    async with session_maker() as session:
-        session.add(_device(device_id))
-        person = RegistryPerson(person_id=str(uuid.uuid4()), display_name="Policy Owner", source="manual", status="active")
-        session.add(person)
-        await session.flush()
-        await RegistryAdminOperationsService(session).update_policies(
-            {
-                "reason": "short ttl",
-                "policies": {"account_sessions": {"confirmed_binding_ttl_hours": 2}},
-            },
-            actor_id="admin",
-        )
-        binding = await RegistrationService(session).bind_person_to_device(
-            device_id=device_id,
-            person_id=person.person_id,
-            relationship_type="primary_user",
-            reviewed_by="admin",
-            reason="owner",
-        )
-        created = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=binding["binding"]["binding_id"],
-        )
-        await session.commit()
-
-    assert created["session"]["expires_at"] is not None
+    assert all(event for event in events)

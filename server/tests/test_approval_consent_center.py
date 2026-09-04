@@ -184,7 +184,7 @@ async def test_approval_consent_center_returns_typed_real_sources(test_client, t
     assert data["summary"]["ticket_approvals_count"] == 1
     assert data["summary"]["change_approvals_count"] == 1
     assert data["summary"]["risky_tool_consents_count"] == 1
-    assert data["summary"]["remote_assist_consents_count"] == 1
+    assert data["summary"]["remote_assist_consents_count"] == 0
     assert data["summary"]["closure_approvals_count"] == 1
     assert data["summary"]["policy_overrides_count"] == 0
     assert {section["key"] for section in data["sections"]} >= {
@@ -195,7 +195,6 @@ async def test_approval_consent_center_returns_typed_real_sources(test_client, t
         "ticket_approvals",
         "change_approvals",
         "risky_tool_consents",
-        "remote_assist_consents",
         "closure_approvals",
         "policy_overrides",
     }
@@ -204,7 +203,6 @@ async def test_approval_consent_center_returns_typed_real_sources(test_client, t
         "ticket_approval",
         "change_approval",
         "risky_tool_consent",
-        "remote_assist_consent",
         "closure_approval",
     } <= kinds
     ticket_item = next(item for item in data["items"] if item["kind"] == "ticket_approval")
@@ -234,7 +232,7 @@ async def test_approval_consent_center_filters_kind_status_and_risk(test_client,
     data = (await response.json())["data"]
     assert data["scope"] == "team"
     assert data["items"]
-    assert {item["kind"] for item in data["items"]} <= {"risky_tool_consent", "remote_assist_consent"}
+    assert {item["kind"] for item in data["items"]} <= {"risky_tool_consent"}
     assert {item["risk"] for item in data["items"]} == {"high"}
 
 

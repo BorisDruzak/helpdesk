@@ -23,15 +23,6 @@ DEFAULT_REGISTRY_POLICIES: dict[str, dict[str, Any]] = {
         "department_mode": "allow_pending_request",
         "location_mode": "allow_pending_request",
     },
-    "account_sessions": {
-        "confirmed_binding_ttl_hours": None,
-        "verified_other_account_ttl_hours": 24,
-        "registration_pending_ttl_hours": 72,
-        "allow_other_account_login": True,
-        "other_account_requires_reason": True,
-        "other_account_requires_admin_approval": True,
-        "allow_other_account_on_shared_or_responsible": True,
-    },
     "ticket_visibility": {
         "owner_can_see_historical_tickets": True,
         "other_account_only_own_session_tickets": True,
@@ -46,9 +37,6 @@ REGISTRY_POLICY_VALIDATION: dict[str, dict[str, Any]] = {
     "registration.stale_after_days": {"type": "integer", "minimum": 1, "maximum": 3650, "nullable": False},
     "registration.department_mode": {"type": "enum", "values": ["allow_pending_request", "optional", "required_existing"]},
     "registration.location_mode": {"type": "enum", "values": ["allow_pending_request", "optional", "required_existing"]},
-    "account_sessions.confirmed_binding_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 87600, "nullable": True},
-    "account_sessions.verified_other_account_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 8760, "nullable": False},
-    "account_sessions.registration_pending_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 8760, "nullable": False},
     "diagnostic_target.allow_single_active_binding_fallback": {"type": "boolean", "nullable": False},
 }
 
@@ -96,7 +84,6 @@ def _validate_mode(value: Any, *, field: str) -> str:
 def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
     merged = _deep_merge_defaults(value)
     registration = merged["registration"]
-    account_sessions = merged["account_sessions"]
     ticket_visibility = merged["ticket_visibility"]
     diagnostic_target = merged["diagnostic_target"]
 
@@ -128,33 +115,6 @@ def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
         registration.get("location_mode"),
         field="registration.location_mode",
     )
-
-    account_sessions["confirmed_binding_ttl_hours"] = _validate_int(
-        account_sessions.get("confirmed_binding_ttl_hours"),
-        field="account_sessions.confirmed_binding_ttl_hours",
-        minimum=1,
-        maximum=87600,
-        nullable=True,
-    )
-    account_sessions["verified_other_account_ttl_hours"] = _validate_int(
-        account_sessions.get("verified_other_account_ttl_hours"),
-        field="account_sessions.verified_other_account_ttl_hours",
-        minimum=1,
-        maximum=8760,
-    )
-    account_sessions["registration_pending_ttl_hours"] = _validate_int(
-        account_sessions.get("registration_pending_ttl_hours"),
-        field="account_sessions.registration_pending_ttl_hours",
-        minimum=1,
-        maximum=8760,
-    )
-    for field in (
-        "allow_other_account_login",
-        "other_account_requires_reason",
-        "other_account_requires_admin_approval",
-        "allow_other_account_on_shared_or_responsible",
-    ):
-        account_sessions[field] = _validate_bool(account_sessions.get(field), field=f"account_sessions.{field}")
 
     for field in ("owner_can_see_historical_tickets", "other_account_only_own_session_tickets"):
         ticket_visibility[field] = _validate_bool(ticket_visibility.get(field), field=f"ticket_visibility.{field}")

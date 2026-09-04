@@ -1,9 +1,0 @@
-{
-  "module_name": "screen",
-  "module_version": "1.0.0",
-  "description": "Скриншоты экрана и запись видео (mss + ffmpeg). Инструменты: screen.collect, screen.record.",
-  "entrypoint": "module:register",
-  "requirements": ["mss", "pydantic"],
-  "optional_requirements": ["imageio-ffmpeg"],
-  "notes": "Для screen.record нужен ffmpeg в PATH или пакет imageio-ffmpeg."
-}

@@ -16,7 +16,6 @@ from app.db.models import (
 )
 from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import normalize_identifier
-from registry.account_session_service import AccountSessionService
 from registry.audience_group_service import RegistryAudienceService
 from registry.profile_schema_service import RequesterProfileSchemaService
 
@@ -117,28 +116,11 @@ class RegistryProfileIngestResult:
 
 
 class RegistryIngestionService:
-    """Converts discovered/self-reported agent data into registry records."""
+    """Converts requester self-reported data into registry records."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
         self.repo = RegistryRepo(session)
-
-    async def ingest_agent_handshake(
-        self,
-        *,
-        device_id: str,
-        hostname: str | None,
-        os_name: str | None,
-        agent_version: str | None,
-        metadata: dict[str, Any] | None = None,
-    ):
-        return await self.repo.upsert_agent_asset(
-            device_id=device_id,
-            hostname=_clean(hostname),
-            os_name=_clean(os_name),
-            agent_version=_clean(agent_version),
-            metadata=metadata or {},
-        )
 
     async def ingest_requester_profile(
         self,
@@ -198,9 +180,6 @@ class RegistrySnapshotService:
         for asset in assets:
             if asset.device_id:
                 bindings.extend(await registration_service.repo.list_bindings_for_device(asset.device_id))
-        account_service = AccountSessionService(self.session)
-        account_sessions = await account_service.list_sessions_admin(limit=500)
-        account_login_requests = await account_service.list_login_requests(limit=300)
         ui_users = list(
             (
                 await self.session.execute(
@@ -295,19 +274,6 @@ class RegistrySnapshotService:
             if claim.status in {"self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review", "conflict"}:
                 pending_by_device.setdefault(claim.device_id, []).append(claim)
         ticket_counts = await self.repo.count_tickets_by_device_ids([asset.device_id for asset in assets if asset.device_id])
-        active_sessions_by_device: dict[str, list[dict[str, Any]]] = {}
-        active_sessions_by_person: dict[str, list[dict[str, Any]]] = {}
-        sessions_by_binding: dict[str, list[dict[str, Any]]] = {}
-        for account_session in account_sessions:
-            if account_session.get("verification_status") == "verified" and not account_session.get("revoked_at"):
-                active_sessions_by_device.setdefault(account_session.get("device_id") or "", []).append(account_session)
-                if account_session.get("person_id"):
-                    active_sessions_by_person.setdefault(account_session.get("person_id") or "", []).append(account_session)
-                if account_session.get("binding_id"):
-                    sessions_by_binding.setdefault(account_session.get("binding_id") or "", []).append(account_session)
-                if account_session.get("base_binding_id"):
-                    sessions_by_binding.setdefault(account_session.get("base_binding_id") or "", []).append(account_session)
-
         data_quality = []
         for asset in assets:
             active_binding = active_any_by_device.get(asset.device_id or "")
@@ -693,7 +659,6 @@ class RegistrySnapshotService:
                 "shared_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "shared_user"),
                 "responsible_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "responsible"),
                 "active_ticket_count": 0,
-                "active_session_count": len(active_sessions_by_person.get(person.person_id, [])),
                 "last_seen_at": person.last_seen_at.isoformat() if person.last_seen_at else None,
                 "updated_at": person.updated_at.isoformat() if person.updated_at else None,
             }
@@ -738,7 +703,6 @@ class RegistrySnapshotService:
                 "revoked_at": binding.revoked_at.isoformat() if binding.revoked_at else None,
                 "revoked_by": binding.revoked_by,
                 "revoke_reason": binding.revoke_reason,
-                "active_sessions_count": len(sessions_by_binding.get(binding.binding_id, [])),
             }
 
         def identity_payload(identity: RegistryPersonIdentity) -> dict[str, Any]:
@@ -797,9 +761,6 @@ class RegistrySnapshotService:
                 "devices_unregistered": sum(1 for asset in assets if asset.asset_type == "pc" and not active_any_by_device.get(asset.device_id or "")),
                 "people_total": len(people),
                 "shared_devices": len(active_shared_by_device),
-                "sessions_active": sum(1 for row in account_sessions if row.get("verification_status") == "verified" and not row.get("revoked_at")),
-                "sessions_other_account": sum(1 for row in account_sessions if row.get("account_mode") == "verified_other_account" and row.get("verification_status") == "verified" and not row.get("revoked_at")),
-                "other_account_requests": sum(1 for row in account_login_requests if row.get("status") == "pending_verification"),
                 "ui_users": len(ui_users),
                 "ui_users_linked": sum(1 for user in ui_users if ui_login_identity_by_normalized.get(normalize_identifier("ui_login", user.user_login))),
                 "ui_users_unlinked": sum(1 for user in ui_users if not ui_login_identity_by_normalized.get(normalize_identifier("ui_login", user.user_login))),
@@ -911,7 +872,6 @@ class RegistrySnapshotService:
                         for binding in bindings_by_device.get(asset.device_id or "", [])
                         if binding.status == "active"
                     ],
-                    "active_sessions_count": len(active_sessions_by_device.get(asset.device_id or "", [])),
                     "active_tickets_count": ticket_counts.get(asset.device_id or "", 0),
                     "can_bind": bool(asset.device_id),
                     "can_transfer": bool(asset.device_id),
@@ -982,8 +942,6 @@ class RegistrySnapshotService:
             "registration_claims": [claim_payload(claim) for claim in claims],
             "active_bindings": [binding_payload(binding) for binding in bindings if binding.status == "active"],
             "bindings": [binding_payload(binding) for binding in bindings],
-            "account_sessions": account_sessions,
-            "account_login_requests": account_login_requests,
             "ui_users": [ui_user_payload(user) for user in ui_users],
             "data_quality": data_quality,
             "suggestions": suggestions,

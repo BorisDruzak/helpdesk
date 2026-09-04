@@ -1,20 +1,4 @@
-"""
-WebSocket сервер для управления удалёнными PC агентами (relay-архитектура).
-
-Этот сервер выступает в роли ретранслятора команд между веб-интерфейсом
-и удалёнными агентами. Сервер НЕ выполняет сбор данных - он только:
-1. Аутентифицирует агентов
-2. Регистрирует подключённые агенты
-3. Пересылает команды от веб-интерфейса к агентам
-4. Возвращает ответы от агентов обратно к веб-интерфейсу
-
-Вся логика сбора данных (SystemCollector, ScreenCollector, etc.)
-выполняется на стороне агента через ws_agent.py и AgentOrchestrator.
-
-РЕСТРУКТУРИЗАЦИЯ: Код разделён на модули для улучшения читаемости и поддержки.
-Архивный legacy runtime-path удалён из активного дерева; источник истины по структуре
-и потокам теперь в CODEMAP/документации рядом с кодом.
-"""
+"""Helpdesk ticket/process facade with Endpoint-owned device operations."""
 
 import sys
 from aiohttp import web
@@ -38,8 +22,6 @@ from config import (
     DATABASE_URL,
     ENABLE_DB_PERSISTENCE,
     ENDPOINT_DIAGNOSTIC_EXECUTION_MODE,
-    ENDPOINT_MODULE_EXECUTION_MODE,
-    ENDPOINT_MODULE_PORT_MODE,
     ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE,
     ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS,
     ENDPOINT_PORT_MODE,
@@ -49,7 +31,7 @@ from config import (
 # Этап 7.2: очистка истёкших артефактов
 ARTIFACTS_CLEANUP_INTERVAL_SEC = 3600  # 1 час
 from state_manager import StateManager
-from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, OUTBOX_SENDER_APP_KEY, bind_app_value
+from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, bind_app_value
 from routes import setup_routes
 
 # Import database initialization
@@ -57,9 +39,6 @@ from app.db import get_session, init_db, shutdown_db
 from app.db.engine import get_session_maker
 from app.repos.operations_repo import OperationsRepo
 from websocket.ui_publisher import UiPublisherImpl
-
-# Phase C: Import device outbox sender
-from websocket.device_outbox_sender import DeviceOutboxSender, recover_pending_commands
 
 # PR#7: Import operation watchdog
 from app.services.operation_watchdog import get_watchdog
@@ -146,19 +125,6 @@ async def housekeeping_cleanup_task(app: web.Application):
             if trimmed_count > 0:
                 logger.info(f"[HOUSEKEEPING] Trimmed {trimmed_count} ticket_seen_message_ids caches")
 
-            # Repair device_outbox: status='sent' без соответствующей операции → failed (ORPHAN_SENT)
-            try:
-                from app.db import get_session
-                from app.repos.device_outbox_repo import DeviceOutboxRepo
-                async with get_session() as session:
-                    repo = DeviceOutboxRepo(session)
-                    repaired = await repo.repair_sent_without_operation(limit=100)
-                    if repaired > 0:
-                        await session.commit()
-                        logger.info(f"[HOUSEKEEPING] device_outbox repair: {repaired} entries marked ORPHAN_SENT")
-            except Exception as outbox_err:
-                logger.warning(f"[HOUSEKEEPING] device_outbox repair skipped: {outbox_err}")
-        
         except Exception as e:
             logger.error(f"[HOUSEKEEPING] Cleanup error: {e}", exc_info=True)
 
@@ -215,20 +181,6 @@ def _endpoint_operation_ui_publisher(state: StateManager):
     return publish
 
 
-async def start_inventory_refresh_runtime(app: web.Application) -> None:
-    """Start the inventory scheduler once per aiohttp application lifecycle."""
-    if app.get("inventory_refresh_runtime") is not None:
-        logger.warning("Inventory refresh runtime already initialized; skipping duplicate start")
-        return
-
-    from inventory.scheduler import InventoryRefreshRuntime
-
-    inventory_refresh_runtime = InventoryRefreshRuntime(state=app["state"])
-    await inventory_refresh_runtime.start()
-    app["inventory_refresh_runtime"] = inventory_refresh_runtime
-    logger.success("Inventory refresh runtime initialized")
-
-
 async def on_startup(app: web.Application):
     """
     Обработчик события запуска приложения.
@@ -239,17 +191,6 @@ async def on_startup(app: web.Application):
         try:
             await init_db(DATABASE_URL)
             logger.success("✅ Database initialized successfully")
-            
-            # Phase C: Recover pending commands from device_outbox
-            logger.info("🔄 Recovering pending commands...")
-            await recover_pending_commands(app['state'])
-            
-            # Phase C: Start device outbox sender loop
-            logger.info("🚀 Starting device outbox sender...")
-            sender = DeviceOutboxSender(app['state'], poll_interval=1.0)
-            await sender.start_async()
-            bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
-            logger.success("✅ Device outbox sender started")
             
             # PR#7: Start operation watchdog (Этап 5: set_app для advance_after_terminal при timeout)
             logger.info("⏰ Starting operation watchdog...")
@@ -288,32 +229,6 @@ async def on_startup(app: web.Application):
                 app["endpoint_operation_reconciler"] = runner
                 logger.success("✅ Endpoint operation reconciler started")
 
-            if (
-                ENDPOINT_MODULE_PORT_MODE == "external"
-                and ENDPOINT_MODULE_EXECUTION_MODE == "endpoint"
-            ):
-                from app.services.endpoint_module_operation_reconciler import (
-                    EndpointModuleOperationReconciler,
-                    EndpointModuleOperationReconcilerRunner,
-                    SqlAlchemyEndpointModuleOperationReconcileStore,
-                )
-                from domain_ports.container import DomainPortContainer
-
-                runner = EndpointModuleOperationReconcilerRunner(
-                    EndpointModuleOperationReconciler(
-                        endpoint_port=DomainPortContainer.from_config().endpoint_modules,
-                        store=SqlAlchemyEndpointModuleOperationReconcileStore(get_session_maker()),
-                        mode=ENDPOINT_MODULE_PORT_MODE,
-                        execution_mode=ENDPOINT_MODULE_EXECUTION_MODE,
-                        owner="helpdesk-endpoint-module-reconciler",
-                    ),
-                    interval_seconds=ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS,
-                    batch_size=ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE,
-                )
-                runner.start()
-                app["endpoint_module_operation_reconciler"] = runner
-                logger.success("✅ Endpoint module operation reconciler started")
-            
             # Этап 2: Ticket SLA Watchdog (breach + reminders)
             from app.services.ticket_sla_watchdog import get_ticket_sla_watchdog
             sla_watchdog = get_ticket_sla_watchdog(state=app['state'])
@@ -348,13 +263,6 @@ async def on_startup(app: web.Application):
             app['problem_candidate_scheduler'] = problem_candidate_scheduler
             logger.success("✅ Problem candidate scheduler initialized")
 
-            # Reconcile scheduler: периодически сверяет desired vs actual state модулей
-            from app.services.module_reconcile_scheduler import start_reconcile_scheduler
-            app['reconcile_task'] = asyncio.create_task(
-                start_reconcile_scheduler(app['state'])
-            )
-            logger.success("✅ Module reconcile scheduler started")
-
             from observer.runtime import ObserverRefreshRuntime
 
             observer_refresh_runtime = ObserverRefreshRuntime()
@@ -365,7 +273,6 @@ async def on_startup(app: web.Application):
                 legacy_name="observer_refresh_runtime",
                 value=observer_refresh_runtime,
             )
-            await start_inventory_refresh_runtime(app)
             logger.success("✅ Observer refresh runtime started")
 
             from observer.runtime_snapshot_writer import ServerRuntimeSnapshotWriter
@@ -433,11 +340,6 @@ async def on_cleanup(app: web.Application):
         await app["endpoint_operation_reconciler"].stop()
         logger.success("✅ Endpoint operation reconciler stopped")
 
-    if "endpoint_module_operation_reconciler" in app:
-        logger.info("⏹️ Stopping Endpoint module operation reconciler...")
-        await app["endpoint_module_operation_reconciler"].stop()
-        logger.success("✅ Endpoint module operation reconciler stopped")
-
     if 'operation_watchdog' in app:
         logger.info("⏹️ Stopping operation watchdog...")
         await app['operation_watchdog'].stop()
@@ -471,31 +373,12 @@ async def on_cleanup(app: web.Application):
         await app['problem_candidate_scheduler'].stop()
         logger.success("✅ Problem candidate scheduler stopped")
 
-    # Stop reconcile scheduler
-    if 'reconcile_task' in app:
-        app['reconcile_task'].cancel()
-        try:
-            await app['reconcile_task']
-        except Exception:
-            pass
-    
     observer_refresh_runtime = app._state.get(OBSERVER_REFRESH_RUNTIME_APP_KEY)
     if observer_refresh_runtime is not None:
         logger.info("⏹️ Stopping observer refresh runtime...")
         await observer_refresh_runtime.stop()
         logger.success("✅ Observer refresh runtime stopped")
 
-    if 'inventory_refresh_runtime' in app:
-        logger.info("Stopping inventory refresh runtime...")
-        await app['inventory_refresh_runtime'].stop()
-        logger.success("Inventory refresh runtime stopped")
-
-    # Phase C: Stop device outbox sender
-    if 'outbox_sender' in app:
-        logger.info("⏹️ Stopping device outbox sender...")
-        await app['outbox_sender'].stop_async()
-        logger.success("✅ Device outbox sender stopped")
-    
     if ENABLE_DB_PERSISTENCE:
         try:
             await shutdown_db()
@@ -556,8 +439,7 @@ def main():
     
     # Баннер при запуске
     logger.info("=" * 70)
-    logger.info("🚀 PC Agent WebSocket Server (Restructured)")
-    logger.info(f"📡 WebSocket (Agents): ws://{SERVER_HOST}:{SERVER_PORT}/ws")
+    logger.info("🚀 Helpdesk server")
     logger.info(f"📡 WebSocket (UI): ws://{SERVER_HOST}:{SERVER_PORT}/ws_ui")
     logger.info(f"🌐 Web Interface: http://{SERVER_HOST}:{SERVER_PORT}/app")
     logger.info(f"🔧 Admin Panel: http://{SERVER_HOST}:{SERVER_PORT}/app/admin")
@@ -565,7 +447,6 @@ def main():
     logger.info(f"🔧 API: http://{SERVER_HOST}:{SERVER_PORT}/api/")
     logger.info(f"📤 File Upload: http://{SERVER_HOST}:{SERVER_PORT}/api/upload")
     logger.info(f"📂 Uploaded Files: http://{SERVER_HOST}:{SERVER_PORT}/uploads/")
-    logger.info(f"📚 Protocol Docs: http://{SERVER_HOST}:{SERVER_PORT}/api/protocol")
     logger.info("=" * 70)
     
     if ENABLE_DB_PERSISTENCE:
@@ -585,10 +466,9 @@ def main():
     logger.info("   📦 state_manager.py - Управление состоянием")
     logger.info("   📦 routes.py - Регистрация маршрутов")
     logger.info("   📂 auth/ - Аутентификация")
-    logger.info("   📂 agents/ - Управление агентами")
     logger.info("   📂 tickets/ - Система тикетов")
-    logger.info("   📂 tools/ - Инструменты")
-    logger.info("   📂 websocket/ - WebSocket коммуникация")
+    logger.info("   📂 endpoint_adapter/ - Endpoint integration")
+    logger.info("   📂 websocket/ - Browser UI transport")
     logger.info("   📂 uploads/ - Загрузка файлов")
     logger.info("   📂 static_pages/ - HTML страницы")
     logger.info("   📂 api/ - Дополнительные API")

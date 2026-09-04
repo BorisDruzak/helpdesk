@@ -72,7 +72,7 @@ class OperationsRepo:
         Raises:
             Exception: If database operation fails
         """
-        if device_id is None and kind not in {"endpoint_operation", "endpoint_module_operation"}:
+        if device_id is None and kind != "endpoint_operation":
             raise ValueError("only Endpoint facade operations may omit a legacy device_id")
         operation = Operation(
             operation_id=operation_id,

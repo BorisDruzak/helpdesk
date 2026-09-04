@@ -53,7 +53,7 @@
 Agent uploads have two ticket-bound modes:
 
 - Runtime/tool artifacts: if an agent-token upload includes both `ticket_id` and `operation_id`, the server authorizes it by the operation binding. The operation must exist and its `ticket_id` and `device_id` must match the upload context.
-- Manual requester attachments from the local agent UI: if an agent-token upload includes `ticket_id` without `operation_id`, it must carry a valid requester account-session context and pass the ticket account-boundary checks.
+- Manual requester attachments from the local agent UI: if an agent-token upload includes `ticket_id` without `operation_id`, the server requires an active binding for the authenticated device and matching ticket requester scope.
 
 UI/requester uploads also require `ticket_id`. Staff UI roles may upload to accessible ticket workflows; authenticated requester role `user` may upload only to tickets owned by the web session requester identity. The stored artifact inherits the ticket `device_id` and is later referenced from chat via `attachment_refs`.
 
@@ -89,7 +89,7 @@ UI/requester uploads also require `ticket_id`. Staff UI roles may upload to acce
 |-----|----------|
 | 400 | Нет поля `file` или пустой запрос |
 | 401 | Нет или невалидный токен |
-| 403 | Account-session denied for manual agent upload, UI/requester ticket ownership denied, or `operation_id` does not match the authenticated agent/ticket context |
+| 403 | Active-binding access denied for manual agent upload, UI/requester ticket ownership denied, or `operation_id` does not match the authenticated agent/ticket context |
 | 413 | Размер файла превышает 200 MB |
 | 500 | Внутренняя ошибка сервера |
 

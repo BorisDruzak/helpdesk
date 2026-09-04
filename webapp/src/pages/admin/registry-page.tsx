@@ -14,15 +14,12 @@ import {
   archiveAdminRegistryDepartment,
   archiveAdminRegistryLocation,
   archiveAdminRegistryPerson,
-  approveAdminAccountLoginRequest,
   approveAdminRegistrationClaim,
   assignAdminRegistryResponsible,
   bindAdminRegistryDevicePerson,
   bulkAssignAdminRegistryDeviceDepartment,
   bulkAssignAdminRegistryDeviceLocation,
   bulkAssignAdminRegistryPeopleDepartment,
-  bulkRevokeAdminRegistryAccountSessions,
-  bulkRevokeAdminRegistryDeviceAccountSessions,
   completeAdminPasswordResetRequest,
   createAdminRegistryAudienceGroup,
   createAdminRegistryDepartment,
@@ -30,7 +27,6 @@ import {
   createAdminRegistryPerson,
   createAdminRegistryPersonIdentity,
   disableAdminRegistryUiUser,
-  fetchAdminAccountLoginRequests,
   fetchAdminPasswordResetRequests,
   fetchAdminRegistry,
   fetchAdminRegistryAudienceGroupMembers,
@@ -46,9 +42,7 @@ import {
   previewAdminRegistryImport,
   previewAdminRegistryLocationsMerge,
   previewAdminRegistryPeopleMerge,
-  rejectAdminAccountLoginRequest,
   rejectAdminRegistrationClaim,
-  revokeAdminDeviceAccountSession,
   revokeAdminDeviceUserBinding,
   transferAdminRegistryDeviceOwner,
   updateAdminRegistryQualityIssue,
@@ -57,7 +51,6 @@ import {
   updateAdminRegistryLocation,
   updateAdminRegistryAudienceGroup,
   updateAdminRegistryPerson,
-  type AdminDeviceAccountSession,
   type AdminDeviceUserBinding,
   type AdminRegistrationClaim,
   type AdminRegistryAudiencePreview,
@@ -65,7 +58,6 @@ import {
   type AdminRegistryPayload,
 } from "../../features/admin/api";
 import { fetchAccessSummary } from "../../features/access-control/api";
-import { RegistryAccountSessionsTab } from "../../features/admin/registry/registry-account-sessions-tab";
 import { RegistryAccessGroupsTab } from "../../features/admin/registry/registry-access-groups-tab";
 import { RegistryAudienceGroupsTab } from "../../features/admin/registry/registry-audience-groups-tab";
 import { RegistryBindPersonDialog, type BindPersonDialogState } from "../../features/admin/registry/registry-bind-person-dialog";
@@ -95,19 +87,18 @@ import { cn } from "../../shared/ui/cn";
 
 const tabs: Array<{ key: RegistryTabKey; label: string; description: string; p1?: boolean }> = [
   { key: "overview", label: "Обзор", description: "Сводка по устройствам, людям, заявкам и проблемам качества. Начинайте отсюда, если не ясно, где исправлять данные." },
-  { key: "devices", label: "Устройства", description: "Работа с ПК и агентами: открыть карточку, привязать владельца, передать устройство, добавить совместного пользователя или отозвать сессии." },
+  { key: "devices", label: "Устройства", description: "Работа с ПК и агентами: открыть карточку, привязать владельца, передать устройство или добавить совместного пользователя." },
   { key: "people", label: "Пользователи", description: "Карточки людей, UI-аккаунты, идентичности и операции слияния. Технические идентификаторы оставлены только для точной диагностики." },
   { key: "bindings", label: "Привязки", description: "Активные и исторические связи устройство-пользователь. Фильтры показывают тип связи или состояние." },
   { key: "requests", label: "Заявки", description: "Заявки регистрации и входа в другой аккаунт. Перед подтверждением проверяйте дифф: устройство, текущая привязка, заявленные ФИО, подразделение и локация." },
   { key: "password_reset", label: "Смена пароля", description: "Заявки пользователей на смену забытого UI-пароля. Закрытие заявки сразу устанавливает новый пароль и фиксирует причину." },
-  { key: "account_sessions", label: "Аккаунт-сессии", description: "Серверные сессии пользователей на устройствах. Отзыв сессии прекращает выбранный контекст аккаунта на агенте." },
   { key: "quality", label: "Качество данных", description: "Действительные проблемы качества и подсказки по исправлению. Игнорирование и отсрочка требуют причины для аудита." },
   { key: "locations", label: "Локации", description: "Справочник зданий, этажей и кабинетов. Архивация и слияние требуют причины и предварительного просмотра.", p1: true },
   { key: "departments", label: "Подразделения", description: "Организационная структура для людей, устройств и правил видимости. Слияние подразделений выполняйте только после предпросмотра.", p1: true },
   { key: "access_groups", label: "Группы доступа", description: "Только сводка RBAC-групп. Права и очереди редактируются в отдельном RBAC-редакторе.", p1: true },
   { key: "audience_groups", label: "Аудитории", description: "Группы таргетинга для базы знаний и сервисов. Аудитории не выдают права доступа, а только участвуют в правилах видимости.", p1: true },
   { key: "profile_schema", label: "Схема профиля", description: "Управляемые поля профиля заявителя. Системные поля нельзя удалить, пользовательские поля пишутся только в контролируемый блок.", p1: true },
-  { key: "policies", label: "Политики", description: "Правила регистрации, аккаунт-сессий и видимости тикетов. Перед сохранением используйте предпросмотр.", p1: true },
+  { key: "policies", label: "Политики", description: "Правила регистрации и видимости тикетов. Перед сохранением используйте предпросмотр.", p1: true },
 ];
 
 function PlaceholderTab({ title }: { title: string }) {
@@ -150,7 +141,6 @@ export function AdminRegistryPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [selectedPersonIds, setSelectedPersonIds] = useState<string[]>([]);
-  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
   const [bulkResult, setBulkResult] = useState<AdminRegistryBulkResponse | null>(null);
   const [selectedAudienceGroupId, setSelectedAudienceGroupId] = useState<string | null>(null);
   const [audiencePreview, setAudiencePreview] = useState<AdminRegistryAudiencePreview | null>(null);
@@ -158,12 +148,6 @@ export function AdminRegistryPage() {
   const registryQuery = useQuery({
     queryKey: ["admin-registry"],
     queryFn: fetchAdminRegistry,
-    retry: false,
-    refetchInterval: 15_000,
-  });
-  const accountLoginRequestsQuery = useQuery({
-    queryKey: ["admin-registry-account-login-requests"],
-    queryFn: () => fetchAdminAccountLoginRequests("pending_verification"),
     retry: false,
     refetchInterval: 15_000,
   });
@@ -242,7 +226,6 @@ export function AdminRegistryPage() {
     () => (registry ? filterRegistryPayload(registry, query) : null),
     [query, registry]
   );
-  const pendingLoginRequests = accountLoginRequestsQuery.data?.items ?? registry?.account_login_requests ?? [];
   const pendingPasswordResetRequests = passwordResetRequestsQuery.data?.items ?? registry?.password_reset_requests ?? [];
   const audienceGroups = audienceGroupsQuery.data?.groups ?? [];
   const audienceMembers = audienceMembersQuery.data?.members ?? [];
@@ -273,21 +256,16 @@ export function AdminRegistryPage() {
   const selectedBulkCount =
     tab === "devices" ? selectedDeviceIds.length :
     tab === "people" ? selectedPersonIds.length :
-    tab === "account_sessions" ? selectedSessionIds.length :
     0;
   const bulkActions: RegistryBulkAction[] = useMemo(() => {
     if (tab === "devices") {
       return [
         { key: "devices.assign_location", label: "Назначить локацию" },
         { key: "devices.assign_department", label: "Назначить подразделение" },
-        { key: "devices.revoke_account_sessions", label: "Отозвать сессии" },
       ];
     }
     if (tab === "people") {
       return [{ key: "people.assign_department", label: "Назначить подразделение" }];
-    }
-    if (tab === "account_sessions") {
-      return [{ key: "account_sessions.revoke", label: "Отозвать сессии" }];
     }
     return [];
   }, [tab]);
@@ -296,8 +274,6 @@ export function AdminRegistryPage() {
       setSelectedDeviceIds([]);
     } else if (tab === "people") {
       setSelectedPersonIds([]);
-    } else if (tab === "account_sessions") {
-      setSelectedSessionIds([]);
     }
   };
 
@@ -306,7 +282,7 @@ export function AdminRegistryPage() {
     const ids =
       typedOperation.startsWith("devices.") ? selectedDeviceIds :
       typedOperation.startsWith("people.") ? selectedPersonIds :
-      selectedSessionIds;
+      [];
     if (!ids.length) {
       return;
     }
@@ -321,13 +297,10 @@ export function AdminRegistryPage() {
       if (state.operation === "devices.assign_department") {
         return bulkAssignAdminRegistryDeviceDepartment({ ids: state.ids, department_id: payload.target_id ?? "", reason: payload.reason });
       }
-      if (state.operation === "devices.revoke_account_sessions") {
-        return bulkRevokeAdminRegistryDeviceAccountSessions(state.ids, payload.reason);
-      }
       if (state.operation === "people.assign_department") {
         return bulkAssignAdminRegistryPeopleDepartment({ ids: state.ids, department_id: payload.target_id ?? "", reason: payload.reason });
       }
-      return bulkRevokeAdminRegistryAccountSessions(state.ids, payload.reason);
+      return bulkAssignAdminRegistryPeopleDepartment({ ids: state.ids, department_id: payload.target_id ?? "", reason: payload.reason });
     });
   };
 
@@ -375,18 +348,6 @@ export function AdminRegistryPage() {
     }
   };
 
-  const revokeAllDeviceSessions = (device: AdminRegistryPayload["assets"][number]) => {
-    const sessions = (registry?.account_sessions ?? []).filter((session) =>
-      session.device_id === device.device_id && session.verification_status !== "revoked"
-    );
-    if (!sessions.length) {
-      return;
-    }
-    runWithReason("Причина отзыва аккаунт-сессий", "Администратор отозвал сессии устройства", async (reason) => {
-      await Promise.all(sessions.map((session) => revokeAdminDeviceAccountSession(session.session_id, reason)));
-    });
-  };
-
   const bindPersonToKnownDevice = (person: AdminRegistryPayload["people"][number]) => {
     setBindDialog({ deviceId: "", personId: person.person_id, mode: "primary_user", title: `Привязать ${person.display_name} к устройству`, replaceExisting: false });
   };
@@ -416,7 +377,6 @@ export function AdminRegistryPage() {
   const exportType =
     tab === "people" ? "people" :
     tab === "bindings" ? "bindings" :
-    tab === "account_sessions" ? "sessions" :
     tab === "locations" ? "locations" :
     tab === "departments" ? "departments" :
     tab === "audience_groups" ? "audience_groups" :
@@ -449,7 +409,7 @@ export function AdminRegistryPage() {
             </Button>
           </>
         }
-        description="Единое рабочее место администратора для устройств, пользователей, привязок, аккаунт-сессий, заявок регистрации, аудиторий и качества данных."
+        description="Единое рабочее место администратора для устройств, пользователей, привязок, заявок регистрации, аудиторий и качества данных."
         eyebrow="Администрирование"
         title="Центр регистрации и привязок"
       />
@@ -462,7 +422,7 @@ export function AdminRegistryPage() {
               <Search className="h-4 w-4 text-slate-400" />
               <SearchField
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="ФИО, логин, почта, телефон, ID устройства, имя ПК, кабинет, ID привязки или сессии"
+                placeholder="ФИО, логин, почта, телефон, ID устройства, имя ПК, кабинет или ID привязки"
                 value={query}
               />
             </div>
@@ -511,7 +471,6 @@ export function AdminRegistryPage() {
               devices={visibleRegistry.assets}
               onBind={(deviceId) => setBindDialog({ deviceId, mode: "primary_user", title: "Привязать пользователя", replaceExisting: false })}
               onResponsible={(deviceId) => setBindDialog({ deviceId, mode: "responsible", title: "Назначить ответственного", replaceExisting: true })}
-              onRevokeSessions={revokeAllDeviceSessions}
               onSelect={setSelection}
               onShared={(deviceId) => setBindDialog({ deviceId, mode: "shared_user", title: "Добавить совместного пользователя", replaceExisting: false })}
               onToggleSelection={(deviceId) => toggleSelected(deviceId, setSelectedDeviceIds)}
@@ -548,7 +507,6 @@ export function AdminRegistryPage() {
           {visibleRegistry && tab === "requests" ? (
             <RegistryRequestsTab
               claims={visibleRegistry.registration_claims}
-              loginRequests={pendingLoginRequests}
               registry={visibleRegistry}
               onApproveClaim={(claim: AdminRegistrationClaim, replaceExisting = false, override = false) => {
                 if (override) {
@@ -557,9 +515,7 @@ export function AdminRegistryPage() {
                   mutation.mutate(() => approveAdminRegistrationClaim(claim.claim_id, replaceExisting));
                 }
               }}
-              onApproveLoginRequest={(request) => mutation.mutate(() => approveAdminAccountLoginRequest(request.request_id))}
               onRejectClaim={(claim) => runWithReason("Причина отклонения заявки", "Данные не подтверждены", (reason) => rejectAdminRegistrationClaim(claim.claim_id, reason))}
-              onRejectLoginRequest={(request) => runWithReason("Причина отклонения входа", "Не подтверждено администратором", (reason) => rejectAdminAccountLoginRequest(request.request_id, reason))}
               onSelect={setSelection}
             />
           ) : null}
@@ -570,16 +526,6 @@ export function AdminRegistryPage() {
               onComplete={(request, payload) => mutation.mutate(() => (
                 completeAdminPasswordResetRequest(request.request_id, payload).then(() => undefined)
               ))}
-            />
-          ) : null}
-          {visibleRegistry && tab === "account_sessions" ? (
-            <RegistryAccountSessionsTab
-              sessions={visibleRegistry.account_sessions ?? []}
-              onRevoke={(session: AdminDeviceAccountSession) => runWithReason("Причина отзыва аккаунт-сессии", "Отозвано администратором", (reason) => revokeAdminDeviceAccountSession(session.session_id, reason))}
-              onSelect={setSelection}
-              onToggleSelection={(sessionId) => toggleSelected(sessionId, setSelectedSessionIds)}
-              onToggleVisibleSelection={(sessionIds) => toggleVisibleSelected(sessionIds, setSelectedSessionIds)}
-              selectedIds={selectedSessionIds}
             />
           ) : null}
           {visibleRegistry && tab === "quality" ? (

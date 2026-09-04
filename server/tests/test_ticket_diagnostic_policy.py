@@ -219,7 +219,7 @@ async def test_diagnostic_policy_auto_run_starts_suggested_playbook_when_safe(te
             "required": True,
             "granted": True,
             "scope": "requester_device",
-            "source": "pc_agent_create",
+            "source": "endpoint_bff_create",
         },
         "request_template": {
             "key": "website_unavailable",
@@ -364,7 +364,7 @@ async def test_diagnostic_policy_auto_run_skips_high_risk_playbook_without_expli
             "required": True,
             "granted": True,
             "scope": "requester_device",
-            "source": "pc_agent_create",
+            "source": "endpoint_bff_create",
         },
         "request_template": {
             "key": "website_unavailable",
@@ -438,7 +438,7 @@ async def test_diagnostic_policy_auto_run_starts_high_risk_playbook_with_explici
             "required": True,
             "granted": True,
             "scope": "requester_device",
-            "source": "pc_agent_create",
+            "source": "endpoint_bff_create",
             "high_risk_tools_granted": True,
         },
         "request_template": {
@@ -523,7 +523,7 @@ async def test_diagnostic_policy_auto_run_skips_when_safety_gate_blocks(
             "required": True,
             "granted": True,
             "scope": "requester_device",
-            "source": "pc_agent_create",
+            "source": "endpoint_bff_create",
         },
         "request_template": {
             "key": "website_unavailable",

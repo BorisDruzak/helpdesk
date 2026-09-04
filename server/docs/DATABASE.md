@@ -1,6 +1,6 @@
 # База данных PostgreSQL
 
-Документ описывает схему и использование PostgreSQL на сервере PC Agent.
+Документ описывает схему и использование PostgreSQL в Helpdesk.
 
 **Требования:** PostgreSQL 12+. Подключение: `DATABASE_URL` (формат `postgresql+asyncpg://user:password@host/dbname`).  
 **Миграции:** Alembic, каталог `server/app/db/migrations/versions/`.  
@@ -10,18 +10,14 @@
 
 ## Роль PostgreSQL (Source of Truth)
 
-После миграции на Protocol V3 PostgreSQL является **единственным источником истины** для:
+PostgreSQL является **единственным источником истины** для:
 
 - тикетов и истории событий тикетов;
-- событий устройств (без привязки к тикету);
-- очереди команд к агентам (device outbox);
-- реестра устройств, конфигураций и снапшотов toolset;
-- операций (run_tool, cancel и т.д.) и решений consent;
-- артефактов (скриншоты, запись экрана);
-- модулей (реестр ZIP) и состояния модулей на устройствах;
-- аутентификации (токены агентов и UI, сессии, аудит скачиваний).
+- исторических снимков устройств и привязок;
+- тикетных операций, решений consent и доказательств;
+- артефактов и UI-аутентификации.
 
-Runtime-данные (подключённые агенты, UI-сессии, кэши) хранятся в **StateManager** в памяти, не в БД.
+Runtime-данные браузерского интерфейса и кэши хранятся в **StateManager** в памяти, не в БД. Управление агентами, transport и delivery принадлежат Endpoint Platform.
 
 ---
 
@@ -32,11 +28,11 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
 | **tickets** | Тикет поддержки, привязан к устройству. | `TicketEventsRepo`: создание/получение/обновление тикета, список тикетов. API: создание тикета, получение тикета, закрытие. |
-| **ticket_events** | События тикета: сообщения чата, command lifecycle (tool_call_started, tool_call_result и т.д.). Упорядочивание по `agent_seq` в рамках тикета. | `TicketEventsRepo`: добавление событий, replay по тикету, дедупликация по `(device_id, ticket_id, agent_seq)`. Проверка доступа к артефактам: `ticket_contains_artifact()`. Пайплайн WS агента (`agent_outbox_ingest`, `agent_command_result`) при сохранении событий от агента и сервера. |
+| **ticket_events** | События тикета: сообщения, процессный lifecycle и исторические доказательства. | `TicketEventsRepo`: добавление, replay и доступ к артефактам. Источником управления агентскими операциями служит Endpoint Platform. |
 
 **tickets:** `ticket_id` (PK), `ticket_code` (UNIQUE, формат T-000001, миграция 031), `device_id`, `title`, `description`, `status`, `created_at`, `updated_at`; расширенные поля (миграция 018); `ticket_type` (`varchar(64)`, миграция 061, используется как `request_kind` для маршрутизации форм), `priority`, `impact`, `urgency`, `importance`, `urgency_reason`, `importance_reason`, `requester_id`, `assignee_id`, `queue_id`, `category_id`, `service_id`, `subcategory_id`, `resolved_at`, `closed_at`, `sla_policy_id`, таймеры FRT/Resolution, `tags` (JSONB), `custom_fields` (JSONB), `external_ref`, `resolution_code`, `root_cause`, `reopen_count`, `parent_ticket_id`. Stage 10.2 (миграция 032): `manual_rank` (BIGINT NULL), `manual_rank_updated_at`, `manual_rank_updated_by` — ручной порядок в очереди. P0 contract hardening (migration 081): `status` is constrained by `ck_tickets_status_canonical` to `new`, `queued`, `assigned`, `in_progress`, `waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`, `scheduled`, `resolved`, `closed`, `canceled`; legacy `triaged` is only an input/backfill alias and is never stored. `requester_id` is `NOT NULL` and guarded by `ck_tickets_requester_id_non_empty`; legacy null/blank rows are backfilled as `device:<device_id>` or `legacy:<ticket_id>`, and the SQLAlchemy `Ticket` model applies the same fallback before direct ORM inserts/updates.
 P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields: `catalog_service_id`, `catalog_offering_id`, `service_code`, `offering_code`, `request_type`, `business_criticality`, `reporting_category`, `service_owner_actor_id`, `support_group_code`. These fields are separate from legacy `tickets.service_id`; `custom_fields.service_catalog` stores the selected catalog/policy snapshot.
-**ticket_events:** `id` (PK), `ticket_id`, `device_id`, `agent_seq` (nullable для server-originated), `event_type`, `payload` (JSONB), `trace_id`, `event_id`, `operation_id`, `created_at`. UNIQUE `(device_id, ticket_id, agent_seq)` WHERE `agent_seq IS NOT NULL`. Canonical timeline/replay ordering is deterministic: `ORDER BY created_at ASC, id ASC`. Migration 081 adds `ix_ticket_events_ticket_created_id` and `ix_ticket_events_ticket_type_created_id` while preserving the partial unique idempotency constraint for agent-originated events.
+**ticket_events:** `id` (PK), `ticket_id`, `device_id`, `agent_seq` (nullable historical correlation), `event_type`, `payload` (JSONB), `trace_id`, `event_id`, `operation_id`, `created_at`. Canonical timeline/replay ordering is deterministic: `ORDER BY created_at ASC, id ASC`.
 
 **Service Catalog (migration 082, Request Studio hardening migration 106):** `helpdesk_services`, `helpdesk_service_offerings`, `helpdesk_service_catalog_audit`, `request_studio_publish_tokens`. Catalog services are requester-facing process objects and may link to CMDB `registry_services`; offerings link services to `request_templates` / form schemas and policy overrides. Request Studio publish tokens store only `token_hash` and `nonce_hash` for one-time HMAC/nonce confirmation, plus draft hash, actor binding, TTL and used-at metadata; raw confirmation tokens are never persisted. Indexes cover lifecycle/visibility, offering full code, offering template key, token lookup/expiry/actor binding and ticket service/offering/reporting dimensions. P1.1 adds no schema migration; baseline catalog data is managed by the idempotent `scripts/seed_service_catalog.py` setup command and should be retired, not deleted, if tickets reference it. See [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
 
@@ -48,13 +44,13 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 **Change Enablement (migration 092):** `changes`, `change_risk_assessments`, `change_plans`, `change_approvals`, `change_windows`, `change_affected_objects`, `change_tasks`, `change_pir_records`, `change_activity_events`, and `change_policies`. P5 models change requests as first-class entities separate from tickets/problems, with type `standard|normal|emergency`, risk/impact assessment, auditable CAB-lite approvals, standard preapproval catalog metadata on policies, one-off/recurring maintenance and blackout windows, implementation and rollback plans, implementation tasks, PIR and aggregate no-PII metrics. Calendar recurrence uses existing `change_windows.recurrence_rule`; emergency retrospective uses existing `change_policies.max_emergency_retro_hours`. Migration `092` also adds nullable `continuous_improvement_actions.change_id` and extends improvement action source compatibility for failed/rolled-back changes. See [CHANGE_ENABLEMENT.md](CHANGE_ENABLEMENT.md).
 
-**Diagnostic Layer (migration 074):** `diagnostic_sessions`, `diagnostic_steps`, `diagnostic_evidence`, `diagnostic_findings`, `diagnostic_bundles`. These tables are ticket-scoped diagnostic state, not ticket workflow state. They normalize existing operations, playbook runs, observer root traces, remote assist sessions, artifacts and manual checks into support-facing evidence/findings/bundles while leaving `tickets.status`, playbook execution and `ToolExecutionService.run_tool` semantics unchanged. Main repo/service entrypoints: `server/app/repos/diagnostics_repo.py` and `server/diagnostics/*`.
+**Diagnostic Layer (migration 074):** `diagnostic_sessions`, `diagnostic_steps`, `diagnostic_evidence`, `diagnostic_findings`, `diagnostic_bundles`. These tables are ticket-scoped diagnostic state, not ticket workflow state. They normalize Endpoint operations, playbook runs, observer root traces, historical remote-assist snapshots, artifacts and manual checks into support-facing evidence/findings/bundles while leaving ticket state unchanged. Main repo/service entrypoints: `server/app/repos/diagnostics_repo.py` and `server/diagnostics/*`.
+
+**Legacy cutover marker (migration 143):** `server_config.endpoint_agent_control_plane_authority=endpoint_platform` records the one-way control-plane transfer. Historical agent/build/update tables remain intact in this release and are not used by Helpdesk runtime.
 
 **Diagnostic Provider Config (migration 075):** `diagnostic_providers`, `diagnostic_capabilities`, `diagnostic_capability_versions`, `diagnostic_provider_configs`, `diagnostic_provider_credential_refs`, `diagnostic_provider_audit`. Capability descriptors still remain computed from manifests/providers for runtime compatibility, while these tables persist provider configuration lifecycle, credential references, redacted integration config and audit rows for server connectors such as Zabbix. Main entrypoints: `server/app/repos/diagnostic_provider_config_repo.py`, `server/diagnostics/provider_config.py`, and `/api/diagnostics/providers/configs*`.
 
-**Agent Recipe Runtime Dependencies (migration 078):** `operation_dependencies` plus nullable `operations.phase`. These fields model ticket-bound runtime prerequisites such as installing/upgrading the protected `agent_recipe_runner` before a recipe operation can continue. Parent recipe operations keep the existing `operations.status` lifecycle and use phase values like `waiting_dependency`, `installing_dependency`, `sending_run_recipe` and `running_recipe`; dependency rows link to the module install operation created by reconcile.
-
-**Agent Recipe Runner Fleet Rollout (migrations 079-080):** `runner_rollout_plans`, `runner_rollout_waves`, `runner_rollout_targets`, `runner_rollout_events`. These tables model admin-controlled canary/wave rollout and rollback for the protected `agent_recipe_runner` module. They store plan state separately from ticket-bound runtime dependencies, while actual delivery still goes through `device_desired_modules` and `modules.reconcile.reconcile_device`.
+**Historical module-control schema (migrations 078-080):** `operation_dependencies`, nullable `operations.phase`, `runner_rollout_plans`, `runner_rollout_waves`, `runner_rollout_targets`, and `runner_rollout_events` remain intact for rollback and audit only. Helpdesk no longer creates, reconciles, or delivers module operations; Endpoint Platform owns the active module runtime.
 
 **Тикетная система (миграция 018):**  
 **ticket_queues** — очереди (ServiceDesk L1, SysAdmins, Network, 1C, Security).  
@@ -85,7 +81,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
-| **device_events** | События устройства без привязки к тикету (tools_changed, метрики и т.д.). Упорядочивание по `device_seq` в рамках устройства. | `DeviceEventsRepo`: добавление событий, replay по device_id. Пайплайн WS агента при сохранении device events от агента. |
+| **device_events** | Исторические события устройства без привязки к тикету. | Read-only evidence for Helpdesk diagnostics; current device telemetry belongs to Endpoint Platform. |
 
 **device_events:** `id` (PK), `device_id`, `device_seq`, `event_type`, `payload` (JSONB), `trace_id`, `event_id`, `operation_id`, `created_at`. UNIQUE `(device_id, device_seq)`.
 
@@ -95,10 +91,8 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
-| **device_outbox** | Серверная outbox: команды к агентам до доставки по WebSocket. Жизненный цикл: pending → sent → delivered/failed. | `DeviceOutboxRepo`: вставка команды, выборка pending по device_id, обновление status/sent_at/delivered_at. Отправка команд агенту через outbox sender (`device_outbox_sender`) и доставка по WS. |
-| **operations** | Материализованное состояние операций (run_tool, cancel, agent_recipe и т.д.) для быстрого запроса и отображения. | `OperationsRepo`: создание/обновление операции по этапам (queued, sent, accepted, running, waiting_consent, succeeded/failed и т.д.) плюс nullable `phase` для runtime dependency substate. Связь с consent_decisions и operation_dependencies. Tools API, WebSocket, отмена операций. |
-| **operation_dependencies** | Явная связь parent operation с runtime dependency operation/resource. | `OperationDependenciesRepo` / `diagnostics.runtime_dependencies`: runner/module dependency status, target version, timeout, resume attempts and dependency operation linkage. |
-| **runner_rollout_plans / waves / targets / events** | Admin-managed canary/wave rollout and rollback state for `agent_recipe_runner`. | `diagnostics.runner_rollout.RunnerRolloutService`: create plan, start canary, promote waves, pause/resume, refresh status, rollback via desired modules + reconcile. |
+| **device_outbox** | Историческая таблица снятого Helpdesk delivery. | Сохраняется как schema residue; Helpdesk runtime не импортирует модель, не читает и не пишет её. |
+| **operations** | Процессное состояние операций и Endpoint evidence. | Helpdesk отображает ticket lifecycle; command delivery и отмена принадлежат Endpoint Platform. |
 
 **device_outbox:** `id` (PK), `device_id`, `command_id`, `command`, `params` (JSONB), `status`, `request_id`, `trace_id`, `operation_id`, `actor_role`, `retry_count`, `max_retries`, `created_at`, `sent_at`, `delivered_at`, `failed_at`, `error_code`, `error_message`.  
 **operations:** `operation_id` (PK), `device_id`, `ticket_id`, `job_id`, `kind`, `tool_name`, `actor_role`, `trace_id`, `status`, `phase`, `deadline_at`, `queued_at`, `sent_at`, `accepted_at`, `started_at`, `finished_at`, `retry_count`, `max_retries`, `retry_of_operation_id`, `error_code`, `error_message`, `result_summary`, `result_event_id`, поля отмены (`cancel_target_operation_id`, `canceled_at` и др.).
@@ -130,8 +124,8 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
-| **modules** | Реестр загруженных модулей (ZIP): имя, версия, sha256, путь на диске. | `ModulesRepo`: загрузка модуля (сохранение в БД и на диск), список модулей, получение по имени/версии. Modules API upload/download. |
-| **device_modules** | Установленные/активные модули на каждом устройстве. | `DeviceModulesRepo`: установка, активация, синхронизация состояния. Modules API, drift/snapshots. |
+| **modules** | Исторический реестр ZIP-модулей. | Сохранён как schema residue; Helpdesk runtime не загружает, не раздаёт и не изменяет эти записи. |
+| **device_modules** | Исторические сведения об установленных модулях. | Сохранены для audit/rollback; активная модульная поверхность принадлежит Endpoint Platform. |
 
 **modules:** `module_name`, `version` (PK composite), `sha256`, `size`, `storage_path`, `created_at`, `uploaded_by`, `manifest_summary` (JSONB).  
 **device_modules:** `id` (PK), `device_id`, `module_name`, `version`, UNIQUE(device_id, module_name, version), `installed`, `active`, `state`, `installed_at`, `activated_at`, `last_updated_at`, `last_error_code`, `last_error_message`.
@@ -180,15 +174,12 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 ---
 
-### Сборки агента (self-update)
+### Historical agent-control-plane schema
 
-| Таблица | Назначение | Где используется |
-|--------|------------|-------------------|
-| **agent_builds** | Реестр загруженных сборок pc_agent (ZIP/tar.gz) по target/channel/version. | `AgentBuildsRepo`: загрузка, список, получение по target/channel/version, скачивание. |
-| **agent_build_download_audit** | Аудит скачивания сборок агента. | Запись при GET download сборки. |
-
-**agent_builds:** `target`, `channel`, `version` (PK composite), `sha256`, `size`, `storage_path`, `created_at`, `uploaded_by`, `notes`, `artifact_filename`, `archive_type`, `mime_type`.  
-**agent_build_download_audit:** `id` (PK), `token_hash`, `token_prefix`, `target`, `channel`, `version`, `downloaded_at`, `ip_address`, `user_agent`.
+Legacy agent build, module, token, outbox and recipe tables can remain in an
+existing database as rollback history. They are deliberately not mapped by the
+active Helpdesk ORM and no Helpdesk runtime writes to them. Endpoint Platform
+owns active agent lifecycle and package delivery.
 
 ---
 
@@ -198,17 +189,11 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 |------------|---------|
 | `ticket_events_repo.py` | tickets, ticket_events |
 | `device_events_repo.py` | device_events |
-| `device_outbox_repo.py` | device_outbox |
 | `operations_repo.py` | operations, consent_decisions |
 | `devices_repo.py` | devices |
 | `device_config_repo.py` | device_config |
-| `toolset_snapshots_repo.py` | device_toolset_snapshots |
-| `modules_repo.py` | modules |
-| `device_modules_repo.py` | device_modules |
-| `auth_tokens_repo.py` | agent_tokens, ui_tokens |
 | `artifacts_repo.py` | artifacts |
 | `job_events_repo.py` | job_events |
-| `agent_builds_repo.py` | agent_builds |
 
 Тикеты создаются/читаются через `TicketEventsRepo` (модель `Ticket` в том же модуле).
 
@@ -318,11 +303,9 @@ rollback is application rollback plus a tested database restore.
 
 ## Связанные документы
 
-- [README.md](README.md) — раздел «База данных», конфигурация DATABASE_URL.
+- [RUNBOOK_BACKUP_RESTORE.md](RUNBOOK_BACKUP_RESTORE.md) — конфигурация и восстановление PostgreSQL.
 - [RUNBOOK_POSTGRES_EXTERNAL_READONLY.md](RUNBOOK_POSTGRES_EXTERNAL_READONLY.md) — доступ к PostgreSQL извне (listen_addresses, pg_hba, firewall, read-only пользователь для другого агента).
-- [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — хранение и проверка agent_tokens, ui_tokens.
+- [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — UI-аутентификация и защищённые browser-сеансы.
 - [ARTIFACTS_API.md](ARTIFACTS_API.md) — upload/download артефактов, таблица artifacts.
 - [MODULES_API.md](MODULES_API.md) — модули, tables modules, device_modules.
-- [MODULES_DRIFT_AND_SNAPSHOTS.md](MODULES_DRIFT_AND_SNAPSHOTS.md) — device_toolset_snapshots, device_modules.
-- [COMMAND_RESULT_LIFECYCLE.md](COMMAND_RESULT_LIFECYCLE.md) — device_outbox, operations, ticket_events.
-- [TOOL_CALL_STARTED_INVARIANT.md](TOOL_CALL_STARTED_INVARIANT.md) — tool_call_started, operations.
+- [ENDPOINT_OPERATION_CONTRACT.md](ENDPOINT_OPERATION_CONTRACT.md) — Endpoint operation links and reconciliation.

@@ -44,11 +44,6 @@ function normalizePath(path: string) {
   return withoutQuery || "/";
 }
 
-function isAuthenticatedAppPath(path: string) {
-  const pathname = normalizePath(path);
-  return pathname === "/app/device/pair" || pathname === "/app/device/register" || pathname === "/app/device/login";
-}
-
 function isRequesterProfileSetupPath(path: string) {
   return normalizePath(path) === "/app/requester/profile/setup";
 }
@@ -88,10 +83,6 @@ export function resolveNextWorkspacePath(
   nextPath: string | null,
   session: WebSession | null
 ): string | null {
-  if (nextPath && isAuthenticatedAppPath(nextPath)) {
-    return nextPath;
-  }
-
   if (nextPath && isRequesterProfileSetupPath(nextPath) && hasWorkspaceAccess(session, "requester")) {
     return nextPath;
   }

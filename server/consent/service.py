@@ -8,7 +8,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DeviceAccountSession, DeviceUserBinding, Ticket, UserConsentRequest
+from app.db.models import DeviceUserBinding, Ticket, UserConsentRequest
 from app.repos.operations_repo import OperationsRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.user_consent_repo import UserConsentRepo
@@ -93,7 +93,6 @@ def serialize_user_consent(row: UserConsentRequest) -> dict[str, Any]:
         "requester_snapshot": row.requester_snapshot_json,
         "requester_person_id": row.requester_person_id,
         "requester_binding_id": row.requester_binding_id,
-        "requester_account_session_id": row.requester_account_session_id,
         "requested_by_actor_id": row.requested_by_actor_id,
         "requested_by_role": row.requested_by_role,
         "risk_level": row.risk_level,
@@ -223,7 +222,6 @@ class UserConsentService:
         requester_snapshot: RequesterSnapshot | None = None,
         requester_person_id: str | None = None,
         requester_binding_id: str | None = None,
-        requester_account_session_id: str | None = None,
         requested_by_actor_id: str | None = None,
         requested_by_role: str | None = None,
         risk_level: str | None = None,
@@ -269,7 +267,6 @@ class UserConsentService:
                     device_id=device_id,
                     requester_person_id=requester_person_id,
                     requester_binding_id=requester_binding_id,
-                    requester_account_session_id=requester_account_session_id,
                     requested_by_actor_id=requested_by_actor_id,
                     requested_by_role=requested_by_role,
                     risk_level=risk_level,
@@ -314,68 +311,6 @@ class UserConsentService:
         )
         return [serialize_user_consent(row) for row in rows]
 
-    async def list_for_agent(
-        self,
-        *,
-        device_id: str,
-        account_session: dict[str, Any] | None = None,
-        statuses: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        account_session = account_session or {}
-        mode = str(account_session.get("account_mode") or "")
-        session_id = str(account_session.get("session_id") or "").strip()
-        person_id = str(account_session.get("person_id") or "") or None
-        requester_external_ref = (
-            str(account_session.get("requester_external_ref") or "") or None
-        )
-        if not (requester_external_ref or person_id):
-            return []
-        requester_clauses = self._requester_identity_clauses(
-            requester_external_ref=requester_external_ref,
-            requester_person_id=person_id,
-        )
-        stmt = select(UserConsentRequest).where(
-            UserConsentRequest.device_id == str(device_id)
-        )
-        if mode in {"registration_pending", "verified_other_account"}:
-            if not session_id:
-                return []
-            stmt = stmt.where(
-                UserConsentRequest.requester_account_session_id == session_id,
-                or_(*requester_clauses),
-            )
-        elif mode == "confirmed_binding":
-            access_clauses = list(requester_clauses)
-            if session_id:
-                access_clauses.insert(
-                    0,
-                    UserConsentRequest.requester_account_session_id == session_id,
-                )
-            stmt = stmt.where(or_(*access_clauses))
-        else:
-            return []
-        if statuses:
-            stmt = stmt.where(UserConsentRequest.status.in_(statuses))
-        result = await self.session.execute(
-            stmt.order_by(UserConsentRequest.created_at.desc()).limit(100)
-        )
-        rows = [
-            row
-            for row in result.scalars().all()
-            if self._stored_requester_scope_is_valid(row)
-        ]
-        for row in rows:
-            await self._expire_if_due_with_event(row)
-        result = await self.session.execute(
-            stmt.order_by(UserConsentRequest.created_at.desc()).limit(100)
-        )
-        rows = [
-            row
-            for row in result.scalars().all()
-            if self._stored_requester_scope_is_valid(row)
-        ]
-        return [serialize_user_consent(row) for row in rows]
-
     async def get_for_requester(
         self,
         *,
@@ -389,50 +324,6 @@ class UserConsentService:
             requester_external_ref=requester_external_ref,
             requester_person_id=requester_person_id,
         ):
-            return None
-        await self._expire_if_due_with_event(row)
-        return await self.repo.get(consent_id)
-
-    async def get_for_agent(
-        self,
-        *,
-        consent_id: str,
-        device_id: str,
-        account_session: dict[str, Any] | None = None,
-    ) -> UserConsentRequest | None:
-        row = await self.repo.get(consent_id)
-        if row is None or row.device_id != device_id:
-            return None
-        account_session = account_session or {}
-        mode = str(account_session.get("account_mode") or "")
-        session_id = str(account_session.get("session_id") or "").strip()
-        account_external_ref = (
-            str(account_session.get("requester_external_ref") or "") or None
-        )
-        account_person_id = str(account_session.get("person_id") or "") or None
-        if not (account_external_ref or account_person_id):
-            return None
-        if not self._stored_requester_scope_is_valid(row):
-            return None
-        scope_matches = self._requester_scope_matches(
-            row,
-            requester_external_ref=account_external_ref,
-            requester_person_id=account_person_id,
-        )
-        if mode in {"registration_pending", "verified_other_account"}:
-            if (
-                not session_id
-                or row.requester_account_session_id != session_id
-                or not scope_matches
-            ):
-                return None
-        elif mode == "confirmed_binding":
-            exact_session = bool(
-                session_id and row.requester_account_session_id == session_id
-            )
-            if not (exact_session or scope_matches):
-                return None
-        else:
             return None
         await self._expire_if_due_with_event(row)
         return await self.repo.get(consent_id)
@@ -455,21 +346,6 @@ class UserConsentService:
         if row is None:
             raise ConsentAccessError("consent not found", error_code="NOT_FOUND", status=404)
         return await self._decide(row, decision=decision, actor_id=actor_id, actor_role="requester", surface="browser", reason=reason)
-
-    async def decide_from_agent(
-        self,
-        *,
-        consent_id: str,
-        decision: str,
-        device_id: str,
-        account_session: dict[str, Any],
-        actor_id: str,
-        reason: str | None = None,
-    ) -> UserConsentRequest:
-        row = await self.get_for_agent(consent_id=consent_id, device_id=device_id, account_session=account_session)
-        if row is None:
-            raise ConsentAccessError("consent not found", error_code="NOT_FOUND", status=404)
-        return await self._decide(row, decision=decision, actor_id=actor_id, actor_role="requester", surface="agent_gui", reason=reason)
 
     async def _decide(
         self,
@@ -516,7 +392,6 @@ class UserConsentService:
         return decided
 
     async def _ensure_active_scope(self, row: UserConsentRequest) -> None:
-        now = _now()
         if row.requester_binding_id:
             binding = await self.session.get(DeviceUserBinding, row.requester_binding_id)
             if binding is None or binding.status != "active":
@@ -525,16 +400,6 @@ class UserConsentService:
                 raise ConsentAccessError("requester binding mismatch", error_code="REQUESTER_BINDING_MISMATCH", status=403)
             if row.device_id and binding.device_id != row.device_id:
                 raise ConsentAccessError("requester binding device mismatch", error_code="REQUESTER_BINDING_MISMATCH", status=403)
-        if row.requester_account_session_id:
-            account_session = await self.session.get(DeviceAccountSession, row.requester_account_session_id)
-            if account_session is None or account_session.verification_status != "verified" or account_session.revoked_at:
-                raise ConsentAccessError("requester account session is not active", error_code="ACCOUNT_SESSION_INACTIVE", status=403)
-            if account_session.expires_at and account_session.expires_at <= now:
-                raise ConsentAccessError("requester account session expired", error_code="ACCOUNT_SESSION_EXPIRED", status=403)
-            if row.requester_person_id and account_session.person_id != row.requester_person_id:
-                raise ConsentAccessError("requester account session mismatch", error_code="ACCOUNT_SESSION_MISMATCH", status=403)
-            if row.device_id and account_session.device_id != row.device_id:
-                raise ConsentAccessError("requester account session device mismatch", error_code="ACCOUNT_SESSION_MISMATCH", status=403)
 
     async def _cancel_if_operation_no_longer_actionable(self, row: UserConsentRequest) -> UserConsentRequest | None:
         if row.subject_type not in OPERATION_SUBJECT_TYPES:
@@ -561,9 +426,6 @@ class UserConsentService:
         return changed
 
     async def _apply_subject_decision(self, row: UserConsentRequest, *, decision: str, actor_id: str, reason: str | None) -> None:
-        if row.subject_type == "remote_assist":
-            await self._apply_remote_assist_decision(row, decision=decision, actor_id=actor_id, reason=reason)
-            return
         if row.subject_type not in OPERATION_SUBJECT_TYPES:
             return
         operation = await OperationsRepo(self.session).get_by_operation_id(row.subject_id)
@@ -574,43 +436,6 @@ class UserConsentService:
             await service.approve_consent(row.subject_id, decided_by=actor_id, reason=reason)
         else:
             await service.deny_consent(row.subject_id, decided_by=actor_id, reason=reason)
-
-    async def _apply_remote_assist_decision(
-        self,
-        row: UserConsentRequest,
-        *,
-        decision: str,
-        actor_id: str,
-        reason: str | None,
-    ) -> None:
-        from remote_assist.service import RemoteAssistError, RemoteAssistService
-
-        service = RemoteAssistService(self.session)
-        if decision == "approved":
-            if self.state is None:
-                raise ConsentAccessError("remote assist state is unavailable", error_code="REMOTE_ASSIST_STATE_UNAVAILABLE", status=409)
-            try:
-                await service.approve_user_consent(
-                    session_id=row.subject_id,
-                    state=self.state,
-                    actor_type=row.decided_from_surface or "user_consent",
-                    actor_id=actor_id,
-                    consent_id=row.consent_id,
-                    reason=reason,
-                )
-            except RemoteAssistError as exc:
-                raise ConsentAccessError(exc.message, error_code=exc.error_code, status=exc.status) from exc
-        else:
-            try:
-                await service.deny_user_consent(
-                    session_id=row.subject_id,
-                    actor_type=row.decided_from_surface or "user_consent",
-                    actor_id=actor_id,
-                    consent_id=row.consent_id,
-                    reason=reason,
-                )
-            except RemoteAssistError as exc:
-                raise ConsentAccessError(exc.message, error_code=exc.error_code, status=exc.status) from exc
 
     async def _append_ticket_event(
         self,

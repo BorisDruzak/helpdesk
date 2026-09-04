@@ -107,6 +107,5 @@ python scripts/run_ci_suite.py
 
 ## Notes
 
-- `pc_agent/tests/test_support_chat_reliability.py` помечен как `manual` и не должен попадать в обычный suite.
 - `/api/tools/run` теперь канонически async: `202 Accepted` возвращается только если команда реально enqueue-нулась; transport/precheck ошибки обязаны возвращать явный error-ответ с `operation_id`, `poll_url` и `error_code`. Sync path только через явный `wait=1`.
 - Исторические point-in-time отчёты о тестах вынесены в [docs/archive/server-tests](../../docs/archive/server-tests/README.md) и не являются каноном.

@@ -747,11 +747,6 @@ export function mapWorkspaceContext(
   const accountMode = detail.ticket.requester_account_mode ?? (
     typeof accountContext.account_mode === "string" ? accountContext.account_mode : null
   );
-  const accountSessionId = detail.ticket.requester_account_session_id ?? (
-    typeof accountContext.account_session_id === "string" ? accountContext.account_session_id : (
-      typeof accountContext.session_id === "string" ? accountContext.session_id : null
-    )
-  );
   const accountDeclaredName = [
     declaredAccount.display_name,
     declaredAccount.full_name,
@@ -770,7 +765,6 @@ export function mapWorkspaceContext(
       location: registry?.location_display_name ?? (locationFallback || "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430"),
       sourceLabel: requesterSourceLabel(registry?.person_source),
       accountMode,
-      accountSessionId,
       accountWarning,
       accountDeclaredName: accountDeclaredName ?? null,
       accountLogin: typeof declaredAccount.login === "string" ? declaredAccount.login : null,

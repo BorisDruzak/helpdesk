@@ -30,14 +30,12 @@ def test_endpoint_contract_acceptance_runs_on_helpdesk_mainline_with_evidence() 
         "server/tests/test_endpoint_device_reference_service.py",
         "server/tests/test_endpoint_diagnostic_cutover_guards.py",
         "server/tests/migration/test_endpoint_integration_upgrade_rehearsal.py",
-        "server/tests/acceptance/test_endpoint_module_platform_v1.py",
         "--junitxml=artifacts/endpoint-contract-acceptance.xml",
         "acceptance-summary.json",
         "artifacts/migration/endpoint-integration-rehearsal.json",
         "endpoint-contract-acceptance",
         '"provider_app": "real"',
         '"gateway_wss": "real"',
-        '"module_provider_catalog": "real"',
         '"agent_client": "protocol_test_client"',
         '"production_changed": False',
     ):
@@ -45,3 +43,4 @@ def test_endpoint_contract_acceptance_runs_on_helpdesk_mainline_with_evidence() 
 
     assert "paths:" not in workflow
     assert "codex/endpoint-integration-hardening-v1" not in workflow
+    assert "endpoint_module_platform" not in workflow

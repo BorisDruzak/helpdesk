@@ -206,6 +206,6 @@
 ## Документация
 
 - **Сервер:** [server/docs/ARTIFACTS_API.md](../server/docs/ARTIFACTS_API.md) — контракты upload/download, дескриптор артефакта, query-параметр `ticket_id` для download (fallback).
-- **Сервер:** [server/docs/README.md](../server/docs/README.md) — раздел «Artifacts API».
+- **Сервер:** [ENDPOINT_OPERATION_CONTRACT.md](../server/docs/ENDPOINT_OPERATION_CONTRACT.md) — границы интеграции Helpdesk и Endpoint.
 - **Агент:** [pc_agent/docs/MODULES.md](../pc_agent/docs/MODULES.md) — модуль screen (screen.collect, screen.record).
 - **Агент:** [pc_agent/docs/README.md](../pc_agent/docs/README.md) — раздел «Графический интерфейс», ссылки на скриншот/запись.

@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +23,6 @@ DEFAULT_REGISTRY = Path("quality/fixture_builders.json")
 AUDIT_SCHEMA = "pc_client.fixture_builder_audit.v1"
 
 FORBIDDEN_SECRET_KEYS = {"password", "token", "secret", "cookie", "auth_header", "authorization"}
-MANDATORY_LIVE_EVIDENCE = {"api", "db", "observer", "live_manifest"}
-MANDATORY_MANIFEST_REQUIREMENTS = {"preflight", "observer_delta", "observer_canary", "cleanup"}
-VISIBLE_SURFACES = {"admin", "requester", "support", "webapp", "reports"}
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -246,182 +243,6 @@ def _audit_phase_e_references(payload: dict[str, Any], *, fixture_id: str, path:
     return issues
 
 
-def _test_ref_path(ref: str) -> Path:
-    return Path(ref.split("::", 1)[0].replace("\\", "/"))
-
-
-def _audit_test_refs(
-    workspace: Path,
-    refs: Iterable[str],
-    *,
-    fixture_id: str,
-    path: Path,
-    json_path: str,
-) -> list[dict[str, str]]:
-    issues: list[dict[str, str]] = []
-    for ref in refs:
-        ref_path = _test_ref_path(str(ref))
-        if not (workspace / ref_path).is_file():
-            issues.append(
-                _issue(
-                    "missing_test_ref",
-                    f"test ref file does not exist: {ref}",
-                    fixture_id=fixture_id,
-                    path=str(path),
-                    json_path=json_path,
-                )
-            )
-    return issues
-
-
-def _audit_known_refs(
-    values: Iterable[str],
-    available: set[str],
-    *,
-    ref_kind: str,
-    fixture_id: str,
-    path: Path,
-    json_path: str,
-) -> list[dict[str, str]]:
-    issues: list[dict[str, str]] = []
-    for value in values:
-        if value not in available:
-            issues.append(
-                _issue(
-                    "unknown_data_ref",
-                    f"{ref_kind} reference is not declared by source packs: {value}",
-                    fixture_id=fixture_id,
-                    path=str(path),
-                    json_path=json_path,
-                )
-            )
-    return issues
-
-
-def _source_pack_refs(workspace: Path, source_packs: Iterable[str], *, fixture_id: str, path: Path) -> tuple[dict[str, set[str]], list[dict[str, str]]]:
-    refs = {"users": set(), "agents": set(), "forms": set(), "knowledge": set()}
-    issues: list[dict[str, str]] = []
-    for index, source_pack in enumerate(source_packs):
-        source_path = workspace / str(source_pack).replace("\\", "/")
-        payload, load_issues = _load_json(source_path, fixture_id=fixture_id)
-        if load_issues:
-            issues.append(
-                _issue(
-                    "missing_source_pack",
-                    f"source pack does not exist or is invalid: {source_pack}",
-                    fixture_id=fixture_id,
-                    path=str(path),
-                    json_path=f"$.source_packs[{index}]",
-                )
-            )
-            continue
-        if payload and payload.get("schema") == "web_first_phase_e_test_data_pack_v1":
-            source_refs = _phase_e_refs(payload)
-            for ref_kind, values in source_refs.items():
-                refs[ref_kind].update(values)
-    return refs, issues
-
-
-def _audit_critical_references(
-    workspace: Path,
-    payload: dict[str, Any],
-    *,
-    fixture_id: str,
-    path: Path,
-) -> list[dict[str, str]]:
-    issues: list[dict[str, str]] = []
-    source_refs, source_issues = _source_pack_refs(
-        workspace,
-        payload.get("source_packs") or [],
-        fixture_id=fixture_id,
-        path=path,
-    )
-    issues.extend(source_issues)
-
-    shared_data_refs = payload.get("shared_data_refs")
-    if isinstance(shared_data_refs, dict):
-        shared_ref_map = {
-            "phase_e_user_keys": "users",
-            "phase_e_agent_keys": "agents",
-            "phase_e_form_scenarios": "forms",
-        }
-        for key, ref_kind in shared_ref_map.items():
-            values = shared_data_refs.get(key)
-            if isinstance(values, list):
-                issues.extend(
-                    _audit_known_refs(
-                        [str(value) for value in values],
-                        source_refs[ref_kind],
-                        ref_kind=ref_kind,
-                        fixture_id=fixture_id,
-                        path=path,
-                        json_path=f"$.shared_data_refs.{key}",
-                    )
-                )
-
-    for domain_index, domain in enumerate(payload.get("domains") or []):
-        if not isinstance(domain, dict):
-            continue
-        for layer_index, layer in enumerate(domain.get("automated_layers") or []):
-            if not isinstance(layer, dict):
-                continue
-            test_refs = [str(ref) for ref in layer.get("test_refs") or []]
-            issues.extend(
-                _audit_test_refs(
-                    workspace,
-                    test_refs,
-                    fixture_id=fixture_id,
-                    path=path,
-                    json_path=f"$.domains[{domain_index}].automated_layers[{layer_index}].test_refs",
-                )
-            )
-        for scenario_index, scenario in enumerate(domain.get("live_scenarios") or []):
-            if not isinstance(scenario, dict):
-                continue
-            data_refs = scenario.get("data_refs")
-            if isinstance(data_refs, dict):
-                for ref_kind in ("users", "agents", "forms", "knowledge"):
-                    values = data_refs.get(ref_kind)
-                    if isinstance(values, list):
-                        issues.extend(
-                            _audit_known_refs(
-                                [str(value) for value in values],
-                                source_refs[ref_kind],
-                                ref_kind=ref_kind,
-                                fixture_id=fixture_id,
-                                path=path,
-                                json_path=f"$.domains[{domain_index}].live_scenarios[{scenario_index}].data_refs.{ref_kind}",
-                            )
-                        )
-            required_evidence = {str(value) for value in scenario.get("required_evidence") or []}
-            missing_evidence = MANDATORY_LIVE_EVIDENCE - required_evidence
-            if str(scenario.get("surface") or "") in VISIBLE_SURFACES and "browser" not in required_evidence:
-                missing_evidence.add("browser")
-            if missing_evidence:
-                issues.append(
-                    _issue(
-                        "missing_required_evidence",
-                        f"live scenario is missing required evidence: {', '.join(sorted(missing_evidence))}",
-                        fixture_id=fixture_id,
-                        path=str(path),
-                        json_path=f"$.domains[{domain_index}].live_scenarios[{scenario_index}].required_evidence",
-                    )
-                )
-            manifest_requirements = {str(value) for value in scenario.get("manifest_requirements") or []}
-            missing_manifest = MANDATORY_MANIFEST_REQUIREMENTS - manifest_requirements
-            if missing_manifest:
-                issues.append(
-                    _issue(
-                        "missing_manifest_requirement",
-                        f"live scenario is missing manifest requirements: {', '.join(sorted(missing_manifest))}",
-                        fixture_id=fixture_id,
-                        path=str(path),
-                        json_path=f"$.domains[{domain_index}].live_scenarios[{scenario_index}].manifest_requirements",
-                    )
-                )
-    return issues
-
-
 def audit_fixture_builders(workspace: Path, *, registry_path: Path | None = None) -> dict[str, Any]:
     workspace = workspace.resolve()
     registry = registry_path or workspace / DEFAULT_REGISTRY
@@ -509,8 +330,6 @@ def audit_fixture_builders(workspace: Path, *, registry_path: Path | None = None
             issues.extend(_audit_secret_free(payload, fixture_id=fixture_id, path=fixture_path))
         if builder_name == "web_first_phase_e_test_data_pack_v1":
             issues.extend(_audit_phase_e_references(payload, fixture_id=fixture_id, path=fixture_path))
-        elif builder_name == "critical_behavior_data_pack_v1":
-            issues.extend(_audit_critical_references(workspace, payload, fixture_id=fixture_id, path=fixture_path))
 
     return {
         "schema": AUDIT_SCHEMA,

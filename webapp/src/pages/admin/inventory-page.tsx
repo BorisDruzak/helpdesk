@@ -5,15 +5,12 @@
   BellRing,
   CheckCircle2,
   ClipboardList,
-  DownloadCloud,
   KeyRound,
-  Layers3,
   Monitor,
   MonitorCog,
   MoreHorizontal,
   RefreshCcw,
   RotateCcw,
-  Rocket,
   ShieldCheck,
   ShieldQuestion,
   Trash2,
@@ -61,13 +58,12 @@ import {
 import { cn } from "../../shared/ui/cn";
 
 type DeviceItem = AdminDevicesPayload["devices"][number];
-type InventoryPanel = "agents" | "requests" | "tokens" | "rollout" | "fleet";
+type InventoryPanel = "agents" | "requests" | "tokens" | "fleet";
 
 const PANEL_OPTIONS: Array<{ id: InventoryPanel; label: string; icon: typeof Monitor }> = [
   { id: "agents", label: "Агенты", icon: Monitor },
   { id: "requests", label: "Подключения", icon: BellRing },
   { id: "tokens", label: "Токены", icon: KeyRound },
-  { id: "rollout", label: "Rollout", icon: Rocket },
   { id: "fleet", label: "Fleet", icon: ClipboardList },
 ];
 
@@ -101,23 +97,6 @@ function compactId(value: string | null | undefined): string {
     return "n/a";
   }
   return value.length > 14 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
-}
-
-function getUpdateTone(value: string | null | undefined): "danger" | "info" | "neutral" | "success" | "warning" {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (!normalized) {
-    return "neutral";
-  }
-  if (["succeeded", "ok", "completed", "up_to_date"].includes(normalized)) {
-    return "success";
-  }
-  if (["queued", "running", "in_progress"].includes(normalized)) {
-    return "info";
-  }
-  if (["failed", "timed_out", "error"].includes(normalized)) {
-    return "danger";
-  }
-  return "warning";
 }
 
 function getOsLabel(value: string | null | undefined): string {
@@ -209,16 +188,8 @@ export function AdminInventoryPage() {
     retry: false,
   });
 
-  const rolloutAssignments = selectedDevice
-    ? (devicesQuery.data?.rollout ?? []).filter((item) => item.target === selectedDevice.target)
-    : devicesQuery.data?.rollout ?? [];
-
   const alertCount = useMemo(
-    () =>
-      devices.filter((device) => {
-        const status = String(device.latest_update.status ?? "").trim().toLowerCase();
-        return ["failed", "timed_out", "error"].includes(status) || device.duplicate_warning;
-      }).length,
+    () => devices.filter((device) => device.duplicate_warning).length,
     [devices]
   );
   const offlineCount = Math.max(0, devices.length - onlineCount);
@@ -409,15 +380,6 @@ export function AdminInventoryPage() {
     });
   }
 
-  function openDeviceOperations() {
-    if (!selectedDevice) {
-      return;
-    }
-    startTransition(() => {
-      navigate(`/app/admin/device-operations/${encodeURIComponent(selectedDevice.device_id)}`);
-    });
-  }
-
   return (
     <section className="space-y-5">
       <PageHeading
@@ -445,15 +407,15 @@ export function AdminInventoryPage() {
             <Button
               disabled={!selectedDevice}
               leadingIcon={<MonitorCog className="h-4 w-4" />}
-              onClick={openDeviceOperations}
+              onClick={openDeviceCard}
               size="sm"
               variant="outline"
             >
-              Операции устройства
+              Карточка устройства
             </Button>
           </>
         }
-        description="Управление подключенными агентами, pending-запросами, токенами и rollout-состоянием."
+        description="Управление подключенными агентами, pending-запросами, токенами и инвентарём."
         eyebrow="Admin workspace"
         title="Агенты"
       />
@@ -593,24 +555,6 @@ export function AdminInventoryPage() {
               />
             ) : null}
 
-            {activePanel === "rollout" ? (
-              <RolloutPanel
-                assignments={devicesQuery.data?.rollout ?? []}
-                onOpenAgentUpdates={() => {
-                  const query = new URLSearchParams();
-                  if (selectedDevice?.device_id) {
-                    query.set("device", selectedDevice.device_id);
-                  }
-                  if (selectedDevice?.target) {
-                    query.set("target", selectedDevice.target);
-                  }
-                  navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
-                }}
-                onOpenModules={() => navigate("/app/admin/modules")}
-                selectedDevice={selectedDevice}
-              />
-            ) : null}
-
             {activePanel === "fleet" ? (
               <FleetInventoryPanel
                 dashboard={fleetDashboardQuery.data ?? null}
@@ -667,21 +611,9 @@ export function AdminInventoryPage() {
           }}
           onCleanupPreview={() => cleanupMutation.mutate(false)}
           onCleanupApply={() => cleanupMutation.mutate(true)}
-          onOpenAgentUpdates={() => {
-            const query = new URLSearchParams();
-            if (selectedDevice?.device_id) {
-              query.set("device", selectedDevice.device_id);
-            }
-            if (selectedDevice?.target) {
-              query.set("target", selectedDevice.target);
-            }
-            navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
-          }}
           onOpenDeviceCard={openDeviceCard}
-          onOpenDeviceOperations={openDeviceOperations}
           onOpenPlaybooks={() => navigate("/app/admin/playbooks")}
           request={activePanel === "requests" ? selectedRequest : null}
-          rolloutAssignments={rolloutAssignments}
           restoreBusy={restoreDeviceMutation.isPending}
           tokenSummary={deviceTokensQuery.data?.summary ?? null}
         />
@@ -757,11 +689,7 @@ function AgentsTable({
                 <td className="px-5 py-4 text-slate-600">{getOsLabel(device.os)}</td>
                 <td className="px-5 py-4 text-slate-600">{device.agent_version || "n/a"}</td>
                 <td className="px-5 py-4 text-slate-600">{formatDateTime(device.last_seen_at)}</td>
-                <td className="px-5 py-4">
-                  <Badge tone={getUpdateTone(device.latest_update.status)}>
-                    {device.latest_update.label}
-                  </Badge>
-                </td>
+                <td className="px-5 py-4 text-slate-600">{device.target || "n/a"}</td>
                 <td className="px-5 py-4 text-right">
                   <button
                     aria-label="Действия агента"
@@ -1213,70 +1141,6 @@ function FleetInventoryPanel({
   );
 }
 
-function RolloutPanel({
-  assignments,
-  onOpenAgentUpdates,
-  onOpenModules,
-  selectedDevice,
-}: {
-  assignments: AdminDevicesPayload["rollout"];
-  onOpenAgentUpdates: () => void;
-  onOpenModules: () => void;
-  selectedDevice: DeviceItem | null;
-}) {
-  return (
-    <div className="space-y-0">
-      <div className="flex flex-col gap-3 border-b border-border p-5 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-slate-950">Rollout-назначения</p>
-          <p className="mt-1 text-sm text-slate-500">Контекст обновления агента и target выбранного устройства.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button leadingIcon={<DownloadCloud className="h-4 w-4" />} onClick={onOpenAgentUpdates} size="sm">
-            Agent Updates
-          </Button>
-          <Button leadingIcon={<Layers3 className="h-4 w-4" />} onClick={onOpenModules} size="sm" variant="outline">
-            Модули
-          </Button>
-        </div>
-      </div>
-      <div className="divide-y divide-border">
-        {selectedDevice ? (
-          <div className="px-5 py-4">
-            <p className="text-xs font-semibold uppercase text-slate-400">Выбранный агент</p>
-            <p className="mt-1 font-semibold text-slate-950">{selectedDevice.hostname || compactId(selectedDevice.device_id)}</p>
-            <p className="mt-1 text-sm text-slate-500">Target: {selectedDevice.target || "не определен"}</p>
-          </div>
-        ) : null}
-        {assignments.length === 0 ? (
-          <EmptyState icon={Rocket} title="Rollout не настроен" description="Нет активных назначений для targets." />
-        ) : (
-          assignments.map((assignment) => (
-            <div className="grid gap-2 px-5 py-4 md:grid-cols-4" key={`${assignment.target}-${assignment.channel}`}>
-              <div>
-                <p className="text-xs text-slate-400">Target</p>
-                <p className="font-semibold text-slate-950">{assignment.target}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Канал</p>
-                <p className="text-slate-700">{assignment.channel}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Версия</p>
-                <p className="text-slate-700">{assignment.version}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Обновлено</p>
-                <p className="text-slate-700">{formatDateTime(assignment.updated_at)}</p>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
 function AgentDetailsPanel({
   archiveBusy,
   archiveFeedback,
@@ -1286,13 +1150,10 @@ function AgentDetailsPanel({
   onArchive,
   onCleanupApply,
   onCleanupPreview,
-  onOpenAgentUpdates,
   onOpenDeviceCard,
-  onOpenDeviceOperations,
   onOpenPlaybooks,
   onRestore,
   request,
-  rolloutAssignments,
   restoreBusy,
   tokenSummary,
 }: {
@@ -1304,13 +1165,10 @@ function AgentDetailsPanel({
   onArchive: () => void;
   onCleanupApply: () => void;
   onCleanupPreview: () => void;
-  onOpenAgentUpdates: () => void;
   onOpenDeviceCard: () => void;
-  onOpenDeviceOperations: () => void;
   onOpenPlaybooks: () => void;
   onRestore: () => void;
   request: AdminConnectionRequestItem | null;
-  rolloutAssignments: AdminDevicesPayload["rollout"];
   restoreBusy: boolean;
   tokenSummary: { total_count: number; active_count: number; revoked_count: number } | null;
 }) {
@@ -1393,7 +1251,7 @@ function AgentDetailsPanel({
             <div className="grid grid-cols-3 gap-2">
               <MiniMetric label="Токенов" value={String(tokenSummary?.total_count ?? 0)} />
               <MiniMetric label="Активных" value={String(tokenSummary?.active_count ?? 0)} />
-              <MiniMetric label="Rollout" value={String(rolloutAssignments.length)} />
+              <MiniMetric label="Статус" value={device.online ? "Online" : "Offline"} />
             </div>
 
             {device.is_deleted ? (
@@ -1441,15 +1299,6 @@ function AgentDetailsPanel({
               ) : null}
               <Button
                 className="w-full justify-start"
-                disabled={device.is_deleted}
-                leadingIcon={<DownloadCloud className="h-4 w-4" />}
-                onClick={onOpenAgentUpdates}
-                size="sm"
-              >
-                Обновления агента
-              </Button>
-              <Button
-                className="w-full justify-start"
                 leadingIcon={<ArrowUpRight className="h-4 w-4" />}
                 onClick={onOpenDeviceCard}
                 size="sm"
@@ -1461,7 +1310,7 @@ function AgentDetailsPanel({
                 className="w-full justify-start"
                 disabled={device.is_deleted}
                 leadingIcon={<MonitorCog className="h-4 w-4" />}
-                onClick={onOpenDeviceOperations}
+                onClick={onOpenDeviceCard}
                 size="sm"
                 variant="outline"
               >

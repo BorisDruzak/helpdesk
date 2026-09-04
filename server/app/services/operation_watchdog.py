@@ -12,7 +12,6 @@ from app.db import get_session
 from app.services.operation_service import OperationService
 from app.repos.operations_repo import OperationsRepo
 import config
-from tech.runtime_audit import write_agent_runtime_audit
 
 
 class OperationWatchdog:
@@ -57,20 +56,6 @@ class OperationWatchdog:
                     limit=100
                 )
 
-                try:
-                    from diagnostics.runtime_dependencies import RuntimeDependencyWorkflow
-
-                    dependency_timeouts = await RuntimeDependencyWorkflow(session, state=(self.app or {}).get("state") if self.app else None).fail_timed_out_dependencies()
-                    if dependency_timeouts:
-                        logger.warning(
-                            f"[OperationWatchdog] Timed out {len(dependency_timeouts)} runtime dependencies"
-                        )
-                        await session.commit()
-                except Exception as dep_timeout_exc:
-                    logger.warning(
-                        f"[OperationWatchdog] Runtime dependency timeout check failed: {dep_timeout_exc}"
-                    )
-                
                 if not expired_ops:
                     return
                 
@@ -114,45 +99,6 @@ class OperationWatchdog:
                                     f"new_status={updated_op.status} "
                                     f"overdue={int(overdue)}s"
                                 )
-                                await write_agent_runtime_audit(
-                                    device_id=operation.device_id,
-                                    event_type="operation_timed_out",
-                                    severity="warning",
-                                    source="operation_watchdog",
-                                    operation_id=operation.operation_id,
-                                    ticket_id=operation.ticket_id,
-                                    actor_role="system",
-                                    details_json={"status_before": operation.status, "overdue_seconds": int(overdue)},
-                                )
-                                
-                                # PR3: Обновить device_outbox при timeout
-                                # Операция timeout → outbox должен быть failed с error_code=TIMEOUT
-                                try:
-                                    from app.repos import DeviceOutboxRepo
-                                    outbox_repo = DeviceOutboxRepo(session)
-                                    
-                                    # Ищем запись в outbox по operation_id (command_id == operation_id)
-                                    outbox_entry = await outbox_repo.get_command_by_id(operation.operation_id)
-                                    
-                                    if outbox_entry and outbox_entry.status not in ['delivered', 'failed']:
-                                        # Помечаем outbox как failed с error_code=TIMEOUT
-                                        await outbox_repo.mark_as_failed(
-                                            outbox_id=outbox_entry.id,
-                                            error_code="TIMEOUT",
-                                            error_message=f"Operation timed out in status {operation.status}",
-                                            should_retry=False  # Timeout не ретраится
-                                        )
-                                        logger.warning(
-                                            f"[OperationWatchdog] Outbox marked as failed (timeout): "
-                                            f"command_id={operation.operation_id} error_code=TIMEOUT"
-                                        )
-                                except Exception as outbox_error:
-                                    logger.error(
-                                        f"[OperationWatchdog] Failed to update outbox for timed out operation: {outbox_error}",
-                                        exc_info=True
-                                    )
-                                    # КРИТИЧНО: Не откатываем транзакцию из-за ошибки outbox
-                                    # Операция уже помечена как timed_out, это важнее
                                 # Этап 5: Playbook Engine — продвижение при timed_out (run не зависает)
                                 if self.app and "state" in self.app:
                                     try:

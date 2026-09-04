@@ -9,13 +9,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
     Device,
-    DeviceAccountSession,
     DeviceRegistrationEvent,
     DeviceInventoryBinding,
     DeviceUserBinding,
     RegistryAsset,
 )
-from registry.account_session_service import AccountSessionService
 from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationConflictError, RegistrationService
 
@@ -171,62 +169,6 @@ async def test_admin_bind_primary_conflict_requires_replace_existing(test_engine
     assert old_binding.status == "transferred"
     assert new_binding.status == "active"
     assert new_binding.person_id == second_person_id
-
-
-@pytest.mark.asyncio
-async def test_admin_transfer_owner_revokes_dependent_account_sessions(test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-
-    async with session_maker() as session:
-        session.add(_device(device_id))
-        registration = RegistrationService(session)
-        first_person_id = await _person_from_claim(
-            registration,
-            device_id=device_id,
-            requester_id="transfer-old",
-            display_name="Transfer Old",
-        )
-        second_person_id = await _person_from_claim(
-            registration,
-            device_id=device_id,
-            requester_id="transfer-new",
-            display_name="Transfer New",
-        )
-        first = await registration.bind_person_to_device(
-            device_id=device_id,
-            person_id=first_person_id,
-            relationship_type="primary_user",
-            replace_existing=False,
-            reviewed_by="admin",
-            reason="initial owner",
-        )
-        account = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=first["binding"]["binding_id"],
-        )
-
-        transferred = await registration.transfer_owner(
-            device_id=device_id,
-            new_person_id=second_person_id,
-            old_binding_action="transferred",
-            reviewed_by="admin",
-            reason="device handed over",
-        )
-        await session.commit()
-
-    async with session_maker() as session:
-        old_binding = await session.get(DeviceUserBinding, first["binding"]["binding_id"])
-        new_binding = await session.get(DeviceUserBinding, transferred["binding"]["binding_id"])
-        account_session = await session.get(DeviceAccountSession, account["session"]["session_id"])
-        asset = (await session.execute(select(RegistryAsset).where(RegistryAsset.device_id == device_id))).scalar_one()
-
-    assert old_binding.status == "transferred"
-    assert new_binding.status == "active"
-    assert new_binding.person_id == second_person_id
-    assert account_session.verification_status == "revoked"
-    assert account_session.revoked_by == "admin"
-    assert asset.assigned_person_id == second_person_id
 
 
 @pytest.mark.asyncio

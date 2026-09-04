@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     Device,
-    DeviceOutbox,
     DevicePresenceSnapshot,
     ObserverTrace,
     Operation,
@@ -142,7 +141,7 @@ async def _counts_for_ticket(session: AsyncSession, ticket_id: str) -> tuple[int
     return int(approvals or 0), int(consent or 0)
 
 
-async def _counts_for_device(session: AsyncSession, device_id: str) -> tuple[int, int, int]:
+async def _counts_for_device(session: AsyncSession, device_id: str) -> tuple[int, int]:
     now = datetime.now(timezone.utc)
     failed = await session.scalar(
         select(func.count())
@@ -160,12 +159,7 @@ async def _counts_for_device(session: AsyncSession, device_id: str) -> tuple[int
             )
         )
     )
-    outbox = await session.scalar(
-        select(func.count())
-        .select_from(DeviceOutbox)
-        .where(and_(DeviceOutbox.device_id == device_id, DeviceOutbox.status.in_(["pending", "sent"])))
-    )
-    return int(failed or 0), int(stuck or 0), int(outbox or 0)
+    return int(failed or 0), int(stuck or 0)
 
 
 def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: int) -> dict[str, Any]:
@@ -180,7 +174,7 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
     severity = "warning" if ticket_open or sla_risk or pending_approvals or waiting_consent else "ok"
     links = [_safe_link("Open ticket", f"/app/tickets/{ticket.ticket_id}", "ticket")]
     if ticket.device_id:
-        links.append(_safe_link("Device Operations", f"/app/admin/device-operations/{ticket.device_id}", "device_operations"))
+        links.append(_safe_link("Device card", f"/app/admin/device?device={ticket.device_id}", "device_card"))
     return {
         "kind": "ticket",
         "id": ticket.ticket_id,
@@ -206,10 +200,10 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
     }
 
 
-def _device_match(device: Device, *, failed_count: int, stuck_count: int, outbox_backlog: int, kind: str = "device") -> dict[str, Any]:
+def _device_match(device: Device, *, failed_count: int, stuck_count: int, kind: str = "device") -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     stale = bool(device.last_seen_at and device.last_seen_at < now - timedelta(minutes=15))
-    severity = "warning" if stale or failed_count or stuck_count or outbox_backlog else "ok"
+    severity = "warning" if stale or failed_count or stuck_count else "ok"
     return {
         "kind": kind,
         "id": device.device_id,
@@ -228,10 +222,9 @@ def _device_match(device: Device, *, failed_count: int, stuck_count: int, outbox
             "stale_agent": stale,
             "failed_operation": failed_count > 0,
             "stuck_operation": stuck_count > 0,
-            "outbox_backlog": outbox_backlog > 0,
         },
         "links": [
-            _safe_link("Device Operations", f"/app/admin/device-operations/{device.device_id}", "device_operations"),
+            _safe_link("Device card", f"/app/admin/device?device={device.device_id}", "device_card"),
             _safe_link("Observer", f"/app/admin/observer?device_id={quote(device.device_id)}", "observer"),
         ],
     }
@@ -303,7 +296,6 @@ def _diagnosis_for_matches(matches: list[dict[str, Any]]) -> str:
         label
         for key, label in [
             ("stale_agent", "DB last_seen is stale"),
-            ("outbox_backlog", "device outbox backlog exists"),
             ("failed_operation", "failed operation exists"),
             ("stuck_operation", "stuck/running operation exists"),
             ("waiting_consent", "operation is waiting for consent"),
@@ -365,9 +357,9 @@ async def locate_debug_context(
             )
         ).scalars().all()
         for device in devices:
-            failed, stuck, outbox = await _counts_for_device(session, device.device_id)
+            failed, stuck = await _counts_for_device(session, device.device_id)
             kind = "hostname" if device.hostname and normalized.lower() in device.hostname.lower() else "device"
-            matches.append(_device_match(device, failed_count=failed, stuck_count=stuck, outbox_backlog=outbox, kind=kind))
+            matches.append(_device_match(device, failed_count=failed, stuck_count=stuck, kind=kind))
 
     if (UUID_RE.match(normalized) or broad) and len(matches) < capped_limit:
         operation = await session.get(Operation, normalized)
@@ -496,49 +488,6 @@ def _runtime_snapshot_payload(row: ServerRuntimeSnapshot) -> dict[str, Any]:
     return snapshot
 
 
-def _runtime_ws_evidence(
-    row: ServerRuntimeSnapshot | None,
-    device_id: str | None,
-    *,
-    limit: int = 50,
-) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    snapshot = row.snapshot if isinstance(row.snapshot, dict) else {}
-    connected_agents = snapshot.get("connected_agents") if isinstance(snapshot.get("connected_agents"), dict) else {}
-    if device_id:
-        evidence = connected_agents.get(device_id)
-        if not isinstance(evidence, dict):
-            return None
-        return {
-            **evidence,
-            "runtime_snapshot_id": row.id,
-            "runtime_collected_at": _iso(row.collected_at),
-            "runtime_expires_at": _iso(row.expires_at),
-        }
-    if not connected_agents:
-        return None
-    agents: list[dict[str, Any]] = []
-    for connected_device_id in sorted(connected_agents.keys())[: max(1, int(limit))]:
-        evidence = connected_agents.get(connected_device_id)
-        if not isinstance(evidence, dict):
-            continue
-        agent = {**evidence}
-        agent.setdefault("device_id", str(connected_device_id))
-        agents.append(agent)
-    if not agents:
-        return None
-    return {
-        "live_ws_state": "online",
-        "connected_count": len(connected_agents),
-        "returned": len(agents),
-        "agents": agents,
-        "runtime_snapshot_id": row.id,
-        "runtime_collected_at": _iso(row.collected_at),
-        "runtime_expires_at": _iso(row.expires_at),
-    }
-
-
 async def runtime_snapshot(session: AsyncSession, *, process_kind: str | None = None, include_details: bool = True) -> dict[str, Any]:
     row = await _latest_runtime_snapshot(session, process_kind=process_kind)
     if row is None:
@@ -582,8 +531,6 @@ async def agent_presence_snapshot(
             .limit(capped_limit)
         )
     rows = (await session.execute(stmt)).scalars().all()
-    runtime_row = await _latest_runtime_snapshot(session, process_kind="server")
-    live_ws_evidence = _runtime_ws_evidence(runtime_row, device_id, limit=capped_limit)
     devices: dict[str, dict[str, Any]] = {}
     if device_id:
         device = await session.get(Device, device_id)
@@ -624,12 +571,11 @@ async def agent_presence_snapshot(
     ]
     return _redact_debug_payload(
         {
-            "status": "ok" if snapshots or live_ws_evidence else "partial",
+            "status": "ok" if snapshots else "partial",
             "presence_snapshot_available": bool(snapshots),
-            "confidence": "live_ws" if live_ws_evidence else ("db_snapshot" if snapshots else "unknown"),
+            "confidence": "db_snapshot" if snapshots else "unknown",
             "message": None if snapshots else "No persisted agent presence snapshots found",
-            "live_ws_state": (live_ws_evidence or {}).get("live_ws_state") or "unavailable_in_debug_readonly_mcp",
-            "live_ws_evidence": live_ws_evidence,
+            "live_ws_state": "unavailable_in_debug_readonly_mcp",
             "device_id": device_id,
             "device_db_evidence": devices.get(device_id) if device_id else None,
             "snapshots": snapshots,
@@ -799,7 +745,7 @@ def _recommended_next_checks(
     if error_occurrences or status in {"failed", "timed_out", "error"}:
         checks.append("Inspect error_occurrences and matching signatures before retry.")
     if status in {"running", "accepted", "queued", "sent"}:
-        checks.append("Inspect operation delivery, outbox, and persisted presence evidence.")
+        checks.append("Inspect Endpoint operation delivery and persisted evidence.")
     if runtime and runtime.get("status") == "partial":
         checks.append("Persisted runtime snapshots are unavailable; verify server runtime before trusting live state.")
     if presence and presence.get("status") == "partial":

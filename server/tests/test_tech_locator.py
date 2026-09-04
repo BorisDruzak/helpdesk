@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceOutbox, ObserverTrace, Operation, Ticket, TicketApproval
+from app.db.models import Device, ObserverTrace, Operation, Ticket, TicketApproval
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -81,19 +81,6 @@ async def _seed_locator_context(test_engine):
                 finished_at=now - timedelta(minutes=16),
                 error_code="COLLECT_FAILED",
                 error_message="failed with password=secret-token",
-            )
-        )
-        session.add(
-            DeviceOutbox(
-                device_id=device_id,
-                command_id=str(uuid.uuid4()),
-                command="run_tool",
-                params={"operation_id": operation_id},
-                status="pending",
-                operation_id=operation_id,
-                trace_id=trace_id,
-                actor_role="support",
-                created_at=now - timedelta(minutes=15),
             )
         )
         session.add(

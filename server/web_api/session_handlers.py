@@ -16,11 +16,9 @@ from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
 from observer.web_event_writer import write_web_cabinet_observer_event
-from registry.browser_pairing_service import BrowserPairingService
 from registry.password_reset_service import PasswordResetRequestService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
-    WebSessionRegisterDeviceLinkPayload,
     WebSessionLoginRequest,
     WebSessionLogoutPayload,
     WebSessionPayload,
@@ -76,7 +74,7 @@ def _clean_header(value: object, *, max_length: int = 120) -> str | None:
     return text[:max_length] if text else None
 
 
-def _account_session_observer_actor_context(
+def _web_session_observer_actor_context(
     request: web.Request,
     *,
     actor_id: str | None,
@@ -95,7 +93,7 @@ def _account_session_observer_actor_context(
     }
 
 
-async def _write_account_session_observer_event(
+async def _write_web_session_observer_event(
     request: web.Request,
     *,
     event_type: str,
@@ -110,11 +108,11 @@ async def _write_account_session_observer_event(
         async with get_session() as session:
             await write_web_cabinet_observer_event(
                 session,
-                source="account_session",
+                source="web_session",
                 event_type=event_type,
                 severity=severity,
                 route=request.path,
-                actor_context=_account_session_observer_actor_context(
+                actor_context=_web_session_observer_actor_context(
                     request,
                     actor_id=actor_id,
                     actor_role=actor_role,
@@ -124,7 +122,7 @@ async def _write_account_session_observer_event(
                 payload=payload,
             )
     except Exception as exc:
-        logger.warning(f"[account_session_observer] failed to write {event_type}: {exc}")
+        logger.warning(f"[web_session_observer] failed to write {event_type}: {exc}")
 
 
 async def _build_effective_session_payload(*, user_login: str, actor_role: str, auth_type: str) -> WebSessionPayload:
@@ -196,7 +194,7 @@ async def handle_web_session_login(request):
         )
     expected_role = str(payload.expected_role or "").strip().lower()
     if expected_role and expected_role in VALID_ROLES and actor_role != expected_role:
-        await _write_account_session_observer_event(
+        await _write_web_session_observer_event(
             request,
             event_type="role_mismatch",
             severity="warning",
@@ -239,7 +237,7 @@ async def handle_web_session_login(request):
         actor_role=actor_role,
         auth_type="ui_token",
     )
-    await _write_account_session_observer_event(
+    await _write_web_session_observer_event(
         request,
         event_type="login_succeeded",
         severity="info",
@@ -328,19 +326,7 @@ async def handle_web_session_register(request):
     if not check_rate_limit("web_session_register", f"{client_ip(request)}:{login}", limit=5, window_seconds=60):
         return rate_limited_response()
 
-    device_link_payload: WebSessionRegisterDeviceLinkPayload | None = None
     async with get_session() as session:
-        device_link_code = str(payload.device_link_code or "").strip()
-        if device_link_code:
-            pairing = await BrowserPairingService(session).lookup_by_pairing_code(device_link_code)
-            if not pairing or pairing.get("purpose") != "registration":
-                return _error("Код подключения не найден или истек.", "DEVICE_LINK_CODE_INVALID", status=400)
-            device_link_payload = WebSessionRegisterDeviceLinkPayload(
-                accepted=True,
-                purpose="registration",
-                expires_at=pairing.get("expires_at"),
-            )
-
         try:
             user = await UiUsersRepo(session).create_user(
                 login,
@@ -353,7 +339,7 @@ async def handle_web_session_register(request):
                 return _error("Пользователь с таким логином уже существует.", "LOGIN_ALREADY_EXISTS", status=409)
             return _error("Не удалось создать аккаунт.", "VALIDATION_ERROR", status=400)
 
-    await _write_account_session_observer_event(
+    await _write_web_session_observer_event(
         request,
         event_type="register_succeeded",
         severity="info",
@@ -362,8 +348,6 @@ async def handle_web_session_register(request):
         actor_role="user",
         payload={
             "next_path": "/app/login?registered=1",
-            "device_link_accepted": bool(device_link_payload and device_link_payload.accepted),
-            "device_link_purpose": device_link_payload.purpose if device_link_payload else None,
         },
     )
     return json_model_response(
@@ -372,7 +356,6 @@ async def handle_web_session_register(request):
                 user_login=user.user_login,
                 actor_role="user",
                 next_path="/app/login?registered=1",
-                device_link=device_link_payload,
             )
         ),
         status=201,
@@ -387,7 +370,7 @@ async def handle_web_session_logout(request):
     if auth_context.token:
         token_revoked = await auth_service.revoke_ui_token(auth_context.token)
     auth_type = getattr(auth_context.auth_type, "value", str(auth_context.auth_type))
-    await _write_account_session_observer_event(
+    await _write_web_session_observer_event(
         request,
         event_type="logout_succeeded",
         severity="info",

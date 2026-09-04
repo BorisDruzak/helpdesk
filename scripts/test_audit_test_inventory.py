@@ -129,7 +129,7 @@ def test_inventory_audit_accepts_owned_server_db_and_agent_ws_files(tmp_path):
     records = {record.file.name: record for record in audit.audit_paths([tests_dir], workspace=tmp_path).records}
 
     assert records["test_web_api.py"].suite == "server_pytest_db_web_api"
-    assert records["test_operation_retry.py"].suite == "server_pytest_agent_ws"
+    assert records["test_operation_retry.py"].suite == "server_pytest_db_agent_runtime"
     assert records["test_migration_schema_contract.py"].suite == "migration_schema"
     assert records["test_web_api.py"].issues == ()
     assert records["test_operation_retry.py"].issues == ()
@@ -143,7 +143,6 @@ def test_inventory_audit_allows_the_explicit_manual_cross_repo_wss_suites():
 
     report = audit.audit_paths(
         [
-            acceptance_dir / "test_endpoint_module_platform_v1.py",
             acceptance_dir / "test_endpoint_operations_v1_acceptance.py",
         ],
         workspace=workspace,

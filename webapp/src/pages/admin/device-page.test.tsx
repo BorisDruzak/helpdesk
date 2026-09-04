@@ -14,10 +14,6 @@ vi.mock("../../features/admin/api", async (importOriginal) => {
   };
 });
 
-vi.mock("../../features/agent-updates/device-update-panel", () => ({
-  DeviceUpdatePanel: () => <section data-testid="device-update-panel">update panel</section>,
-}));
-
 vi.mock("../../features/admin/device-inventory-panel", () => ({
   DeviceInventoryPanel: () => <section data-testid="device-inventory-panel">inventory panel</section>,
 }));
@@ -58,7 +54,6 @@ describe("AdminDevicePage", () => {
       summary: {
         visible_count: 1,
         online_count: 0,
-        rollout_targets: 1,
         duplicate_hosts: 0,
         cleanup_candidates: 0,
         archived_count: 0,
@@ -71,7 +66,6 @@ describe("AdminDevicePage", () => {
           { value: "offline", label: "Оффлайн" },
         ],
       },
-      rollout: [],
       devices: [
         {
           device_id: "device-1",
@@ -86,11 +80,6 @@ describe("AdminDevicePage", () => {
           deleted_at: null,
           deleted_by: null,
           delete_reason: null,
-          latest_update: {
-            status: "waiting",
-            label: "Ждёт связи",
-            summary: "Waiting for agent connection",
-          },
           identity_summary: {
             machine_id: "machine-1",
             install_id: "install-1",

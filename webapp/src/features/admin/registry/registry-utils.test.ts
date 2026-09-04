@@ -120,50 +120,6 @@ const registryPayload: AdminRegistryPayload = {
     },
   ],
   bindings: [],
-  account_sessions: [
-    {
-      session_id: "session-other-1",
-      account_mode: "other_account",
-      verification_status: "verified",
-      verification_method: "admin",
-      device_id: "dev-acc-17",
-      person_id: "person-1",
-      binding_id: "binding-primary-1",
-      claim_id: null,
-      base_binding_id: "binding-primary-1",
-      base_person_id: "person-1",
-      display_name: "Иван Петров",
-      full_name: "Петров Иван Сергеевич",
-      login: "petrov",
-      email: "petrov@example.test",
-      phone: null,
-      reason: null,
-      warning_code: null,
-      created_at: null,
-      verified_at: null,
-      expires_at: null,
-      revoked_at: null,
-      revoked_by: null,
-    },
-  ],
-  account_login_requests: [
-    {
-      request_id: "login-request-1",
-      device_id: "dev-acc-17",
-      requested_account: { login: "other-user" },
-      matched_person_id: "person-1",
-      base_binding_id: "binding-primary-1",
-      base_person_id: "person-1",
-      status: "pending",
-      verification_method: "admin_review",
-      reason: null,
-      requested_at: null,
-      reviewed_by: null,
-      reviewed_at: null,
-      rejection_reason: null,
-      resulting_session_id: null,
-    },
-  ],
 };
 
 describe("registry utilities", () => {
@@ -171,11 +127,10 @@ describe("registry utilities", () => {
     expect(formatDateTime(null)).toBe("Нет данных");
   });
 
-  it("filters registry payload across device, person, binding, session and quality fields", () => {
+  it("filters registry payload across device, person, binding and quality fields", () => {
     expect(filterRegistryPayload(registryPayload, "ACC-17").assets).toHaveLength(1);
     expect(filterRegistryPayload(registryPayload, "petrov").people).toHaveLength(1);
     expect(filterRegistryPayload(registryPayload, "binding-primary-1").active_bindings).toHaveLength(1);
-    expect(filterRegistryPayload(registryPayload, "session-other-1").account_sessions).toHaveLength(1);
     expect(filterRegistryPayload(registryPayload, "binding_stale").data_quality).toHaveLength(1);
     expect(filterRegistryPayload(registryPayload, "missing").assets).toHaveLength(0);
   });

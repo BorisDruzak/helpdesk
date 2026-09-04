@@ -16,7 +16,7 @@ from quality.improvement_service import ContinuousImprovementService
 from quality.policy_service import QualityPolicyService
 from quality.reopen_service import TicketReopenService
 from quality.review_service import QualityReviewService
-from tickets.account_access_service import TicketAccountAccessService, requester_account_from_payload
+from tickets.account_access_service import TicketBindingAccessService
 
 
 def _ok(**payload: Any) -> web.Response:
@@ -39,8 +39,8 @@ def _auth(request: web.Request) -> AuthContext:
     return request.get("auth_context")
 
 
-def _account_error(error_code: str, *, status: int = 403) -> web.Response:
-    return _error("account_session_invalid", status=status, error_code=error_code)
+def _binding_error(error_code: str, *, status: int = 403) -> web.Response:
+    return _error("active_device_binding_required", status=status, error_code=error_code)
 
 
 async def _quality_actor_for_ticket(
@@ -56,21 +56,16 @@ async def _quality_actor_for_ticket(
 
     role = str(auth.actor_role or "")
     if role == "agent":
-        requester_account = requester_account_from_payload(data, query=request.query, headers=request.headers)
-        access = TicketAccountAccessService(session)
-        validation = await access.validate_agent_account_session(
-            device_id=auth.actor_id,
-            requester_account=requester_account,
-            require=True,
-        )
+        access = TicketBindingAccessService(session)
+        validation = await access.resolve_agent_binding(device_id=auth.actor_id)
         if not validation.get("valid"):
-            return None, None, _account_error(str(validation.get("error_code") or "ACCOUNT_SESSION_INVALID"))
+            return None, None, _binding_error(str(validation.get("error_code") or "ACTIVE_DEVICE_BINDING_REQUIRED"))
 
         ticket = await session.get(Ticket, ticket_id)
         if ticket is None:
             return None, None, _error("ticket not found", status=404)
-        if not await access.can_view_ticket(ticket=ticket, account_session=validation.get("session") or {}):
-            return None, None, _account_error("ACCOUNT_ACCESS_DENIED")
+        if not await access.can_view_ticket(ticket=ticket, binding=validation.get("binding") or {}):
+            return None, None, _binding_error("DEVICE_BINDING_ACCESS_DENIED")
 
         data["source_surface"] = str(data.get("source_surface") or "agent_gui")
         return str(getattr(ticket, "requester_id", "") or auth.actor_id), "requester", None

@@ -632,7 +632,7 @@ describe("appRoutes", () => {
           alerts: [{ id: "alert-1", title: "Операции требуют внимания", severity: "critical" }],
           release: { gate: "unknown" },
           smoke: { status: "unknown", last_business_smoke: null, last_health_smoke: null },
-          links: { observer: "/app/admin/observer", inventory: "/app/admin/inventory", device_operations: "/app/admin/device-operations", agent_updates: "/app/admin/agent-updates", command_center: "/app/support", approval_center: "/app/support/approvals", logs: "/app/admin/tech?tab=logs" },
+          links: { observer: "/app/admin/observer", inventory: "/app/admin/inventory", device_operations: "/app/admin/device-operations", command_center: "/app/support", approval_center: "/app/support/approvals", logs: "/app/admin/tech?tab=logs" },
         });
       }
 

@@ -112,7 +112,6 @@ import type {
 } from "../../features/queues/support-workspace-model";
 import { useSession } from "../../features/auth/session-provider";
 import { fetchTicketProblemLinks } from "../../features/problems/api";
-import { RemoteAssistPanel } from "../../features/remote-assist/remote-assist-panel";
 import { ExpandedWorkspaceHeader } from "./components/expanded-workspace-header";
 import { OperationsTable } from "./components/operations-table";
 import { QueueExplorer } from "./components/queue-explorer";
@@ -145,7 +144,7 @@ type SupportWorkspaceTheme = "dark" | "light";
 type OperatorActionKind = "status" | "assign_self" | "queue" | "priority" | "reroute";
 type AutomationCatalogFilter = "all" | "runnable" | "playbook" | "tool" | "disabled";
 type WorkspaceResizePane = "left" | "right";
-type ToolsWorkspaceTab = "diagnostics" | "quick" | "playbook" | "remote" | "operations" | "history";
+type ToolsWorkspaceTab = "diagnostics" | "quick" | "playbook" | "operations" | "history";
 type SlaWorkspaceTab = "overview" | "ola" | "escalations" | "history";
 type PassportWorkspaceTab = "sections" | "evidence" | "operations" | "readiness";
 type WorkspaceColumnSizes = { left: number; right: number };
@@ -367,7 +366,6 @@ const toolsWorkspaceTabs: Array<{ value: ToolsWorkspaceTab; label: string }> = [
   { value: "diagnostics", label: "Диагностика" },
   { value: "quick", label: "Быстрые" },
   { value: "playbook", label: "Playbook" },
-  { value: "remote", label: "Удалённая помощь" },
   { value: "operations", label: "Операции" },
   { value: "history", label: "История" },
 ];
@@ -3599,7 +3597,7 @@ export function TicketListPage() {
                       </div>
                     </div>
                   ) : null}
-                  {viewModel.right.context.requester.accountMode || viewModel.right.context.requester.accountSessionId ? (
+                  {viewModel.right.context.requester.accountMode ? (
                     <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Аккаунт обращения</p>
                       {viewModel.right.context.requester.accountMode === "registration_pending" ? (
@@ -3609,7 +3607,6 @@ export function TicketListPage() {
                       ) : null}
                       <dl className="mt-3 grid gap-1 text-xs leading-5 text-slate-300">
                         <ContextInfoRow icon={ShieldCheck} label="Режим" value={viewModel.right.context.requester.accountMode} />
-                        <ContextInfoRow icon={Fingerprint} label="Session" value={viewModel.right.context.requester.accountSessionId} />
                         <ContextInfoRow icon={UserRound} label="Заявленный аккаунт" value={viewModel.right.context.requester.accountDeclaredName} />
                         <ContextInfoRow icon={Fingerprint} label="Логин" value={viewModel.right.context.requester.accountLogin} />
                         <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.accountEmail} />
@@ -3951,18 +3948,6 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "tools" ? (
               <div className="space-y-3">
-                {workspaceMode !== "tools" ? (
-                  <RemoteAssistPanel
-                    deviceId={viewModel.right.context?.device.id ?? null}
-                    deviceOnline={viewModel.right.context?.device.online ?? false}
-                    onChanged={() => {
-                      void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
-                      void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
-                    }}
-                    permissions={session?.permissions ?? []}
-                    ticketId={selectedTicket.id}
-                  />
-                ) : null}
                 {workspaceMode === "tools" ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div aria-label="Режим инструментов" className="mb-4 flex flex-wrap gap-2" role="tablist">
@@ -4040,18 +4025,6 @@ export function TicketListPage() {
                           </p>
                         ) : null}
                       </div>
-                    ) : null}
-                    {toolsWorkspaceTab === "remote" ? (
-                      <RemoteAssistPanel
-                        deviceId={viewModel.right.context?.device.id ?? null}
-                        deviceOnline={viewModel.right.context?.device.online ?? false}
-                        onChanged={() => {
-                          void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
-                          void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
-                        }}
-                        permissions={session?.permissions ?? []}
-                        ticketId={selectedTicket.id}
-                      />
                     ) : null}
                     {toolsWorkspaceTab === "operations" ? (
                       <OperationsTable
@@ -4213,9 +4186,9 @@ export function TicketListPage() {
                           <div className="flex flex-wrap gap-2">
                             <Link
                               className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"
-                              to={`/app/admin/device-operations/${encodeURIComponent(viewModel.right.context.device.id)}`}
+                              to={`/app/admin/device?device=${encodeURIComponent(viewModel.right.context.device.id)}`}
                             >
-                              Операции устройства
+                              Карточка устройства
                             </Link>
                             <Link
                               className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"

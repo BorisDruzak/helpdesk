@@ -4,16 +4,13 @@ import { Link, Navigate, Outlet, useLocation, type RouteObject } from "react-rou
 import { AppShell } from "./layouts/app-shell";
 import {
   AdminCenterPage,
-  AdminAgentUpdatesPage,
   AdminAiIntegrationPage,
   AdminChangesPage,
-  AdminDeviceOperationsPage,
   AdminCapabilitiesPage,
   AdminDevicePage,
   AdminAccessPage,
   AdminFormsPage,
   AdminInventoryPage,
-  AdminModulesPage,
   AdminObserverPage,
   AdminOperationDetailPage,
   AdminPlaybooksPage,
@@ -27,15 +24,12 @@ import {
   AdminTechPage,
   HelpPage,
   ReportsPage,
-  RequesterDeviceLinkPage,
   RequesterDevicesPage,
   RequesterHomePage,
   RequesterNewRequestPage,
   RequesterProfilePage,
   RequesterTicketPage,
   RequesterTicketsPage,
-  DevicePairCodePage,
-  DevicePairingPage,
   SettingsPage,
   SupportCommandCenterPage,
   TicketDetailPage,
@@ -107,27 +101,6 @@ function PublicPageFallback() {
 }
 
 function PublicPage({ children }: { children: ReactNode }) {
-  return <Suspense fallback={<PublicPageFallback />}>{children}</Suspense>;
-}
-
-function ProtectedDevicePage({ children }: { children: ReactNode }) {
-  const location = useLocation();
-  const { status } = useSession();
-
-  if (status === "loading") {
-    return (
-      <SessionState
-        description="Проверяем web-сессию перед подтверждением устройства."
-        title="Проверяем сессию"
-      />
-    );
-  }
-
-  if (status === "anonymous") {
-    const nextPath = `${location.pathname}${location.search}${location.hash}`;
-    return <Navigate replace to={`/app/login?next=${encodeURIComponent(nextPath)}`} />;
-  }
-
   return <Suspense fallback={<PublicPageFallback />}>{children}</Suspense>;
 }
 
@@ -255,30 +228,6 @@ export const appRoutes: RouteObject[] = [
         )
       },
       {
-        path: "device/pair",
-        element: (
-          <ProtectedDevicePage>
-            <DevicePairCodePage />
-          </ProtectedDevicePage>
-        )
-      },
-      {
-        path: "device/login",
-        element: (
-          <ProtectedDevicePage>
-            <DevicePairingPage purpose="login" />
-          </ProtectedDevicePage>
-        )
-      },
-      {
-        path: "device/register",
-        element: (
-          <ProtectedDevicePage>
-            <DevicePairingPage purpose="registration" />
-          </ProtectedDevicePage>
-        )
-      },
-      {
         element: <ProtectedWorkspaceLayout />,
         children: [
           {
@@ -338,14 +287,6 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="requester">
                 <RequesterDevicesPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "requester/devices/link",
-            element: (
-              <WorkspaceAccessGate workspace="requester">
-                <RequesterDeviceLinkPage />
               </WorkspaceAccessGate>
             )
           },
@@ -478,34 +419,10 @@ export const appRoutes: RouteObject[] = [
             )
           },
           {
-            path: "admin/device-operations",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminDeviceOperationsPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/device-operations/:deviceId",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminDeviceOperationsPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
             path: "admin/operations/:operationId",
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminOperationDetailPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/agent-updates",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminAgentUpdatesPage />
               </WorkspaceAccessGate>
             )
           },
@@ -522,14 +439,6 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminRegistryPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/modules",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminModulesPage />
               </WorkspaceAccessGate>
             )
           },

@@ -105,13 +105,7 @@ class PrimaryAgentResolver:
         return bool(diagnostic_target.get("allow_single_active_binding_fallback", False))
 
     def _connection_state(self, device_id: str) -> tuple[bool | None, str]:
-        checker = getattr(self.state, "is_agent_online", None)
-        if callable(checker):
-            try:
-                online = bool(checker(device_id))
-                return online, "online" if online else "offline"
-            except Exception:
-                return None, "unknown"
+        del device_id
         return None, "unknown"
 
     async def _target_payload(

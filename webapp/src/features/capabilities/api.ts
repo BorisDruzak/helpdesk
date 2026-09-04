@@ -1,15 +1,5 @@
 import { SupportBootstrapApiError } from "../queues/api";
-import type {
-  AgentRecipeCreatePayload,
-  AgentRecipeCreateResult,
-  AgentRecipePrimitive,
-  CapabilityDescriptor,
-  DiagnosticProviderConfig,
-  RunnerRolloutCreatePayload,
-  RunnerRolloutPayload,
-  RunnerRolloutPlan,
-  ToolPresentationDetail,
-} from "./types";
+import type { CapabilityDescriptor, DiagnosticProviderConfig, ToolPresentationDetail } from "./types";
 
 type ApiErrorResponse = {
   status: "error";
@@ -120,86 +110,4 @@ export async function resetToolPresentation(
   });
   const payload = await readJson<ApiOkResponse<ToolPresentationDetail> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to reset presentation schema");
-}
-
-export async function listAgentRecipePrimitives(): Promise<AgentRecipePrimitive[]> {
-  const response = await fetch(`/api/web/admin/agent-recipes/primitives?_=${Date.now()}`, {
-    credentials: "same-origin",
-    cache: "no-store",
-  });
-  const payload = await readJson<ApiOkResponse<{ primitives: AgentRecipePrimitive[] }> | ApiErrorResponse>(response);
-  return assertOk(payload, response, "Unable to load agent recipe primitives").primitives;
-}
-
-export async function createAgentRecipe(payload: AgentRecipeCreatePayload): Promise<AgentRecipeCreateResult> {
-  const response = await fetch("/api/web/admin/agent-recipes", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await readJson<ApiOkResponse<AgentRecipeCreateResult> | ApiErrorResponse>(response);
-  return assertOk(data, response, "Unable to create agent recipe");
-}
-
-export async function validateAgentRecipe(recipeVersionId: string): Promise<{ validation_status: string }> {
-  const response = await fetch(`/api/web/admin/agent-recipes/${encodeURIComponent(recipeVersionId)}/validate`, {
-    method: "POST",
-    credentials: "same-origin",
-  });
-  const payload = await readJson<ApiOkResponse<{ validation_status: string }> | ApiErrorResponse>(response);
-  return assertOk(payload, response, "Unable to validate agent recipe");
-}
-
-export async function publishAgentRecipe(recipeVersionId: string): Promise<{ capability_id: string }> {
-  const response = await fetch(`/api/web/admin/agent-recipes/${encodeURIComponent(recipeVersionId)}/publish`, {
-    method: "POST",
-    credentials: "same-origin",
-  });
-  const payload = await readJson<ApiOkResponse<{ capability_id: string }> | ApiErrorResponse>(response);
-  return assertOk(payload, response, "Unable to publish agent recipe");
-}
-
-export async function getRunnerRollout(): Promise<RunnerRolloutPayload> {
-  const response = await fetch(`/api/web/admin/capabilities/runner-rollout?_=${Date.now()}`, {
-    credentials: "same-origin",
-    cache: "no-store",
-  });
-  const payload = await readJson<ApiOkResponse<RunnerRolloutPayload> | ApiErrorResponse>(response);
-  return assertOk(payload, response, "Unable to load runner rollout");
-}
-
-export async function createRunnerRolloutPlan(payload: RunnerRolloutCreatePayload): Promise<RunnerRolloutPlan> {
-  const response = await fetch("/api/web/admin/capabilities/runner-rollout/plans", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await readJson<ApiOkResponse<{ plan: RunnerRolloutPlan }> | ApiErrorResponse>(response);
-  return assertOk(data, response, "Unable to create runner rollout plan").plan;
-}
-
-export async function runRunnerRolloutAction(
-  planId: string,
-  action:
-    | "start-canary"
-    | "promote-next-wave"
-    | "pause"
-    | "resume"
-    | "refresh"
-    | "rollback",
-  payload: Record<string, unknown> = {},
-): Promise<RunnerRolloutPlan> {
-  const response = await fetch(
-    `/api/web/admin/capabilities/runner-rollout/plans/${encodeURIComponent(planId)}/${action}`,
-    {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    },
-  );
-  const data = await readJson<ApiOkResponse<{ plan: RunnerRolloutPlan }> | ApiErrorResponse>(response);
-  return assertOk(data, response, "Unable to update runner rollout").plan;
 }

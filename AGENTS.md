@@ -13,6 +13,18 @@ Keep this root contract short. Put detailed procedures in `.agents/skills/*/SKIL
 - Before non-trivial work, bootstrap UTF-8 with `.\scripts\bootstrap_shell_utf8.ps1` and inspect `git status --short`.
 - Read the nearest relevant `AGENTS.md` and only the documentation for the subsystem being changed.
 
+## Approved staging SSH targets
+
+- Helpdesk staging Linux host: `osn-admin@192.168.101.118`. Use only its
+  isolated staging services and paths (for example `/opt/helpdesk-staging` and
+  `/var/lib/helpdesk-staging`); never substitute the production target.
+- Dedicated Windows agent test VM: `test_agent_win@192.168.101.120`.
+- Dedicated ALT Linux agent test VM: `osn-admin@192.168.101.70`. Use it only
+  for approved staging agent installation, validation, and canary work.
+- These are connection identities and network targets only. Obtain passwords,
+  SSH keys, tokens, and any other secrets from the approved secret channel at
+  runtime; never place them in this repository, `AGENTS.md`, evidence, or logs.
+
 ## GitNexus MCP
 
 GitNexus is the canonical architectural index for this project.

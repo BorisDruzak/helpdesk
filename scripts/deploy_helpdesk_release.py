@@ -35,6 +35,7 @@ def remote_install_command(
 ) -> str:
     release = release_path(profile, commit, release_id=release_id)
     deployment_root = Path(profile.root).parent.as_posix()
+    previous_release_file = f"{Path(profile.environment_file).parent.as_posix()}/previous-release"
     release_venv = f"{release}/{profile.release_venv_path}"
     runtime_services = " ".join(
         service for service in (profile.server_service, profile.control_service) if service
@@ -52,6 +53,8 @@ def remote_install_command(
             f"sudo {release_venv}/bin/pip install --disable-pip-version-check --no-input -r {release}/server/requirements.txt",
             f"sudo chown -R root:root {release}",
             f"sudo chmod -R a-w {release}",
+            f"previous_release=$(sudo readlink -f {profile.root} 2>/dev/null || true)",
+            f"if [ -n \"$previous_release\" ]; then printf '%s\\n' \"$previous_release\" | sudo install -o root -g root -m 0644 /dev/stdin {previous_release_file}; fi",
             f"sudo ln -sfn {release} {profile.root}",
             "sudo systemctl daemon-reload",
             f"sudo systemctl start {profile.migrate_service}",

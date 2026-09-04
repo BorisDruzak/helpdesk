@@ -1,27 +1,20 @@
 from __future__ import annotations
 
-import uuid
 from typing import Any, Dict, Optional
 
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.providers.manual_provider import ManualCapabilityProvider
 from diagnostics.providers.observer_provider import ObserverCapabilityProvider
-from diagnostics.providers.remote_assist_provider import RemoteAssistCapabilityProvider
 from diagnostics.providers.server_builtin import ServerBuiltinProvider
 from diagnostics.providers.server_connector import ServerConnectorProvider
 from diagnostics.observability import NullCapabilityExecutionObserver, monotonic_ms
 
 
 TARGET_EXECUTION_KIND = {
-    "agent_builtin": "operation",
-    "agent_managed_module": "operation",
-    "agent_recipe": "operation",
     "server_builtin": "query",
     "server_connector": "query",
     "observer_query": "query",
-    "remote_assist": "session",
     "manual": "manual_evidence",
-    "hybrid": "session",
     "endpoint_operation": "operation",
 }
 
@@ -33,21 +26,17 @@ class CapabilityExecutionRouter:
         self,
         *,
         capability_registry: CapabilityRegistry,
-        tool_service: Any,
         server_builtin_provider: Any = None,
         server_connector_provider: Any = None,
         observer_provider: Any = None,
-        remote_assist_provider: Any = None,
         manual_provider: Any = None,
         endpoint_platform_provider: Any = None,
         observability: Any = None,
     ) -> None:
         self.capability_registry = capability_registry
-        self.tool_service = tool_service
         self.server_builtin_provider = server_builtin_provider or ServerBuiltinProvider()
         self.server_connector_provider = server_connector_provider or ServerConnectorProvider()
         self.observer_provider = observer_provider or ObserverCapabilityProvider()
-        self.remote_assist_provider = remote_assist_provider or RemoteAssistCapabilityProvider()
         self.manual_provider = manual_provider or ManualCapabilityProvider()
         self.endpoint_platform_provider = endpoint_platform_provider
         self.observability = observability or NullCapabilityExecutionObserver()
@@ -153,41 +142,6 @@ class CapabilityExecutionRouter:
         if readiness_error is not None:
             return readiness_error
         target = capability.execution_target
-        if target in {"agent_builtin", "agent_managed_module"}:
-            result = await self.route_agent_tool(
-                ticket_id=ticket_id,
-                device_id=device_id,
-                capability_id=capability.id,
-                params=params,
-                actor=actor,
-                idempotency_key=idempotency_key,
-            )
-            return self._envelope(
-                capability,
-                result,
-                ticket_id=ticket_id,
-                device_id=device_id,
-                idempotency_key=idempotency_key,
-                timeout_ms=timeout_ms,
-            )
-        if target == "agent_recipe":
-            result = await self.route_agent_recipe(
-                capability,
-                ticket_id=ticket_id,
-                device_id=device_id,
-                params=params,
-                actor=actor,
-                idempotency_key=idempotency_key,
-                timeout_ms=timeout_ms,
-            )
-            return self._envelope(
-                capability,
-                result,
-                ticket_id=ticket_id,
-                device_id=device_id,
-                idempotency_key=idempotency_key,
-                timeout_ms=timeout_ms,
-            )
         if target == "server_builtin":
             result = await self.route_server_builtin(
                 capability,
@@ -221,18 +175,6 @@ class CapabilityExecutionRouter:
             )
         if target == "observer_query":
             result = await self.route_observer_query(
-                capability, ticket_id=ticket_id, device_id=device_id, params=params, actor=actor, state=self.capability_registry.state
-            )
-            return self._envelope(
-                capability,
-                result,
-                ticket_id=ticket_id,
-                device_id=device_id,
-                idempotency_key=idempotency_key,
-                timeout_ms=timeout_ms,
-            )
-        if target == "remote_assist":
-            result = await self.route_remote_assist(
                 capability, ticket_id=ticket_id, device_id=device_id, params=params, actor=actor, state=self.capability_registry.state
             )
             return self._envelope(
@@ -292,47 +234,8 @@ class CapabilityExecutionRouter:
             "timeout_ms": timeout_ms,
         }
 
-    async def route_agent_tool(
-        self,
-        *,
-        ticket_id: str,
-        device_id: Optional[str],
-        capability_id: str,
-        params: Dict[str, Any],
-        actor: Any,
-        idempotency_key: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        if not device_id:
-            return {"status": "error", "error_code": "DEVICE_REQUIRED", "message": "Device is required"}
-        return await self.tool_service.run_tool(
-            device_id=device_id,
-            ticket_id=ticket_id,
-            tool_name=capability_id,
-            params=dict(params or {}),
-            call_id=idempotency_key or f"capability-{uuid.uuid4()}",
-            auth_context=actor,
-            wait_for_result=False,
-        )
-
     async def route_server_builtin(self, capability, **kwargs) -> Dict[str, Any]:
         return await self._route_query_provider(self.server_builtin_provider, capability, **kwargs)
-
-    async def route_agent_recipe(self, capability, **kwargs) -> Dict[str, Any]:
-        from app.db import get_session
-        from diagnostics.recipe_execution_service import RecipeExecutionService
-
-        async with get_session() as session:
-            result = await RecipeExecutionService(session, state=self.capability_registry.state).run_recipe_capability(
-                ticket_id=kwargs["ticket_id"],
-                device_id=kwargs.get("device_id"),
-                capability_id=capability.id,
-                params=kwargs.get("params") or {},
-                actor=kwargs.get("actor"),
-                idempotency_key=kwargs.get("idempotency_key"),
-                timeout_ms=kwargs.get("timeout_ms"),
-            )
-            await session.commit()
-            return result
 
     async def route_server_connector(self, capability, **kwargs) -> Dict[str, Any]:
         return await self._route_query_provider(self.server_connector_provider, capability, **kwargs)
@@ -352,9 +255,6 @@ class CapabilityExecutionRouter:
 
     async def route_observer_query(self, capability, **kwargs) -> Dict[str, Any]:
         return await self.observer_provider.run(capability, **kwargs)
-
-    async def route_remote_assist(self, capability, **kwargs) -> Dict[str, Any]:
-        return await self.remote_assist_provider.run(capability, **kwargs)
 
     async def route_manual(self, capability, **kwargs) -> Dict[str, Any]:
         return await self.manual_provider.run(capability, **kwargs)
@@ -403,23 +303,7 @@ class CapabilityExecutionRouter:
         readiness_status = str(readiness.get("readiness") or "").strip()
         if readiness_status in EXECUTABLE_READINESS:
             return True
-        if (
-            readiness_status == "consent_required"
-            and capability.execution_target in {"agent_builtin", "agent_managed_module", "remote_assist"}
-            and "request_consent" in set(readiness.get("actions") or [])
-        ):
-            return True
-        if (
-            capability.execution_target == "agent_recipe"
-            and readiness_status in {"runner_not_installed", "runner_install_required", "runner_outdated", "primitive_not_supported"}
-            and {"install_runner", "upgrade_runner"}.intersection(set(readiness.get("actions") or []))
-        ):
-            return True
-        return (
-            readiness_status == "install_required"
-            and capability.execution_target == "agent_managed_module"
-            and capability.supports_auto_install
-        )
+        return False
 
     def _envelope(
         self,

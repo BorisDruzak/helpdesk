@@ -55,35 +55,8 @@ ENDPOINT_EXTERNAL_BASE_URL = (os.getenv("ENDPOINT_EXTERNAL_BASE_URL", "") or "")
 ENDPOINT_EXTERNAL_SERVICE_TOKEN = os.getenv("ENDPOINT_EXTERNAL_SERVICE_TOKEN", "") or ""
 ENDPOINT_EXTERNAL_CA_FILE = (os.getenv("ENDPOINT_EXTERNAL_CA_FILE", "") or "").strip()
 ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
-    os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy") or "legacy"
+    os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint") or "endpoint"
 ).strip().lower()
-# Endpoint Module Platform is an independent typed boundary.  It must never
-# inherit the diagnostic provider's execution mode or legacy fallback.
-ENDPOINT_MODULE_PORT_MODE = (
-    os.getenv("ENDPOINT_MODULE_PORT_MODE", "unavailable") or "unavailable"
-).strip().lower()
-# Module Platform credentials are deliberately separate from diagnostic access.
-# A module-only service client must not inherit the diagnostic client's scopes.
-ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN = os.getenv(
-    "ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN", ""
-) or ""
-# The legacy Python-module workbench remains authoritative unless a reviewed
-# deployment explicitly selects Endpoint-native recipes.  This flag is
-# declarative only: it cannot enable execution by itself.
-MODULE_WORKBENCH_AUTHORITY = (
-    os.getenv("MODULE_WORKBENCH_AUTHORITY", "legacy") or "legacy"
-).strip().lower()
-# Module operations have a separate cutover from the read-only module port.
-# Keep the established diagnostic execution path intact until the module
-# reconciler has explicit acceptance in a pilot environment.
-ENDPOINT_MODULE_EXECUTION_MODE = (
-    os.getenv("ENDPOINT_MODULE_EXECUTION_MODE", "disabled") or "disabled"
-).strip().lower()
-LEGACY_MODULE_EXECUTION_ENABLED = (
-    os.getenv("LEGACY_MODULE_EXECUTION_ENABLED", "true") or "true"
-).strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _bounded_endpoint_external_timeout() -> float:
     try:
         timeout = float(os.getenv("ENDPOINT_EXTERNAL_TIMEOUT_SECONDS", "2.0") or "2.0")
@@ -148,9 +121,6 @@ WEB_SESSION_COOKIE_SAMESITE = (os.getenv("WEB_SESSION_COOKIE_SAMESITE", "Lax") o
 WEB_CSRF_SAME_ORIGIN_ENABLED = os.getenv("WEB_CSRF_SAME_ORIGIN_ENABLED", "true").lower() == "true"
 WEB_CSRF_TRUSTED_ORIGINS = os.getenv("WEB_CSRF_TRUSTED_ORIGINS", "").strip()
 LEGACY_UI_TOKEN_LOGIN_ENABLED = os.getenv("LEGACY_UI_TOKEN_LOGIN_ENABLED", "false").lower() == "true"
-ACCOUNT_SESSION_ALLOW_QUERY_TOKEN = os.getenv("ACCOUNT_SESSION_ALLOW_QUERY_TOKEN", "false").lower() == "true"
-ACCOUNT_SESSION_DELIVERY_SECRET = os.getenv("ACCOUNT_SESSION_DELIVERY_SECRET", "").strip()
-AGENT_TOKEN_MAX_ACTIVE_TOKENS = int(os.getenv("AGENT_TOKEN_MAX_ACTIVE_TOKENS", "2"))
 TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "false").lower() == "true"
 TRUSTED_PROXY_CIDRS = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
 TECH_BACKUP_STATUS_PATH = os.getenv("TECH_BACKUP_STATUS_PATH", "").strip()
@@ -237,15 +207,6 @@ MODULES_STORAGE_DIR = _prepare_runtime_dir(
 
 # Maximum module ZIP size (100MB, no longer limited by JSON)
 MAX_MODULE_SIZE = 100 * 1024 * 1024
-
-# Agent builds storage directory (remote self-update packages)
-AGENT_BUILDS_STORAGE_DIR = _prepare_runtime_dir(
-    "agent_builds",
-    legacy_relative_paths=("data/agent_builds", "agent_builds"),
-)
-
-# Maximum agent build ZIP size (300MB)
-MAX_AGENT_BUILD_SIZE = 300 * 1024 * 1024
 
 # Maximum artifact upload size (200MB) — скриншоты, запись экрана
 ARTIFACT_MAX_BYTES = 200 * 1024 * 1024
@@ -336,73 +297,6 @@ MAX_TICKET_MESSAGES_UI = 200
 # TTL для кеша tools (секунды)
 TOOLS_CACHE_TTL = 20.0
 
-# Таймаут для WebSocket команд (секунды)
-WS_COMMAND_TIMEOUT = 60.0
-
-# Лимиты конкурентности send_ws_command (очередь не переполняется, при исчерпании — 429)
-WS_COMMAND_MAX_INFLIGHT_GLOBAL = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_GLOBAL", "200"))
-WS_COMMAND_MAX_INFLIGHT_PER_DEVICE = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE", "10"))
-WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL = int(
-    os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL", "1")
-)
-
-# ============================================================================
-# Remote Assist
-# ============================================================================
-
-REMOTE_ASSIST_ENABLED = os.getenv("REMOTE_ASSIST_ENABLED", "true").lower() == "true"
-REMOTE_ASSIST_DEFAULT_DURATION_MINUTES = int(os.getenv("REMOTE_ASSIST_DEFAULT_DURATION_MINUTES", "15"))
-REMOTE_ASSIST_MAX_DURATION_MINUTES = int(os.getenv("REMOTE_ASSIST_MAX_DURATION_MINUTES", "30"))
-REMOTE_ASSIST_CONSENT_TIMEOUT_MINUTES = int(os.getenv("REMOTE_ASSIST_CONSENT_TIMEOUT_MINUTES", "3"))
-REMOTE_ASSIST_REQUIRE_CONSENT_FOR_USER_DEVICES = (
-    os.getenv("REMOTE_ASSIST_REQUIRE_CONSENT_FOR_USER_DEVICES", "true").lower() == "true"
-)
-REMOTE_ASSIST_ALLOW_UNATTENDED = os.getenv("REMOTE_ASSIST_ALLOW_UNATTENDED", "false").lower() == "true"
-REMOTE_ASSIST_INTERACTIVE_CONTROL_ENABLED = os.getenv("REMOTE_ASSIST_INTERACTIVE_CONTROL_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_FILE_TRANSFER_ENABLED = os.getenv("REMOTE_ASSIST_FILE_TRANSFER_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_CLIPBOARD_ENABLED = os.getenv("REMOTE_ASSIST_CLIPBOARD_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_ELEVATED_ADMIN_ENABLED = os.getenv("REMOTE_ASSIST_ELEVATED_ADMIN_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_MANAGED_UNATTENDED_ENABLED = os.getenv("REMOTE_ASSIST_MANAGED_UNATTENDED_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_CONTROL_RATE_LIMIT_PER_SEC = int(os.getenv("REMOTE_ASSIST_CONTROL_RATE_LIMIT_PER_SEC", "60"))
-REMOTE_ASSIST_FILE_TRANSFER_MAX_BYTES = int(os.getenv("REMOTE_ASSIST_FILE_TRANSFER_MAX_BYTES", str(25 * 1024 * 1024)))
-REMOTE_ASSIST_CLIPBOARD_MAX_BYTES = int(os.getenv("REMOTE_ASSIST_CLIPBOARD_MAX_BYTES", str(256 * 1024)))
-REMOTE_ASSIST_ALLOWED_MODES = {
-    mode.strip().lower()
-    for mode in os.getenv("REMOTE_ASSIST_ALLOWED_MODES", "view_only").split(",")
-    if mode.strip()
-}
-REMOTE_ASSIST_SIGNALING_TOKEN_TTL_SECONDS = int(os.getenv("REMOTE_ASSIST_SIGNALING_TOKEN_TTL_SECONDS", "900"))
-
-
-def _parse_remote_assist_ice_servers() -> list[dict]:
-    raw = os.getenv("REMOTE_ASSIST_ICE_SERVERS_JSON", "").strip()
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-    except (TypeError, ValueError) as exc:
-        logger.warning(f"Invalid REMOTE_ASSIST_ICE_SERVERS_JSON: {exc}")
-        return []
-    if not isinstance(parsed, list):
-        logger.warning("REMOTE_ASSIST_ICE_SERVERS_JSON must be a JSON list")
-        return []
-    return [item for item in parsed if isinstance(item, dict)]
-
-
-REMOTE_ASSIST_ICE_SERVERS = _parse_remote_assist_ice_servers()
-REMOTE_ASSIST_TURN_SHARED_SECRET = os.getenv("REMOTE_ASSIST_TURN_SHARED_SECRET", "")
-# Internal dispatch runtime mode for server->agent outbox delivery:
-# - poll: compatibility/rollback poll-all sender loop
-# - sharded: per-device queue + shard workers + reconcile sweep
-DEVICE_DISPATCH_MODE = (os.getenv("DEVICE_DISPATCH_MODE", "sharded") or "sharded").strip().lower()
-DEVICE_DISPATCH_SHARDS = int(os.getenv("DEVICE_DISPATCH_SHARDS", "4"))
-DEVICE_DISPATCH_FETCH_LIMIT = int(os.getenv("DEVICE_DISPATCH_FETCH_LIMIT", "50"))
-DEVICE_DISPATCH_RECONCILE_SECONDS = int(os.getenv("DEVICE_DISPATCH_RECONCILE_SECONDS", "30"))
-DEVICE_DISPATCH_LEASE_SECONDS = int(os.getenv("DEVICE_DISPATCH_LEASE_SECONDS", "30"))
-
-# Protocol V3 ingest guardrails (post-handshake only)
-OUTBOX_INGEST_RATE_LIMIT_PER_SEC = int(os.getenv("OUTBOX_INGEST_RATE_LIMIT_PER_SEC", "150"))
-
 # Таймаут для tool execution (секунды)
 TOOL_EXECUTION_TIMEOUT = 120.0
 
@@ -471,27 +365,9 @@ CAPABILITY_GATE_STRICT = os.getenv("CAPABILITY_GATE_STRICT", "true").lower() == 
 INVENTORY_REFRESH_SCHEDULER_ENABLED = os.getenv("INVENTORY_REFRESH_SCHEDULER_ENABLED", "false").lower() == "true"
 INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC = int(os.getenv("INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC", "60"))
 
-# Agent Recipe Runner runtime dependency policy.
-AGENT_RECIPE_RUNNER_AUTO_INSTALL_ENABLED = os.getenv("AGENT_RECIPE_RUNNER_AUTO_INSTALL_ENABLED", "true").lower() == "true"
-AGENT_RECIPE_RUNNER_AUTO_UPGRADE_ENABLED = os.getenv("AGENT_RECIPE_RUNNER_AUTO_UPGRADE_ENABLED", "true").lower() == "true"
-AGENT_RECIPE_RUNNER_AUTO_INSTALL_TIMEOUT_SEC = int(os.getenv("AGENT_RECIPE_RUNNER_AUTO_INSTALL_TIMEOUT_SEC", "300"))
-AGENT_RECIPE_RUNNER_AUTO_UPGRADE_TIMEOUT_SEC = int(os.getenv("AGENT_RECIPE_RUNNER_AUTO_UPGRADE_TIMEOUT_SEC", "600"))
-AGENT_RECIPE_RUNNER_AUTO_INSTALL_ROLES = {
-    role.strip()
-    for role in os.getenv("AGENT_RECIPE_RUNNER_AUTO_INSTALL_ROLES", "support,support_l1,support_l2,admin,system").split(",")
-    if role.strip()
-}
-AGENT_RECIPE_RUNNER_AUTO_UPGRADE_ROLES = {
-    role.strip()
-    for role in os.getenv("AGENT_RECIPE_RUNNER_AUTO_UPGRADE_ROLES", "support,support_l2,admin,system").split(",")
-    if role.strip()
-}
-AGENT_RECIPE_RUNNER_AUTO_MAX_RISK = os.getenv("AGENT_RECIPE_RUNNER_AUTO_MAX_RISK", "low").strip().lower()
-
 # ============================================================================
 # Logging Configuration
 # ============================================================================
-# DEBUG: нужен для диагностики отключений (is_agent_online причины, connected_agents)
 LOG_LEVEL = "DEBUG"
 LOG_FORMAT = "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
 
@@ -604,30 +480,5 @@ def validate_security_config() -> None:
             errors.append("default UI users/passwords are forbidden in pilot/prod mode")
         if LEGACY_UI_TOKEN_LOGIN_ENABLED:
             errors.append("LEGACY_UI_TOKEN_LOGIN_ENABLED must be false in pilot/prod mode")
-        if not ACCOUNT_SESSION_DELIVERY_SECRET:
-            errors.append("ACCOUNT_SESSION_DELIVERY_SECRET must be set in pilot/prod mode")
     if errors:
         raise RuntimeError("Insecure security configuration: " + "; ".join(errors))
-
-# ============================================================================
-# Protocol V3 Configuration
-# ============================================================================
-
-# Server capabilities advertised to agents in handshake_ack
-SERVER_CAPABILITIES = [
-    "protocol_v3",
-    "envelope_v3",
-    "outbox_ack_v3",
-    "outbox_nack",
-    "trace_correlation",
-    "ticket_context",
-    "job_context",
-    "device_outbox",
-    "event_replay",
-    "batch_ack",
-    "outbox_batch_v1",
-    "device_binding_validation",
-    "device_registry",
-    "toolset_snapshots",
-    "config_management"
-]

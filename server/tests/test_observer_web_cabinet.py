@@ -40,7 +40,6 @@ from observer.checks.web_cabinet import check_web_cabinet
 from observer.integrity_service import ObserverIntegrityService
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from observer.web_event_writer import write_web_cabinet_observer_event
-from registry.browser_pairing_service import BrowserPairingService
 from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
@@ -1968,7 +1967,7 @@ async def test_web_requester_reopen_writes_closure_observer_event(test_client, t
 
 
 @pytest.mark.asyncio
-async def test_web_session_login_writes_account_session_observer_event(
+async def test_web_session_login_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
@@ -2015,7 +2014,7 @@ async def test_web_session_login_writes_account_session_observer_event(
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
-                source="account_session",
+                source="web_session",
                 route="/api/web/session/login",
                 event_type="login_succeeded",
                 query=request_id,
@@ -2030,7 +2029,7 @@ async def test_web_session_login_writes_account_session_observer_event(
 
     assert trace is not None
     assert trace.status == "succeeded"
-    assert trace.attrs_json["source"] == "account_session"
+    assert trace.attrs_json["source"] == "web_session"
     assert trace.attrs_json["event_type"] == "login_succeeded"
     assert trace.attrs_json["actor_role"] == "user"
     assert span.attrs_json["route"] == "/api/web/session/login"
@@ -2041,7 +2040,7 @@ async def test_web_session_login_writes_account_session_observer_event(
 
 
 @pytest.mark.asyncio
-async def test_web_session_register_writes_account_session_observer_event(
+async def test_web_session_register_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
@@ -2080,7 +2079,7 @@ async def test_web_session_register_writes_account_session_observer_event(
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
-                source="account_session",
+                source="web_session",
                 route="/api/web/session/register",
                 event_type="register_succeeded",
                 query=request_id,
@@ -2095,7 +2094,7 @@ async def test_web_session_register_writes_account_session_observer_event(
 
     assert trace is not None
     assert trace.status == "succeeded"
-    assert trace.attrs_json["source"] == "account_session"
+    assert trace.attrs_json["source"] == "web_session"
     assert trace.attrs_json["event_type"] == "register_succeeded"
     assert trace.attrs_json["actor_role"] == "user"
     assert span.attrs_json["route"] == "/api/web/session/register"
@@ -2107,7 +2106,7 @@ async def test_web_session_register_writes_account_session_observer_event(
 
 
 @pytest.mark.asyncio
-async def test_web_session_logout_writes_account_session_observer_event(
+async def test_web_session_logout_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
@@ -2148,7 +2147,7 @@ async def test_web_session_logout_writes_account_session_observer_event(
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
-                source="account_session",
+                source="web_session",
                 route="/api/web/session/logout",
                 event_type="logout_succeeded",
                 query=request_id,
@@ -2163,7 +2162,7 @@ async def test_web_session_logout_writes_account_session_observer_event(
 
     assert trace is not None
     assert trace.status == "succeeded"
-    assert trace.attrs_json["source"] == "account_session"
+    assert trace.attrs_json["source"] == "web_session"
     assert trace.attrs_json["event_type"] == "logout_succeeded"
     assert trace.attrs_json["actor_role"] == "user"
     assert span.attrs_json["route"] == "/api/web/session/logout"
@@ -2176,7 +2175,7 @@ async def test_web_session_logout_writes_account_session_observer_event(
 
 
 @pytest.mark.asyncio
-async def test_web_session_role_mismatch_writes_account_session_observer_event(
+async def test_web_session_role_mismatch_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
@@ -2217,7 +2216,7 @@ async def test_web_session_role_mismatch_writes_account_session_observer_event(
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
-                source="account_session",
+                source="web_session",
                 route="/api/web/session/login",
                 event_type="role_mismatch",
                 error_code="ROLE_MISMATCH",
@@ -2233,7 +2232,7 @@ async def test_web_session_role_mismatch_writes_account_session_observer_event(
 
     assert trace is not None
     assert trace.status == "failed"
-    assert trace.attrs_json["source"] == "account_session"
+    assert trace.attrs_json["source"] == "web_session"
     assert trace.attrs_json["event_type"] == "role_mismatch"
     assert trace.attrs_json["actor_role"] == "user"
     assert span.status == "error"
@@ -2243,154 +2242,6 @@ async def test_web_session_role_mismatch_writes_account_session_observer_event(
     assert span.attrs_json["payload"]["actual_role"] == "user"
     serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
     assert "VeryStrong123!" not in serialized
-    assert login not in serialized
-
-
-@pytest.mark.asyncio
-async def test_web_device_linking_lookup_writes_observer_event(
-    test_client,
-    test_engine,
-) -> None:
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-    request_id = f"phase-d-device-link-lookup-{uuid.uuid4().hex[:8]}"
-    login = f"observer-device-link-{uuid.uuid4().hex[:8]}@example.test"
-
-    async with session_maker() as session:
-        session.add(_device(device_id))
-        pairing = await BrowserPairingService(session).create_pairing(
-            device_id=device_id,
-            purpose="registration",
-            actor_id=device_id,
-        )
-        await session.commit()
-
-    response = await test_client.post(
-        "/api/web/registry/browser-pairings/lookup",
-        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}", request_id=request_id),
-        json={"pairing_code": pairing["pairing_code"]},
-    )
-    payload = await response.json()
-
-    assert response.status == 200, payload
-    assert payload["data"]["pairing_id"] == pairing["pairing_id"]
-    assert "device_id" not in payload["data"]
-    assert "pairing_code" not in payload["data"]
-    assert "pairing_token" not in payload["data"]
-
-    async with session_maker() as session:
-        traces = await ObserverOverlayService(session).search_traces(
-            TraceOverlayFilters(
-                root_kind="requester_web",
-                source="device_linking",
-                route="/api/web/registry/browser-pairings/lookup",
-                device_id=device_id,
-                event_type="browser_pairing_lookup_succeeded",
-                query=request_id,
-            ),
-            limit=10,
-        )
-        assert len(traces) == 1
-        trace = await session.get(ObserverTrace, traces[0]["trace_id"])
-        span = (
-            await session.execute(sa.select(ObserverSpan).where(ObserverSpan.trace_id == traces[0]["trace_id"]))
-        ).scalar_one()
-
-    assert trace is not None
-    assert trace.status == "succeeded"
-    assert trace.device_id == device_id
-    assert trace.attrs_json["source"] == "device_linking"
-    assert trace.attrs_json["event_type"] == "browser_pairing_lookup_succeeded"
-    assert trace.attrs_json["actor_role"] == "user"
-    assert span.attrs_json["route"] == "/api/web/registry/browser-pairings/lookup"
-    assert span.attrs_json["method"] == "POST"
-    assert span.attrs_json["payload"]["purpose"] == "registration"
-    assert span.attrs_json["payload"]["next_route"] == "/app/device/register"
-    serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
-    assert pairing["pairing_code"] not in serialized
-    assert pairing["pairing_token"] not in serialized
-    assert login not in serialized
-
-
-@pytest.mark.asyncio
-async def test_web_device_linking_registration_confirm_writes_observer_event(
-    test_client,
-    test_engine,
-) -> None:
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-    request_id = f"phase-d-device-link-request-{uuid.uuid4().hex[:8]}"
-    login = f"observer-device-request-{uuid.uuid4().hex[:8]}@example.test"
-
-    async with session_maker() as session:
-        session.add(_device(device_id))
-        person = await _seed_completed_person_for_login(session, login=login)
-        await RegistryPolicyService(session).update_policies(
-            {
-                "registration": {
-                    "require_admin_confirmation": True,
-                    "auto_approve_first_binding": False,
-                }
-            },
-            actor_id="test",
-        )
-        pairing = await BrowserPairingService(session).create_pairing(
-            device_id=device_id,
-            purpose="registration",
-            actor_id=device_id,
-        )
-        await session.commit()
-
-    route = f"/api/web/registry/browser-pairings/{pairing['pairing_id']}/registration/confirm"
-    response = await test_client.post(
-        route,
-        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}", request_id=request_id),
-        json={},
-    )
-    payload = await response.json()
-
-    assert response.status == 200, payload
-    assert payload["data"]["status"] == "confirmed"
-    claim_id = payload["data"]["claim_id"]
-    assert claim_id
-    assert payload["data"]["registration"]["device_id"] == device_id
-
-    async with session_maker() as session:
-        traces = await ObserverOverlayService(session).search_traces(
-            TraceOverlayFilters(
-                root_kind="requester_web",
-                source="device_linking",
-                route="/api/web/registry/browser-pairings/{pairing_id}/registration/confirm",
-                device_id=device_id,
-                person_id=person.person_id,
-                event_type="device_link_request_created",
-                query=request_id,
-            ),
-            limit=10,
-        )
-        assert len(traces) == 1
-        trace = await session.get(ObserverTrace, traces[0]["trace_id"])
-        span = (
-            await session.execute(sa.select(ObserverSpan).where(ObserverSpan.trace_id == traces[0]["trace_id"]))
-        ).scalar_one()
-
-    assert trace is not None
-    assert trace.status == "succeeded"
-    assert trace.device_id == device_id
-    assert trace.attrs_json["source"] == "device_linking"
-    assert trace.attrs_json["event_type"] == "device_link_request_created"
-    assert trace.attrs_json["person_id"] == person.person_id
-    assert trace.attrs_json["actor_role"] == "user"
-    assert span.attrs_json["route"] == "/api/web/registry/browser-pairings/{pairing_id}/registration/confirm"
-    assert span.attrs_json["method"] == "POST"
-    assert span.attrs_json["payload"]["purpose"] == "registration"
-    assert span.attrs_json["payload"]["pairing_status"] == "confirmed"
-    assert span.attrs_json["payload"]["registration_status"] == "pending_admin_review"
-    serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
-    assert pairing["pairing_id"] not in serialized
-    assert pairing["pairing_code"] not in serialized
-    assert pairing["pairing_token"] not in serialized
-    assert claim_id not in serialized
     assert login not in serialized
 
 

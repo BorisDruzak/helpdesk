@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
     Device,
-    DeviceAccountSession,
     DeviceInventoryBinding,
     DeviceUserBinding,
     RegistryAsset,
@@ -17,7 +16,6 @@ from app.db.models import (
     RegistryLocation,
     RegistryPerson,
 )
-from registry.account_session_service import AccountSessionService
 from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationService, RegistrationValidationError
 
@@ -217,18 +215,7 @@ async def test_approval_applies_strict_department_location_to_verified_person_an
         person_after_submit = await session.get(RegistryPerson, person_id)
         person_department_after_submit = person_after_submit.department_id
         person_location_after_submit = person_after_submit.location_id
-        pending = await AccountSessionService(session).create_registration_pending_session(
-            device_id=device_id,
-            claim_id=claim_payload["registration"]["claim_id"],
-        )
-
         approved = await service.approve_claim(claim_payload["registration"]["claim_id"], reviewed_by="admin")
-        pending_row = await session.get(DeviceAccountSession, pending["session"]["session_id"])
-        invalid_pending = await AccountSessionService(session).validate_session(
-            device_id=device_id,
-            session_id=pending["session"]["session_id"],
-            session_token=pending["session_token"],
-        )
         await session.commit()
 
     async with session_maker() as session:
@@ -252,6 +239,3 @@ async def test_approval_applies_strict_department_location_to_verified_person_an
     assert inventory.person_id == person_id
     assert inventory.source_binding_id == binding.binding_id
     assert inventory.registration_status == "admin_confirmed"
-    assert pending_row.verification_status == "revoked"
-    assert invalid_pending["valid"] is False
-    assert invalid_pending["error_code"] == "ACCOUNT_SESSION_REVOKED"

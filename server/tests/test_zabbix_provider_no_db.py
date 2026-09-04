@@ -187,16 +187,7 @@ async def test_zabbix_connector_routes_through_router_without_tool_execution(mon
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
-    class FakeToolService:
-        def __init__(self):
-            self.run_calls = []
-
-        async def run_tool(self, **kwargs):
-            self.run_calls.append(kwargs)
-            return {"status": "unexpected"}
-
-    tool_service = FakeToolService()
-    router = CapabilityExecutionRouter(capability_registry=CapabilityRegistry(), tool_service=tool_service)
+    router = CapabilityExecutionRouter(capability_registry=CapabilityRegistry())
     result = await router.run_capability(
         ticket_id="ticket-1",
         device_id="device-1",
@@ -217,4 +208,3 @@ async def test_zabbix_connector_routes_through_router_without_tool_execution(mon
     assert result["execution_kind"] == "query"
     assert result["provider_id"] == "zabbix_connector"
     assert result["idempotency_key"] == "idem-zabbix"
-    assert tool_service.run_calls == []

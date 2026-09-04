@@ -1,4 +1,4 @@
-"""OBS1 account-session/public-requester mutation boundary checks."""
+"""OBS1 web-requester/public mutation boundary checks."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -51,7 +51,7 @@ async def check_account_boundary(
                 ticket_id=str(details.get("ticket_id") or row.ticket_id or "") or None,
                 operation_id=row.operation_id,
                 actor_role=row.actor_role,
-                expected="Requester/public mutations must only succeed with valid account-session/public authorization and safe projection fields.",
+                expected="Requester/public mutations must only succeed with valid web-requester/public authorization and safe projection fields.",
                 actual=f"Boundary anomaly audit event recorded: {mutation_kind}",
                 evidence={
                     "audit_id": row.id,

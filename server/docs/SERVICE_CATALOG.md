@@ -115,7 +115,7 @@ The seed is idempotent, creates baseline services (`workplace`, `access`, `netwo
 - `/app/admin/request-template-studio`: primary no-code request setup UX. It edits the basic draft inside Studio and uses Request Studio safe publish endpoints to validate, preview, confirm and publish the form schema, request template and catalog offering without opening expert pages for the normal path.
 - `/app/admin/service-catalog`: expert service/offering dashboard, filters, structured service editor, structured offering editor, publication gates for service and selected offering, policy inheritance summary, Advanced JSON loader, publish/retire actions and runtime simulation.
 - `/app/help`: requester chooses service and offering, fills the linked form, runs runtime-backed safe preview and submits `service_code`, `offering_code`, `offering_full_code` and `request_template_key`. It has no local Knowledge suggestions or deflection actions.
-- Agent Qt GUI: `TicketApiClient.get_service_catalog_current()` caches the safe catalog. The create wizard explicitly shows `Раздел обращения -> Тип обращения -> dynamic form/details -> Preview -> Submit` and sends only the catalog references without changing Protocol V3.
+- The browser requester flow is the sole Helpdesk catalog client and sends only catalog references with the ticket form.
 
 ## Reporting
 

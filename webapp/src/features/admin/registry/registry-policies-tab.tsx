@@ -26,13 +26,6 @@ const FIELD_LABELS: Record<string, string> = {
   "registration.stale_after_days": "Считать устаревшей через, дней",
   "registration.department_mode": "Режим подразделения",
   "registration.location_mode": "Режим локации",
-  "account_sessions.confirmed_binding_ttl_hours": "TTL подтвержденной привязки, часов",
-  "account_sessions.verified_other_account_ttl_hours": "TTL другого аккаунта, часов",
-  "account_sessions.registration_pending_ttl_hours": "TTL ожидания регистрации, часов",
-  "account_sessions.allow_other_account_login": "Разрешить вход в другой аккаунт",
-  "account_sessions.other_account_requires_reason": "Причина для другого аккаунта обязательна",
-  "account_sessions.other_account_requires_admin_approval": "Другой аккаунт требует одобрения администратора",
-  "account_sessions.allow_other_account_on_shared_or_responsible": "Разрешить для совместных и ответственных привязок",
   "ticket_visibility.owner_can_see_historical_tickets": "Владелец видит исторические тикеты",
   "ticket_visibility.other_account_only_own_session_tickets": "Другой аккаунт видит только свои тикеты",
 };
@@ -149,10 +142,6 @@ export function RegistryPoliciesTab() {
     });
     setServerPreview(null);
   };
-  const setAccount = (key: keyof typeof draft.account_sessions, value: boolean | number | null) => {
-    setDraft({ ...draft, account_sessions: { ...draft.account_sessions, [key]: value } });
-    setServerPreview(null);
-  };
   const setTicket = (key: keyof typeof draft.ticket_visibility, value: boolean) => {
     setDraft({ ...draft, ticket_visibility: { ...draft.ticket_visibility, [key]: value } });
     setServerPreview(null);
@@ -194,15 +183,6 @@ export function RegistryPoliciesTab() {
           <NumberRow defaultValue={query.data.defaults.registration.stale_after_days} label={FIELD_LABELS["registration.stale_after_days"]} rules={validation["registration.stale_after_days"]} value={draft.registration.stale_after_days} onChange={(value) => setRegistration("stale_after_days", value)} />
           <ModeRow defaultValue={query.data.defaults.registration.department_mode} label={FIELD_LABELS["registration.department_mode"]} rules={validation["registration.department_mode"]} value={draft.registration.department_mode} onChange={(value) => setRegistration("department_mode", value)} />
           <ModeRow defaultValue={query.data.defaults.registration.location_mode} label={FIELD_LABELS["registration.location_mode"]} rules={validation["registration.location_mode"]} value={draft.registration.location_mode} onChange={(value) => setRegistration("location_mode", value)} />
-        </PolicyCard>
-        <PolicyCard title="Аккаунт-сессии">
-          <NullableNumberRow defaultValue={query.data.defaults.account_sessions.confirmed_binding_ttl_hours} label={FIELD_LABELS["account_sessions.confirmed_binding_ttl_hours"]} rules={validation["account_sessions.confirmed_binding_ttl_hours"]} value={draft.account_sessions.confirmed_binding_ttl_hours} onChange={(value) => setAccount("confirmed_binding_ttl_hours", value)} />
-          <NumberRow defaultValue={query.data.defaults.account_sessions.verified_other_account_ttl_hours} label={FIELD_LABELS["account_sessions.verified_other_account_ttl_hours"]} rules={validation["account_sessions.verified_other_account_ttl_hours"]} value={draft.account_sessions.verified_other_account_ttl_hours} onChange={(value) => setAccount("verified_other_account_ttl_hours", value)} />
-          <NumberRow defaultValue={query.data.defaults.account_sessions.registration_pending_ttl_hours} label={FIELD_LABELS["account_sessions.registration_pending_ttl_hours"]} rules={validation["account_sessions.registration_pending_ttl_hours"]} value={draft.account_sessions.registration_pending_ttl_hours} onChange={(value) => setAccount("registration_pending_ttl_hours", value)} />
-          <CheckRow defaultValue={query.data.defaults.account_sessions.allow_other_account_login} label={FIELD_LABELS["account_sessions.allow_other_account_login"]} value={draft.account_sessions.allow_other_account_login} onChange={(value) => setAccount("allow_other_account_login", value)} />
-          <CheckRow defaultValue={query.data.defaults.account_sessions.other_account_requires_reason} label={FIELD_LABELS["account_sessions.other_account_requires_reason"]} value={draft.account_sessions.other_account_requires_reason} onChange={(value) => setAccount("other_account_requires_reason", value)} />
-          <CheckRow defaultValue={query.data.defaults.account_sessions.other_account_requires_admin_approval} label={FIELD_LABELS["account_sessions.other_account_requires_admin_approval"]} value={draft.account_sessions.other_account_requires_admin_approval} onChange={(value) => setAccount("other_account_requires_admin_approval", value)} />
-          <CheckRow defaultValue={query.data.defaults.account_sessions.allow_other_account_on_shared_or_responsible} label={FIELD_LABELS["account_sessions.allow_other_account_on_shared_or_responsible"]} value={draft.account_sessions.allow_other_account_on_shared_or_responsible} onChange={(value) => setAccount("allow_other_account_on_shared_or_responsible", value)} />
         </PolicyCard>
         <PolicyCard title="Видимость тикетов">
           <CheckRow defaultValue={query.data.defaults.ticket_visibility.owner_can_see_historical_tickets} label={FIELD_LABELS["ticket_visibility.owner_can_see_historical_tickets"]} value={draft.ticket_visibility.owner_can_see_historical_tickets} onChange={(value) => setTicket("owner_can_see_historical_tickets", value)} />

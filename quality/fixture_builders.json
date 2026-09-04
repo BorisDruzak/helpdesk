@@ -8,14 +8,6 @@
       "owner": "quality",
       "description": "Pre-broad-live fixture/data pack for required users, VM agents, Knowledge, forms and validation matrix inputs.",
       "secret_free": true
-    },
-    {
-      "id": "critical_behavior_v1",
-      "path": "test_data_packs/critical_behavior_v1.json",
-      "schema_builder": "critical_behavior_data_pack_v1",
-      "owner": "quality",
-      "description": "Critical behavior live-gate data pack mapping domains to automated refs, data refs and required live evidence.",
-      "secret_free": true
     }
   ]
 }

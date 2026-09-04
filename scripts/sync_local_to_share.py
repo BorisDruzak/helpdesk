@@ -26,10 +26,6 @@ RELATIVE_EXCLUDED_DIRS = [
     "server\\data",
     "server\\uploads",
     "server\\reports",
-    "pc_agent\\venv",
-    "pc_agent\\data",
-    "pc_agent\\build",
-    "pc_agent\\dist",
 ]
 
 EXCLUDED_DIR_NAMES = ["__pycache__", ".pytest_cache", "venv"]

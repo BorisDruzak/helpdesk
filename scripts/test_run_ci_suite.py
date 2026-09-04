@@ -267,8 +267,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "server_pytest_db_observer_diagnostics",
         "server_pytest_db_agent_runtime",
         "server_pytest_db_web_api",
-        "server_pytest_agent_ws",
-        "pc_agent_pytest",
     ]
     build_step = next(
         command
@@ -297,8 +295,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert idle_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["migration_schema"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
-    assert idle_by_step["server_pytest_agent_ws"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
-    assert idle_by_step["pc_agent_pytest"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
 
     command_by_step = {
         step_name: command
@@ -382,7 +378,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert command_by_step["migration_schema"][3] == expected_migration_path
     assert command_by_step["migration_schema"][-6:] == [
         "-m",
-        "not manual and not no_db and not agent_ws",
+        "not manual and not no_db",
         "-vv",
         "--durations=80",
         "--junitxml",
@@ -392,23 +388,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "server\\tests\\test_web_admin_api.py" if sys.platform == "win32" else "server/tests/test_web_admin_api.py"
     )
     assert command_by_step["server_pytest_db_web_api"][3] == expected_web_api_path
-    assert command_by_step["server_pytest_agent_ws"][-6:] == [
-        "-m",
-        "not manual and agent_ws",
-        "-vv",
-        "--durations=80",
-        "--junitxml",
-        str(summary_path.parent / "junit-server-agent-ws.xml"),
-    ]
-    assert command_by_step["pc_agent_pytest"][-7:] == [
-        "pc_agent/tests",
-        "-m",
-        "not manual",
-        "-vv",
-        "--durations=80",
-        "--junitxml",
-        str(summary_path.parent / "junit-pc-agent.xml"),
-    ]
     env_by_step = {
         step_name: env
         for step_name, _command, _log_path, _idle_timeout, env, _timeout in steps_seen
@@ -450,15 +429,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "PC_CLIENT_TEST_DB_DOMAIN": "web_api",
         "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
     }
-    assert env_by_step["server_pytest_agent_ws"] == {
-        "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
-        "PC_CLIENT_TEST_TIMING": "1",
-        "PC_CLIENT_TEST_TIMING_PATH": str(summary_path.parent / "fixture-timings" / "server_pytest_agent_ws.jsonl"),
-        "PC_CLIENT_TEST_DB_TEMPLATE": "1",
-        "PC_CLIENT_TEST_DB_TEMPLATE_KEEP": "1",
-        "PC_CLIENT_TEST_DB_DOMAIN": "agent_ws",
-        "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
-    }
     timeout_by_step = {
         step_name: timeout
         for step_name, _command, _log_path, _idle_timeout, _env, timeout in steps_seen
@@ -476,7 +446,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert timeout_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
     assert timeout_by_step["migration_schema"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
     assert timeout_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["server_pytest_agent_ws"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
 
     summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["evidence_layers"]["webapp_fixture_e2e"] == {
@@ -502,10 +471,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert summary["baseline_artifacts"]["durations"]["migration_schema"] == {
         "pytest_durations": 80,
         "junit": str(summary_path.parent / "junit-migration-schema.xml"),
-    }
-    assert summary["baseline_artifacts"]["durations"]["pc_agent_pytest"] == {
-        "pytest_durations": 80,
-        "junit": str(summary_path.parent / "junit-pc-agent.xml"),
     }
     assert summary["baseline_artifacts"]["durations"]["fixture_timings_dir"] == str(
         summary_path.parent / "fixture-timings"
@@ -871,7 +836,7 @@ def test_parallel_mode_groups_only_server_db_ws_layers_and_respects_max_workers(
         "server_pytest_no_db",
         "migration_schema",
     ]
-    assert completed_steps[-1] == "pc_agent_pytest"
+    assert completed_steps[-1] == "server_pytest_db_agent_runtime"
     summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["parallel_enabled"] is True
     assert summary["max_workers"] == 2

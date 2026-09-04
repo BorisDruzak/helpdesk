@@ -32,7 +32,7 @@ def normalize_diagnostic_consent_payload(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     scope = str(raw.get("scope") or "requester_device").strip() or "requester_device"
-    source = str(raw.get("source") or "pc_agent_create").strip() or "pc_agent_create"
+    source = str(raw.get("source") or "ticket_request").strip() or "ticket_request"
     result: dict[str, Any] = {
         "required": bool(raw.get("required")),
         "granted": bool(raw.get("granted")),
@@ -148,19 +148,6 @@ def has_granted_high_risk_tool_consent(custom_fields: dict[str, Any]) -> bool:
     return scope in {"high_risk_tools", "all_diagnostics"} and bool(consent.get("granted"))
 
 
-def _state_reports_agent_online(state: Any | None, device_id: str) -> bool:
-    if state is None or not device_id:
-        return False
-    checker = getattr(state, "is_agent_online", None)
-    if callable(checker):
-        try:
-            return bool(checker(device_id))
-        except Exception:
-            return False
-    connected_agents = getattr(state, "connected_agents", None)
-    return isinstance(connected_agents, dict) and device_id in connected_agents
-
-
 def _normalize_priority_list(raw: Any) -> list[str]:
     if raw is None:
         return []
@@ -207,7 +194,7 @@ def collect_diagnostic_policy_auto_run_triggers(
     consent_required = _policy_requires_requester_device_consent(policy)
     high_risk_consent_required = policy_requires_high_risk_tool_consent(policy)
     consent_granted = _has_granted_requester_device_consent(fields)
-    agent_online = _state_reports_agent_online(state, device_id)
+    agent_online = None
 
     triggers: list[dict[str, Any]] = []
     skips: list[dict[str, Any]] = []
@@ -216,8 +203,6 @@ def collect_diagnostic_policy_auto_run_triggers(
         target_skip_reason = diagnostic_target.skip_reason
         if target_skip_reason:
             reason = target_skip_reason
-        elif not agent_online:
-            reason = "target_agent_offline"
         elif allowed_priorities and priority_class not in allowed_priorities:
             reason = "priority_not_allowed"
         elif consent_required and not consent_granted:

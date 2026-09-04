@@ -9,17 +9,11 @@ from loguru import logger
 
 from app.db.models import (
     Device,
-    AgentToken,
-    DeviceOutbox,
     DispatchReadyDevice,
     Operation,
-    DeviceModule,
-    DeviceDesiredModule,
     DeviceConfig,
     DeviceToolsetSnapshot,
     DeviceEvent,
-    ConnectionRequest,
-    AgentRuntimeAudit,
     PlaybookRun,
 )
 
@@ -121,10 +115,9 @@ class DevicesRepo:
     
     async def ensure_device_exists(self, device_id: str) -> Device:
         """
-        Создаёт запись устройства, если её ещё нет (для логина по UUID до первого handshake).
-        Используется при POST /api/login: agent_tokens ссылается на devices, поэтому устройство
-        должно существовать до создания токена.
-        При первом подключении агента upsert_on_handshake обновит запись реальными данными.
+        Создаёт запись устройства, если её ещё нет для административного Registry
+        связывания. Endpoint Platform остаётся единственным владельцем
+        enrollment, token issuance и Gateway handshake.
         
         Args:
             device_id: Device identifier (UUID)
@@ -394,8 +387,8 @@ class DevicesRepo:
         delete_reason: Optional[str] = None,
     ) -> bool:
         """
-        Мягко удаляет устройство: архивирует запись устройства, отзывает токены,
-        гасит активные операции/outbox и сохраняет всю историю для аудита.
+        Мягко удаляет устройство, отменяет локальную facade-историю операций
+        и сохраняет исторические записи для аудита.
         
         Returns:
             True если устройство найдено и архивировано, False если не найдено.
@@ -411,50 +404,6 @@ class DevicesRepo:
         device.deleted_at = now
         device.deleted_by = deleted_by
         device.delete_reason = delete_reason or None
-
-        active_tokens = (
-            await self.session.execute(
-                select(AgentToken).where(
-                    AgentToken.device_id == device_id,
-                    AgentToken.revoked_at.is_(None),
-                )
-            )
-        ).scalars().all()
-        for token in active_tokens:
-            token.revoked_at = now
-
-        pending_requests = (
-            await self.session.execute(
-                select(ConnectionRequest).where(
-                    ConnectionRequest.device_id == device_id,
-                    ConnectionRequest.status == "pending",
-                )
-            )
-        ).scalars().all()
-        for row in pending_requests:
-            row.status = "rejected"
-            row.resolved_at = now
-            meta = row.request_metadata if isinstance(row.request_metadata, dict) else {}
-            meta = dict(meta)
-            meta["archived_by"] = deleted_by or ""
-            meta["archived_at"] = now.isoformat()
-            if delete_reason:
-                meta["archive_reason"] = delete_reason
-            row.request_metadata = meta
-
-        active_outbox_rows = (
-            await self.session.execute(
-                select(DeviceOutbox).where(
-                    DeviceOutbox.device_id == device_id,
-                    DeviceOutbox.status.in_(["pending", "sent"]),
-                )
-            )
-        ).scalars().all()
-        for row in active_outbox_rows:
-            row.status = "failed"
-            row.failed_at = row.failed_at or now
-            row.error_code = row.error_code or "DEVICE_ARCHIVED"
-            row.error_message = row.error_message or "Команда остановлена: агент архивирован"
 
         active_operations = (
             await self.session.execute(
@@ -497,7 +446,7 @@ class DevicesRepo:
     ) -> bool:
         """
         Restore a previously archived device record without reviving revoked tokens,
-        account sessions, pending requests, outbox rows, or canceled operations.
+        pending registration requests, outbox rows, or canceled operations.
 
         Returns:
             True when the device exists, False when it was not found.
@@ -518,25 +467,6 @@ class DevicesRepo:
         device.deleted_by = None
         device.delete_reason = None
 
-        self.session.add(
-            AgentRuntimeAudit(
-                device_id=device_id,
-                event_type="device_restored_from_archive",
-                severity="info",
-                source="admin",
-                actor_id=restored_by,
-                actor_role="admin",
-                details_json={
-                    "restore_reason": restore_reason,
-                    "previous_deleted_at": old_deleted_at,
-                    "previous_deleted_by": old_deleted_by,
-                    "previous_delete_reason": old_delete_reason,
-                    "tokens_restored": False,
-                    "sessions_restored": False,
-                },
-                created_at=now,
-            )
-        )
         await self.session.flush()
         logger.info(
             f"[DevicesRepo] Restored archived device record without reviving tokens: device_id={device_id}"

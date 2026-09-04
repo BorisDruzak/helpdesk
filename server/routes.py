@@ -5,16 +5,7 @@
 from aiohttp import web
 
 # Import handlers from modules
-from auth.handlers import handle_login, handle_ui_login, handle_ui_session, handle_get_device_tokens, handle_revoke_device_token
-from auth.connection_request_handlers import (
-    handle_connection_request,
-    handle_connection_request_status,
-    handle_admin_connection_policy_get,
-    handle_admin_connection_policy_patch,
-    handle_admin_connection_requests_list,
-    handle_admin_connection_request_approve,
-    handle_admin_connection_request_reject,
-)
+from auth.handlers import handle_ui_login, handle_ui_session
 from auth.admin_users_handlers import (
     handle_admin_users_list,
     handle_admin_users_post,
@@ -23,26 +14,6 @@ from auth.admin_users_handlers import (
     handle_admin_users_password_post,
     handle_admin_users_deactivate_post,
     handle_users_me_password_post,
-)
-from agents.handlers import (
-    handle_get_agents,
-    handle_get_devices,
-    handle_get_device,
-    handle_get_device_update_diagnostics,
-    handle_get_pending_connections,
-    handle_device_check,
-    handle_delete_device,
-)
-from agents.agent_builds_handlers import (
-    handle_upload_agent_build,
-    handle_list_agent_builds,
-    handle_delete_agent_build,
-    handle_download_agent_build,
-    handle_get_agent_rollout_policy,
-    handle_patch_agent_rollout_policy,
-    handle_get_device_update_recommendation,
-    handle_update_device_agent,
-    handle_bulk_update_agents,
 )
 from tickets.public_queue_handlers import (
     handle_public_queues,
@@ -219,11 +190,8 @@ from tickets.handlers import (
     handle_ticket_change_links_list,
     handle_ticket_change_links_delete,
 )
-from tools.handlers import handle_get_tools, handle_tools_run
 from playbook_handlers import handle_start_playbook_run
-from websocket.agent_handler import websocket_handler
 from websocket.ui_handler import websocket_ui_handler
-from remote_assist.signaling import websocket_remote_assist_handler
 from uploads.handlers import handle_upload, handle_artifact_download
 from static_pages.handlers import (
     handle_index,
@@ -233,11 +201,7 @@ from static_pages.handlers import (
     handle_favicon,
     handle_ticket_page,
     handle_ticket_page_by_id,
-    handle_chat_debug,
-    handle_chat_ws,
-    handle_test_simple,
     handle_ws_ui_test,
-    handle_modules_page,
     handle_public_queue_page,
     handle_public_queue_css,
     handle_public_queue_js,
@@ -248,7 +212,6 @@ from static_pages.webapp_assets import (
     handle_webapp_page,
     handle_webapp_public_asset,
 )
-from api.admin import handle_admin_run_tool
 from tickets.admin_config_handlers import (
     handle_admin_queues_list,
     handle_admin_queues_post,
@@ -279,18 +242,10 @@ from tickets.admin_config_handlers import (
     handle_admin_ola_targets_put,
     handle_admin_audit_list,
 )
-from api.protocol import handle_protocol
-from api.commands import handle_send_command, handle_check_functions, handle_smoke_run
-from api.events import handle_get_ticket_events, handle_get_device_events, handle_ticket_messages
-from api.operations import (
-    handle_get_operations,
-    handle_get_operation,
-    handle_web_admin_get_operation,
-    handle_cancel_operation,
-    handle_web_support_cancel_operation,
-    handle_retry_operation,
-    handle_approve_consent,
-    handle_deny_consent
+from api.events import handle_get_ticket_events, handle_ticket_messages
+from web_api.endpoint_operation_handlers import (
+    handle_web_admin_endpoint_operation_get,
+    handle_web_support_endpoint_operation_cancel,
 )
 from web_api.session_handlers import (
     handle_web_session_login,
@@ -340,7 +295,6 @@ from web_api.support_handlers import (
     handle_web_support_queue_saved_views,
     handle_web_support_workspace_summary,
     handle_web_support_run_playbook,
-    handle_web_support_run_tool,
     handle_web_support_send_message,
     handle_web_support_ticket_detail,
     handle_web_support_ticket_playbooks,
@@ -352,18 +306,7 @@ from web_api.support_handlers import (
     handle_web_support_unhide_ticket,
 )
 from web_api.admin_handlers import (
-    handle_web_admin_agent_build_delete,
-    handle_web_admin_agent_build_download,
-    handle_web_admin_agent_build_upload,
-    handle_web_admin_agent_builds,
-    handle_web_admin_agent_rollout_policy,
-    handle_web_admin_agent_rollout_policy_patch,
     handle_web_admin_bootstrap,
-    handle_web_admin_device_update_run,
-    handle_web_admin_device_updates,
-    handle_web_admin_device_token_revoke,
-    handle_web_admin_device_tokens_list,
-    handle_web_admin_device_tokens,
     handle_web_admin_device_restore,
     handle_web_admin_devices,
     handle_web_admin_devices_cleanup_env_duplicates,
@@ -387,42 +330,27 @@ from web_api.admin_handlers import (
     handle_web_admin_helpdesk_model_republish_legacy_forms,
     handle_web_admin_helpdesk_model_ticket_type_deactivate,
     handle_web_admin_helpdesk_model_ticket_type_rollback,
-    handle_web_admin_modules,
-    handle_web_admin_patch_modules_rollout_settings,
     handle_web_admin_playbooks_catalog,
     handle_web_admin_playbooks_save,
     handle_web_admin_observer_quick,
     handle_web_admin_observer_trace_detail,
     handle_web_admin_observer_traces,
-    handle_web_admin_set_module_preferred_version,
-)
-from web_api.endpoint_module_handlers import (
-    handle_endpoint_module_capabilities,
-    handle_endpoint_module_create_version,
-    handle_endpoint_module_deprecate,
-    handle_endpoint_module_publish,
-    handle_endpoint_module_validate,
-    handle_endpoint_module_run,
-    handle_endpoint_modules_list,
 )
 from web_api.admin_inventory_handlers import (
     handle_web_admin_device_inventory,
     handle_web_admin_device_inventory_binding,
     handle_web_admin_device_inventory_binding_history,
     handle_web_admin_device_inventory_binding_update,
-    handle_web_admin_device_inventory_collect,
     handle_web_admin_device_inventory_refresh_policy,
     handle_web_admin_device_inventory_refresh_policy_update,
     handle_web_admin_device_binding_suggestion_apply,
     handle_web_admin_device_binding_suggestion_ignore,
     handle_web_admin_device_binding_suggestions,
     handle_web_admin_device_presence,
-    handle_web_admin_device_presence_collect,
     handle_web_admin_device_profiles,
     handle_web_admin_inventory_bindings_export_csv,
     handle_web_admin_inventory_bindings_import,
     handle_web_admin_inventory_bulk_operations,
-    handle_web_admin_inventory_bulk_refresh,
     handle_web_admin_inventory_dashboard,
     handle_web_admin_inventory_export_csv,
     handle_web_admin_inventory_export_xlsx,
@@ -435,7 +363,6 @@ from web_api.observer_integrity_handlers import (
     handle_web_admin_observer_integrity,
     handle_web_admin_observer_integrity_scan,
 )
-from web_api.device_operations_handlers import handle_web_admin_device_operations
 from web_api.policy_health_handlers import (
     handle_web_admin_policy_health,
     handle_web_admin_policy_health_detail,
@@ -467,52 +394,22 @@ from web_api.service_catalog_handlers import (
     handle_web_admin_service_catalog_validate_service,
 )
 from web_api.registry_handlers import (
-    handle_registry_agent_claim_confirm,
-    handle_registry_agent_consent_approve,
-    handle_registry_agent_consent_deny,
-    handle_registry_agent_consent_detail,
-    handle_registry_agent_consents,
-    handle_registry_agent_account_state,
-    handle_registry_agent_account_login_request_create,
-    handle_registry_agent_account_login_request_get,
-    handle_registry_agent_account_session_confirmed_binding,
-    handle_registry_agent_account_session_login,
-    handle_registry_agent_account_session_logout,
-    handle_registry_agent_account_session_registration_pending,
-    handle_registry_agent_account_session_validate,
-    handle_registry_agent_browser_pairing_create,
-    handle_registry_agent_browser_pairing_get,
-    handle_registry_agent_profile,
-    handle_registry_agent_registration_form,
-    handle_registry_agent_registration_status,
     handle_registry_options,
-    handle_registry_profile_upsert,
-    handle_web_admin_registry_account_sessions,
     handle_web_admin_registry_binding_revoke,
-    handle_web_admin_registry_account_login_request_approve,
-    handle_web_admin_registry_account_login_request_reject,
-    handle_web_admin_registry_account_login_requests,
-    handle_web_admin_registry_account_session_revoke,
-    handle_web_admin_registry_account_session_timeline,
-    handle_web_admin_registry_account_session_identity_explain,
     handle_web_admin_registry_audience_group_archive,
     handle_web_admin_registry_audience_group_members,
     handle_web_admin_registry_audience_group_preview_members,
     handle_web_admin_registry_audience_group_update,
     handle_web_admin_registry_audience_groups,
     handle_web_admin_registry_bulk_preview,
-    handle_web_admin_registry_bulk_account_sessions_revoke,
     handle_web_admin_registry_bulk_devices_assign_department,
     handle_web_admin_registry_bulk_devices_assign_location,
-    handle_web_admin_registry_bulk_devices_revoke_account_sessions,
     handle_web_admin_registry_bulk_people_assign_department,
     handle_web_admin_registry_department_archive,
     handle_web_admin_registry_department_update,
     handle_web_admin_registry_departments,
     handle_web_admin_registry_departments_merge,
     handle_web_admin_registry_departments_merge_preview,
-    handle_web_admin_registry_device_account_events,
-    handle_web_admin_registry_device_account_sessions,
     handle_web_admin_registry_device_bind_person,
     handle_web_admin_registry_device_responsible,
     handle_web_admin_registry_device_shared_users,
@@ -528,10 +425,6 @@ from web_api.registry_handlers import (
     handle_web_admin_registry_locations,
     handle_web_admin_registry_locations_merge,
     handle_web_admin_registry_locations_merge_preview,
-    handle_web_registry_browser_pairing_code_lookup,
-    handle_web_registry_browser_pairing_get,
-    handle_web_registry_browser_pairing_login_confirm,
-    handle_web_registry_browser_pairing_registration_confirm,
     handle_web_admin_registry_people_create,
     handle_web_admin_registry_password_reset_request_complete,
     handle_web_admin_registry_password_reset_requests,
@@ -562,65 +455,6 @@ from web_api.registry_handlers import (
 from web_api.reports_handlers import handle_web_reports_summary
 from web_api.settings_handlers import handle_web_settings_payload, handle_web_settings_workflow_profiles_put
 from web_api.realtime_handlers import handle_web_realtime_bootstrap
-from chat.handlers import (
-    handle_chat_start,
-    handle_chat_raise,
-    handle_chat_send,
-    handle_active_chats,
-    handle_chat_events
-)
-from modules.handlers import (
-    handle_modules_ping,
-    handle_install_module_package,
-    handle_list_installed_modules,
-    handle_activate_module,
-    handle_rollback_module,
-    handle_deactivate_module,
-    handle_smoke_install_and_run,
-    handle_upload_module,
-    handle_create_module,
-    handle_bulk_install_modules,
-    handle_download_module,
-    handle_list_modules,
-    handle_list_modules_workbench,
-    handle_cleanup_missing_modules,
-    handle_get_module_detail,
-    handle_get_module_workbench_detail,
-    handle_get_module_rollout_settings,
-    handle_set_module_preferred_version,
-    handle_patch_module_rollout_settings,
-    handle_get_module_authoring_catalog,
-    handle_validate_module_authoring,
-    handle_publish_module_authoring,
-    handle_save_module_workbench,
-    handle_validate_module_workbench,
-    handle_list_module_live_test_candidates,
-    handle_run_module_live_test,
-    handle_delete_module,
-    handle_get_device_modules,
-    handle_get_device_toolset,
-    handle_install_module,
-    handle_activate_module_new,
-    handle_deactivate_module_new,
-    handle_sync_modules,
-    handle_remove_module_version,
-    handle_remove_module,
-    handle_verify_module,
-    handle_debug_modules,
-    handle_get_desired_diff,
-    handle_trigger_reconcile
-)
-from remote_assist.handlers import (
-    handle_remote_assist_approve,
-    handle_remote_assist_deny,
-    handle_remote_assist_end,
-    handle_remote_assist_fail,
-    handle_remote_assist_request,
-    handle_remote_assist_status,
-    handle_remote_assist_ticket_sessions,
-    handle_remote_assist_viewer,
-)
-from jobs.handlers import handle_get_job_events, handle_start_job
 from web_api.ai_integration_handlers import handle_ai_integration_mcp_status
 from tech.handlers import (
     handle_observer_settings_get,
@@ -632,9 +466,6 @@ from tech.handlers import (
     handle_tech_snapshot,
     handle_tech_locate,
     handle_tech_alerts,
-    handle_tech_agents_audit,
-    handle_tech_agent_timeline,
-    handle_tech_agent_action,
     handle_tech_ticket_lifecycle,
     handle_tech_users_audit,
     handle_tech_admin_config_audit,
@@ -650,11 +481,6 @@ from tech.handlers import (
     handle_tech_signature_detail,
 )
 from diagnostics.handlers import (
-    handle_agent_recipe_create,
-    handle_agent_recipe_primitives,
-    handle_agent_recipe_publish,
-    handle_agent_recipe_validate,
-    handle_agent_recipes_list,
     handle_diagnostics_capabilities,
     handle_diagnostics_provider_config_get,
     handle_diagnostics_provider_config_put,
@@ -663,15 +489,6 @@ from diagnostics.handlers import (
     handle_tool_presentation_delete,
     handle_tool_presentation_get,
     handle_tool_presentation_put,
-    handle_runner_rollout_create_plan,
-    handle_runner_rollout_get_plan,
-    handle_runner_rollout_pause,
-    handle_runner_rollout_promote_next_wave,
-    handle_runner_rollout_refresh,
-    handle_runner_rollout_resume,
-    handle_runner_rollout_rollback,
-    handle_runner_rollout_start_canary,
-    handle_runner_rollout_summary,
     handle_admin_ticket_endpoint_device_mapping,
     handle_ticket_diagnostics_bundle_create,
     handle_ticket_diagnostics_bundle_get,
@@ -711,9 +528,7 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # WebSocket Endpoints
         # ============================================================================
-        web.get('/ws', websocket_handler),
         web.get('/ws_ui', websocket_ui_handler),
-        web.get('/ws/remote-assist/{session_id}', websocket_remote_assist_handler),
         
         # ============================================================================
         # Static Pages
@@ -734,7 +549,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/help', handle_help_page),
         web.get('/ticket.html', handle_ticket_page),
         web.get('/ticket/{ticket_id}', handle_ticket_page_by_id),
-        web.get('/modules.html', handle_modules_page),
         
         # ============================================================================
         # Public Queue (Stage 10.2) — без авторизации
@@ -756,7 +570,6 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # Authentication API
         # ============================================================================
-        web.post('/api/login', handle_login),
         web.post('/api/ui_login', handle_ui_login),  # UI user login
         web.get('/api/ui_session', handle_ui_session),
         web.post('/api/web/session/login', handle_web_session_login),
@@ -810,8 +623,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/diagnostics/passport/attach-selected', handle_ticket_diagnostics_passport_attach_selected),
         web.post('/api/web/support/tickets/{ticket_id}/worklogs', handle_web_support_ticket_worklog),
         web.get('/api/web/support/tickets/{ticket_id}/tools', handle_web_support_ticket_tools),
-        web.post('/api/web/support/tickets/{ticket_id}/remote-assist/request', handle_remote_assist_request),
-        web.get('/api/web/support/tickets/{ticket_id}/remote-assist/sessions', handle_remote_assist_ticket_sessions),
         web.get('/api/web/support/tickets/{ticket_id}/playbooks', handle_web_support_ticket_playbooks),
         web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message),
         web.post('/api/web/support/tickets/{ticket_id}/read', handle_ticket_mark_read),
@@ -825,13 +636,8 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/archive', handle_web_support_archive_ticket),
         web.post('/api/web/support/tickets/{ticket_id}/unarchive', handle_web_support_unarchive_ticket),
         web.post('/api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision', handle_web_support_approval_decision),
-        web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
         web.post('/api/web/support/tickets/{ticket_id}/playbooks/run', handle_web_support_run_playbook),
-        web.post('/api/web/support/operations/{operation_id}/cancel', handle_web_support_cancel_operation),
-        web.get('/api/web/remote-assist/{session_id}', handle_remote_assist_status),
-        web.get('/api/web/remote-assist/{session_id}/viewer', handle_remote_assist_viewer),
-        web.post('/api/web/remote-assist/{session_id}/end', handle_remote_assist_end),
-        web.post('/api/web/remote-assist/{session_id}/fail', handle_remote_assist_fail),
+        web.post('/api/web/support/operations/{operation_id}/cancel', handle_web_support_endpoint_operation_cancel),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
         web.post('/api/web/admin/tickets/purge/preview', handle_web_admin_ticket_purge_preview),
         web.post('/api/web/admin/tickets/purge', handle_web_admin_ticket_purge),
@@ -842,20 +648,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/capabilities/provider-configs', handle_diagnostics_provider_configs),
         web.get('/api/web/admin/capabilities/provider-configs/{provider_id}', handle_diagnostics_provider_config_get),
         web.put('/api/web/admin/capabilities/provider-configs/{provider_id}', handle_diagnostics_provider_config_put),
-        web.get('/api/web/admin/capabilities/runner-rollout', handle_runner_rollout_summary),
-        web.post('/api/web/admin/capabilities/runner-rollout/plans', handle_runner_rollout_create_plan),
-        web.get('/api/web/admin/capabilities/runner-rollout/plans/{plan_id}', handle_runner_rollout_get_plan),
-        web.post('/api/web/admin/capabilities/runner-rollout/plans/{plan_id}/start-canary', handle_runner_rollout_start_canary),
-        web.post('/api/web/admin/capabilities/runner-rollout/plans/{plan_id}/promote-next-wave', handle_runner_rollout_promote_next_wave),
-        web.post('/api/web/admin/capabilities/runner-rollout/plans/{plan_id}/pause', handle_runner_rollout_pause),
-        web.post('/api/web/admin/capabilities/runner-rollout/plans/{plan_id}/resume', handle_runner_rollout_resume),
-        web.post('/api/web/admin/capabilities/runner-rollout/plans/{plan_id}/refresh', handle_runner_rollout_refresh),
-        web.post('/api/web/admin/capabilities/runner-rollout/plans/{plan_id}/rollback', handle_runner_rollout_rollback),
-        web.get('/api/web/admin/agent-recipes/primitives', handle_agent_recipe_primitives),
-        web.get('/api/web/admin/agent-recipes', handle_agent_recipes_list),
-        web.post('/api/web/admin/agent-recipes', handle_agent_recipe_create),
-        web.post('/api/web/admin/agent-recipes/{recipe_id}/validate', handle_agent_recipe_validate),
-        web.post('/api/web/admin/agent-recipes/{recipe_id}/publish', handle_agent_recipe_publish),
         web.get('/api/web/admin/diagnostics/providers/configs', handle_diagnostics_provider_configs),
         web.get('/api/web/admin/diagnostics/providers/configs/{provider_id}', handle_diagnostics_provider_config_get),
         web.put('/api/web/admin/diagnostics/providers/configs/{provider_id}', handle_diagnostics_provider_config_put),
@@ -888,15 +680,13 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/tech/locate', handle_tech_locate),
         web.get('/api/web/admin/tech/alerts', handle_tech_alerts),
         web.get('/api/web/admin/tech/logs', handle_tech_logs),
-        web.get('/api/web/admin/tech/agents/audit', handle_tech_agents_audit),
         web.get('/api/web/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/web/admin/tech/operations/stuck', handle_tech_operations_stuck),
         web.get('/api/web/admin/ai-integration/mcp', handle_ai_integration_mcp_status),
-        web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_get_operation),
+        web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_endpoint_operation_get),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
         web.post('/api/web/admin/devices/cleanup_env_duplicates', handle_web_admin_devices_cleanup_env_duplicates),
         web.post('/api/web/admin/devices/{device_id}/restore', handle_web_admin_device_restore),
-        web.delete('/api/web/admin/devices/{device_id}', handle_delete_device),
         web.get('/api/web/admin/inventory/dashboard', handle_web_admin_inventory_dashboard),
         web.post('/api/web/admin/inventory/bindings/import', handle_web_admin_inventory_bindings_import),
         web.get('/api/web/admin/inventory/bindings/export.csv', handle_web_admin_inventory_bindings_export_csv),
@@ -904,41 +694,27 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/inventory/export.xlsx', handle_web_admin_inventory_export_xlsx),
         web.get('/api/web/admin/inventory/reports', handle_web_admin_inventory_report),
         web.get('/api/web/admin/inventory/reports/{report_type}', handle_web_admin_inventory_report),
-        web.post('/api/web/admin/inventory/bulk-refresh', handle_web_admin_inventory_bulk_refresh),
         web.get('/api/web/admin/inventory/bulk-operations', handle_web_admin_inventory_bulk_operations),
         web.get('/api/web/admin/inventory/refresh-runs', handle_web_admin_inventory_refresh_runs),
         web.get('/api/web/admin/inventory/refresh-policy', handle_web_admin_inventory_refresh_policy),
         web.put('/api/web/admin/inventory/refresh-policy', handle_web_admin_inventory_refresh_policy_update),
         web.get('/api/web/admin/devices/{device_id}/inventory', handle_web_admin_device_inventory),
-        web.post('/api/web/admin/devices/{device_id}/inventory/collect', handle_web_admin_device_inventory_collect),
         web.get('/api/web/admin/devices/{device_id}/profiles', handle_web_admin_device_profiles),
         web.get('/api/web/admin/devices/{device_id}/binding-suggestions', handle_web_admin_device_binding_suggestions),
         web.post('/api/web/admin/devices/{device_id}/binding-suggestions/{suggestion_id}/apply', handle_web_admin_device_binding_suggestion_apply),
         web.post('/api/web/admin/devices/{device_id}/binding-suggestions/{suggestion_id}/ignore', handle_web_admin_device_binding_suggestion_ignore),
         web.get('/api/web/admin/devices/{device_id}/presence', handle_web_admin_device_presence),
-        web.post('/api/web/admin/devices/{device_id}/presence/collect', handle_web_admin_device_presence_collect),
         web.get('/api/web/admin/devices/{device_id}/binding', handle_web_admin_device_inventory_binding),
         web.put('/api/web/admin/devices/{device_id}/binding', handle_web_admin_device_inventory_binding_update),
         web.get('/api/web/admin/devices/{device_id}/binding/history', handle_web_admin_device_inventory_binding_history),
         web.get('/api/web/admin/devices/{device_id}/inventory/refresh-policy', handle_web_admin_device_inventory_refresh_policy),
         web.put('/api/web/admin/devices/{device_id}/inventory/refresh-policy', handle_web_admin_device_inventory_refresh_policy_update),
-        web.get('/api/web/admin/device-tokens', handle_web_admin_device_tokens_list),
-        web.get('/api/web/admin/devices/{device_id}/tokens', handle_web_admin_device_tokens),
-        web.post('/api/web/admin/devices/{device_id}/tokens/revoke', handle_web_admin_device_token_revoke),
-        web.get('/api/web/admin/device-operations/{device_id}', handle_web_admin_device_operations),
-        web.get('/api/web/admin/device-operations', handle_web_admin_device_operations),
-        web.get('/api/web/admin/connection_policy', handle_admin_connection_policy_get),
-        web.patch('/api/web/admin/connection_policy', handle_admin_connection_policy_patch),
-        web.get('/api/web/admin/connection_requests', handle_admin_connection_requests_list),
-        web.post('/api/web/admin/connection_requests/{device_id}/approve', handle_admin_connection_request_approve),
-        web.post('/api/web/admin/connection_requests/{device_id}/reject', handle_admin_connection_request_reject),
         web.get('/api/web/admin/registry', handle_web_admin_registry),
         web.get('/api/web/admin/registry/profile-schema', handle_web_admin_registry_profile_schema),
         web.put('/api/web/admin/registry/profile-schema', handle_web_admin_registry_profile_schema),
         web.post('/api/web/admin/registry/profile-schema/preview', handle_web_admin_registry_profile_schema_preview),
         web.get('/api/web/admin/registry/identity/effective', handle_web_admin_registry_effective_identity),
         web.get('/api/web/admin/registry/identity/person/{person_id}/audience', handle_web_admin_registry_person_audience),
-        web.get('/api/web/admin/registry/identity/session/{session_id}/explain', handle_web_admin_registry_account_session_identity_explain),
         web.get('/api/web/admin/registry/audience-groups', handle_web_admin_registry_audience_groups),
         web.post('/api/web/admin/registry/audience-groups', handle_web_admin_registry_audience_groups),
         web.patch('/api/web/admin/registry/audience-groups/{audience_group_id}', handle_web_admin_registry_audience_group_update),
@@ -993,65 +769,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms', handle_web_admin_helpdesk_model_republish_legacy_forms),
         web.get('/api/web/admin/playbooks/catalog', handle_web_admin_playbooks_catalog),
         web.post('/api/web/admin/playbooks/save', handle_web_admin_playbooks_save),
-        web.get('/api/web/admin/modules', handle_web_admin_modules),
-        # Endpoint Recipe modules are a separate typed BFF surface. Legacy
-        # Python-module Workbench routes above remain unchanged.
-        web.get('/api/web/admin/endpoint-modules', handle_endpoint_modules_list),
-        web.get('/api/web/admin/endpoint-modules/capabilities', handle_endpoint_module_capabilities),
-        web.post('/api/web/admin/endpoint-modules', handle_endpoint_module_create_version),
-        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/validate', handle_endpoint_module_validate),
-        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/publish', handle_endpoint_module_publish),
-        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/deprecate', handle_endpoint_module_deprecate),
-        web.get('/api/admin/endpoint-modules', handle_endpoint_modules_list),
-        web.post('/api/admin/endpoint-modules', handle_endpoint_module_create_version),
-        web.post('/api/admin/endpoint-modules/{module_key}/{version}/validate', handle_endpoint_module_validate),
-        web.post('/api/admin/endpoint-modules/{module_key}/{version}/publish', handle_endpoint_module_publish),
-        web.post('/api/admin/endpoint-modules/{module_key}/{version}/deprecate', handle_endpoint_module_deprecate),
-        web.post('/api/web/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
-        web.post('/api/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
-        web.patch('/api/web/admin/modules/rollout_settings', handle_web_admin_patch_modules_rollout_settings),
-        web.patch('/api/web/admin/modules/{module_name}/preferred', handle_web_admin_set_module_preferred_version),
-        web.get('/api/web/admin/agent-builds', handle_web_admin_agent_builds),
-        web.post('/api/web/admin/agent-builds/upload', handle_web_admin_agent_build_upload),
-        web.delete('/api/web/admin/agent-builds/{target}/{channel}/{version}', handle_web_admin_agent_build_delete),
-        web.get('/api/web/admin/agent-builds/{target}/{channel}/{version}/download', handle_web_admin_agent_build_download),
-        web.get('/api/web/admin/agent-updates/rollout-policy', handle_web_admin_agent_rollout_policy),
-        web.patch('/api/web/admin/agent-updates/rollout-policy', handle_web_admin_agent_rollout_policy_patch),
-        web.get('/api/web/admin/modules/workbench', handle_list_modules_workbench),
-        web.get('/api/web/admin/modules/workbench/{module_name}/{version}', handle_get_module_workbench_detail),
-        web.post('/api/web/admin/modules/workbench/authoring/validate', handle_validate_module_authoring),
-        web.post('/api/web/admin/modules/workbench/authoring/publish', handle_publish_module_authoring),
-        web.post('/api/web/admin/modules/workbench/upload', handle_upload_module),
-        web.get('/api/web/admin/modules/workbench/{module_name}/{version}/live_test_candidates', handle_list_module_live_test_candidates),
-        web.post('/api/web/admin/modules/workbench/{module_name}/{version}/live_tests', handle_run_module_live_test),
-        web.delete('/api/web/admin/modules/workbench/{module_name}/{version}', handle_delete_module),
-        web.get('/api/web/admin/devices/{device_id}/updates', handle_web_admin_device_updates),
-        web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),
         web.get('/api/registry/options', handle_registry_options),
-        web.post('/api/registry/profile', handle_registry_profile_upsert),
-        web.post('/api/registry/agent/profile', handle_registry_agent_profile),
-        web.get('/api/registry/agent/account-state', handle_registry_agent_account_state),
-        web.post('/api/registry/agent/account-sessions/confirmed-binding', handle_registry_agent_account_session_confirmed_binding),
-        web.post('/api/registry/agent/account-sessions/registration-pending', handle_registry_agent_account_session_registration_pending),
-        web.post('/api/registry/agent/account-sessions/login', handle_registry_agent_account_session_login),
-        web.get('/api/registry/agent/account-sessions/{session_id}/validate', handle_registry_agent_account_session_validate),
-        web.post('/api/registry/agent/account-sessions/{session_id}/validate', handle_registry_agent_account_session_validate),
-        web.post('/api/registry/agent/account-sessions/{session_id}/logout', handle_registry_agent_account_session_logout),
-        web.post('/api/registry/agent/browser-pairings', handle_registry_agent_browser_pairing_create),
-        web.get('/api/registry/agent/browser-pairings/{pairing_id}', handle_registry_agent_browser_pairing_get),
-        web.post('/api/registry/agent/account-login-requests', handle_registry_agent_account_login_request_create),
-        web.get('/api/registry/agent/account-login-requests/{request_id}', handle_registry_agent_account_login_request_get),
-        web.get('/api/registry/agent/consents', handle_registry_agent_consents),
-        web.get('/api/registry/agent/consents/{consent_id}', handle_registry_agent_consent_detail),
-        web.post('/api/registry/agent/consents/{consent_id}/approve', handle_registry_agent_consent_approve),
-        web.post('/api/registry/agent/consents/{consent_id}/deny', handle_registry_agent_consent_deny),
-        web.get('/api/registry/agent/registration-form', handle_registry_agent_registration_form),
-        web.get('/api/registry/agent/registration-status', handle_registry_agent_registration_status),
-        web.post('/api/registry/agent/claims/{claim_id}/confirm', handle_registry_agent_claim_confirm),
-        web.post('/api/web/registry/browser-pairings/lookup', handle_web_registry_browser_pairing_code_lookup),
-        web.get('/api/web/registry/browser-pairings/{pairing_id}', handle_web_registry_browser_pairing_get),
-        web.post('/api/web/registry/browser-pairings/{pairing_id}/login/confirm', handle_web_registry_browser_pairing_login_confirm),
-        web.post('/api/web/registry/browser-pairings/{pairing_id}/registration/confirm', handle_web_registry_browser_pairing_registration_confirm),
         web.get('/api/web/requester/bootstrap', handle_web_requester_bootstrap),
         web.get('/api/web/requester/profile', handle_web_requester_profile),
         web.put('/api/web/requester/profile', handle_web_requester_profile_update),
@@ -1074,17 +792,11 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/requester/tickets/{ticket_id}/feedback', handle_web_requester_ticket_feedback),
         web.post('/api/web/requester/tickets/{ticket_id}/reopen', handle_web_requester_ticket_reopen),
         web.get('/api/web/admin/history/search', handle_web_admin_history_search),
-        web.get('/api/web/admin/registry/account-login-requests', handle_web_admin_registry_account_login_requests),
-        web.post('/api/web/admin/registry/account-login-requests/{request_id}/approve', handle_web_admin_registry_account_login_request_approve),
-        web.post('/api/web/admin/registry/account-login-requests/{request_id}/reject', handle_web_admin_registry_account_login_request_reject),
         web.get('/api/web/admin/registry/password-reset-requests', handle_web_admin_registry_password_reset_requests),
         web.post('/api/web/admin/registry/password-reset-requests/{request_id}/complete', handle_web_admin_registry_password_reset_request_complete),
-        web.get('/api/web/admin/registry/account-sessions', handle_web_admin_registry_account_sessions),
         web.post('/api/web/admin/registry/bulk/preview', handle_web_admin_registry_bulk_preview),
-        web.post('/api/web/admin/registry/bulk/account-sessions/revoke', handle_web_admin_registry_bulk_account_sessions_revoke),
         web.post('/api/web/admin/registry/bulk/devices/assign-location', handle_web_admin_registry_bulk_devices_assign_location),
         web.post('/api/web/admin/registry/bulk/devices/assign-department', handle_web_admin_registry_bulk_devices_assign_department),
-        web.post('/api/web/admin/registry/bulk/devices/revoke-account-sessions', handle_web_admin_registry_bulk_devices_revoke_account_sessions),
         web.post('/api/web/admin/registry/bulk/people/assign-department', handle_web_admin_registry_bulk_people_assign_department),
         web.get('/api/web/admin/registry/departments', handle_web_admin_registry_departments),
         web.post('/api/web/admin/registry/departments', handle_web_admin_registry_departments),
@@ -1109,15 +821,11 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/registry/quality/{issue_key}/snooze', handle_web_admin_registry_quality_snooze),
         web.post('/api/web/admin/registry/quality/{issue_key}/resolve', handle_web_admin_registry_quality_resolve),
         web.get('/api/web/admin/registry/timeline/{object_type}/{object_id}', handle_web_admin_registry_timeline),
-        web.get('/api/web/admin/registry/devices/{device_id}/account-sessions', handle_web_admin_registry_device_account_sessions),
-        web.get('/api/web/admin/registry/devices/{device_id}/account-events', handle_web_admin_registry_device_account_events),
         web.post('/api/web/admin/registry/devices/{device_id}/bind-person', handle_web_admin_registry_device_bind_person),
         web.post('/api/web/admin/registry/devices/{device_id}/transfer-owner/preview', handle_web_admin_registry_device_transfer_owner_preview),
         web.post('/api/web/admin/registry/devices/{device_id}/transfer-owner', handle_web_admin_registry_device_transfer_owner),
         web.post('/api/web/admin/registry/devices/{device_id}/shared-users', handle_web_admin_registry_device_shared_users),
         web.post('/api/web/admin/registry/devices/{device_id}/responsible', handle_web_admin_registry_device_responsible),
-        web.get('/api/web/admin/registry/account-sessions/{session_id}/timeline', handle_web_admin_registry_account_session_timeline),
-        web.post('/api/web/admin/registry/account-sessions/{session_id}/revoke', handle_web_admin_registry_account_session_revoke),
         web.post('/api/web/admin/registry/people', handle_web_admin_registry_people_create),
         web.post('/api/web/admin/registry/people/merge/preview', handle_web_admin_registry_people_merge_preview),
         web.post('/api/web/admin/registry/people/merge', handle_web_admin_registry_people_merge),
@@ -1232,37 +940,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/settings/audit', handle_admin_audit_list),
         web.get('/api/web/realtime/bootstrap', handle_web_realtime_bootstrap),
         web.post('/api/users/me/password', handle_users_me_password_post),  # Stage 10: self-service password
-        # Connection request flow (no auth: agent requests token)
-        web.post('/api/connection_request', handle_connection_request),
-        web.get('/api/connection_request/status', handle_connection_request_status),
-
-        # ============================================================================
-        # Agents API
-        # ============================================================================
-        web.get('/api/agents', handle_get_agents),
-        web.get('/api/pending_connections', handle_get_pending_connections),
-        web.get('/api/devices', handle_get_devices),
-        web.get('/api/list_devices', handle_get_devices),  # Alias for compatibility
-        web.get('/api/devices/{device_id}', handle_get_device),  # Single device (agent page)
-        web.get('/api/devices/{device_id}/agent/update_diagnostics', handle_get_device_update_diagnostics),
-        web.get('/api/devices/{device_id}/agent/update_recommendation', handle_get_device_update_recommendation),
-        web.post('/api/devices/{device_id}/check', handle_device_check),  # Force check (list_tools)
-        web.delete('/api/devices/{device_id}', handle_delete_device),  # Delete device from DB
-        web.get('/api/devices/{device_id}/tokens', handle_get_device_tokens),  # Get device tokens
-        web.post('/api/devices/{device_id}/tokens/revoke', handle_revoke_device_token),  # Revoke device token
-
-        # ============================================================================
-        # Agent Builds (Remote Self-Update)
-        # ============================================================================
-        web.post('/api/agent_builds/upload', handle_upload_agent_build),
-        web.get('/api/agent_builds', handle_list_agent_builds),
-        web.delete('/api/agent_builds/{target}/{channel}/{version}', handle_delete_agent_build),
-        web.get('/api/agent_builds/{target}/{channel}/{version}/download', handle_download_agent_build),
-        web.get('/api/agent_updates/rollout_policy', handle_get_agent_rollout_policy),
-        web.patch('/api/agent_updates/rollout_policy', handle_patch_agent_rollout_policy),
-        web.post('/api/devices/{device_id}/agent/update', handle_update_device_agent),
-        web.post('/api/agents/update_bulk', handle_bulk_update_agents),
-
         # ============================================================================
         # Tickets API (static paths before {ticket_id} to avoid "resolution_codes" as ticket_id)
         # ============================================================================
@@ -1305,8 +982,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/tickets/{ticket_id}', handle_ticket_get),
         web.get('/api/tickets/{ticket_id}/snapshot', handle_ticket_get_snapshot),  # New snapshot endpoint
         web.get('/api/tickets/{ticket_id}/observer', handle_ticket_get_observer_summary),
-        web.post('/api/tickets/{ticket_id}/remote-assist/request', handle_remote_assist_request),
-        web.get('/api/tickets/{ticket_id}/remote-assist/sessions', handle_remote_assist_ticket_sessions),
         web.post('/api/tickets/{ticket_id}/message', handle_ticket_send_message),
         web.post('/api/tickets/{ticket_id}/close', handle_ticket_close),
         web.post('/api/tickets/{ticket_id}/status', handle_ticket_status),
@@ -1356,30 +1031,11 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/problems/{problem_id}/status', handle_problem_status_post),
         web.post('/api/problems/{problem_id}/tickets', handle_problem_tickets_post),
         web.delete('/api/problems/{problem_id}/tickets/{ticket_id}', handle_problem_tickets_delete),
-        web.get('/api/devices/{device_id}/events', handle_get_device_events),
         
         # ============================================================================
         # Operations API
         # ============================================================================
-        web.get('/api/operations', handle_get_operations),
-        web.get('/api/operations/{operation_id}', handle_get_operation),
-        web.post('/api/operations/{operation_id}/cancel', handle_cancel_operation),
-        web.post('/api/operations/{operation_id}/retry', handle_retry_operation),
-        web.post('/api/tickets/{ticket_id}/operations/{operation_id}/retry', handle_retry_operation),
-        web.post('/api/operations/{operation_id}/approve', handle_approve_consent),
-        web.post('/api/operations/{operation_id}/deny', handle_deny_consent),
-        web.get('/api/remote-assist/{session_id}', handle_remote_assist_status),
-        web.post('/api/remote-assist/{session_id}/approve', handle_remote_assist_approve),
-        web.post('/api/remote-assist/{session_id}/deny', handle_remote_assist_deny),
-        web.get('/api/remote-assist/{session_id}/viewer', handle_remote_assist_viewer),
-        web.post('/api/remote-assist/{session_id}/end', handle_remote_assist_end),
-        web.post('/api/remote-assist/{session_id}/fail', handle_remote_assist_fail),
         
-        # ============================================================================
-        # Tools API
-        # ============================================================================
-        web.get('/api/tools', handle_get_tools),
-        web.post('/api/tools/run', handle_tools_run),
         web.get('/api/diagnostics/capabilities', handle_diagnostics_capabilities),
         web.get('/api/diagnostics/providers/configs', handle_diagnostics_provider_configs),
         web.get('/api/diagnostics/providers/configs/{provider_id}', handle_diagnostics_provider_config_get),
@@ -1389,7 +1045,6 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # Admin API
         # ============================================================================
-        web.post('/api/admin/run_tool', handle_admin_run_tool),
         # Stage 10: Admin Users API (feature-flagged: AUTH_UI_DB_USERS_ENABLED)
         web.get('/api/admin/users', handle_admin_users_list),
         web.post('/api/admin/users', handle_admin_users_post),
@@ -1398,11 +1053,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/admin/users/{user_login}/password', handle_admin_users_password_post),
         web.post('/api/admin/users/{user_login}/deactivate', handle_admin_users_deactivate_post),
         # Connection request policy and pending requests (admin)
-        web.get('/api/admin/connection_policy', handle_admin_connection_policy_get),
-        web.patch('/api/admin/connection_policy', handle_admin_connection_policy_patch),
-        web.get('/api/admin/connection_requests', handle_admin_connection_requests_list),
-        web.post('/api/admin/connection_requests/{device_id}/approve', handle_admin_connection_request_approve),
-        web.post('/api/admin/connection_requests/{device_id}/reject', handle_admin_connection_request_reject),
         # Stage 9: Admin Config API (feature-flagged)
         web.get('/api/admin/tickets/queues', handle_admin_queues_list),
         web.post('/api/admin/tickets/queues', handle_admin_queues_post),
@@ -1437,9 +1087,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/admin/tech/alerts', handle_tech_alerts),
         web.get('/api/admin/tech/logs', handle_tech_logs),
         web.post('/api/admin/tech/dismiss', handle_tech_dismiss_item),
-        web.get('/api/admin/tech/agents/audit', handle_tech_agents_audit),
-        web.get('/api/admin/tech/agents/{device_id}/timeline', handle_tech_agent_timeline),
-        web.post('/api/admin/tech/agents/{device_id}/actions', handle_tech_agent_action),
         web.get('/api/admin/tech/tickets/{ticket_id}/lifecycle', handle_tech_ticket_lifecycle),
         web.get('/api/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/admin/tech/admin-config/audit', handle_tech_admin_config_audit),
@@ -1466,69 +1113,10 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # Protocol Documentation
         # ============================================================================
-        web.get('/api/protocol', handle_protocol),
         
         # ============================================================================
         # Commands API
         # ============================================================================
-        web.post('/api/send_command', handle_send_command),
-        web.post('/api/check_functions', handle_check_functions),
-        web.post('/api/smoke_run', handle_smoke_run),
-        
-        # ============================================================================
-        # Chat API
-        # ============================================================================
-        web.post('/api/chat_start', handle_chat_start),
-        web.post('/api/chat_raise', handle_chat_raise),
-        web.post('/api/chat_send', handle_chat_send),
-        web.get('/api/active_chats', handle_active_chats),
-        web.get('/api/chat_events', handle_chat_events),
-        
-        # ============================================================================
-        # Modules API
-        # ============================================================================
-        # New HTTP download endpoints
-        web.get('/api/modules/ping', handle_modules_ping),
-        web.post('/api/modules/upload', handle_upload_module),
-        web.post('/api/modules/create', handle_create_module),
-        web.get('/api/modules/authoring/catalog', handle_get_module_authoring_catalog),
-        web.post('/api/modules/authoring/validate', handle_validate_module_authoring),
-        web.post('/api/modules/authoring/publish', handle_publish_module_authoring),
-        web.post('/api/modules/workbench/validate', handle_validate_module_workbench),
-        web.post('/api/modules/workbench/save', handle_save_module_workbench),
-        web.post('/api/modules/cleanup_missing', handle_cleanup_missing_modules),
-        web.post('/api/modules/bulk_install', handle_bulk_install_modules),
-        web.get('/api/modules/rollout_settings', handle_get_module_rollout_settings),
-        web.patch('/api/modules/rollout_settings', handle_patch_module_rollout_settings),
-        web.get('/api/modules/workbench', handle_list_modules_workbench),
-        web.get('/api/modules/workbench/{module_name}/{version}', handle_get_module_workbench_detail),
-        web.get('/api/modules/{module_name}/{version}/live_test_candidates', handle_list_module_live_test_candidates),
-        web.post('/api/modules/{module_name}/{version}/live_tests', handle_run_module_live_test),
-        web.get('/api/modules/{module_name}/{version}', handle_get_module_detail),
-        web.get('/api/modules/{module_name}/{version}/download', handle_download_module),
-        web.delete('/api/modules/{module_name}/{version}', handle_delete_module),
-        web.get('/api/modules', handle_list_modules),
-        web.patch('/api/modules/{module_name}/preferred', handle_set_module_preferred_version),
-        web.get('/api/devices/{device_id}/modules', handle_get_device_modules),
-        web.get('/api/devices/{device_id}/toolset', handle_get_device_toolset),
-        web.post('/api/devices/{device_id}/modules/install', handle_install_module),
-        web.post('/api/devices/{device_id}/modules/activate', handle_activate_module_new),
-        web.post('/api/devices/{device_id}/modules/deactivate', handle_deactivate_module_new),
-        web.post('/api/devices/{device_id}/modules/sync', handle_sync_modules),
-        web.post('/api/devices/{device_id}/modules/remove_version', handle_remove_module_version),
-        web.post('/api/devices/{device_id}/modules/remove', handle_remove_module),
-        web.post('/api/devices/{device_id}/modules/verify', handle_verify_module),
-        web.get('/api/devices/{device_id}/modules/debug', handle_debug_modules),
-        web.get('/api/devices/{device_id}/modules/desired_diff', handle_get_desired_diff),
-        web.post('/api/devices/{device_id}/modules/reconcile', handle_trigger_reconcile),
-        
-        # Compatibility endpoints for older clients (planned for removal after migration window)
-        web.post('/api/install_module_package', handle_install_module_package),
-        web.post('/api/list_installed_modules', handle_list_installed_modules),
-        web.post('/api/activate_module', handle_activate_module),
-        web.post('/api/rollback_module', handle_rollback_module),
-        web.post('/api/deactivate_module', handle_deactivate_module),
-        web.post('/api/smoke_install_and_run', handle_smoke_install_and_run),
         
         # ============================================================================
         # Playbook API (Этап 4 MVP)
@@ -1536,16 +1124,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/playbooks/runs', handle_start_playbook_run),
         
         # ============================================================================
-        # Jobs API
-        # ============================================================================
-        web.get('/api/job_events', handle_get_job_events),
-        web.post('/api/start_job', handle_start_job),
-        
-        # ============================================================================
         # Additional HTML Pages
         # ============================================================================
-        web.get('/chat_debug', handle_chat_debug),
-        web.get('/chat_ws', handle_chat_ws),
-        web.get('/test_simple', handle_test_simple),
         web.get('/ws_ui_test', handle_ws_ui_test),
     ])
