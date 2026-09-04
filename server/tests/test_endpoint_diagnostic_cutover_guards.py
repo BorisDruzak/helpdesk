@@ -86,6 +86,17 @@ def test_helpdesk_does_not_ship_agent_runtime_sources():
     assert list((ROOT / "pc_agent").rglob("*.py")) == []
 
 
+def test_server_tests_do_not_depend_on_retired_agent_handshake_fixture():
+    forbidden_symbol = "".join(("ingest_agent_", "handshake"))
+    violations = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "server" / "tests").rglob("*.py")
+        if forbidden_symbol in path.read_text(encoding="utf-8-sig")
+    )
+
+    assert violations == []
+
+
 def test_server_lifecycle_does_not_start_device_outbox_runtime():
     source = (ROOT / "server" / "server.py").read_text(encoding="utf-8")
 

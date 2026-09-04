@@ -39,6 +39,7 @@ from app.db.models import (
     UserConsentRequest,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
 from observer.service import ObserverOverlayService, TraceOverlayFilters
@@ -2058,13 +2059,14 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
         session.add(ticket)
         await session.flush()
 
-        registry_service = RegistryIngestionService(session)
-        await registry_service.ingest_agent_handshake(
+        await RegistryRepo(session).upsert_agent_asset(
             device_id=detail_device_id,
             hostname="ws-detail-host",
             os_name="Windows 11",
             agent_version="1.2.3",
+            metadata={},
         )
+        registry_service = RegistryIngestionService(session)
         profile_result = await registry_service.ingest_requester_profile(
             device_id=detail_device_id,
             requester_id="user-a",

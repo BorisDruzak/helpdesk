@@ -19,6 +19,8 @@
 - `server/app/repos/` persists ticket, operation and Endpoint facade state.
 - `server/web_api/support_handlers.py` exposes the canonical support
   diagnostic route and its browser compatibility alias.
+- `server/tickets/handlers.py` projects requester and support UI presence;
+  the retired Helpdesk agent runtime is always reported as offline.
 
 Helpdesk has no agent WebSocket server, device outbox sender, tool execution
 service, command-result pipeline or local agent operation fallback. `/ws_ui`

@@ -1,8 +1,11 @@
+from types import SimpleNamespace
+
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.repos.ticket_events_repo import TicketEventsRepo
 from state_manager import StateManager
+from tickets.handlers import _ticket_presence_payload
 
 
 pytestmark = pytest.mark.db_cleanup("tickets")
@@ -89,3 +92,24 @@ def test_state_manager_ticket_presence_expires_and_clears(monkeypatch):
     expired_presence = state.get_ticket_presence("ticket-1")
     assert expired_presence["requester_online"] is False
     assert expired_presence["support_online"] is False
+
+
+@pytest.mark.no_db
+def test_ticket_presence_hides_retired_agent_runtime_as_offline():
+    state = SimpleNamespace(
+        get_ticket_presence=lambda _ticket_id: {
+            "requester_online": True,
+            "requester_last_seen_at": None,
+            "requester_actor_ids": ["requester-1"],
+            "support_online": False,
+            "support_last_seen_at": None,
+            "support_actor_ids": [],
+        }
+    )
+
+    payload = _ticket_presence_payload(
+        SimpleNamespace(app={"state": state}),
+        SimpleNamespace(ticket_id="ticket-1", device_id="device-1"),
+    )
+
+    assert payload["agent_online"] is False

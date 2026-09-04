@@ -298,7 +298,7 @@ def _ticket_presence_payload(request: web.Request, ticket: Any) -> Dict[str, Any
     presence = state.get_ticket_presence(getattr(ticket, "ticket_id", None))
     return {
         **presence,
-        "agent_online": None,
+        "agent_online": False,
     }
 
 

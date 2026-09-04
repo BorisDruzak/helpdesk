@@ -15,6 +15,7 @@ from app.db.models import (
     UiUser,
 )
 from app.repos.auth_tokens_repo import AuthTokensRepo
+from app.repos.registry_repo import RegistryRepo
 from auth.password_service import hash_password
 from registry.service import RegistryIngestionService
 from tests.conftest import TEST_UI_ADMIN_TOKEN
@@ -49,14 +50,14 @@ async def test_web_admin_registry_returns_snapshot_for_reestr_ui(test_client, te
                 device_metadata={},
             )
         )
-        service = RegistryIngestionService(session)
-        await service.ingest_agent_handshake(
+        await RegistryRepo(session).upsert_agent_asset(
             device_id=device_id,
             hostname="DOC-214-02",
             os_name="Windows 11",
             agent_version="1.2.0",
             metadata={},
         )
+        service = RegistryIngestionService(session)
         await service.ingest_requester_profile(
             device_id=device_id,
             requester_id="agent-profile:petrova",
@@ -373,14 +374,14 @@ async def test_registry_options_available_to_agent_request_forms_without_full_sn
                 device_metadata={},
             )
         )
-        service = RegistryIngestionService(session)
-        await service.ingest_agent_handshake(
+        await RegistryRepo(session).upsert_agent_asset(
             device_id=device_id,
             hostname="OPT-214",
             os_name="Windows 11",
             agent_version="1.2.0",
             metadata={},
         )
+        service = RegistryIngestionService(session)
         await service.ingest_requester_profile(
             device_id=device_id,
             requester_id="agent-profile:options",
