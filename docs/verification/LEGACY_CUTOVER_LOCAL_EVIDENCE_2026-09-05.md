@@ -30,7 +30,7 @@ The historical full suite was intentionally not run.
 | Endpoint compile | `python -m compileall -q endpoint_contracts endpoint_server pc_agent` | PASS |
 | Endpoint headless/package boundary | Selected runtime, gateway, Linux packaging and Windows tests from the cutover plan | `234 passed` |
 | Helpdesk contract lock | `python -m pytest server/tests/test_endpoint_contract_lock.py -q` | `9 passed` |
-| Helpdesk no-DB cutover boundary | 16 present targeted files with `-m no_db` | `149 passed, 1 skipped, 8 deselected` |
+| Helpdesk no-DB cutover boundary | 16 present targeted files with `-m no_db` and the exact clean Endpoint checkout | `149 passed, 10 deselected` |
 | Helpdesk workspace verifier | `python scripts/verify_workspace.py --workspace <Helpdesk worktree>` | PASS |
 | Helpdesk compile | `python -m compileall -q server scripts` | PASS |
 | Helpdesk webapp production build | `pnpm --dir webapp run build` after `pnpm --dir webapp install --frozen-lockfile` | PASS |
