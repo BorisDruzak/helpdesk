@@ -836,7 +836,7 @@ def test_parallel_mode_groups_only_server_db_ws_layers_and_respects_max_workers(
         "server_pytest_no_db",
         "migration_schema",
     ]
-    assert completed_steps[-1] == "server_pytest_db_agent_runtime"
+    assert set(completed_steps[-len(db_layer_names) :]) == db_layer_names
     summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["parallel_enabled"] is True
     assert summary["max_workers"] == 2
