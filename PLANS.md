@@ -40,6 +40,11 @@ browser UI responsibilities only.
   OpenAPI SHA-256 is `2982924427c731b83cfbd203e2fc86533c6e7b0fb4ec234cacd2d96f838fc04f`.
   Windows checkout CRLF conversion must not be used as contract-digest
   evidence.
+- The local Helpdesk deletion gate passed on the integration worktree:
+  32 no-DB cutover/route/boundary/resolver tests and `python -m compileall -q
+  server scripts` are green. Static legacy matches are limited to retained
+  migration history and negative-test/audit assertions; active runtime
+  imports are absent.
 
 ## Next steps
 
