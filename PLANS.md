@@ -62,6 +62,9 @@ browser UI responsibilities only.
   `tests/deploy/test_alt_agent_bundle_install.py`, and
   `tests/packaging/test_alt_rpm_contract.py`. The skipped checks remain
   required on the approved ALT worker before release acceptance.
+- The Endpoint Windows package/runtime test directory passed locally with 128
+  tests and zero failures, errors, or skips. The required dedicated-VM MSI
+  installation, service, reconnect and rollback canary is still outstanding.
 
 ## Next steps
 
