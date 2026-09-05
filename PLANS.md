@@ -35,6 +35,11 @@ browser UI responsibilities only.
   commit `5cee2bd2ecdbaf2a6a8c4acf33162aab644aa2b9`. It predates the two
   latest cleanup/presence fixes and is therefore evidence for further
   diagnosis, not release acceptance for the current branch.
+- The current Helpdesk lock was verified against the clean Endpoint `main`
+  checkout at `22060e2bd3eae9fff874a64d01d80d18be9ff576`: the raw Git-blob
+  OpenAPI SHA-256 is `2982924427c731b83cfbd203e2fc86533c6e7b0fb4ec234cacd2d96f838fc04f`.
+  Windows checkout CRLF conversion must not be used as contract-digest
+  evidence.
 
 ## Next steps
 
