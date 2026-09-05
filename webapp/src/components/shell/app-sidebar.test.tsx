@@ -142,7 +142,7 @@ describe("AppSidebar", () => {
     handleCollapsedChange.mockClear();
     handleNavigate.mockClear();
     rerender(
-      <MemoryRouter initialEntries={["/app/admin/modules"]}>
+      <MemoryRouter initialEntries={["/app/admin/capabilities"]}>
         <AppSidebar
           collapsed
           hasAdminAccess
