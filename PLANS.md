@@ -20,21 +20,31 @@ browser UI responsibilities only.
 
 ## Current state
 
-- Helpdesk source baseline is `79374b715350ac42d7e35eb4ca8a010c29d9ce44`;
-  it does not yet include the required UI-removal commit
+- The accepted Helpdesk baseline is
+  `origin/codex/helpdesk-process-model` at
+  `a5f1d2311406f6565460aa31cc9708d469479601`. It includes both the plan
+  baseline and the required UI-removal commit
   `e88022956e4670278d151d0af1238f806b1a231a`.
-- Endpoint source baseline is
-  `d4a7797afc6c87b9ec5409ce96f0e47a26bc2434`; it has create/read operations
-  but no public cancel contract or `operations.cancel` scope.
+- The isolated integration branch is `codex/legacy-cutover-integration`.
+  It has not been merged or pushed. Its current fixes remove stale admin
+  rollout metadata, align the browser capability test, make parallel-layer
+  completion ordering deterministic, clean `registry_person_identities` in
+  the `registry_access` test profile, and project primary-device presence
+  through the supplied state provider with a safe `unknown` fallback.
+- A user-authorized full CI diagnostic run is still executing on frozen
+  commit `5cee2bd2ecdbaf2a6a8c4acf33162aab644aa2b9`. It predates the two
+  latest cleanup/presence fixes and is therefore evidence for further
+  diagnosis, not release acceptance for the current branch.
 
 ## Next steps
 
-1. Establish the accepted Helpdesk base including UI removal and map direct
-   consumers of legacy operation, agent and Remote Assist surfaces.
-2. Add and verify the Endpoint cancel contract, then refresh generated
-   contract artifacts and the Helpdesk lock.
-3. Delete legacy source incrementally behind retained-boundary checks; update
-   docs and targeted release evidence as each atomic commit completes.
+1. Let the frozen CI run finish and use its exact tracebacks to identify any
+   remaining defects; rerun only the relevant targeted DB layers on the
+   current commit after the parent-owned tunnel is free.
+2. Reconcile the prepared Endpoint cancel/headless release train with the
+   final Helpdesk contract lock, generated artifacts and targeted gates.
+3. Do not merge either integration branch until targeted gates, package
+   evidence and the approved real-agent canaries satisfy the cutover plan.
 
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
