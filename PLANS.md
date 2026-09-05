@@ -65,6 +65,12 @@ browser UI responsibilities only.
 - The Endpoint Windows package/runtime test directory passed locally with 128
   tests and zero failures, errors, or skips. The required dedicated-VM MSI
   installation, service, reconnect and rollback canary is still outstanding.
+- A read-only preflight on the approved ALT staging host confirmed that
+  `endpoint-agent.service` is active but none of
+  `ENDPOINT_AGENT_DEPLOYMENT_ENVIRONMENT`, `CANARY_ENVIRONMENT`, or
+  `CANARY_APPROVED` is configured. The marker-bound staging canary therefore
+  remains fail-closed; no remote configuration, service, or test data was
+  changed.
 
 ## Next steps
 
