@@ -69,6 +69,16 @@ browser UI responsibilities only.
 - The Endpoint Windows package/runtime test directory passed locally with 128
   tests and zero failures, errors, or skips. The required dedicated-VM MSI
   installation, service, reconnect and rollback canary is still outstanding.
+- Immutable package bytes have now been independently verified without an
+  installation: the staging ALT RPM built from
+  `572f3a0249bd4a49035cc97177279fbbf1e90068` is
+  `endpoint-agent-3.2.38-alt3.x86_64.rpm` with SHA-256
+  `78abe5ecf63fe594aef2eddd4b25657236ff5231413d7996bbb8d9ebd541950c`;
+  `rpm -K`, metadata and the forbidden legacy-payload scan are green. The
+  locally retained `EndpointAgent-3.2.38-x64.msi` has SHA-256
+  `1b377298939121c5e669d90ad91606a627ff073e5ac1bfc0bd0bbe82ad7c4b90`,
+  matching its sidecar's same source revision and initial-runtime tree hash.
+  Neither package was installed or published by this verification.
 - A read-only preflight on the approved ALT staging host confirmed that
   `endpoint-agent.service` is active but none of
   `ENDPOINT_AGENT_DEPLOYMENT_ENVIRONMENT`, `CANARY_ENVIRONMENT`, or
