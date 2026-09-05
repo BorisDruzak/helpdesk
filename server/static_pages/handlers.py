@@ -70,10 +70,6 @@ async def handle_ticket_page_by_id(request):
     raise _retired_shell_redirect(request, _webapp_ticket_target_path(request))
 
 
-async def handle_ws_ui_test(request):
-    return _text_file_response(BASE_DIR / "ws_ui_test.html", "text/html")
-
-
 async def handle_public_queue_page(request):
     """Stage 10.2: публичная страница очереди (без авторизации)."""
     return _text_file_response(BASE_DIR / "public_queue.html", "text/html", no_cache=True)

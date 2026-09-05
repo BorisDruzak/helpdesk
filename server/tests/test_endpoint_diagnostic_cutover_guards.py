@@ -73,6 +73,23 @@ def test_legacy_agent_and_remote_assist_routes_are_not_registered():
     assert "/remote-assist/" not in routes
 
 
+def test_legacy_agent_debug_surfaces_are_physically_removed():
+    for relative_path in (
+        "scripts/admin_run_tool.py",
+        "scripts/agent_test_driver.py",
+        "scripts/test_429_semaphore.py",
+        "server/support_console.html",
+        "server/ws_ui_test.html",
+    ):
+        assert not (ROOT / relative_path).exists()
+
+    routes = (ROOT / "server" / "routes.py").read_text(encoding="utf-8")
+    static_handlers = (ROOT / "server" / "static_pages" / "handlers.py").read_text(encoding="utf-8")
+    assert "handle_ws_ui_test" not in routes
+    assert "'/ws_ui_test'" not in routes
+    assert "handle_ws_ui_test" not in static_handlers
+
+
 def test_remote_assist_runtime_and_configuration_are_removed():
     remote_assist_source = ROOT / "server" / "remote_assist"
     assert list(remote_assist_source.glob("*.py")) == []
