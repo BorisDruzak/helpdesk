@@ -30,7 +30,10 @@ browser UI responsibilities only.
   rollout metadata, align the browser capability test, make parallel-layer
   completion ordering deterministic, clean `registry_person_identities` in
   the `registry_access` test profile, and project primary-device presence
-  through the supplied state provider with a safe `unknown` fallback.
+  through the supplied state provider with a safe `unknown` fallback. It also
+  physically removes the legacy local `run_tool`/GUI-agent debug surfaces,
+  `/ws_ui_test`, and the local UIA agent harness; those absences are guarded
+  by `test_endpoint_diagnostic_cutover_guards.py`.
 - A user-authorized full CI diagnostic run is still executing on frozen
   commit `5cee2bd2ecdbaf2a6a8c4acf33162aab644aa2b9`. It predates the two
   latest cleanup/presence fixes and is therefore evidence for further
@@ -41,10 +44,11 @@ browser UI responsibilities only.
   Windows checkout CRLF conversion must not be used as contract-digest
   evidence.
 - The local Helpdesk deletion gate passed on the integration worktree:
-  32 no-DB cutover/route/boundary/resolver tests and `python -m compileall -q
-  server scripts` are green. Static legacy matches are limited to retained
-  migration history and negative-test/audit assertions; active runtime
-  imports are absent.
+  45 no-DB cutover/route/boundary/resolver/static-page tests are green;
+  `python -m compileall -q server scripts`, `npm --prefix webapp run build`,
+  and `python scripts/verify_workspace.py --workspace .` are green. Static
+  legacy matches are limited to retained migration history and
+  negative-test/audit assertions; active runtime imports are absent.
 - The Endpoint `main` cancel-contract check is green locally: 189 contract
   and operation-route tests passed, generated contract artifacts are current,
   and `python -m compileall -q endpoint_contracts endpoint_server pc_agent`
