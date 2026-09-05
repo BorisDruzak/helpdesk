@@ -45,6 +45,11 @@ browser UI responsibilities only.
   server scripts` are green. Static legacy matches are limited to retained
   migration history and negative-test/audit assertions; active runtime
   imports are absent.
+- The Endpoint `main` cancel-contract check is green locally: 189 contract
+  and operation-route tests passed, generated contract artifacts are current,
+  and `python -m compileall -q endpoint_contracts endpoint_server pc_agent`
+  passed. This is local contract evidence only; it does not substitute for
+  immutable package or real-agent canary acceptance.
 
 ## Next steps
 
