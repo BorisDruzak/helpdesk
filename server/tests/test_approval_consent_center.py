@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Change, ChangeApproval, Operation, RemoteAccessSession, Ticket, TicketApproval
+from app.db.models import Change, ChangeApproval, Operation, Ticket, TicketApproval
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -27,7 +27,6 @@ async def _seed_approval_center(session, *, now: datetime) -> dict[str, str]:
     closure_ticket_id = str(uuid.uuid4())
     change_id = str(uuid.uuid4())
     operation_id = str(uuid.uuid4())
-    remote_session_id = str(uuid.uuid4())
     device_id = f"device-approval-{uuid.uuid4().hex[:8]}"
 
     session.add(
@@ -129,33 +128,12 @@ async def _seed_approval_center(session, *, now: datetime) -> dict[str, str]:
             error_message="secret=must-not-leak",
         )
     )
-    session.add(
-        RemoteAccessSession(
-            id=remote_session_id,
-            ticket_id=ticket_id,
-            device_id=device_id,
-            operator_id="support-1",
-            requester_id="requester-1",
-            mode="view_only",
-            status="waiting_consent",
-            reason="Нужно визуально проверить ошибку",
-            consent_required=True,
-            consent_status="pending",
-            requested_at=now - timedelta(minutes=5),
-            expires_at=now + timedelta(minutes=15),
-            signaling_token_hash="secret-signaling-hash",
-            operator_token_hash="secret-operator-hash",
-            agent_token_hash="secret-agent-hash",
-            ice_config={"turn": "secret-turn"},
-        )
-    )
     await session.commit()
     return {
         "ticket_id": ticket_id,
         "closure_ticket_id": closure_ticket_id,
         "change_id": change_id,
         "operation_id": operation_id,
-        "remote_session_id": remote_session_id,
     }
 
 
@@ -184,7 +162,6 @@ async def test_approval_consent_center_returns_typed_real_sources(test_client, t
     assert data["summary"]["ticket_approvals_count"] == 1
     assert data["summary"]["change_approvals_count"] == 1
     assert data["summary"]["risky_tool_consents_count"] == 1
-    assert data["summary"]["remote_assist_consents_count"] == 0
     assert data["summary"]["closure_approvals_count"] == 1
     assert data["summary"]["policy_overrides_count"] == 0
     assert {section["key"] for section in data["sections"]} >= {
@@ -211,8 +188,6 @@ async def test_approval_consent_center_returns_typed_real_sources(test_client, t
     assert change_item["actions"][0]["href"] == f"/app/admin/changes?change={ids['change_id']}"
 
     serialized = str(data)
-    assert "secret-signaling-hash" not in serialized
-    assert "secret-turn" not in serialized
     assert "must-not-leak" not in serialized
 
 

@@ -369,7 +369,6 @@ class ApprovalConsentCenterService:
             ticket_approvals_count=sum(1 for item in items if item.kind == "ticket_approval"),
             change_approvals_count=sum(1 for item in items if item.kind == "change_approval"),
             risky_tool_consents_count=sum(1 for item in items if item.kind == "risky_tool_consent"),
-            remote_assist_consents_count=0,
             closure_approvals_count=sum(1 for item in items if item.kind == "closure_approval"),
             policy_overrides_count=sum(1 for item in items if item.kind == "policy_override"),
         )
