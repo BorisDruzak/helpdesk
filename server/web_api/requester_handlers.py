@@ -43,7 +43,11 @@ from tickets.handlers import (
     _serialize_message_for_requester,
     _store_resolution_confirmation_state,
 )
-from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.create_flow import (
+    VerifiedRequesterBinding,
+    build_default_priority_payload,
+    create_ticket_with_side_effects,
+)
 from tickets.diagnostic_target import resolve_ticket_diagnostic_target
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom_fields, resolve_ticket_form_pack
@@ -2003,6 +2007,15 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             support_group_code=catalog_process_fields.get("support_group_code"),
             extra_custom_fields=extra_custom_fields,
             requester_account=requester_account,
+            verified_requester_binding=(
+                VerifiedRequesterBinding(
+                    device_id=str(binding.device_id),
+                    person_id=str(person.person_id),
+                    binding_id=str(binding.binding_id),
+                )
+                if account_mode == "confirmed_binding" and person is not None and binding is not None
+                else None
+            ),
             ticket_context=on_behalf_context,
             state=request.app.get("state"),
         )

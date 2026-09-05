@@ -39,7 +39,7 @@ from customer_history.projection_service import CustomerHistoryProjectionService
 from registry.registration_service import RegistrationService
 from routes import setup_routes
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
-from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.create_flow import VerifiedRequesterBinding, build_default_priority_payload, create_ticket_with_side_effects
 import web_api.requester_handlers as requester_handlers_module
 
 
@@ -1425,7 +1425,7 @@ async def test_requester_normal_form_requires_resolved_primary_device(test_clien
 
 
 @pytest.mark.asyncio
-async def test_requester_device_online_state_is_consistent_across_bootstrap_list_and_detail(test_client, test_engine):
+async def test_requester_device_online_is_unavailable_without_helpdesk_agent_runtime(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     login = "requester-device-online-state@example.test"
     online_device_id = str(uuid.uuid4())
@@ -1478,14 +1478,6 @@ async def test_requester_device_online_state_is_consistent_across_bootstrap_list
         )
         await session.commit()
 
-    def online_checker(checked_device_id: str) -> bool:
-        if checked_device_id == online_device_id:
-            return True
-        if checked_device_id == offline_device_id:
-            return False
-        raise RuntimeError("runtime state unavailable")
-
-    test_client.app["state"].is_agent_online = online_checker
     headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
 
     bootstrap = await test_client.get("/api/web/requester/bootstrap", headers=headers)
@@ -1495,8 +1487,8 @@ async def test_requester_device_online_state_is_consistent_across_bootstrap_list
         item["device_id"]: item["online"]
         for item in bootstrap_payload["data"]["devices"]
     } == {
-        online_device_id: True,
-        offline_device_id: False,
+        online_device_id: None,
+        offline_device_id: None,
         unknown_device_id: None,
     }
 
@@ -1507,15 +1499,15 @@ async def test_requester_device_online_state_is_consistent_across_bootstrap_list
         item["device_id"]: item["online"]
         for item in devices_payload["data"]["devices"]
     } == {
-        online_device_id: True,
-        offline_device_id: False,
+        online_device_id: None,
+        offline_device_id: None,
         unknown_device_id: None,
     }
 
     detail = await test_client.get(f"/api/web/requester/devices/{offline_device_id}", headers=headers)
     detail_payload = await detail.json()
     assert detail.status == 200, detail_payload
-    assert detail_payload["data"]["device"]["online"] is False
+    assert detail_payload["data"]["device"]["online"] is None
 
 
 @pytest.mark.asyncio
@@ -1558,6 +1550,11 @@ async def test_requester_shared_device_tickets_stay_scoped_to_person_and_binding
                 "binding_id": primary["binding"]["binding_id"],
                 "validation": "web_requester_identity_resolved",
             },
+            verified_requester_binding=VerifiedRequesterBinding(
+                device_id=device_id,
+                person_id=primary["person"]["person_id"],
+                binding_id=primary["binding"]["binding_id"],
+            ),
             include_public_access=True,
         )
         shared_ticket = await create_ticket_with_side_effects(
@@ -1575,6 +1572,11 @@ async def test_requester_shared_device_tickets_stay_scoped_to_person_and_binding
                 "binding_id": shared_binding.binding_id,
                 "validation": "web_requester_identity_resolved",
             },
+            verified_requester_binding=VerifiedRequesterBinding(
+                device_id=device_id,
+                person_id=shared_person.person_id,
+                binding_id=shared_binding.binding_id,
+            ),
             include_public_access=True,
         )
         await session.commit()
@@ -2236,8 +2238,8 @@ async def test_requester_preview_ticket_accepts_catalog_form_payload(test_client
     assert payload["data"]["requester_context"]["routing_facts"]["account_mode"] == "confirmed_binding"
     assert payload["data"]["ticket_context"]["summary"]["created_on_behalf"] is False
     assert payload["data"]["ticket_context"]["summary"]["affected"]
-    assert payload["data"]["ticket_context"]["diagnostic_target"]["available"] is False
-    assert payload["data"]["ticket_context"]["diagnostic_target"]["status"] == "offline"
+    assert payload["data"]["ticket_context"]["diagnostic_target"]["available"] is True
+    assert payload["data"]["ticket_context"]["diagnostic_target"]["status"] == "unknown"
     assert payload["data"]["ticket_context"]["diagnostic_target"]["label"] == "preview-owned-device"
     assert "person_id" not in str(payload["data"]["ticket_context"])
     assert device_id not in str(payload["data"]["ticket_context"])

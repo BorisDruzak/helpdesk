@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from loguru import logger
@@ -36,6 +37,21 @@ from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.workflow_service import TicketWorkflowService
 from playbooks.form_triggers import start_ticket_created_playbooks
 from utils import new_ticket_id
+
+
+@dataclass(frozen=True)
+class VerifiedRequesterBinding:
+    """A browser-requester binding resolved by trusted server-side composition.
+
+    This context is intentionally separate from ``requester_account``: the
+    latter may originate from legacy entrypoints, while this value is produced
+    only after the requester handler has checked the authenticated actor owns
+    the selected device.
+    """
+
+    device_id: str
+    person_id: str
+    binding_id: str
 
 
 def build_default_priority_payload(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -404,6 +420,7 @@ async def create_ticket_with_side_effects(
     support_group_code: Optional[str] = None,
     extra_custom_fields: Optional[dict[str, Any]] = None,
     requester_account: Optional[dict[str, Any]] = None,
+    verified_requester_binding: VerifiedRequesterBinding | None = None,
     ticket_context: Optional[dict[str, Any]] = None,
     state: Any | None = None,
     registry_port: RegistryPort | None = None,
@@ -437,7 +454,21 @@ async def create_ticket_with_side_effects(
     except Exception as exc:
         logger.warning(f"[create] registration precheck failed ticket_id={ticket_id} err={exc}")
     account_mode = str((requester_account or {}).get("account_mode") or "").strip()
-    if account_mode not in {"", "browser_no_device"}:
+    confirmed_binding_requested = account_mode == "confirmed_binding"
+    confirmed_binding = None
+    if confirmed_binding_requested:
+        requested_person_id = str((requester_account or {}).get("person_id") or "").strip()
+        requested_binding_id = str((requester_account or {}).get("binding_id") or "").strip()
+        if (
+            verified_requester_binding is not None
+            and str(verified_requester_binding.device_id) == str(device_id or "")
+            and str(verified_requester_binding.person_id) == requested_person_id
+            and str(verified_requester_binding.binding_id) == requested_binding_id
+        ):
+            confirmed_binding = verified_requester_binding
+        else:
+            account_mode = ""
+    elif account_mode not in {"", "browser_no_device"}:
         account_mode = ""
     skip_profile_ingest = account_mode == "browser_no_device"
     if requester_profile:
@@ -481,7 +512,19 @@ async def create_ticket_with_side_effects(
             submitted_registration if isinstance(submitted_registration, dict) else None,
         )
         active_binding = registration_status.get("active_binding") if isinstance(registration_status, dict) else None
-        if account_mode == "browser_no_device":
+        if confirmed_binding is not None:
+            requester_person_id = confirmed_binding.person_id
+            requester_binding_id = confirmed_binding.binding_id
+            verified_requester_person_id = requester_person_id
+            requester_registration_status = "admin_confirmed"
+            requester_account_context = {
+                **_safe_account_payload(requester_account or {}),
+                "account_mode": "confirmed_binding",
+                "person_id": requester_person_id,
+                "binding_id": requester_binding_id,
+                "validation": "web_requester_binding_verified",
+            }
+        elif account_mode == "browser_no_device":
             requester_person_id = str((requester_account or {}).get("person_id") or "").strip() or None
             requester_binding_id = None
             requester_registration_status = "no_device"
@@ -496,7 +539,7 @@ async def create_ticket_with_side_effects(
                 "person_id": requester_person_id,
                 "validation": (requester_account or {}).get("validation") or "web_requester_identity_resolved",
             }
-        elif isinstance(active_binding, dict) and active_binding.get("binding_id"):
+        elif not confirmed_binding_requested and isinstance(active_binding, dict) and active_binding.get("binding_id"):
             requester_person_id = active_binding.get("person_id")
             requester_binding_id = active_binding.get("binding_id")
             verified_requester_person_id = requester_person_id

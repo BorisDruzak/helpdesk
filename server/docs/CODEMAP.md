@@ -19,6 +19,11 @@
 - `server/app/repos/` persists ticket, operation and Endpoint facade state.
 - `server/web_api/support_handlers.py` exposes the canonical support
   diagnostic route and its browser compatibility alias.
+- `server/web_api/requester_handlers.py` derives a `VerifiedRequesterBinding`
+  only after the authenticated requester-device ownership check;
+  `server/tickets/create_flow.py` accepts that internal context only when its
+  device, person, and binding identifiers match, preserving requester scope
+  for shared devices without changing the public request payload.
 - `server/web_api/admin_handlers.py` supplies the browser admin bootstrap;
   its active feature catalog is limited to inventory, forms and the Tech Panel
   and does not advertise retired agent rollout or module-workbench surfaces.

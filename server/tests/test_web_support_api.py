@@ -3930,7 +3930,7 @@ async def test_web_support_ticket_playbooks_returns_published_playbooks_for_tick
             "version": "1.0.0",
             "status": "published",
             "blocks_count": 1,
-            "required_tools": ["system.collect"],
+            "required_tools": [],
             "missing_tools": [],
             "missing_params": [],
             "can_run": True,
