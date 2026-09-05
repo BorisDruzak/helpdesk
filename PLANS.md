@@ -50,6 +50,10 @@ browser UI responsibilities only.
   and `python -m compileall -q endpoint_contracts endpoint_server pc_agent`
   passed. This is local contract evidence only; it does not substitute for
   immutable package or real-agent canary acceptance.
+- The Endpoint headless-boundary subset also passed with a JUnit result of
+  59 tests, zero failures, errors, or skips. It covers the excluded GUI,
+  Helpdesk client and legacy WebSocket surfaces alongside the supported
+  headless lifecycle and verification entrypoints.
 
 ## Next steps
 
