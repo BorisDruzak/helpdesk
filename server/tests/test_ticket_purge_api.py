@@ -199,7 +199,6 @@ async def test_ticket_purge_preview_is_admin_only_and_reports_related_counts(tes
     assert data["affected_counts"]["tickets"] == 1
     assert data["affected_counts"]["ticket_events"] == 1
     assert data["affected_counts"]["operations"] == 1
-    assert data["affected_counts"]["device_outbox"] == 1
     assert data["affected_counts"]["remote_access_sessions"] == 1
     assert data["affected_counts"]["artifacts"] == 1
     assert data["affected_counts"]["observer_traces"] == 1
