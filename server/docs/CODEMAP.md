@@ -32,6 +32,7 @@ Helpdesk has no agent WebSocket server, device outbox sender, tool execution
 service, command-result pipeline or local agent operation fallback. `/ws_ui`
 is retained solely for browser notification delivery. The legacy local
 `run_tool` CLI, GUI-agent debug driver and `/ws_ui_test` page are not shipped.
+This also includes the retired UIA create-ticket harness for the local agent.
 
 ## Contracts and verification
 

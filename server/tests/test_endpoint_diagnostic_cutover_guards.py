@@ -77,6 +77,7 @@ def test_legacy_agent_debug_surfaces_are_physically_removed():
     for relative_path in (
         "scripts/admin_run_tool.py",
         "scripts/agent_test_driver.py",
+        "scripts/live_agent_uia_create_ticket.py",
         "scripts/test_429_semaphore.py",
         "server/support_console.html",
         "server/ws_ui_test.html",
