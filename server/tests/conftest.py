@@ -1757,6 +1757,7 @@ CLEANUP_TABLES_BY_PROFILE = {
         "registry_audience_group_members",
         "registry_audience_groups",
         "registry_assets",
+        "registry_person_identities",
         "registry_people",
         "registry_services",
         "registry_vendors",

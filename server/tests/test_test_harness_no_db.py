@@ -552,6 +552,12 @@ def test_web_api_cleanup_profiles_are_bounded_subsets():
     assert {"observer_traces", "observer_spans", "playbook", "playbook_run"} <= web_support_tables
 
 
+def test_registry_access_cleanup_profile_covers_person_identity_state():
+    tables = set(test_harness.CLEANUP_TABLES_BY_PROFILE["registry_access"])
+
+    assert {"registry_people", "registry_person_identities", "ui_users"} <= tables
+
+
 def test_cleanup_profiles_reject_the_retired_knowledge_schema():
     with pytest.raises(RuntimeError, match="Unknown db_cleanup profile 'knowledge'"):
         test_harness._cleanup_truncate_sql("knowledge")
