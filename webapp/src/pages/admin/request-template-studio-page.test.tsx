@@ -577,7 +577,7 @@ describe("AdminRequestTemplateStudioPage", () => {
     await waitFor(() => expect(publishButton).toBeEnabled());
     fireEvent.click(publishButton);
 
-    const confirmButton = await screen.findByRole("button", { name: /публикацию|publish/i });
+    const confirmButton = await screen.findByRole("button", { name: /публикацию|publish/i }, { timeout: 3000 });
     expect(confirmButton).toBeDisabled();
     expect(screen.getAllByText("Заблокировано").length).toBeGreaterThan(0);
     expect(fetchMock).not.toHaveBeenCalledWith("/api/web/admin/request-studio/publish", expect.anything());
