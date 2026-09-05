@@ -54,6 +54,14 @@ browser UI responsibilities only.
   59 tests, zero failures, errors, or skips. It covers the excluded GUI,
   Helpdesk client and legacy WebSocket surfaces alongside the supported
   headless lifecycle and verification entrypoints.
+- The current local ALT package subset produced 104 passes and 14 expected
+  platform skips (POSIX ownership/FIFO checks, Linux assembly/harness, and
+  RPM inspection). The obsolete plan reference
+  `pc_agent/tests/test_linux_release_bundle.py` is absent; its current
+  coverage is in `tests/build/test_linux_headless_artifact.py`,
+  `tests/deploy/test_alt_agent_bundle_install.py`, and
+  `tests/packaging/test_alt_rpm_contract.py`. The skipped checks remain
+  required on the approved ALT worker before release acceptance.
 
 ## Next steps
 
