@@ -24,6 +24,9 @@
   and does not advertise retired agent rollout or module-workbench surfaces.
 - `server/tickets/handlers.py` projects requester and support UI presence;
   the retired Helpdesk agent runtime is always reported as offline.
+- `server/registry/primary_agent_resolver.py` resolves a person's primary
+  Endpoint device and projects runtime presence when the supplied state
+  provider is available; an unavailable provider remains `unknown`.
 
 Helpdesk has no agent WebSocket server, device outbox sender, tool execution
 service, command-result pipeline or local agent operation fallback. `/ws_ui`
