@@ -160,6 +160,14 @@ def _normalize_priority_list(raw: Any) -> list[str]:
     return priorities
 
 
+def _target_is_explicitly_offline(agent_status: str | None) -> bool:
+    return str(agent_status or "").strip().casefold() in {
+        "offline",
+        "disconnected",
+        "unavailable",
+    }
+
+
 def collect_diagnostic_policy_auto_run_triggers(
     *,
     ticket: Any,
@@ -203,6 +211,8 @@ def collect_diagnostic_policy_auto_run_triggers(
         target_skip_reason = diagnostic_target.skip_reason
         if target_skip_reason:
             reason = target_skip_reason
+        elif _target_is_explicitly_offline(diagnostic_target.agent_status):
+            reason = "target_agent_offline"
         elif allowed_priorities and priority_class not in allowed_priorities:
             reason = "priority_not_allowed"
         elif consent_required and not consent_granted:

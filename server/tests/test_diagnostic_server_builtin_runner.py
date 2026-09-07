@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import DiagnosticEvidence, Operation, Ticket

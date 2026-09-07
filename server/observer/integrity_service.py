@@ -388,10 +388,7 @@ class ObserverIntegrityService:
         resolved = 0
         for source in (
             OPERATION_SOURCE,
-            PROTOCOL_SOURCE,
-            RUNTIME_SOURCE,
             ACCOUNT_SOURCE,
-            MODULE_TOOLSET_SOURCE,
             GOVERNANCE_SOURCE,
             WEB_CABINET_SOURCE,
             INTEGRITY_RUNNER_SOURCE,

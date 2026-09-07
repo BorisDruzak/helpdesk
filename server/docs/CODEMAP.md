@@ -32,6 +32,18 @@
 - `server/registry/primary_agent_resolver.py` resolves a person's primary
   Endpoint device and projects runtime presence when the supplied state
   provider is available; an unavailable provider remains `unknown`.
+- `server/tickets/diagnostic_policy.py` uses the ticket-context target rather
+  than the retired Helpdesk agent runtime; an explicitly offline Endpoint
+  target records a `diagnostic_autorun_skipped` event instead of starting a
+  diagnostic playbook.
+- `server/web_api/registry_handlers.py` creates admin registry people with a
+  server-generated UUID, so the identity and audit flows never accept a
+  caller-supplied person identifier.
+- `server/observer/integrity_service.py` scans and resolves findings only for
+  its active checks; retired protocol and local-runtime sources are excluded
+  from new scans and leave existing events unchanged. Browser authentication
+  failures remain in the
+  `UiUserAudit` trail rather than the retired agent-runtime audit stream.
 
 Helpdesk has no agent WebSocket server, device outbox sender, tool execution
 service, command-result pipeline or local agent operation fallback. `/ws_ui`

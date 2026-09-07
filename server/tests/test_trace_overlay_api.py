@@ -291,7 +291,7 @@ async def test_trace_overlay_reuses_fresh_projection_until_new_source_arrives(te
 
 
 @pytest.mark.asyncio
-async def test_get_device_toolset_returns_empty_snapshot_when_device_has_no_snapshot(test_client):
+async def test_get_device_toolset_route_is_retired_with_local_agent_runtime(test_client):
     now = datetime.now(timezone.utc)
     device_id = "00000000-0000-0000-0000-00000000ee01"
 
@@ -317,13 +317,7 @@ async def test_get_device_toolset_returns_empty_snapshot_when_device_has_no_snap
         f"/api/devices/{device_id}/toolset",
         headers=_auth(),
     )
-    assert response.status == 200
-    payload = await response.json()
-    assert payload["status"] == "ok"
-    assert payload["device_id"] == device_id
-    assert payload["missing_snapshot"] is True
-    assert payload["tool_count"] == 0
-    assert payload["tools_by_module"] == {}
+    assert response.status == 404
 
 
 @pytest.mark.asyncio

@@ -500,17 +500,16 @@ async def test_diagnostic_policy_auto_run_starts_high_risk_playbook_with_explici
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("custom_overrides", "state_online", "expected_reason"),
+    ("custom_overrides", "expected_reason"),
     [
-        ({"diagnostic_consent": {"required": True, "granted": False, "scope": "requester_device"}}, True, "consent_required"),
-        ({"priority_class": "P3"}, True, "priority_not_allowed"),
-        ({}, False, "target_agent_offline"),
+        ({"diagnostic_consent": {"required": True, "granted": False, "scope": "requester_device"}}, "consent_required"),
+        ({"priority_class": "P3"}, "priority_not_allowed"),
+        ({"target_device_id": "offline-target", "target_agent_status": "offline"}, "target_agent_offline"),
     ],
 )
 async def test_diagnostic_policy_auto_run_skips_when_safety_gate_blocks(
     test_engine,
     custom_overrides,
-    state_online,
     expected_reason,
 ):
     session_maker = async_sessionmaker(test_engine)
@@ -558,7 +557,7 @@ async def test_diagnostic_policy_auto_run_skips_when_safety_gate_blocks(
 
         started = await start_ticket_created_playbooks(
             session=session,
-            state=SimpleNamespace(is_agent_online=lambda _device_id: state_online),
+            state=SimpleNamespace(is_agent_online=lambda _device_id: True),
             ticket=ticket,
             custom_fields=custom_fields,
         )

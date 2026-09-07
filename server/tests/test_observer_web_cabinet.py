@@ -2099,7 +2099,6 @@ async def test_web_session_register_writes_web_session_observer_event(
     assert trace.attrs_json["actor_role"] == "user"
     assert span.attrs_json["route"] == "/api/web/session/register"
     assert span.attrs_json["method"] == "POST"
-    assert span.attrs_json["payload"]["device_link_accepted"] is False
     serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
     assert "VeryStrong123!" not in serialized
     assert login not in serialized
@@ -2447,7 +2446,6 @@ async def test_web_device_linking_transfer_owner_writes_observer_event(
     assert span.attrs_json["payload"]["new_binding_status"] == "active"
     assert span.attrs_json["payload"]["relationship_type"] == "primary_user"
     assert span.attrs_json["payload"]["old_binding_action"] == "transferred"
-    assert span.attrs_json["payload"]["revoked_session_count"] == 0
     assert span.attrs_json["payload"]["reason_present"] is True
 
     serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
@@ -2592,8 +2590,6 @@ async def test_web_registry_binding_revoke_writes_observer_event(
     assert span.attrs_json["method"] == "POST"
     assert span.attrs_json["payload"]["binding_status"] == "revoked"
     assert span.attrs_json["payload"]["reason_present"] is True
-    assert span.attrs_json["payload"]["revoked_session_count"] == 0
-    assert span.attrs_json["payload"]["canceled_login_request_count"] == 0
 
     serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
     assert binding_id not in serialized

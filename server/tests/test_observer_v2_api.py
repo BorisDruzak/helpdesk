@@ -602,7 +602,7 @@ async def test_observer_can_filter_agent_update_traces_and_rate_threshold_degrad
 
 
 @pytest.mark.asyncio
-async def test_trace_detail_syncs_agent_actions_into_observer_spans(monkeypatch: pytest.MonkeyPatch, test_client):
+async def test_trace_detail_does_not_fetch_or_sync_retired_agent_actions(test_client):
     now = datetime.now(timezone.utc)
     device_id = "00000000-0000-0000-0000-00000000e301"
     ticket_id = "00000000-0000-0000-0000-00000000e302"
@@ -630,8 +630,8 @@ async def test_trace_detail_syncs_agent_actions_into_observer_spans(monkeypatch:
                 ticket_id=ticket_id,
                 ticket_code="T-OBSACT01",
                 device_id=device_id,
-                title="Observer agent actions",
-                description="Agent action trace should become persisted spans",
+                title="Observer retired agent-action boundary",
+                description="Helpdesk does not fetch or synchronize retired agent actions.",
                 status="in_progress",
                 created_at=now - timedelta(minutes=8),
                 updated_at=now,
@@ -668,61 +668,6 @@ async def test_trace_detail_syncs_agent_actions_into_observer_spans(monkeypatch:
         )
         await session.commit()
 
-    async def _fake_send_ws_rpc_request(**_: object) -> dict[str, object]:
-        return {
-            "payload": {
-                "data": {
-                    "observations": {
-                        "entries": [
-                            {
-                                "ts": (now - timedelta(seconds=5)).isoformat(),
-                                "source": "module",
-                                "action": "module.execute",
-                                "category": "tool",
-                                "action_id": "action-root-1",
-                                "parent_action_id": None,
-                                "ticket_id": ticket_id,
-                                "operation_id": operation_id,
-                                "tool_name": "system.collect",
-                                "trace_id": trace_id,
-                                "request_id": operation_id,
-                                "stage": "finish",
-                                "status": "ok",
-                                "summary": "done",
-                                "details": {
-                                    "module_name": "system",
-                                    "method_name": "collect",
-                                    "access_token": "super-secret",
-                                },
-                            },
-                            {
-                                "ts": (now - timedelta(seconds=4)).isoformat(),
-                                "source": "module",
-                                "action": "module.step",
-                                "category": "tool",
-                                "action_id": "action-step-1",
-                                "parent_action_id": "action-root-1",
-                                "ticket_id": ticket_id,
-                                "operation_id": operation_id,
-                                "tool_name": "system.collect",
-                                "trace_id": trace_id,
-                                "request_id": operation_id,
-                                "stage": "finish",
-                                "status": "ok",
-                                "summary": "cpu collected",
-                                "details": {
-                                    "step": "collect.cpu",
-                                    "module_name": "system",
-                                },
-                            },
-                        ]
-                    }
-                }
-            }
-        }
-
-    monkeypatch.setattr("tech.handlers.send_ws_rpc_request", _fake_send_ws_rpc_request)
-
     detail_resp = await test_client.get(
         f"/api/admin/tech/traces/{trace_id}?include_agent_actions=1&sync_agent_actions=1",
         headers=_auth(),
@@ -730,18 +675,8 @@ async def test_trace_detail_syncs_agent_actions_into_observer_spans(monkeypatch:
     assert detail_resp.status == 200
     detail_payload = await detail_resp.json()
     assert detail_payload["status"] == "ok"
-    assert len(detail_payload["agent_actions"]) == 2
-    assert detail_payload["agent_actions"][0]["details"]["access_token"] == "***REDACTED***"
-    assert any(
-        span["source_type"] == "agent_action"
-        and span["source_ref"] == "action-root-1"
-        and span["name"] == "module.execute"
-        for span in detail_payload["spans"]
-    )
-    assert any(
-        link["reason"] == "agent_action_parent"
-        for link in detail_payload["span_links"]
-    )
+    assert detail_payload["agent_actions"] == []
+    assert detail_payload["agent_actions_error"] == "Endpoint-owned agent traces are not fetched by Helpdesk."
 
 
 @pytest.mark.asyncio
