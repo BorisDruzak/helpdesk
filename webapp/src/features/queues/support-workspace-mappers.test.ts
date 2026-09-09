@@ -7,10 +7,12 @@ import type {
   SupportTicketDetailPayload,
   SupportTicketPassportPayload,
   SupportTicketSlaOlaPayload,
+  SupportTicketToolsPayload,
 } from "./api";
 import {
   formatRemainingSeconds,
   mapSupportWorkspaceViewModel,
+  mapWorkspaceTools,
   mapWorkspaceTicketItems,
   mapWorkspaceSlices,
   mapWorkspaceTimeline,
@@ -80,6 +82,50 @@ function queuePayload(): SupportQueuePayload {
     ],
   };
 }
+
+describe("mapWorkspaceTools", () => {
+  it("keeps an endpoint diagnostic available when the legacy device snapshot is offline", () => {
+    const tools: SupportTicketToolsPayload = {
+      ticket_id: "ticket-1",
+      device_id: "device-1",
+      tools: [
+        {
+          tool_name: "endpoint.context.diagnostic.collect",
+          module_name: "endpoint_platform",
+          description: "Сбор диагностики через Endpoint",
+          risk_level: "low",
+          requires_consent: false,
+          install_required: false,
+          source: "external_endpoint",
+          params_schema: [],
+          presets: [],
+        },
+        {
+          tool_name: "dns.resolve",
+          module_name: "network",
+          description: "Проверка DNS",
+          risk_level: "low",
+          requires_consent: false,
+          install_required: false,
+          source: "agent",
+          params_schema: [],
+          presets: [],
+        },
+      ],
+    };
+
+    const [endpointTool, legacyTool] = mapWorkspaceTools(tools, false);
+
+    expect(endpointTool).toMatchObject({
+      enabled: true,
+      disabledReason: null,
+    });
+    expect(legacyTool).toMatchObject({
+      enabled: false,
+      disabledReason: "Агент устройства offline",
+    });
+  });
+});
 
 describe("mapWorkspaceTicketItems", () => {
   it("uses SLA due dates when compact queue payload has no next action due date", () => {

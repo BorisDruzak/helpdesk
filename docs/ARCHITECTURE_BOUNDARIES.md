@@ -14,6 +14,13 @@ former Helpdesk agent-transport and Protocol V3 descriptions.
 The canonical diagnostic and cancellation contract is
 [server/docs/ENDPOINT_OPERATION_CONTRACT.md](../server/docs/ENDPOINT_OPERATION_CONTRACT.md).
 
+## Diagnostic UI availability
+
+For an Endpoint-backed diagnostic, Helpdesk must not use the legacy inventory
+`device.online` snapshot as an availability gate. The Endpoint operation
+boundary remains the authority for readiness, authorization, and execution;
+legacy tools may continue to use the legacy device state.
+
 ## Required change checks
 
 - A Helpdesk diagnostic change must preserve the Endpoint HTTP contract lock

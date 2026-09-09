@@ -803,7 +803,8 @@ export function mapWorkspaceContext(
 
 export function mapWorkspaceTools(tools: SupportTicketToolsPayload | undefined, deviceOnline = true): SupportWorkspaceToolItem[] {
   return (tools?.tools ?? []).map((tool) => {
-    const disabledReason = !deviceOnline
+    const isEndpointDiagnostic = tool.tool_name === "endpoint.context.diagnostic.collect" && tool.source === "external_endpoint";
+    const disabledReason = !deviceOnline && !isEndpointDiagnostic
       ? "Агент устройства offline"
       : tool.install_required
         ? "Требуется установка модуля"
