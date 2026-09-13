@@ -130,7 +130,7 @@ def build_condition_hints(output_contract: dict[str, Any], error_codes: list[str
 
 
 def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> dict[str, Any]:
-    """Normalize an agent/server tool into the low-code playbook catalog shape."""
+    """Normalize a server- or Endpoint-backed capability for the playbook catalog."""
     spec = _as_dict(raw_tool.get("spec"))
     metadata = _first_dict(spec.get("metadata"), raw_tool.get("metadata"))
     dependencies = _first_dict(spec.get("dependencies"), raw_tool.get("dependencies"))
@@ -176,11 +176,6 @@ def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> di
     )
     condition_hints = build_condition_hints(output_contract, error_codes)
 
-    min_agent_version = (
-        dependencies.get("min_agent_version")
-        or metadata.get("min_agent_version")
-        or raw_tool.get("min_agent_version")
-    )
     normalized = {
         "id": tool_name,
         "label": str(raw_tool.get("label") or raw_tool.get("title") or tool_name),
@@ -198,10 +193,9 @@ def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> di
         "condition_hints": condition_hints,
         "source": source,
         "install_required": bool(raw_tool.get("install_required")),
-        "install_policy": "lazy" if raw_tool.get("install_required") else "preinstalled",
+        "install_policy": "server",
         "supported_platforms": [str(item) for item in platforms],
         "platforms": [str(item) for item in platforms],
-        "min_agent_version": str(min_agent_version).strip() if min_agent_version else None,
         "risk_level": str(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
         "params_schema": params_schema,
         "output_schema": output_schema,
@@ -232,8 +226,7 @@ def normalize_capability_catalog_entry(raw_capability: Any, *, source: str) -> d
     condition_hints = _as_dict(raw.get("condition_hints"))
     if not condition_hints:
         condition_hints = build_condition_hints(output_contract, [])
-    install_required = bool(raw.get("install_required_on_agent") or raw.get("install_required"))
-    non_agent = execution_target and execution_target not in {"agent_builtin", "agent_managed_module"}
+    install_required = bool(raw.get("install_required"))
     return {
         "id": capability_id,
         "label": str(raw.get("title") or raw.get("label") or capability_id),
@@ -254,10 +247,9 @@ def normalize_capability_catalog_entry(raw_capability: Any, *, source: str) -> d
         "condition_hints": condition_hints,
         "source": source,
         "install_required": install_required,
-        "install_policy": "server" if non_agent else ("lazy" if install_required else "preinstalled"),
+        "install_policy": "server",
         "supported_platforms": [str(item) for item in (raw.get("platforms") or ["any"])],
         "platforms": [str(item) for item in (raw.get("platforms") or ["any"])],
-        "min_agent_version": raw.get("min_agent_version"),
         "risk_level": str(raw.get("risk_level") or "low"),
         "params_schema": params_schema,
         "output_schema": output_schema,
@@ -295,37 +287,8 @@ def build_required_tools_manifest(
     catalog_by_tool: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Build the playbook-level command requirements used by preflight/reporting."""
-    result: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for block in blocks:
-        tool_name = str(block.get("tool") or "").strip()
-        if not tool_name or tool_name in seen:
-            continue
-        execution_target = str(block.get("execution_target") or "").strip()
-        if execution_target and execution_target not in {"agent_builtin", "agent_managed_module"}:
-            continue
-        seen.add(tool_name)
-        entry = catalog_by_tool.get(tool_name) or _as_dict(block.get("tool_manifest"))
-        result.append(
-            {
-                "tool": tool_name,
-                "module_name": entry.get("module_name"),
-                "source": entry.get("source"),
-                "install_required": bool(entry.get("install_required")),
-                "install_policy": str(block.get("install_policy") or entry.get("install_policy") or "preinstalled"),
-                "supported_platforms": _as_list(entry.get("supported_platforms") or entry.get("platforms") or ["any"]),
-                "min_agent_version": entry.get("min_agent_version"),
-                "risk_level": entry.get("risk_level"),
-                "requires_consent": bool(entry.get("requires_consent") or entry.get("requires_confirmation")),
-                "params_schema": _as_dict(entry.get("params_schema")),
-                "output_schema": _as_dict(entry.get("output_schema")),
-                "output_contract": _as_dict(entry.get("output_contract")),
-                "condition_hints": _as_dict(entry.get("condition_hints")),
-                "presets": _as_list(entry.get("presets")),
-                "error_codes": _as_list(entry.get("error_codes")),
-            }
-        )
-    return result
+    del blocks, catalog_by_tool
+    return []
 
 
 def build_required_capabilities_manifest(
@@ -345,12 +308,10 @@ def build_required_capabilities_manifest(
             block.get("execution_target")
             or entry.get("execution_target")
             or _as_dict(entry.get("execution")).get("target")
-            or "agent_managed_module"
+            or "endpoint_operation"
         ).strip()
         install_required = bool(
             entry.get("install_required")
-            or entry.get("install_required_on_agent")
-            or _as_dict(entry.get("deployment")).get("install_required_on_agent")
         )
         result.append(
             {
@@ -361,7 +322,7 @@ def build_required_capabilities_manifest(
                 "install_policy": str(
                     block.get("install_policy")
                     or entry.get("install_policy")
-                    or ("lazy" if install_required else ("server" if execution_target not in {"agent_builtin", "agent_managed_module"} else "preinstalled"))
+                    or "server"
                 ),
                 "requires_consent": bool(entry.get("requires_consent") or entry.get("requires_confirmation")),
                 "params_schema": _as_dict(entry.get("params_schema")),

@@ -25,10 +25,7 @@ def list_server_builtin_capabilities() -> List[CapabilityDescriptor]:
         "tool_kind": "diagnostic",
         "risk_level": "low",
         "requires_device": False,
-        "requires_agent_online": False,
-        "supports_auto_install": False,
         "requires_integration": False,
-        "install_required_on_agent": False,
         "platforms": ["any"],
         "source": "server_builtin",
     }

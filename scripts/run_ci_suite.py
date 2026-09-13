@@ -48,7 +48,6 @@ DEFAULT_WEB_BUILD_TIMEOUT_SECONDS = 20 * 60
 DEFAULT_WEB_TEST_TIMEOUT_SECONDS = 20 * 60
 DEFAULT_FAST_CHECK_TIMEOUT_SECONDS = 45 * 60
 DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS = 8 * 60 * 60
-DEFAULT_PC_AGENT_PYTEST_TIMEOUT_SECONDS = 30 * 60
 DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_PYTEST_WATCHDOG_SECONDS = 120
 OUTPUT_POLL_INTERVAL_SECONDS = 0.2
@@ -140,7 +139,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--verify-timeout", type=float, default=DEFAULT_VERIFY_TIMEOUT_SECONDS)
     parser.add_argument("--web-build-timeout", type=float, default=DEFAULT_WEB_BUILD_TIMEOUT_SECONDS)
     parser.add_argument("--server-pytest-timeout", type=float, default=DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS)
-    parser.add_argument("--pc-agent-pytest-timeout", type=float, default=DEFAULT_PC_AGENT_PYTEST_TIMEOUT_SECONDS)
     parser.add_argument(
         "--idle-timeout",
         type=float,
@@ -953,8 +951,6 @@ def _junit_artifacts(artifact_dir: Path, workspace: Path) -> dict[str, object]:
             )
             for layer_name, _paths in _server_db_api_layer_paths(workspace)
         },
-        "server_pytest_agent_ws": str(artifact_dir / "junit-server-agent-ws.xml"),
-        "pc_agent_pytest": str(artifact_dir / "junit-pc-agent.xml"),
     }
 
 
@@ -978,8 +974,6 @@ def _baseline_artifacts(
             "server_pytest_db_api_layers": {
                 layer_name: _duration_baseline(str(junit_path), 80) for layer_name, junit_path in db_api_junit.items()
             },
-            "server_pytest_agent_ws": _duration_baseline(str(junit_artifacts["server_pytest_agent_ws"]), 80),
-            "pc_agent_pytest": _duration_baseline(str(junit_artifacts["pc_agent_pytest"]), 80),
             "fixture_timings_dir": str(fixture_timings_dir),
             "fixture_timings_summary": str(fixture_timings_summary_path),
         },
@@ -1103,7 +1097,7 @@ def _mutation_smoke_command(workspace: Path) -> list[str]:
 
 def _migration_schema_command(workspace: Path, junit_path: Path) -> list[str]:
     return _server_pytest_command(
-        "not manual and not no_db and not agent_ws",
+        "not manual and not no_db",
         junit_path,
         [MIGRATION_SCHEMA_TEST_PATH],
     )
@@ -1184,7 +1178,7 @@ def _server_db_api_layer_steps(
             (
                 layer_name,
                 _server_pytest_command(
-                    "not manual and not no_db and not agent_ws",
+                    "not manual and not no_db",
                     artifact_dir / f"{junit_name}.xml",
                     paths,
                 ),
@@ -1299,8 +1293,6 @@ def _affected_selection_for_paths(
     for path in normalized_paths:
         if path.startswith("webapp/"):
             add_layer("webapp_fixture_e2e", path)
-        elif path.startswith("pc_agent/"):
-            add_layer("pc_agent_pytest", path)
         elif path.startswith("server/"):
             add_layer("server_pytest_no_db", path)
             for layer_name in _server_db_layers_for_changed_path(path, workspace=workspace):
@@ -1539,38 +1531,6 @@ def main() -> None:
             commit=commit,
             keep_test_db=args.keep_test_db,
         ),
-        (
-            "server_pytest_agent_ws",
-            _server_pytest_command("not manual and agent_ws", artifact_dir / "junit-server-agent-ws.xml"),
-            logs_dir / "server_pytest_agent_ws.log",
-            float(args.server_pytest_timeout),
-            float(args.idle_timeout),
-            _server_pytest_env(
-                layer_name="server_pytest_agent_ws",
-                commit=commit,
-                keep_test_db=args.keep_test_db,
-                timing_path=_server_fixture_timing_path(artifact_dir, "server_pytest_agent_ws"),
-            ),
-        ),
-        (
-            "pc_agent_pytest",
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "pc_agent/tests",
-                "-m",
-                "not manual",
-                "-vv",
-                "--durations=80",
-                "--junitxml",
-                str(artifact_dir / "junit-pc-agent.xml"),
-            ],
-            logs_dir / "pc_agent_pytest.log",
-            float(args.pc_agent_pytest_timeout),
-            float(args.idle_timeout),
-            None,
-        ),
     ]
     available_layers = [step_name for step_name, *_rest in steps]
     try:
@@ -1698,8 +1658,6 @@ def main() -> None:
                 "junit_scripts_no_db": junit_artifacts["scripts_pytest_no_db"],
                 "junit_server_no_db": junit_artifacts["server_pytest_no_db"],
                 "junit_server_db_api_layers": junit_artifacts["server_pytest_db_api_layers"],
-                "junit_server_agent_ws": junit_artifacts["server_pytest_agent_ws"],
-                "junit_pc_agent": junit_artifacts["pc_agent_pytest"],
             },
             "flaky_summary": flaky_summary,
             "steps": results,

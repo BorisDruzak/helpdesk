@@ -106,13 +106,13 @@ class PrimaryAgentResolver:
 
     def _connection_state(self, device_id: str) -> tuple[bool | None, str]:
         checker = getattr(self.state, "is_agent_online", None)
-        if callable(checker):
-            try:
-                online = bool(checker(device_id))
-                return online, "online" if online else "offline"
-            except Exception:
-                return None, "unknown"
-        return None, "unknown"
+        if not callable(checker):
+            return None, "unknown"
+        try:
+            online = bool(checker(device_id))
+        except Exception:
+            return None, "unknown"
+        return online, "online" if online else "offline"
 
     async def _target_payload(
         self,

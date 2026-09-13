@@ -170,11 +170,8 @@ export type DiagnosticCapability = {
   side_effects?: boolean;
   requires_consent: boolean;
   requires_device?: boolean;
-  requires_agent_online?: boolean;
-  supports_auto_install?: boolean;
   requires_integration: boolean;
   integration_key: string | null;
-  install_required_on_agent: boolean;
   platforms?: string[];
   params_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;

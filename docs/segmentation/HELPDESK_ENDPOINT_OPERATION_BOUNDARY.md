@@ -191,13 +191,10 @@ guidance. Service token, base URL, CA path, raw response/command, credential,
 WSS session and stack traces are never shown. The opaque external operation
 reference is available only in authorized advanced service details.
 
-## Explicit non-goals
+## Cutover boundary
 
-This slice neither migrates all `run_tool` paths nor removes the legacy agent
-runtime. It does not complete consent migration, Remote Assist migration,
-legacy agent `/ws` deletion, `DeviceOutbox` deletion, or agent account-session
-deletion. Those components remain until their individual cutover prerequisites
-are accepted. It does not move managed modules, recipes, scheduler, agent
-update/build/rollout, Registry, Knowledge, device tables, browser pairing, or
-`/ws_ui`; it does not deploy, run a production migration, change service
-credentials, or roll out an agent.
+Helpdesk has no legacy agent runtime, agent WebSocket, device outbox, local
+command dispatch, browser pairing, or device account-session authority. Those
+responsibilities belong to Endpoint Platform. Helpdesk retains only the
+Endpoint operation facade, ticket workflow, web authentication/RBAC and
+`/ws_ui` browser notifications.

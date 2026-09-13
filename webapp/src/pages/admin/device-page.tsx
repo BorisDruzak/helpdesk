@@ -8,7 +8,6 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
 import { Select } from "../../components/ui/select";
-import { DeviceUpdatePanel } from "../../features/agent-updates/device-update-panel";
 import { fetchAdminDevices } from "../../features/admin/api";
 import { DeviceInventoryPanel } from "../../features/admin/device-inventory-panel";
 import { ObserverQuickPanel } from "../../features/tech/observer-quick-panel";
@@ -31,24 +30,7 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 
-function getUpdateTone(value: string | null | undefined): "danger" | "info" | "neutral" | "success" | "warning" {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (!normalized) {
-    return "neutral";
-  }
-  if (["succeeded", "ok", "completed", "up_to_date"].includes(normalized)) {
-    return "success";
-  }
-  if (["queued", "running", "in_progress"].includes(normalized)) {
-    return "info";
-  }
-  if (["failed", "timed_out", "error"].includes(normalized)) {
-    return "danger";
-  }
-  return "warning";
-}
-
-type DeviceDrilldownTab = "inventory" | "observer" | "status" | "updates";
+type DeviceDrilldownTab = "inventory" | "observer" | "status";
 
 
 export function AdminDevicePage() {
@@ -108,13 +90,13 @@ export function AdminDevicePage() {
                 leadingIcon={<ArrowUpRight className="h-4 w-4" />}
                 onClick={() => {
                   startTransition(() => {
-                    navigate(`/app/admin/device-operations/${encodeURIComponent(selectedDevice.device_id)}`);
+                    navigate(`/app/admin/device?device=${encodeURIComponent(selectedDevice.device_id)}`);
                   });
                 }}
                 size="sm"
                 variant="outline"
               >
-                Операции устройства
+                Карточка устройства
               </Button>
             ) : null}
             <Select
@@ -145,7 +127,7 @@ export function AdminDevicePage() {
             </Button>
           </>
         }
-        description="Выделенная карточка устройства с живым update workflow и observer quick panel. Здесь остаётся новый SaaS-слой, но действия и состояние уже идут из реального backend."
+        description="Выделенная карточка устройства с текущим состоянием подключения, инвентарём и observer quick panel."
         eyebrow="Admin detail"
         title="Карточка устройства"
       />
@@ -170,11 +152,7 @@ export function AdminDevicePage() {
                       : "Выберите устройство, чтобы открыть реальный update flow."}
                   </CardDescription>
                 </div>
-                {selectedDevice ? (
-                  <Badge tone={getUpdateTone(selectedDevice.latest_update.status)} withDot>
-                    {selectedDevice.latest_update.label}
-                  </Badge>
-                ) : null}
+                {selectedDevice ? <Badge tone={selectedDevice.online ? "success" : "neutral"} withDot>{selectedDevice.connection_status_label}</Badge> : null}
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -197,16 +175,14 @@ export function AdminDevicePage() {
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
-                      <p className="text-sm text-slate-500">Последний update status</p>
-                      <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.latest_update.label}</p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        {selectedDevice.latest_update.summary ?? "Подробности появятся после следующего server-side обновления."}
-                      </p>
+                      <p className="text-sm text-slate-500">Последний контакт</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.connection_status_label}</p>
+                      <p className="mt-2 text-sm text-slate-500">{formatDateTime(selectedDevice.last_seen_at)}</p>
                     </div>
                     <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
                       <p className="text-sm text-slate-500">Целевой target</p>
                       <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice.target ?? "Не назначен"}</p>
-                      <p className="mt-2 text-sm text-slate-500">Для rollout и observer drilldown используем этот же идентификатор устройства.</p>
+                      <p className="mt-2 text-sm text-slate-500">Идентификатор доступен для диагностики и observer drilldown.</p>
                     </div>
                   </div>
 
@@ -241,7 +217,6 @@ export function AdminDevicePage() {
                 ["status", "Status"],
                 ["inventory", "Inventory"],
                 ["observer", "Observer"],
-                ["updates", "Updates"],
               ].map(([value, label]) => (
                 <button
                   aria-selected={deviceDrilldownTab === value}
@@ -273,9 +248,9 @@ export function AdminDevicePage() {
                     <p className="mt-2 text-sm text-slate-500">{selectedDevice?.os ?? "OS n/a"}</p>
                   </div>
                   <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
-                    <p className="text-sm text-slate-500">Recommended action</p>
-                    <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice?.latest_update.label ?? "Select device"}</p>
-                    <p className="mt-2 text-sm text-slate-500">{selectedDevice?.latest_update.summary ?? "No update signal yet."}</p>
+                    <p className="text-sm text-slate-500">Diagnostic target</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice?.target ?? "Select device"}</p>
+                    <p className="mt-2 text-sm text-slate-500">Endpoint Platform owns agent lifecycle and releases.</p>
                   </div>
                 </div>
               ) : null}
@@ -289,18 +264,6 @@ export function AdminDevicePage() {
                 <ObserverQuickPanel
                   deviceId={selectedDevice?.device_id ?? null}
                   deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? "selected device"}
-                />
-              ) : null}
-              {deviceDrilldownTab === "updates" ? (
-                <DeviceUpdatePanel
-                  device={
-                    selectedDevice
-                      ? {
-                          device_id: selectedDevice.device_id,
-                          hostname: selectedDevice.hostname,
-                        }
-                      : null
-                  }
                 />
               ) : null}
             </div>
@@ -342,31 +305,12 @@ export function AdminDevicePage() {
                 className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
                 onClick={() => {
                   startTransition(() => {
-                    const query = new URLSearchParams();
-                    if (selectedDevice?.device_id) {
-                      query.set("device", selectedDevice.device_id);
-                    }
-                    if (selectedDevice?.target) {
-                      query.set("target", selectedDevice.target);
-                    }
-                    navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
+                    navigate("/app/admin/capabilities");
                   });
                 }}
                 type="button"
               >
-                <span className="font-medium text-slate-900">Обновления агента и rollout</span>
-                <ArrowUpRight className="h-4 w-4 text-brand-700" />
-              </button>
-              <button
-                className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
-                onClick={() => {
-                  startTransition(() => {
-                    navigate("/app/admin/modules");
-                  });
-                }}
-                type="button"
-              >
-                <span className="font-medium text-slate-900">Модули и preferred versions</span>
+                <span className="font-medium text-slate-900">Возможности Endpoint</span>
                 <ArrowUpRight className="h-4 w-4 text-brand-700" />
               </button>
               <button

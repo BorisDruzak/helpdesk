@@ -1,402 +1,42 @@
 {
   "schema": "pc_client.active_risks.v1",
-  "last_reviewed": "2026-06-24",
+  "last_reviewed": "2026-09-04",
   "risks": [
     {
       "id": "TD-012",
       "priority": "P2",
       "status": "active",
       "owner_zone": "quality",
-      "risk": "Archive risk notes can drift away from executable coverage and become non-blocking documentation.",
+      "risk": "A cutover release can be accepted without complete, redacted evidence for both Endpoint packages and real-agent canaries.",
       "affected_contracts": [
-        "PLANS.md technical debt registry",
-        "quality active-risk audit"
+        "Legacy Cutover Production Acceptance",
+        "Endpoint-only route boundary"
       ],
       "source_refs": [
         {
-          "source_id": "plans.h2.td-012",
-          "path": "PLANS.md",
-          "section": "H2 initial backlog TD-012"
-        },
-        {
-          "source_id": "plans.phase5.td-501",
-          "path": "PLANS.md",
-          "section": "Phase 5 TD-501"
+          "source_id": "cutover.acceptance",
+          "path": "docs/verification/LEGACY_CUTOVER_PRODUCTION_ACCEPTANCE.md",
+          "section": "Targeted verification and real-agent canaries"
         }
       ],
       "evidence_refs": [
-        "docs/archive/BOTTLENECKS_AND_RISKS.md",
-        "quality/active_risks.json"
+        "docs/verification/LEGACY_CUTOVER_PRODUCTION_ACCEPTANCE.md",
+        "docs/segmentation/HELPDESK_ENDPOINT_OPERATION_BOUNDARY.md"
       ],
-      "escalation_trigger": "An active archive source is not represented by a registry row or the audit reports any issue.",
+      "escalation_trigger": "A release candidate lacks an exact immutable SHA, targeted gate output, or a complete ALT and Windows canary record.",
       "acceptance_criteria": [
         {
-          "metric": "active risk audit",
-          "target": "0 issues from python scripts/audit_active_risks.py --strict"
+          "metric": "cutover acceptance evidence",
+          "target": "The release record contains exact SHAs, targeted gate results, package digests, and both canary outcomes."
         }
       ],
       "linked_tests": [
         {
-          "ref": "scripts/test_audit_active_risks.py::test_audit_active_risks_accepts_complete_registry",
-          "purpose": "Validates the active-risk registry contract and required source coverage."
+          "ref": "server/tests/test_no_legacy_endpoint_routes.py::test_legacy_agent_control_routes_are_not_registered",
+          "purpose": "Prevents retired Helpdesk agent control-plane routes from returning."
         }
       ],
-      "last_reviewed": "2026-06-24"
-    },
-    {
-      "id": "TD-013",
-      "priority": "P2",
-      "status": "active",
-      "owner_zone": "agent_runtime",
-      "risk": "Agent-side ACK handling and previous-runtime in_progress command recovery can regress into duplicate execution or lost terminal replay.",
-      "affected_contracts": [
-        "Protocol V3 outbox ACK",
-        "agent seen command lifecycle",
-        "command_result replay after restart"
-      ],
-      "source_refs": [
-        {
-          "source_id": "archive.1.1.outbox_ack",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "1.1 Outbox and ACK"
-        },
-        {
-          "source_id": "archive.1.2.command_idempotency",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "1.2 Command idempotency"
-        },
-        {
-          "source_id": "plans.h2.td-013",
-          "path": "PLANS.md",
-          "section": "H2 initial backlog TD-013"
-        }
-      ],
-      "evidence_refs": [
-        "pc_agent/docs/PROTOCOL_V3.md",
-        "pc_agent/docs/CODEMAP.md"
-      ],
-      "escalation_trigger": "Restart recovery tests fail, stale in_progress commands execute again, or ACK delete/claim ordering loses terminal replay evidence.",
-      "acceptance_criteria": [
-        {
-          "metric": "restart duplicate execution",
-          "target": "0 duplicate executions in command restart recovery tests"
-        },
-        {
-          "metric": "seen command retry metadata",
-          "target": "owner and stale retry counters remain deterministic across retries"
-        }
-      ],
-      "linked_tests": [
-        {
-          "ref": "pc_agent/tests/test_command_restart_recovery.py::test_previous_runtime_in_progress_command_recovers_without_ack_or_rerun",
-          "purpose": "Guards the previous-runtime in_progress restart path against re-execution."
-        },
-        {
-          "ref": "pc_agent/tests/test_command_restart_recovery.py::test_duplicate_after_restart_recovery_returns_cached_error",
-          "purpose": "Keeps duplicate recovery terminal and replay-safe."
-        },
-        {
-          "ref": "pc_agent/tests/test_seen_commands_retry_policy.py::test_mark_command_started_tracks_owner_and_stale_retry_count",
-          "purpose": "Locks owner and stale retry metadata for in_progress commands."
-        }
-      ],
-      "last_reviewed": "2026-06-24"
-    },
-    {
-      "id": "TD-014",
-      "priority": "P2",
-      "status": "active",
-      "owner_zone": "tool_execution",
-      "risk": "Synchronous run_tool wait paths and legacy/admin entry points can diverge from the canonical ToolService facade and tool_call_started invariant.",
-      "affected_contracts": [
-        "ToolService.run_tool",
-        "tool_call_started before dispatch",
-        "async operation polling contract",
-        "support tool action boundary"
-      ],
-      "source_refs": [
-        {
-          "source_id": "archive.2.3.sync_run_tool_wait",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "2.3 send_ws_command, HTTP run_tool and timeouts"
-        },
-        {
-          "source_id": "archive.2.4.run_tool_entry_paths",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "2.4 Two run_tool paths"
-        },
-        {
-          "source_id": "plans.h2.td-014",
-          "path": "PLANS.md",
-          "section": "H2 initial backlog TD-014"
-        }
-      ],
-      "evidence_refs": [
-        "server/docs/TOOL_CALL_STARTED_INVARIANT.md",
-        "server/docs/RFC_ASYNC_COMMAND_AND_OPERATION_POLL.md",
-        "server/docs/CODEMAP.md"
-      ],
-      "escalation_trigger": "A run_tool entry point bypasses ToolService, omits tool_call_started, or sync wait consumes the run_tool slot under async submission.",
-      "acceptance_criteria": [
-        {
-          "metric": "tool_call_started invariant",
-          "target": "all run_tool dispatch paths create exactly one tool_call_started before command send"
-        },
-        {
-          "metric": "async dispatch slot release",
-          "target": "send_ws_command async path releases the run_tool slot immediately"
-        }
-      ],
-      "linked_tests": [
-        {
-          "ref": "server/tests/test_tool_started_event.py::test_tool_call_started_created_before_command",
-          "purpose": "Guards event creation before command dispatch."
-        },
-        {
-          "ref": "server/tests/test_web_support_api.py::test_web_support_tool_action_returns_typed_result_and_dispatches_run_tool",
-          "purpose": "Guards typed support tool action dispatch through the run_tool boundary."
-        },
-        {
-          "ref": "server/tests/test_tool_dispatch_failure.py::test_send_ws_command_async_releases_run_tool_slot",
-          "purpose": "Guards async send behavior under run_tool concurrency limits."
-        },
-        {
-          "ref": "server/tests/test_tool_service_auto_install_no_db.py::test_resume_approved_operation_dispatches_through_deferred_run_tool",
-          "purpose": "Guards approved-consent resume through the ToolExecutionService run_tool facade."
-        }
-      ],
-      "last_reviewed": "2026-06-24"
-    },
-    {
-      "id": "TD-015",
-      "priority": "P3",
-      "status": "accepted",
-      "owner_zone": "server_runtime",
-      "risk": "Device outbox dispatch is still process-local for runtime ownership; multi-instance deployment needs explicit DB coordination and locking prerequisites.",
-      "affected_contracts": [
-        "DeviceOutboxSender dispatch runtime",
-        "device_outbox delivery lifecycle",
-        "operation retry/exhaustion synchronization",
-        "multi-instance deployment prerequisites"
-      ],
-      "source_refs": [
-        {
-          "source_id": "archive.2.2.device_outbox_dispatch",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "2.2 DeviceOutboxSender and dispatch"
-        },
-        {
-          "source_id": "plans.h2.td-015",
-          "path": "PLANS.md",
-          "section": "H2 initial backlog TD-015"
-        },
-        {
-          "source_id": "plans.phase5.td-507",
-          "path": "PLANS.md",
-          "section": "Phase 5 TD-507"
-        }
-      ],
-      "evidence_refs": [
-        "server/docs/PROTOCOL_V3.md",
-        "server/docs/CODEMAP.md",
-        "quality/outbox_multi_instance_prerequisites.json",
-        "docs/IMPLEMENTATION_PLAN_THIN_HANDLER_OUTBOX_ASYNC.md"
-      ],
-      "escalation_trigger": "Deployment adds multiple server dispatch instances before quality/outbox_multi_instance_prerequisites.json is fully implemented and its DB locking/lease/connection-owner tests pass.",
-      "acceptance_criteria": [
-        {
-          "metric": "single-process dispatch regression",
-          "target": "0 scheduling loss in 50-device sharded dispatcher test"
-        },
-        {
-          "metric": "multi-instance prerequisite record",
-          "target": "quality/outbox_multi_instance_prerequisites.json records DB coordination, lock ownership, connection ownership, lease recovery, and test plan before horizontal scaling"
-        }
-      ],
-      "linked_tests": [
-        {
-          "ref": "server/tests/test_outbox_multi_instance_prerequisites.py::test_outbox_multi_instance_prerequisites_are_recorded",
-          "purpose": "Guards the multi-instance dispatch prerequisite record and horizontal scaling deployment gate."
-        },
-        {
-          "ref": "server/tests/test_device_dispatch_integration.py::test_shard_dispatcher_light_load_50_devices_no_scheduling_loss",
-          "purpose": "Guards current sharded dispatch scheduling under light load."
-        },
-        {
-          "ref": "server/tests/test_device_dispatch_runtime.py::test_sharded_dispatch_commits_each_command_before_next_send",
-          "purpose": "Guards per-command commit ordering in sharded dispatch."
-        }
-      ],
-      "last_reviewed": "2026-06-24"
-    },
-    {
-      "id": "TD-016",
-      "priority": "P2",
-      "status": "mitigated",
-      "owner_zone": "agent_runtime",
-      "risk": "Scheduler RPC methods were historically declared before agent implementation, creating NOT_IMPLEMENTED surprises for callers.",
-      "affected_contracts": [
-        "Protocol V3 scheduler RPC",
-        "agent scheduled_tasks storage",
-        "admin tech list_tasks action"
-      ],
-      "source_refs": [
-        {
-          "source_id": "archive.1.3.scheduler_rpc",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "1.3 Scheduler"
-        }
-      ],
-      "evidence_refs": [
-        "pc_agent/docs/PROTOCOL_V3.md",
-        "pc_agent/docs/CODEMAP.md"
-      ],
-      "escalation_trigger": "Scheduler RPC returns NOT_IMPLEMENTED for schedule_task, cancel_task, list_tasks, or task_run_now in supported agent builds.",
-      "acceptance_criteria": [
-        {
-          "metric": "scheduler runtime execution",
-          "target": "scheduled task run_now executes through the run_tool path"
-        }
-      ],
-      "linked_tests": [
-        {
-          "ref": "pc_agent/tests/test_scheduler_runtime.py::test_scheduler_executes_due_task_via_run_tool_path",
-          "purpose": "Guards agent scheduler execution through run_tool."
-        },
-        {
-          "ref": "server/tests/test_admin_tech_api.py::test_tech_agent_action_list_tasks_uses_rpc",
-          "purpose": "Guards server tech action routing to list_tasks RPC."
-        }
-      ],
-      "last_reviewed": "2026-06-24"
-    },
-    {
-      "id": "TD-017",
-      "priority": "P2",
-      "status": "active",
-      "owner_zone": "agent_runtime",
-      "risk": "Legacy orchestrator branches can grow beyond policy and execution routing, making consent/tool execution behavior harder to audit.",
-      "affected_contracts": [
-        "AgentOrchestrator command facade",
-        "tool execution scheduler",
-        "consent-aware command execution"
-      ],
-      "source_refs": [
-        {
-          "source_id": "archive.1.4.consent_orchestrator",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "1.4 Consent and orchestrator"
-        }
-      ],
-      "evidence_refs": [
-        "pc_agent/docs/CODEMAP.md",
-        "docs/ARCHITECTURE_BOUNDARIES.md"
-      ],
-      "escalation_trigger": "New command handling logic lands directly in orchestrator legacy branches without scheduler/policy tests.",
-      "acceptance_criteria": [
-        {
-          "metric": "stateful tool serialization",
-          "target": "stateful/write tools remain serialized by the scheduler"
-        },
-        {
-          "metric": "module execution trace",
-          "target": "run_tool emits module-level action trace breakdown"
-        }
-      ],
-      "linked_tests": [
-        {
-          "ref": "pc_agent/tests/test_tool_execution_scheduler.py::test_system_write_run_tool_is_serialized",
-          "purpose": "Guards execution-lane behavior outside ad-hoc orchestrator branching."
-        },
-        {
-          "ref": "pc_agent/tests/test_tool_contract_runtime.py::test_run_tool_emits_module_level_action_trace_breakdown",
-          "purpose": "Guards auditable module execution trace output."
-        }
-      ],
-      "last_reviewed": "2026-06-24"
-    },
-    {
-      "id": "TD-018",
-      "priority": "P3",
-      "status": "mitigated",
-      "owner_zone": "agent_modules",
-      "risk": "An orchestrator without module manager inventory could send empty modules_inventory and drift from server module state.",
-      "affected_contracts": [
-        "agent startup module inventory",
-        "server handshake module sync",
-        "device_modules projection"
-      ],
-      "source_refs": [
-        {
-          "source_id": "archive.1.5.module_manager_handshake",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "1.5 ModuleManager and handshake"
-        }
-      ],
-      "evidence_refs": [
-        "pc_agent/docs/PROTOCOL_V3.md",
-        "server/docs/CODEMAP.md"
-      ],
-      "escalation_trigger": "Agent startup stops emitting inventory sync or server handshake stops reconciling modules_inventory.",
-      "acceptance_criteria": [
-        {
-          "metric": "startup inventory sync",
-          "target": "orchestrator emits startup module inventory sync"
-        },
-        {
-          "metric": "handshake inventory reconcile",
-          "target": "server reconciles modules_inventory during handshake"
-        }
-      ],
-      "linked_tests": [
-        {
-          "ref": "pc_agent/tests/test_startup_module_inventory_sync.py::test_orchestrator_emits_startup_inventory_sync",
-          "purpose": "Guards agent startup inventory sync."
-        },
-        {
-          "ref": "server/tests/test_handshake_module_reconcile.py::test_handshake_reconciles_after_modules_inventory_sync",
-          "purpose": "Guards server-side modules_inventory reconciliation."
-        }
-      ],
-      "last_reviewed": "2026-06-24"
-    },
-    {
-      "id": "TD-019",
-      "priority": "P3",
-      "status": "accepted",
-      "owner_zone": "release_control",
-      "risk": "SERVER_PUBLIC_BASE_URL must be explicit and reachable outside dev defaults, otherwise module and update downloads fail on agent hosts.",
-      "affected_contracts": [
-        "server module download URLs",
-        "agent module/update reachability preflight",
-        "production environment configuration"
-      ],
-      "source_refs": [
-        {
-          "source_id": "archive.3.3.server_public_base_url",
-          "path": "docs/archive/BOTTLENECKS_AND_RISKS.md",
-          "section": "3.3 SERVER_PUBLIC_BASE_URL and preflight"
-        }
-      ],
-      "evidence_refs": [
-        "server/docs/MODULES_API.md",
-        "server/docs/README.md",
-        "server/docs/AGENT_UPDATES_ANALYSIS.md"
-      ],
-      "escalation_trigger": "A production/pilot release uses the dev default SERVER_PUBLIC_BASE_URL or module/update download reachability fails from agent hosts.",
-      "acceptance_criteria": [
-        {
-          "metric": "release config proof",
-          "target": "pilot/prod release evidence records reachable SERVER_PUBLIC_BASE_URL and module ping"
-        }
-      ],
-      "linked_tests": [
-        {
-          "ref": "scripts/test_audit_active_risks.py::test_audit_active_risks_accepts_complete_registry",
-          "purpose": "Keeps the accepted configuration risk present in the registry until a dedicated release preflight test owns it."
-        }
-      ],
-      "last_reviewed": "2026-06-24"
+      "last_reviewed": "2026-09-04"
     }
   ]
 }

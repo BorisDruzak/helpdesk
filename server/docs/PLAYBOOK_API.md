@@ -1,10 +1,15 @@
-# Playbook API (Этап 4 MVP, Этап 6 deferred + idempotency)
+# Playbook API
 
 Краткое описание API запуска плейбуков.
 
 ## POST /api/playbooks/runs
 
-Запускает плейбук на устройстве: создаётся playbook_run. При немедленном запуске первый шаг ставится в device_outbox (run_tool с require_online=False). При отложенном (scheduled_at в будущем) run создаётся со статусом pending и планировщик запустит первый шаг в срок. Продвижение по шагам выполняется при получении command_result (succeeded/failed/timed_out) в WebSocket-обработчике.
+Запускает playbook run для устройства. При немедленном запуске Helpdesk
+разрешает первый шаг только как Endpoint или server capability и передаёт его
+через `CapabilityExecutionRouter`; Endpoint capability создаёт ticket-facing
+operation facade. Helpdesk не создаёт `device_outbox` и не доставляет команды
+агенту локально. При отложенном `scheduled_at` run создаётся со статусом
+`pending`, а планировщик запускает его в срок.
 
 **Request (JSON):**
 
@@ -51,7 +56,7 @@
 
 **Response 404:** версия плейбука не найдена.
 
-**Response 500:** ошибка при создании run или постановке команды в outbox.
+**Response 500:** ошибка при создании run или разрешении capability.
 
 ---
 
@@ -59,10 +64,13 @@
 
 - **playbook** — ключ, имя, домен, владелец.
 - **playbook_version** — версия, manifest_json, status (draft/published).
-- **playbook_step** — step_key, order_no, type (run_tool), tool (module.tool), params_template_json, continue_on_error и др.
+- **playbook_step** — step_key, order_no, type (logical tool-backed step),
+  tool (capability id), params_template_json, continue_on_error и др.
 - **playbook_run** — запуск на устройстве: status (pending/running/success/failed), started_at, finished_at, error_code, error_message.
 - **playbook_step_run** — исполнение шага: attempt, status, operation_id, started_at, finished_at, input_json, output_json, error_json.
 
-Создание playbook, version и step — через БД или будущий CRUD API. Для теста можно вставить записи вручную.
+Tool-backed step обязан разрешаться в Endpoint или server capability; иначе run
+фиксирует `ENDPOINT_ONLY_CAPABILITY_REQUIRED`. Создание playbook, version и
+step — через БД или будущий CRUD API. Для теста можно вставить записи вручную.
 
 См. также: `PLAYBOOK_IMPLEMENTATION.md`, миграция 033.

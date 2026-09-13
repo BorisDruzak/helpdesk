@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Layers3, Plus, RefreshCw, ShieldAlert, Sparkles } from "lucide-react";
+import { Layers3, RefreshCw, ShieldAlert, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -11,12 +11,10 @@ import { StatTile } from "../../components/ui/stat-tile";
 import { Tabs } from "../../components/ui/tabs";
 import { listAdminCapabilities, listAdminCapabilityProviderConfigs } from "./api";
 import { CapabilityCatalogTable } from "./capability-catalog-table";
-import { CapabilityCreateModal } from "./capability-create-modal";
 import { CapabilityDetailDrawer } from "./capability-detail-drawer";
 import { CapabilityProviderCards } from "./capability-provider-cards";
 import { EvidenceMappingPanel } from "./evidence-mapping-panel";
 import { ReadinessLabPanel } from "./readiness-lab-panel";
-import { RunnerRolloutPanel } from "./runner-rollout-panel";
 import { SdkModulesTab } from "./sdk-modules-tab";
 import type { CapabilityDescriptor, DiagnosticProviderConfig, ProviderSummary } from "./types";
 
@@ -160,7 +158,6 @@ export function CapabilityStudioPage() {
   const deviceId = searchParams.get("device_id") ?? searchParams.get("device") ?? null;
   const [activeTab, setActiveTab] = useState<CapabilityStudioTab>(() => normalizeTab(searchParams.get("tab")));
   const [selectedCapability, setSelectedCapability] = useState<CapabilityDescriptor | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [targetFilter, setTargetFilter] = useState("");
   const [providerFilter, setProviderFilter] = useState("");
@@ -206,7 +203,7 @@ export function CapabilityStudioPage() {
   const stats = useMemo(
     () => ({
       total: capabilities.length,
-      agent: capabilities.filter((capability) => capability.execution_target.startsWith("agent_")).length,
+      endpoint: capabilities.filter((capability) => capability.execution_target === "endpoint_operation").length,
       server: capabilities.filter((capability) => capability.execution_target.startsWith("server_")).length,
       connectors: capabilities.filter((capability) => capability.execution_target === "server_connector").length,
       evidence: capabilities.filter((capability) => capability.evidence?.produces_evidence).length,
@@ -244,9 +241,6 @@ export function CapabilityStudioPage() {
       <PageHeading
         actions={
           <>
-            <Button leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
-              Создать capability
-            </Button>
             <Button
               leadingIcon={<RefreshCw className="h-4 w-4" />}
               onClick={refresh}
@@ -254,12 +248,12 @@ export function CapabilityStudioPage() {
             >
               Обновить
             </Button>
-            <a href="/app/admin/modules">
+            <a href="/app/admin/capabilities">
               <Button variant="ghost">Документация</Button>
             </a>
           </>
         }
-        description="Единый каталог диагностических возможностей, модулей агента, серверных проверок и внешних API."
+        description="Единый каталог Endpoint-операций, серверных проверок и внешних API."
         eyebrow="Возможности"
         title="Capabilities"
       />
@@ -272,7 +266,7 @@ export function CapabilityStudioPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <StatTile accent={<Layers3 className="h-5 w-5 text-brand-700" />} label="Всего capabilities" value={String(stats.total)} />
-        <StatTile label="Agent capabilities" value={String(stats.agent)} />
+        <StatTile label="Endpoint capabilities" value={String(stats.endpoint)} />
         <StatTile label="Server capabilities" value={String(stats.server)} />
         <StatTile label="Connectors" value={String(stats.connectors)} />
         <StatTile label="Produces evidence" value={String(stats.evidence)} />
@@ -329,7 +323,6 @@ export function CapabilityStudioPage() {
 
       {activeTab === "providers" ? (
         <div className="space-y-5">
-          <RunnerRolloutPanel />
           <CapabilityProviderCards
             providers={providers}
             onSelectProvider={(providerId) => {
@@ -352,17 +345,10 @@ export function CapabilityStudioPage() {
 
       <div className="rounded-[1rem] border border-dashed border-border bg-white px-4 py-3 text-sm text-slate-500">
         <Sparkles className="mr-2 inline h-4 w-4 text-brand-700" />
-        Low-code creation, persisted evidence mapping и declarative recipes помечены как Phase 2, чтобы MVP не подменял runtime contracts.
+        Capability catalog отображает только безопасные Endpoint и server-side runtime contracts.
       </div>
 
       <CapabilityDetailDrawer capability={selectedCapability} deviceId={deviceId} onClose={() => setSelectedCapability(null)} />
-      <CapabilityCreateModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={() => {
-          void queryClient.invalidateQueries({ queryKey: ["admin-capabilities"] });
-        }}
-      />
     </section>
   );
 }

@@ -24,7 +24,6 @@ DEFAULT_WORKSPACE = REPO_ROOT
 DEFAULT_PYTEST_INI = REPO_ROOT / "pytest.ini"
 DEFAULT_PATHS = (
     REPO_ROOT / "server" / "tests",
-    REPO_ROOT / "pc_agent" / "tests",
     REPO_ROOT / "scripts",
 )
 
@@ -268,7 +267,6 @@ def _classify_suite(path: Path, workspace: Path, markers: frozenset[str], fixtur
     resolved = path.resolve()
     workspace = workspace.resolve()
     server_tests = workspace / "server" / "tests"
-    pc_agent_tests = workspace / "pc_agent" / "tests"
     scripts_dir = workspace / "scripts"
 
     if _is_relative_to(resolved, server_tests):
@@ -279,11 +277,7 @@ def _classify_suite(path: Path, workspace: Path, markers: frozenset[str], fixtur
             return _classify_server_db_api_file(path.name, workspace=workspace)
         if "no_db" in markers:
             return "server_pytest_no_db"
-        if "agent_ws" in markers or "test_agent" in fixtures:
-            return "server_pytest_agent_ws"
         return _classify_server_db_api_file(path.name, workspace=workspace)
-    if _is_relative_to(resolved, pc_agent_tests):
-        return "pc_agent_pytest"
     if _is_relative_to(resolved, scripts_dir):
         return "scripts_pytest_no_db"
     return "unowned"
@@ -416,7 +410,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     workspace = args.workspace.resolve()
-    paths = args.paths or [workspace / "server" / "tests", workspace / "pc_agent" / "tests", workspace / "scripts"]
+    paths = args.paths or [workspace / "server" / "tests", workspace / "scripts"]
     pytest_ini = args.pytest_ini or workspace / "pytest.ini"
     report = audit_paths(paths, workspace=workspace, known_markers=load_known_markers(pytest_ini))
     print_report(report, workspace=workspace)

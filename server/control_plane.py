@@ -91,23 +91,14 @@ async def control_auth_middleware(request: web.Request, handler):
     auth_context = None
     if token:
         auth_service = AuthService(request.app[STATE_KEY])
-        token_info = await auth_service.verify_agent_token(token)
+        token_info = await auth_service.verify_ui_token(token)
         if token_info:
             auth_context = AuthContext(
-                actor_id=token_info["device_id"],
-                actor_role="agent",
-                auth_type=AuthType.AGENT_TOKEN,
+                actor_id=token_info["user_login"],
+                actor_role=token_info["actor_role"],
+                auth_type=AuthType.UI_TOKEN,
                 token=token,
             )
-        else:
-            token_info = await auth_service.verify_ui_token(token)
-            if token_info:
-                auth_context = AuthContext(
-                    actor_id=token_info["user_login"],
-                    actor_role=token_info["actor_role"],
-                    auth_type=AuthType.UI_TOKEN,
-                    token=token,
-                )
     if not auth_context:
         return web.json_response(
             {"status": "error", "error": "Authentication required", "error_code": "AUTH_REQUIRED"},

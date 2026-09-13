@@ -123,4 +123,4 @@ MCP-серверы обычно подхватываются при старте
 | `agent_ui_request_support` | Запрос в поддержку |
 | `agent_ui_chat_send` | Отправить сообщение в чат тикета (ticket_id, text) |
 
-Подробности по API — в `mcp_agent_ui/README.md` и `pc_agent/ui_bridge/README.md`.
+Подробности по API — в `mcp_agent_ui/README.md`.

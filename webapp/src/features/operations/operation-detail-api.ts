@@ -81,7 +81,7 @@ function sanitizeOperation(operation: OperationDetail): OperationDetail {
 
 function linksForOperation(operation: OperationDetail): OperationDetailPayload["links"] {
   return {
-    device_operations: operation.device_id ? `/app/admin/device-operations/${encodeURIComponent(operation.device_id)}` : null,
+    device_operations: operation.device_id ? `/app/admin/device?device=${encodeURIComponent(operation.device_id)}` : null,
     observer: operation.trace_id
       ? `/app/admin/observer?trace_id=${encodeURIComponent(operation.trace_id)}`
       : operation.operation_id

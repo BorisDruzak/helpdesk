@@ -1,4 +1,4 @@
-"""OBS1 operation/outbox lifecycle integrity checks."""
+"""OBS1 ticket-operation lifecycle integrity checks."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DeviceOutbox, Operation, TicketEvent
+from app.db.models import Operation, TicketEvent
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
 from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
 
@@ -16,7 +16,6 @@ SOURCE = "observer.operation_lifecycle"
 QUERY_LIMIT = 200
 TERMINAL_OPERATION_STATUSES = {"succeeded", "success", "failed", "denied", "timed_out", "canceled", "cancelled"}
 ACTIVE_OPERATION_STATUSES = {"queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"}
-ACTIVE_OUTBOX_STATUSES = {"pending", "sent", "accepted", "running", "cancel_requested"}
 RESULT_EVENT_TYPES = {"tool_call_result"}
 
 
@@ -48,12 +47,6 @@ async def check_operation_lifecycle(
 ) -> ObserverIntegrityCheckResult:
     now = _now()
     events: list[ObserverIntegrityEventInput] = []
-    terminal_outbox, terminal_outbox_complete, terminal_outbox_scanned = await _terminal_operation_with_active_outbox(
-        session,
-        now=now,
-        stale_after=stale_after,
-        run_id=run_id,
-    )
     stuck_active, stuck_active_complete, stuck_active_scanned = await _active_operation_stuck(
         session,
         now=now,
@@ -64,79 +57,15 @@ async def check_operation_lifecycle(
         session,
         run_id=run_id,
     )
-    events.extend(terminal_outbox)
     events.extend(stuck_active)
     events.extend(missing_result)
     return ObserverIntegrityCheckResult(
         source=SOURCE,
         events=events,
-        complete=terminal_outbox_complete and stuck_active_complete and missing_result_complete,
-        scanned_count=terminal_outbox_scanned + stuck_active_scanned + missing_result_scanned,
+        complete=stuck_active_complete and missing_result_complete,
+        scanned_count=stuck_active_scanned + missing_result_scanned,
         limit=QUERY_LIMIT,
     )
-
-
-async def _terminal_operation_with_active_outbox(
-    session: AsyncSession,
-    *,
-    now: datetime,
-    stale_after: timedelta,
-    run_id: str | None,
-) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
-    cutoff = now - stale_after
-    result = await session.execute(
-        select(Operation, DeviceOutbox)
-        .join(DeviceOutbox, DeviceOutbox.operation_id == Operation.operation_id)
-        .where(
-            Operation.status.in_(TERMINAL_OPERATION_STATUSES),
-            DeviceOutbox.status.in_(ACTIVE_OUTBOX_STATUSES),
-            DeviceOutbox.created_at <= cutoff,
-        )
-        .order_by(DeviceOutbox.created_at.asc())
-        .limit(QUERY_LIMIT + 1)
-    )
-    rows = result.all()
-    window, complete = limit_plus_one_window(rows, limit=QUERY_LIMIT)
-    events: list[ObserverIntegrityEventInput] = []
-    for operation, outbox in window:
-        operation_status = str(operation.status or "").lower()
-        severity = "critical" if operation_status in {"succeeded", "success", "canceled", "cancelled"} else "error"
-        age = _age_seconds(now, outbox.created_at)
-        events.append(
-            ObserverIntegrityEventInput(
-                event_type="operation_outbox_mismatch",
-                severity=severity,
-                source=SOURCE,
-                dedupe_key=f"operation_outbox_mismatch:{operation.operation_id}:{outbox.id}",
-                device_id=operation.device_id,
-                ticket_id=operation.ticket_id,
-                operation_id=operation.operation_id,
-                command_id=outbox.command_id,
-                device_outbox_id=int(outbox.id),
-                trace_id=operation.trace_id or outbox.trace_id,
-                actor_role=operation.actor_role or outbox.actor_role,
-                expected="Terminal operation must not have a related active device_outbox command beyond grace period.",
-                actual=f"operation.status={operation.status}; device_outbox.status={outbox.status}; age_seconds={age}",
-                evidence={
-                    "operation_status": operation.status,
-                    "outbox_status": outbox.status,
-                    "outbox_command": outbox.command,
-                    "operation_kind": operation.kind,
-                    "tool_name": operation.tool_name,
-                    "outbox_created_at": outbox.created_at.isoformat() if outbox.created_at else None,
-                    "outbox_sent_at": outbox.sent_at.isoformat() if outbox.sent_at else None,
-                    "operation_finished_at": (
-                        operation.finished_at.isoformat()
-                        if operation.finished_at
-                        else (operation.canceled_at.isoformat() if operation.canceled_at else None)
-                    ),
-                    "age_seconds": age,
-                },
-                runbook="docs/runbooks/observer_operation_lifecycle.md",
-                run_id=run_id,
-            )
-        )
-    return events, complete, len(rows)
 
 
 async def _active_operation_stuck(

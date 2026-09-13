@@ -66,13 +66,18 @@ describe("navigation helpers", () => {
     expect(findFirstVisibleDomainItem("catalog-intake", [])).toBeNull();
   });
 
-  it("keeps device operations last in the devices domain", () => {
+  it("removes device operations while keeping the remaining devices navigation ordered", () => {
     const devicesDomain = getVisibleNavigationDomains("admin", fullAdminPermissions).find(
       (domain) => domain.id === "devices-agents",
     );
 
-    expect(devicesDomain?.items.map((item) => item.to)).toContain("/app/admin/tech");
-    expect(devicesDomain?.items.at(-1)?.label).toBe("Операции устройства");
+    expect(devicesDomain?.items.map((item) => item.to)).toEqual([
+      "/app/admin/inventory",
+      "/app/admin/device",
+      "/app/admin/observer",
+      "/app/admin/tech",
+    ]);
+    expect(devicesDomain?.items.map((item) => item.label)).not.toContain("Операции устройства");
   });
 
   it("recognizes the migrated tech panel as an admin navigation item", () => {
@@ -150,32 +155,10 @@ describe("navigation helpers", () => {
     );
   });
 
-  it("keeps protected device pairing next paths after login", () => {
-    expect(
-      resolveNextWorkspacePath("/app/device/pair", {
-        ...fullSession,
-        default_workspace: "requester",
-        available_workspaces: ["requester"],
-        permissions: ["workspace.requester.view"],
-      }),
-    ).toBe("/app/device/pair");
-    expect(
-      resolveNextWorkspacePath("/app/device/register?pairing_id=pair-1", {
-        ...fullSession,
-        default_workspace: "requester",
-        available_workspaces: ["requester"],
-        permissions: ["workspace.requester.view"],
-      }),
-    ).toBe("/app/device/register?pairing_id=pair-1");
-    expect(
-      resolveNextWorkspacePath("https://example.test/app/device/register?pairing_id=pair-1", fullSession),
-    ).toBe(ADMIN_HOME_PATH);
-  });
-
   it("keeps requester profile setup next path after account registration", () => {
     expect(
       resolveNextWorkspacePath(
-        "/app/requester/profile/setup?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-1",
+        "/app/requester/profile/setup?next=%2Fapp%2Frequester%2Fdevices",
         {
           ...fullSession,
           default_workspace: "requester",
@@ -183,6 +166,6 @@ describe("navigation helpers", () => {
           permissions: ["workspace.requester.view"],
         },
       ),
-    ).toBe("/app/requester/profile/setup?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-1");
+    ).toBe("/app/requester/profile/setup?next=%2Fapp%2Frequester%2Fdevices");
   });
 });

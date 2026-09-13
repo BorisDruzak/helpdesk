@@ -32,7 +32,7 @@ async def test_ai_integration_mcp_endpoint_returns_manifest_and_runtime_snapshot
                 collected_at=now,
                 expires_at=now + timedelta(minutes=2),
                 snapshot={
-                    "service_health": {"api": "ok", "agent_ws_connections": 0},
+                    "service_health": {"api": "ok", "ui_ws_connections": 0},
                     "mcp": {"server": "helpdesk-server-debug", "mode": "debug_readonly"},
                 },
             )

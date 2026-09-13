@@ -27,14 +27,13 @@ function csvSafe(value: unknown): string {
 }
 
 function resultCsv(result: AdminRegistryBulkResponse): string {
-  const rows = ["id,status,error_code,error,affected_sessions"];
+  const rows = ["id,status,error_code,error"];
   for (const item of result.items) {
     rows.push([
       item.id,
       item.status,
       item.error_code ?? "",
       item.error ?? "",
-      item.affected_sessions ?? "",
     ].map(csvSafe).join(","));
   }
   return `${rows.join("\n")}\n`;

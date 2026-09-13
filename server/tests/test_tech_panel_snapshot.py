@@ -28,7 +28,6 @@ def _sample_snapshot() -> dict:
             "observer": "/app/admin/observer",
             "inventory": "/app/admin/inventory",
             "device_operations": "/app/admin/device-operations",
-            "agent_updates": "/app/admin/agent-updates",
             "command_center": "/app/support",
             "approval_center": "/app/support/approvals",
             "logs": "/app/admin/tech?tab=logs",

@@ -28,19 +28,22 @@ cookies, private keys, raw agent result, full configuration, or database dump.
 | Reconciliation | Local and remote operations succeeded; linked `DiagnosticStep` and `DiagnosticSession` completed. |
 | Evidence | Exactly one safe Endpoint diagnostic evidence record. |
 | Repeat reconciliation | No second operation, link, or evidence record was created. |
-| Ticket and legacy boundary | Ticket remained `queued`; `DeviceOutbox` delta was zero; no Helpdesk payload was present in the Gateway command. |
+| Ticket and boundary | Ticket remained `queued`; no Helpdesk payload was present in the Gateway command. |
 
 The lifecycle repair is deliberately local and idempotent: it requires an
 already-succeeded Endpoint link, a stored safe result, existing succeeded
 evidence, and no active diagnostic steps. It does not call Endpoint, create an
 operation, change a ticket, or create evidence.
 
-## Rollback and smoke
+## Historical rollback and smoke
+
+This pre-cutover record predates the permanent endpoint-only policy. Its
+rollback selector is retained as historical evidence only and must not be
+reused for a current Helpdesk deployment.
 
 The approved pre-canary configuration snapshots were restored:
 
 - `ENDPOINT_PORT_MODE=unavailable`;
-- `ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=legacy`;
 - `ENDPOINT_OPERATIONS_API_ENABLED=false`.
 
 The Endpoint Operations route returned HTTP 404 after rollback; strict-TLS

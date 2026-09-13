@@ -13,7 +13,6 @@ from app.db.models import (
     AgentObserverEvent,
     AgentRuntimeAudit,
     Artifact,
-    DeviceOutbox,
     Operation,
     ObserverErrorOccurrence,
     ObserverTrace,
@@ -110,7 +109,6 @@ class TicketPurgeService:
             return result
 
         artifact_refs = await self._artifact_file_refs(existing_ids)
-        operation_ids = await self._operation_ids(existing_ids)
         trace_ids = await self._trace_ids(existing_ids)
 
         await self._delete_ticket_events_archive(existing_ids)
@@ -124,9 +122,6 @@ class TicketPurgeService:
         await self.session.execute(delete(TicketEvent).where(TicketEvent.ticket_id.in_(existing_ids)))
         await self.session.execute(delete(RemoteAccessEvent).where(RemoteAccessEvent.ticket_id.in_(existing_ids)))
         await self.session.execute(delete(RemoteAccessSession).where(RemoteAccessSession.ticket_id.in_(existing_ids)))
-
-        if operation_ids:
-            await self.session.execute(delete(DeviceOutbox).where(DeviceOutbox.operation_id.in_(operation_ids)))
 
         await self.session.execute(delete(AgentRuntimeAudit).where(AgentRuntimeAudit.ticket_id.in_(existing_ids)))
         await self.session.execute(delete(AgentObserverEvent).where(AgentObserverEvent.ticket_id.in_(existing_ids)))
@@ -279,7 +274,6 @@ class TicketPurgeService:
             counts[table_name] = await self._count_table(table_name, "ticket_id", ticket_ids)
 
         counts["ticket_links"] = await self._count_ticket_links(ticket_ids)
-        counts["device_outbox"] = await self._count_device_outbox(ticket_ids)
         counts["ticket_events_archive"] = await self._count_ticket_events_archive(ticket_ids)
         counts["ticket_admin_audit"] = await self._count_ticket_admin_audit(ticket_ids)
         counts["ticket_admin_audit_archive"] = await self._count_ticket_admin_audit_archive(ticket_ids)
@@ -315,7 +309,6 @@ class TicketPurgeService:
             "ticket_events",
             "ticket_events_archive",
             "operations",
-            "device_outbox",
             "remote_access_sessions",
             "remote_access_events",
             "artifacts",
@@ -345,22 +338,9 @@ class TicketPurgeService:
         )
         return int(result or 0)
 
-    async def _operation_ids(self, ticket_ids: list[str]) -> list[str]:
-        result = await self.session.execute(select(Operation.operation_id).where(Operation.ticket_id.in_(ticket_ids)))
-        return list(result.scalars().all())
-
     async def _trace_ids(self, ticket_ids: list[str]) -> list[str]:
         result = await self.session.execute(select(ObserverTrace.trace_id).where(ObserverTrace.ticket_id.in_(ticket_ids)))
         return list(result.scalars().all())
-
-    async def _count_device_outbox(self, ticket_ids: list[str]) -> int:
-        operation_ids = await self._operation_ids(ticket_ids)
-        if not operation_ids:
-            return 0
-        result = await self.session.scalar(
-            select(func.count()).select_from(DeviceOutbox).where(DeviceOutbox.operation_id.in_(operation_ids))
-        )
-        return int(result or 0)
 
     async def _artifact_file_refs(self, ticket_ids: list[str]) -> list[ArtifactFileRef]:
         result = await self.session.execute(

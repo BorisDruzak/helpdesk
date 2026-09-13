@@ -21,7 +21,7 @@ For a non-trivial task, inspect `git status --short`, classify the change as loc
 - Preserve unrelated dirty files and stage only files belonging to the task.
 - Use project lifecycle and deployment scripts rather than manual remote changes.
 - For webapp work, bootstrap the frontend toolchain before frontend checks.
-- For live debugging, GUI, protocol, browser, or runtime work, follow `docs/LIVE_TESTING_DEBUG_RULES.md`.
+- For live debugging, browser, deployment or Endpoint-operation work, follow `docs/LIVE_TESTING_DEBUG_RULES.md`.
 
 ## Completion
 

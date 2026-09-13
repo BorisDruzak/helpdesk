@@ -20,6 +20,21 @@ def test_retired_local_knowledge_tables_are_not_synthesized_into_post_134_schema
     assert audit.RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES.isdisjoint(audit.MIGRATION_ONLY_TABLES)
 
 
+def test_retired_agent_control_plane_tables_are_explicit_migration_residue():
+    audit = importlib.import_module("scripts.audit_db_cleanup_schema")
+
+    expected = {
+        "agent_tokens",
+        "connection_requests",
+        "device_outbox",
+        "device_modules",
+        "runner_rollout_plans",
+    }
+
+    assert expected <= audit.RETIRED_AGENT_CONTROL_PLANE_MIGRATION_TABLES
+    assert audit.RETIRED_AGENT_CONTROL_PLANE_MIGRATION_TABLES <= audit.MIGRATION_ONLY_TABLES
+
+
 def _catalog(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "db_table_classification.toml"
     path.write_text(content, encoding="utf-8")

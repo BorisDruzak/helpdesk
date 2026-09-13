@@ -169,46 +169,6 @@ async def wait_for_ticket_event(
     )
 
 
-async def wait_for_agent_connected(state, device_id: str, timeout: float = 10.0) -> None:
-    """Ждёт, пока серверный state увидит агента в connected_agents."""
-    start = time.time()
-    while time.time() - start < timeout:
-        if state.get_agent(device_id):
-            return
-        await asyncio.sleep(0.1)
-    raise TimeoutError(f"Agent {device_id} did not appear in connected_agents within {timeout}s")
-
-
-async def start_tool_operation(
-    client,
-    *,
-    device_id: str,
-    ticket_id: str,
-    tool_name: str,
-    params: Optional[dict] = None,
-    query: Optional[str] = None,
-) -> tuple[dict, str]:
-    """Run POST /api/tools/run and return payload plus canonical operation_id."""
-    url = "/api/tools/run"
-    if query:
-        url = f"{url}?{query}"
-
-    resp = await client.post(
-        url,
-        json={
-            "tool_name": tool_name,
-            "params": params or {},
-            "device_id": device_id,
-            "ticket_id": ticket_id,
-        },
-    )
-    assert resp.status in {200, 202}, f"Unexpected tools/run status: {resp.status} body={await resp.text()}"
-    payload = await resp.json()
-    operation_id = payload.get("operation_id")
-    assert operation_id, f"tools/run did not return operation_id: {payload}"
-    return payload, operation_id
-
-
 async def create_test_ticket(client, device_id: str, user_display_name: str = "Test User"):
     """
     Создает тестовый ticket и возвращает ticket_id, device_id.

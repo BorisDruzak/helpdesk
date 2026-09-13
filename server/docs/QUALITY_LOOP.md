@@ -1,6 +1,6 @@
 # P3 Quality Loop
 
-P3 adds a structured experience and quality loop around ticket resolution without changing canonical ticket statuses or Protocol V3.
+P3 adds a structured experience and quality loop around ticket resolution without changing canonical ticket statuses.
 
 ## Model
 
@@ -53,7 +53,7 @@ Support/admin/auditor:
 - Admin `/app/admin/quality` shows aggregate CSAT/reopen/SLA/KB/QA/action metrics, the last snapshot timestamp, internal review/action work queues and a service/offering quality-policy override editor with effective-policy preview.
 - Admin `/app/admin/problems` and the support ticket Quality tab expose P4 problem candidates/links without exposing requester-internal problem/RCA data to requester pages.
 - Admin `/app/admin/changes` consumes P5 change metrics by service/offering; requester pages do not expose risk, implementation or rollback details.
-- Agent GUI is unchanged in P3; web/public requester surfaces are the canonical CSAT/reopen path and Protocol V3 is not changed.
+- Web/public requester surfaces are the canonical CSAT/reopen path.
 
 ## Privacy
 

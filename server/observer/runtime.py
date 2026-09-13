@@ -11,12 +11,8 @@ from sqlalchemy import and_, delete, distinct, exists, func, or_, select
 
 from app.db import get_session
 from app.db.models import AgentObserverEvent, AgentRuntimeAudit, DeviceEvent, ObserverTrace, Operation, PlaybookRun, PlaybookStepRun, Ticket, TicketEvent
-from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.observer_settings_repo import DEFAULT_OBSERVER_SETTINGS, ObserverSettingsRepo
-from observer.service import ObserverOverlayService, _playbook_run_trace_id, _runtime_audit_trace_id
-
-
-OBSERVER_RUNTIME_AUDIT_DEVICE_ID = "00000000-0000-0000-0000-00000000b0b0"
+from observer.service import ObserverOverlayService, _playbook_run_trace_id
 
 
 @dataclass(slots=True)
@@ -212,27 +208,8 @@ class ObserverRefreshRuntime:
         if self._last_self_health_key == issue_key:
             return None
         self._last_self_health_key = issue_key
-        severity = "error" if "last_error" in issues else "warning"
-        async with get_session() as session:
-            audit = await AgentRuntimeAuditRepo(session).add(
-                device_id=OBSERVER_RUNTIME_AUDIT_DEVICE_ID,
-                event_type="observer_runtime_degraded",
-                severity=severity,
-                source="observer_runtime",
-                actor_id="system",
-                actor_role="system",
-                details_json={
-                    "issues": issues,
-                    "pending_trace_count": health.get("pending_trace_count"),
-                    "last_projected_age_sec": health.get("last_projected_age_sec"),
-                    "last_error": self._stats.last_error,
-                    "consecutive_failures": self._stats.consecutive_failures,
-                },
-            )
-            await session.commit()
-        trace_id = _runtime_audit_trace_id(audit.id)
-        await self.enqueue_trace(trace_id, delay_sec=0.0)
-        return trace_id
+        logger.warning(f"[observer_refresh] degraded: {issue_key}")
+        return None
 
     async def _discover_recent_trace_ids(self) -> list[str]:
         now = datetime.now(timezone.utc)

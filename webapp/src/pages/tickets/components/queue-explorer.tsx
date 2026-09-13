@@ -301,7 +301,6 @@ export function QueueExplorer({
   const [massNote, setMassNote] = useState("");
   const [massPriority, setMassPriority] = useState<"P0" | "P1" | "P2" | "P3">("P2");
   const [massQueueId, setMassQueueId] = useState<string>("");
-  const [massToolName, setMassToolName] = useState("diagnostics.basic");
   const [massProblemKey, setMassProblemKey] = useState("");
   const appliedDefaultViewRef = useRef<string | null>(null);
   const columnsChangedByUserRef = useRef(false);
@@ -605,22 +604,6 @@ export function QueueExplorer({
                   >
                     Добавить заметку
                   </button>
-                  <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-                    <input
-                      className="h-9 rounded-lg border border-white/10 bg-black/15 px-3 text-sm text-white outline-none"
-                      onChange={(event) => setMassToolName(event.currentTarget.value)}
-                      placeholder="tool_name"
-                      value={massToolName}
-                    />
-                    <button
-                      className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={!selectedCount || !massToolName.trim() || massActionPending}
-                      onClick={() => submitMassAction({ action: "run_diagnostics", tool_name: massToolName.trim(), reason: massReason })}
-                      type="button"
-                    >
-                      Диагностика
-                    </button>
-                  </div>
                   <div className="grid gap-2 md:grid-cols-[1fr_auto]">
                     <input
                       className="h-9 rounded-lg border border-white/10 bg-black/15 px-3 text-sm text-white outline-none"

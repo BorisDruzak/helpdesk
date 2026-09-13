@@ -15,13 +15,12 @@ import config
 from auth.context import AuthContext, AuthType
 from auth.service import AuthService
 from app.db import get_session
-from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
+from app.db.models import UiUserAudit
 
 
 WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
 SERVER_REQUEST_ID_KEY = "server_request_id"
 SERVER_REQUEST_ID_HEADER = "X-Server-Request-ID"
-WEB_AUTH_AUDIT_DEVICE_ID = "00000000-0000-0000-0000-00000000a11d"
 WEB_AUTH_AUDIT_WINDOW_SEC = 60
 _WEB_AUTH_AUDIT_LAST_SEEN: dict[tuple[str, str, str, str], datetime] = {}
 # Cookie sessions are browser credentials. They must cover every API route the
@@ -41,8 +40,6 @@ AUTH_WHITELIST = {
     "/api/web/session/password-reset-requests",
     "/api/web/session/me",
     "/api/health",
-    "/api/connection_request",
-    "/api/connection_request/status",
 }
 def _record_query_token_attempt(request: web.Request, *, rejected: bool) -> None:
     _QUERY_TOKEN_AUTH_ATTEMPTS.append(
@@ -290,17 +287,6 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     
     auth_service = AuthService(state)
     
-    if not web_session_token:
-        # Non-web API paths may still use agent tokens.
-        token_info = await auth_service.verify_agent_token(token)
-        if token_info:
-            return AuthContext(
-                actor_id=token_info["device_id"],
-                actor_role="agent",
-                auth_type=AuthType.AGENT_TOKEN,
-                token=token
-            )
-
     # Try UI token
     token_info = await auth_service.verify_ui_token(token)
     if token_info:
@@ -371,15 +357,12 @@ async def _write_web_auth_audit(
     }
     try:
         async with get_session() as session:
-            await AgentRuntimeAuditRepo(session).add(
-                device_id=WEB_AUTH_AUDIT_DEVICE_ID,
-                event_type=event_type,
-                severity=severity,
-                source="web_auth",
+            session.add(UiUserAudit(
+                user_login=str(actor_id or "system")[:100],
+                action=f"web_auth:{event_type}"[:50],
                 actor_id=actor_id,
-                actor_role=actor_role,
                 details_json=details,
-            )
+            ))
             await session.commit()
     except Exception as exc:
         logger.debug(f"[AuthMiddleware] web auth audit write skipped: {exc}")
@@ -424,7 +407,6 @@ async def auth_middleware(request: web.Request, handler):
     КРИТИЧНО: No graceful degradation without token → always 401 for unprotected endpoints.
     
     Whitelist:
-    - /api/login
     - /api/health
     
     All other /api/* endpoints require valid token.
@@ -455,9 +437,6 @@ async def auth_middleware(request: web.Request, handler):
         return await handler(request)
     if request.method == "POST" and request.path == "/api/service-catalog/preview":
         return await handler(request)
-    if request.path.startswith("/api/connection_request"):
-        return await handler(request)
-
     web_session_auth = bool(extract_token_from_web_cookie(request))
 
     # Extract and verify token

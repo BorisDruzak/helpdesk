@@ -139,9 +139,8 @@ DTO field names. It never includes correlation IDs, values, references,
 payloads, tokens or authorization decisions. Shadow calls are limited to reads.
 On-behalf authorization is a read-only decision comparison: its external
 result may report only a redacted mismatch and never replaces the local
-authoritative decision. Commands,
-registration, pairing, account sessions and login eligibility remain local in
-this PR and do not issue shadow calls.
+authoritative decision. Helpdesk has no local agent-identity or device-control
+command authority and does not issue shadow writes.
 The observer profile-completion read follows the same local-authoritative
 shadow rule: comparison evidence contains only the operation and changed
 projection field names, never person refs, missing-field values or response
@@ -150,11 +149,8 @@ payloads.
 Breaking changes require `/v2`; additive platform fields are rejected until the
 Helpdesk projection contract is explicitly extended and accepted.
 
-## Command and eligibility boundary
+## Command boundary
 
-This is a read-only integration contract. The separate
-`REGISTRY_PLATFORM_COMMANDS_V1.md` specifies the future command and
-eligibility acceptance gate. It does not activate external authority: commands,
-registration, pairing, account sessions and UI-login eligibility remain local
-until per-operation external acceptance evidence permits a later explicit
-cutover.
+This is a read-only integration contract. Endpoint Platform owns agent and
+device-control commands; Helpdesk never restores a local command path as a
+fallback for a failed or unavailable Endpoint operation.

@@ -4,7 +4,6 @@ Run subagent workers in parallel and produce a combined summary report.
 
 Workers:
 - subagent_worker_server.py
-- subagent_worker_agent.py
 """
 
 from __future__ import annotations
@@ -57,7 +56,6 @@ def render_summary_md(summary: dict) -> str:
     lines.append("")
     lines.append("## Reports")
     lines.append(f"- server: `{summary['report_paths']['server_md']}`")
-    lines.append(f"- agent: `{summary['report_paths']['agent_md']}`")
     lines.append(f"- summary_json: `{summary['report_paths']['summary_json']}`")
     lines.append("")
     lines.append("## Stdout/Stderr")
@@ -87,8 +85,6 @@ async def run(args: argparse.Namespace) -> int:
 
     server_json = out_dir / "server_worker.json"
     server_md = out_dir / "server_worker.md"
-    agent_json = out_dir / "agent_worker.json"
-    agent_md = out_dir / "agent_worker.md"
 
     py = sys.executable
     env_readonly = os.getenv(
@@ -110,22 +106,8 @@ async def run(args: argparse.Namespace) -> int:
         "--output-md",
         str(server_md),
     ]
-    cmd_agent = [
-        py,
-        str(script_dir / "subagent_worker_agent.py"),
-        "--repo-root",
-        str(repo_root),
-        "--output-json",
-        str(agent_json),
-        "--output-md",
-        str(agent_md),
-    ]
-
     started_at = time.strftime("%Y-%m-%dT%H:%M:%S")
-    workers = await asyncio.gather(
-        run_one("server-worker", cmd_server, repo_root),
-        run_one("agent-worker", cmd_agent, repo_root),
-    )
+    workers = [await run_one("server-worker", cmd_server, repo_root)]
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%S")
 
     ok = all(w["returncode"] == 0 for w in workers)
@@ -137,7 +119,6 @@ async def run(args: argparse.Namespace) -> int:
         "workers": workers,
         "report_paths": {
             "server_md": str(server_md),
-            "agent_md": str(agent_md),
             "summary_md": str(out_dir / "summary.md"),
             "summary_json": str(out_dir / "summary.json"),
         },

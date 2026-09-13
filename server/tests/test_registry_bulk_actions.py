@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
     Device,
-    DeviceAccountSession,
     DeviceInventoryBinding,
     RegistryAsset,
 )
@@ -74,71 +73,3 @@ async def test_bulk_assign_location_to_devices_and_partial_failure(test_engine):
     ]
     assert asset_row.location_id == location["location_id"]
     assert inventory.room == "701"
-
-
-@pytest.mark.asyncio
-async def test_bulk_revoke_account_sessions_and_batch_limit(test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-    async with session_maker() as session:
-        service = RegistryAdminOperationsService(session)
-        session.add(_device(device_id))
-        account_session = DeviceAccountSession(
-            session_id=str(uuid.uuid4()),
-            device_id=device_id,
-            account_mode="confirmed_binding",
-            verification_status="verified",
-            declared_account={},
-            metadata_json={},
-        )
-        session.add(account_session)
-        await session.flush()
-
-        result = await service.bulk_revoke_sessions(
-            {"ids": [account_session.session_id], "reason": "incident response"},
-            actor_id="admin",
-        )
-        with pytest.raises(ValueError):
-            service._validate_bulk_ids({"ids": [str(uuid.uuid4()) for _ in range(BULK_LIMIT + 1)]})
-        await session.commit()
-
-    async with session_maker() as session:
-        row = await session.get(DeviceAccountSession, account_session.session_id)
-
-    assert result["results"] == [{"id": account_session.session_id, "success": True}]
-    assert result["summary"] == {"selected": 1, "success": 1, "failed": 0}
-    assert result["items"] == [{"id": account_session.session_id, "status": "success"}]
-    assert row.verification_status == "revoked"
-
-
-@pytest.mark.asyncio
-async def test_bulk_revoke_device_sessions_reports_each_selected_device(test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-    missing_device_id = str(uuid.uuid4())
-    async with session_maker() as session:
-        service = RegistryAdminOperationsService(session)
-        session.add(_device(device_id))
-        account_session = DeviceAccountSession(
-            session_id=str(uuid.uuid4()),
-            device_id=device_id,
-            account_mode="confirmed_binding",
-            verification_status="verified",
-            declared_account={},
-            metadata_json={},
-        )
-        session.add(account_session)
-        await session.flush()
-
-        result = await service.bulk_revoke_sessions(
-            {"ids": [device_id, missing_device_id], "reason": "device incident"},
-            actor_id="admin",
-            by_device=True,
-        )
-        await session.commit()
-
-    assert result["summary"] == {"selected": 2, "success": 1, "failed": 1}
-    assert result["items"] == [
-        {"id": device_id, "status": "success", "affected_sessions": 1},
-        {"id": missing_device_id, "status": "error", "error_code": "NOT_FOUND"},
-    ]

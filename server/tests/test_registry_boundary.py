@@ -204,7 +204,7 @@ async def test_customer_history_registry_source_projects_only_port_history() -> 
                     source="external_authoritative",
                 ),
                 RegistryHistoryEventProjection(
-                    event_type="account_session",
+                    event_type="device_binding",
                     occurred_at=occurred_at,
                     device=DeviceRef(external_id="registry-ref-device-1"),
                     status="verified",
@@ -220,7 +220,7 @@ async def test_customer_history_registry_source_projects_only_port_history() -> 
         limit=20,
     )
 
-    assert [event.event_type for event in result.events] == ["device_binding", "account_session"]
+    assert [event.event_type for event in result.events] == ["device_binding", "device_binding"]
     assert result.source_state == {"status": "available", "source": "external_authoritative"}
     assert result.events[0].payload == {
         "relationship_type": "primary_user",
@@ -244,6 +244,35 @@ async def test_customer_history_registry_source_rejects_spoofed_requester_actor(
     assert result.events == []
     assert result.source_state == {"status": "unavailable", "code": "registry_actor_forbidden"}
     assert port.calls == []
+
+
+@pytest.mark.asyncio
+async def test_customer_history_registry_source_rejects_legacy_account_session_event() -> None:
+    occurred_at = datetime(2026, 8, 10, 12, tzinfo=timezone.utc)
+    port = _RequesterHistoryPort(
+        RequesterHistoryProjection(
+            requester=RequesterRef(external_id="registry-ref-person-1"),
+            source="external_authoritative",
+            items=(
+                RegistryHistoryEventProjection(
+                    event_type="account_session",
+                    occurred_at=occurred_at,
+                    device=DeviceRef(external_id="registry-ref-device-1"),
+                    status="verified",
+                    source="external_authoritative",
+                ),
+            ),
+        )
+    )
+
+    result = await RegistryHistorySource(registry_port=port).events_for_person(
+        PersonRef(external_id="registry-ref-person-1"),
+        actor=_history_actor(),
+        limit=20,
+    )
+
+    assert result.events == []
+    assert result.source_state == {"status": "invalid", "code": "registry_projection_invalid"}
 
 
 @pytest.mark.asyncio
@@ -288,7 +317,7 @@ async def test_customer_history_registry_source_keeps_same_time_port_events_dist
 
 
 @pytest.mark.asyncio
-async def test_customer_history_registry_event_refs_are_stable_across_response_order_and_extra_events() -> None:
+async def test_customer_history_registry_event_refs_are_stable_across_response_order() -> None:
     occurred_at = datetime(2026, 8, 10, 12, tzinfo=timezone.utc)
     first = RegistryHistoryEventProjection(
         event_type="device_binding",
@@ -306,14 +335,6 @@ async def test_customer_history_registry_event_refs_are_stable_across_response_o
         status="active",
         source="external_authoritative",
     )
-    extra = RegistryHistoryEventProjection(
-        event_type="account_session",
-        occurred_at=occurred_at,
-        device=DeviceRef(external_id="registry-ref-device-extra"),
-        status="verified",
-        source="external_authoritative",
-    )
-
     async def project(items: tuple[RegistryHistoryEventProjection, ...]) -> list[object]:
         result = await RegistryHistorySource(
             registry_port=_RequesterHistoryPort(
@@ -331,10 +352,10 @@ async def test_customer_history_registry_event_refs_are_stable_across_response_o
         return result.events
 
     forward = await project((first, second))
-    reversed_with_extra = await project((extra, second, first))
+    reordered = await project((second, first))
 
     forward_ids = {event.device_id: event.event_id for event in forward}
-    reordered_ids = {event.device_id: event.event_id for event in reversed_with_extra}
+    reordered_ids = {event.device_id: event.event_id for event in reordered}
     assert forward_ids["device-prefix-collision-a"] == reordered_ids["device-prefix-collision-a"]
     assert forward_ids["device-prefix-collision-b"] == reordered_ids["device-prefix-collision-b"]
     assert forward_ids["device-prefix-collision-a"] != forward_ids["device-prefix-collision-b"]

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceOutbox, ObserverTrace, Operation, Ticket, TicketApproval
+from app.db.models import Device, ObserverTrace, Operation, Ticket, TicketApproval
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -84,19 +84,6 @@ async def _seed_locator_context(test_engine):
             )
         )
         session.add(
-            DeviceOutbox(
-                device_id=device_id,
-                command_id=str(uuid.uuid4()),
-                command="run_tool",
-                params={"operation_id": operation_id},
-                status="pending",
-                operation_id=operation_id,
-                trace_id=trace_id,
-                actor_role="support",
-                created_at=now - timedelta(minutes=15),
-            )
-        )
-        session.add(
             ObserverTrace(
                 trace_id=trace_id,
                 root_span_id=str(uuid.uuid4()),
@@ -168,7 +155,7 @@ async def test_device_id_and_hostname_locate_device(test_client, test_engine):
         assert device_match["context"]["device_id"] == seeded["device_id"]
         assert device_match["signals"]["stale_agent"] is True
         assert device_match["signals"]["failed_operation"] is True
-        assert any(link["href"] == f"/app/admin/device-operations/{seeded['device_id']}" for link in device_match["links"])
+        assert any(link["href"] == f"/app/admin/device?device={seeded['device_id']}" for link in device_match["links"])
 
 
 @pytest.mark.asyncio

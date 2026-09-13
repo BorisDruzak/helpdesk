@@ -210,8 +210,6 @@ class OperationService:
         """
         Enqueue a new operation with specified initial status.
         
-        This should be called in the same transaction as device_outbox.enqueue.
-        
         Args:
             operation_id: Operation identifier (equals request_id and command_id)
             device_id: Device identifier
@@ -843,9 +841,7 @@ class OperationService:
         """
         Approve consent for operation in waiting_consent status.
         
-        Phase 5: Transitions operation from waiting_consent → queued and enqueues command.
-        
-        КРИТИЧНО: После approve операция enqueued в device_outbox и переходит в queued.
+        Transitions an operation from waiting_consent to queued after approval.
         
         Args:
             operation_id: Operation identifier
@@ -894,75 +890,6 @@ class OperationService:
             reason=reason
         )
 
-        # Historical direct DeviceOutbox enqueue stays disabled here.
-        # ToolExecutionService resumes approved run_tool operations after commit.
-        if False and operation.kind == "tool_call" and operation.tool_name:
-            # Для tool_call: команда = "run_tool"
-            from app.repos.device_outbox_repo import DeviceOutboxRepo
-            from app.repos.ticket_events_repo import TicketEventsRepo
-            
-            # Пытаемся восстановить params из tool_call_started события
-            tool_params = {}
-            if operation.ticket_id:
-                try:
-                    events_repo = TicketEventsRepo(self.session)
-                    # Ищем tool_call_started событие с этим operation_id
-                    events = await events_repo.get_events(
-                        ticket_id=operation.ticket_id,
-                        limit=1000  # Достаточно для поиска
-                    )
-                    
-                    # Ищем событие tool_call_started с operation_id
-                    for event in events:
-                        if (event.event_type == "tool_call_started" and 
-                            event.operation_id == operation_id):
-                            # Восстанавливаем params из payload
-                            event_payload = event.payload
-                            if isinstance(event_payload, dict):
-                                tool_params = event_payload.get("params", {})
-                                logger.debug(
-                                    f"[OperationService] Restored params from tool_call_started: "
-                                    f"operation_id={operation_id} params={tool_params}"
-                                )
-                            break
-                except Exception as e:
-                    logger.warning(
-                        f"[OperationService] Failed to restore params from ticket_events: {e}"
-                    )
-                    # Fallback to empty params
-            
-            # Формируем params для run_tool команды
-            params = {
-                "tool_name": operation.tool_name,
-                "ticket_id": operation.ticket_id,
-                "params": tool_params  # Восстановленные или пустые params
-            }
-            
-            if operation.job_id:
-                params["job_id"] = operation.job_id
-            
-            outbox_repo = DeviceOutboxRepo(self.session)
-            await outbox_repo.enqueue_command(
-                device_id=operation.device_id,
-                command_id=operation_id,  # command_id = operation_id
-                command="run_tool",
-                params=params,
-                request_id=operation_id,
-                trace_id=operation.trace_id,
-                actor_role=operation.actor_role,
-                operation_id=operation_id
-            )
-            
-            logger.info(
-                f"[OperationService] Enqueued command after approve: "
-                f"operation_id={operation_id} command=run_tool tool_name={operation.tool_name}"
-            )
-        elif False:
-            logger.warning(
-                f"[OperationService] Cannot enqueue non-tool_call operation: "
-                f"operation_id={operation_id} kind={operation.kind}"
-            )
-        
         logger.info(
             f"[OperationService] Approved consent: operation_id={operation_id} "
             f"decided_by={decided_by}"

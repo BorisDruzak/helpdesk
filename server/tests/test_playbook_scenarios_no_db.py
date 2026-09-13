@@ -5,7 +5,6 @@ from playbooks.catalog import (
     normalize_playbook_draft,
 )
 from playbooks.tool_catalog import (
-    build_required_tools_manifest,
     expand_preset_params,
     normalize_tool_catalog_entry,
 )
@@ -21,12 +20,8 @@ from tickets.form_catalog import (
 
 
 @pytest.mark.no_db
-def test_diagnostic_module_catalog_contains_only_diagnostic_blocks():
-    tool_ids = {item["tool"] for item in DIAGNOSTIC_MODULE_CATALOG}
-
-    assert {"system.collect", "ip_address.get_ip", "diag.logs.collect"} <= tool_ids
-    assert all(item["module_kind"] == "diagnostic" for item in DIAGNOSTIC_MODULE_CATALOG)
-    assert all(item["changes_device"] is False for item in DIAGNOSTIC_MODULE_CATALOG)
+def test_diagnostic_module_catalog_has_no_local_agent_tools():
+    assert DIAGNOSTIC_MODULE_CATALOG == []
 
 
 @pytest.mark.no_db
@@ -172,7 +167,7 @@ def test_tool_catalog_exposes_predictable_output_contract_and_condition_hints():
 
 
 @pytest.mark.no_db
-def test_normalize_playbook_draft_writes_manifest_v2_required_tools_and_install_policy():
+def test_normalize_playbook_draft_writes_endpoint_only_capability_manifest():
     catalog_entry = normalize_tool_catalog_entry(
         {
             "tool": "ip_address.get_ip",
@@ -194,7 +189,6 @@ def test_normalize_playbook_draft_writes_manifest_v2_required_tools_and_install_
                     "risk_level": "safe_read",
                     "requires_consent": False,
                 },
-                "dependencies": {"min_agent_version": "3.1.0"},
                 "error_codes": ["NETWORK_UNAVAILABLE"],
             },
             "install_required": True,
@@ -222,13 +216,9 @@ def test_normalize_playbook_draft_writes_manifest_v2_required_tools_and_install_
 
     assert normalized["manifest"]["schema"] == "pc_client.playbook.self_healing.v2"
     assert normalized["manifest"]["blocks"][0]["install_policy"] == "lazy"
-    assert normalized["manifest"]["required_tools"] == [
-        build_required_tools_manifest([normalized["manifest"]["blocks"][0]], {"ip_address.get_ip": catalog_entry})[0]
-    ]
-    assert normalized["manifest"]["required_tools"][0]["module_name"] == "ip_address"
-    assert normalized["manifest"]["required_tools"][0]["min_agent_version"] == "3.1.0"
-    assert normalized["manifest"]["required_tools"][0]["output_contract"]["status_values"] == ["ok", "error"]
-    assert normalized["manifest"]["required_tools"][0]["condition_hints"]["status_path"] == "result.status"
+    assert normalized["manifest"]["required_tools"] == []
+    assert normalized["manifest"]["required_capabilities"][0]["execution_target"] == "endpoint_operation"
+    assert normalized["manifest"]["required_capabilities"][0]["output_contract"]["status_values"] == ["ok", "error"]
 
 
 @pytest.mark.no_db

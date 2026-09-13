@@ -9,7 +9,7 @@ The canonical project rules live in:
 
 Always read and follow that canonical document before live validation, debugging
 or bug fixing. It defines the required evidence-before-fix workflow, validation
-path separation, browser/UIA requirements, account-session checks, clean run
+path separation, browser/UIA requirements, requester authorization checks, clean run
 markers, pre-fix contamination labeling, blocking-bug policy, token hygiene,
 status consistency and final phase gates.
 

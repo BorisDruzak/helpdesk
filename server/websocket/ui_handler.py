@@ -1,5 +1,5 @@
 """
-WebSocket обработчик для UI клиентов (Protocol V3).
+WebSocket обработчик для UI клиентов.
 
 Протокол:
 - ui_hello: аутентификация UI клиента
@@ -346,7 +346,7 @@ async def push_operation_updated(
 
 async def websocket_ui_handler(request):
     """
-    WebSocket обработчик для веб-UI (Protocol V3).
+    WebSocket обработчик для веб-UI.
     
     Протокол:
     - ui_hello: аутентификация UI клиента

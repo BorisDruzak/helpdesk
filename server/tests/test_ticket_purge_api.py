@@ -9,7 +9,6 @@ from app.db.models import (
     AgentObserverEvent,
     AgentRuntimeAudit,
     Artifact,
-    DeviceOutbox,
     Operation,
     RemoteAccessEvent,
     RemoteAccessSession,
@@ -90,15 +89,6 @@ async def _seed_ticket_graph(session, ticket_id: str, *, operation_status: str =
                 trace_id=trace_id,
                 status=operation_status,
                 queued_at=now,
-            ),
-            DeviceOutbox(
-                device_id="device-purge",
-                command_id=f"cmd-{ticket_id}",
-                command="run_tool",
-                params={"ticket_id": ticket_id},
-                operation_id=operation_id,
-                actor_role="support",
-                status="delivered",
             ),
             RemoteAccessSession(
                 id=remote_session_id,
@@ -209,7 +199,6 @@ async def test_ticket_purge_preview_is_admin_only_and_reports_related_counts(tes
     assert data["affected_counts"]["tickets"] == 1
     assert data["affected_counts"]["ticket_events"] == 1
     assert data["affected_counts"]["operations"] == 1
-    assert data["affected_counts"]["device_outbox"] == 1
     assert data["affected_counts"]["remote_access_sessions"] == 1
     assert data["affected_counts"]["artifacts"] == 1
     assert data["affected_counts"]["observer_traces"] == 1
@@ -270,7 +259,6 @@ async def test_ticket_purge_confirmed_removes_fk_and_non_fk_rows(test_client, te
         assert await _count(session, TicketWorklog) == 0
         assert await _count(session, TicketPublicSession) == 0
         assert await _count(session, Operation) == 0
-        assert await _count(session, DeviceOutbox) == 0
         assert await _count(session, RemoteAccessSession) == 0
         assert await _count(session, RemoteAccessEvent) == 0
         assert await _count(session, Artifact) == 0

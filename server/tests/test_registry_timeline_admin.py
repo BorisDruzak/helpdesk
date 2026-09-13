@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, DeviceRegistrationClaim, DeviceUserBinding
-from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationService
@@ -140,7 +139,7 @@ async def test_person_timeline_records_admin_and_identity_events(test_client):
 
 
 @pytest.mark.asyncio
-async def test_unified_timeline_covers_device_binding_session_and_claim(test_engine):
+async def test_unified_timeline_covers_device_binding_and_claim(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
 
@@ -162,11 +161,6 @@ async def test_unified_timeline_covers_device_binding_session_and_claim(test_eng
             reason="timeline bind reason",
         )
         binding_id = result["binding"]["binding_id"]
-        account = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=binding_id,
-        )
-        session_id = account["session"]["session_id"]
         binding = await session.get(DeviceUserBinding, binding_id)
         claim = (
             await session.execute(
@@ -180,18 +174,15 @@ async def test_unified_timeline_covers_device_binding_session_and_claim(test_eng
         service = RegistryAdminOperationsService(session)
         device_items = await service.list_timeline(object_type="device", object_id=device_id)
         binding_items = await service.list_timeline(object_type="binding", object_id=binding_id)
-        session_items = await service.list_timeline(object_type="account_session", object_id=session_id)
         claim_items = await service.list_timeline(object_type="claim", object_id=claim_id)
 
-    for collection in (device_items, binding_items, session_items, claim_items):
+    for collection in (device_items, binding_items, claim_items):
         assert collection
         for item in collection:
             _assert_timeline_item_shape(item)
 
     assert any(item["event_type"] == "admin_binding_created" and item["source"] == "registration" for item in device_items)
-    assert any(item["event_type"] == "confirmed_binding_session_created" and item["source"] == "account" for item in device_items)
     assert any(item["related"]["binding_id"] == binding_id for item in binding_items)
-    assert any(item["related"]["session_id"] == session_id for item in session_items)
     assert any(item["related"]["claim_id"] == claim_id for item in claim_items)
     assert any(item["reason"] == "timeline bind reason" for item in binding_items)
 
@@ -225,10 +216,6 @@ async def test_transfer_timeline_explains_actor_reason_changes_and_related_entit
             reason="initial transfer owner",
         )
         old_binding_id = initial["binding"]["binding_id"]
-        account = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=old_binding_id,
-        )
         transfer = await registration.transfer_owner(
             device_id=device_id,
             new_person_id=new_person_id,
@@ -237,7 +224,6 @@ async def test_transfer_timeline_explains_actor_reason_changes_and_related_entit
             reason="owner left department",
         )
         new_binding_id = transfer["binding"]["binding_id"]
-        session_id = account["session"]["session_id"]
         await session.commit()
 
     async with session_maker() as session:
@@ -254,4 +240,3 @@ async def test_transfer_timeline_explains_actor_reason_changes_and_related_entit
     assert transfer_item["related"]["binding_id"] == new_binding_id
     assert any(change["field"] == "primary_person_id" and change["before"] == old_person_id and change["after"] == new_person_id for change in transfer_item["changes"])
     assert any(item["related"].get("binding_id") == old_binding_id for item in transfer_items)
-    assert any(item["related"].get("session_id") == session_id for item in items)

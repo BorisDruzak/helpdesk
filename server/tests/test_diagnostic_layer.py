@@ -42,11 +42,11 @@ def _ticket(ticket_id: str, device_id: str, *, root_trace_id: str | None = None)
     )
 
 
-def test_agent_recipe_waiting_dependency_result_does_not_persist_evidence():
+def test_endpoint_operation_waiting_dependency_result_does_not_persist_evidence():
     capability = CapabilityDescriptor(
         id="endpoint.file.exists",
         title="File exists",
-        execution_target="agent_recipe",
+        execution_target="endpoint_operation",
         evidence={"produces_evidence": True},
     )
 

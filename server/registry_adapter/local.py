@@ -1008,7 +1008,7 @@ class LocalRegistryAdapter:
         async def reader(session: Any) -> object:
             from sqlalchemy import desc, select
 
-            from app.db.models import DeviceAccountSession, DeviceUserBinding, RegistryPerson
+            from app.db.models import DeviceUserBinding, RegistryPerson
 
             person_row = await session.get(RegistryPerson, person.external_id)
             if person_row is None or self._is_inactive_person(person_row):
@@ -1023,24 +1023,14 @@ class LocalRegistryAdapter:
                     .limit(bounded_limit)
                 )
             ).scalars().all()
-            sessions: list[object] = []
-            if actor.role in {"admin", "support"}:
-                sessions = (
-                    await session.execute(
-                        select(DeviceAccountSession)
-                        .where(DeviceAccountSession.person_id == person.external_id)
-                        .order_by(desc(DeviceAccountSession.created_at))
-                        .limit(bounded_limit)
-                    )
-                ).scalars().all()
-            return bindings, sessions
+            return bindings
 
         loaded = await self._read("requester_history", reader)
         if loaded is _READ_FAILED:
             return RegistryUnavailable(code="registry_read_unavailable")
         if isinstance(loaded, RegistryNotFound):
             return loaded
-        bindings, sessions = loaded
+        bindings = loaded
         items: list[RegistryHistoryEventProjection] = []
         try:
             for binding in bindings:
@@ -1054,19 +1044,6 @@ class LocalRegistryAdapter:
                         device=DeviceRef(external_id=str(getattr(binding, "device_id", "") or "")),
                         relationship_type=_safe_code(getattr(binding, "relationship_type", None)),
                         status=_safe_code(getattr(binding, "status", None)),
-                        source="local_authoritative",
-                    )
-                )
-            for session in sessions:
-                occurred_at = getattr(session, "created_at", None)
-                if not isinstance(occurred_at, datetime):
-                    return RegistryInvalidProjection()
-                items.append(
-                    RegistryHistoryEventProjection(
-                        event_type="account_session",
-                        occurred_at=occurred_at,
-                        device=DeviceRef(external_id=str(getattr(session, "device_id", "") or "")),
-                        status=_safe_code(getattr(session, "verification_status", None)),
                         source="local_authoritative",
                     )
                 )

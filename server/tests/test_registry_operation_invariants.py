@@ -20,7 +20,6 @@ from app.db.models import (
     RegistryPersonIdentity,
     Ticket,
 )
-from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.registration_service import RegistrationService
 
@@ -140,10 +139,6 @@ async def test_transfer_owner_leaves_no_duplicate_active_primary(test_engine):
             reviewed_by="admin",
             reason="initial owner",
         )
-        session_payload = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=old_binding["binding"]["binding_id"],
-        )
         new_binding = await registration.transfer_owner(
             device_id=device_id,
             new_person_id=new_owner.person_id,
@@ -156,13 +151,10 @@ async def test_transfer_owner_leaves_no_duplicate_active_primary(test_engine):
     async with session_maker() as session:
         old_row = await session.get(DeviceUserBinding, old_binding["binding"]["binding_id"])
         new_row = await session.get(DeviceUserBinding, new_binding["binding"]["binding_id"])
-        account_session = await session.get(DeviceAccountSession, session_payload["session"]["session_id"])
-
         assert await _active_primary_count(session, device_id) == 1
         assert old_row.status == "transferred"
         assert new_row.status == "active"
         assert new_row.person_id == new_owner.person_id
-        assert account_session.verification_status == "revoked"
 
 
 @pytest.mark.asyncio
@@ -372,7 +364,6 @@ async def test_people_merge_leaves_no_live_duplicate_person_references(test_engi
             },
             actor_id="admin",
         )
-        assert result["moved"]["login_requests"] == 1
         await session.commit()
 
     async with session_maker() as session:

@@ -14,27 +14,23 @@ from config import SERVER_DATA_ROOT, SERVER_PORT
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 SERVER_PYTHON = WORKSPACE_ROOT / "server" / "venv" / "bin" / "python"
-AGENT_PYTHON = WORKSPACE_ROOT / "pc_agent" / "venv" / "bin" / "python"
 
 SERVER_UNIT = "pc-client-server"
-AGENT_UNIT = "pc-client-agent"
 CONTROL_UNIT = "pc-client-control"
 CONTROL_STATE_FILE = SERVER_DATA_ROOT / "control_plane_state.json"
 DEFAULT_ADMIN_ORIGIN = "http://192.168.100.19:8080"
 DEFAULT_REMOTE_SMOKE_BASE_URL = "http://192.168.100.19:8080"
 
-SYSTEMD_TARGETS = {"server", "agent", "control"}
+SYSTEMD_TARGETS = {"server", "control"}
 ALL_TARGETS = (*SYSTEMD_TARGETS, "all")
 
 _UNIT_BY_TARGET = {
     "server": SERVER_UNIT,
-    "agent": AGENT_UNIT,
     "control": CONTROL_UNIT,
 }
 
 _DESCRIPTION_BY_TARGET = {
     "server": "pc_client server",
-    "agent": "pc_client agent",
     "control": "pc_client control plane",
 }
 
@@ -50,8 +46,6 @@ def runtime_command(target: str) -> str:
     value = str(target or "").strip().lower()
     if value == "server":
         return f"cd {WORKSPACE_ROOT} && {SERVER_PYTHON} scripts/run_server.py"
-    if value == "agent":
-        return f"cd {WORKSPACE_ROOT} && {AGENT_PYTHON} scripts/run_agent.py"
     if value == "control":
         return f"cd {WORKSPACE_ROOT} && {SERVER_PYTHON} scripts/run_control_plane.py"
     raise ValueError(f"Unsupported target: {target}")
@@ -394,10 +388,6 @@ def stop_target(target: str) -> subprocess.CompletedProcess[str]:
         _stop_workspace_server_processes()
         _stop_unit(SERVER_UNIT)
         _reset_failed(SERVER_UNIT)
-        return subprocess.CompletedProcess(args=["stop", target], returncode=0, stdout="", stderr="")
-    if target == "agent":
-        _stop_unit(AGENT_UNIT)
-        _reset_failed(AGENT_UNIT)
         return subprocess.CompletedProcess(args=["stop", target], returncode=0, stdout="", stderr="")
     if target == "control":
         _stop_unit(CONTROL_UNIT)

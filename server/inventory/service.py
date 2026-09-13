@@ -32,10 +32,9 @@ from domain_ports import (
 )
 from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.presentation_overrides import ToolPresentationOverrideService
-from shared.builtin_tool_descriptors import INVENTORY_COLLECT_TOOL_ID, get_builtin_tool_descriptor
 
 
-INVENTORY_TOOL_ID = INVENTORY_COLLECT_TOOL_ID
+INVENTORY_TOOL_ID = "inventory.collect"
 _BINDING_FIELDS = [
     "building",
     "floor",
@@ -319,31 +318,6 @@ def extract_tool_result_payload(payload: Any) -> dict[str, Any] | None:
     if isinstance(output, dict):
         return dict(output)
     return None
-
-
-def _inventory_builtin_descriptor(tool_id: str) -> CapabilityDescriptor | None:
-    descriptor = get_builtin_tool_descriptor(tool_id)
-    if descriptor is None:
-        return None
-    return CapabilityDescriptor(
-        id=str(descriptor.get("id") or tool_id),
-        title=str(descriptor.get("title") or tool_id),
-        description=str(descriptor.get("description") or ""),
-        provider_id=str(descriptor.get("provider_id") or tool_id.split(".", 1)[0]),
-        provider_type=str(descriptor.get("provider_type") or "agent_builtin"),
-        execution_target=str(descriptor.get("execution_target") or "agent_builtin"),
-        tool_kind=str(descriptor.get("tool_kind") or tool_id.split(".", 1)[0]),
-        risk_level=str(descriptor.get("risk_level") or "low"),
-        side_effects=bool(descriptor.get("side_effects", False)),
-        requires_device=bool(descriptor.get("requires_device", True)),
-        requires_agent_online=bool(descriptor.get("requires_agent_online", True)),
-        platforms=[str(item) for item in descriptor.get("platforms", [])] or ["win32", "linux"],
-        params_schema=_safe_dict(descriptor.get("params_schema")) or {"type": "object", "additionalProperties": False, "properties": {}},
-        output_schema=_safe_dict(descriptor.get("output_schema")),
-        output_contract=_safe_dict(descriptor.get("output_contract")),
-        presentation_schema=_safe_dict(descriptor.get("presentation_schema")),
-        source=str(descriptor.get("source") or "agent_builtin"),
-    )
 
 
 class DeviceInventoryService:
@@ -1385,9 +1359,14 @@ class DeviceInventoryService:
         presentation_service = ToolPresentationOverrideService(self.session)
         descriptor = await presentation_service.descriptor_from_persisted_capability(tool_id)
         if descriptor is None:
-            descriptor = _inventory_builtin_descriptor(tool_id)
-        if descriptor is None:
-            descriptor = CapabilityDescriptor(id=tool_id, title=tool_id, execution_target="agent_builtin")
+            descriptor = CapabilityDescriptor(
+                id=tool_id,
+                title=tool_id,
+                provider_id="endpoint_platform",
+                provider_type="endpoint_operation",
+                execution_target="endpoint_operation",
+                source="external_endpoint",
+            )
         detail = await presentation_service.get_presentation_detail(descriptor)
         output_contract = _safe_dict(descriptor.output_contract)
         device_card = _safe_dict(output_contract.get("device_card"))

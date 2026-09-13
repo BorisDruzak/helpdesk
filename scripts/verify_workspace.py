@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 import tempfile
-from importlib import import_module
 from pathlib import Path
 from typing import Iterable
 
@@ -239,20 +238,6 @@ def check_forbidden_tracked_files(workspace: Path) -> list[str]:
     return [f"forbidden local config is tracked by git: {path}" for path in tracked]
 
 
-def run_module_observer_guard(workspace: Path) -> list[str]:
-    server_root = workspace / "server"
-    if not (server_root / "utils" / "module_observer_contract.py").exists():
-        server_root = SCRIPT_WORKSPACE / "server"
-    if str(server_root) not in sys.path:
-        sys.path.insert(0, str(server_root))
-    scan_workspace_module_observer_failures = getattr(
-        import_module("utils.module_observer_contract"),
-        "scan_workspace_module_observer_failures",
-    )
-
-    return scan_workspace_module_observer_failures(workspace)
-
-
 def run_domain_import_boundary_guard(workspace: Path) -> list[str]:
     result = subprocess.run(
         [sys.executable, str(SCRIPT_WORKSPACE / "scripts" / "check_domain_import_boundaries.py"), "--workspace", str(workspace)],
@@ -275,7 +260,6 @@ def main() -> None:
     failures.extend(run_py_compile(args.workspace, files))
     node_results = run_node_syntax(args.workspace, files)
     failures.extend([item for item in node_results if "skipped" not in item])
-    failures.extend(run_module_observer_guard(args.workspace))
     failures.extend(run_domain_import_boundary_guard(args.workspace))
     failures.extend(check_forbidden_tracked_files(args.workspace))
     if not args.skip_docs_drift:

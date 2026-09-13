@@ -378,7 +378,7 @@ describe("AdminInventoryPage", () => {
     });
   });
 
-  it("keeps token and rollout panels available for the selected agent", async () => {
+  it("keeps the token panel available for the selected agent", async () => {
     installFetchMock();
 
     renderInventory();
@@ -388,9 +388,6 @@ describe("AdminInventoryPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Токены/i }));
     expect(await screen.findByText("pc_123")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Rollout/i }));
-    expect((await screen.findAllByText("linux_alt_x86_64")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("1.2.3").length).toBeGreaterThan(0);
   });
 
   it("shows tokens for every visible agent instead of only the selected agent", async () => {

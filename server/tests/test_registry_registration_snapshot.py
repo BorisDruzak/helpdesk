@@ -41,6 +41,18 @@ def _device(device_id: str) -> Device:
 
 
 @pytest.mark.asyncio
+async def test_registry_snapshot_excludes_retired_account_session_runtime(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        snapshot = await RegistrySnapshotService(session).build_snapshot()
+
+    assert "account_sessions" not in snapshot
+    assert "account_login_requests" not in snapshot
+    assert {"sessions_active", "sessions_other_account", "other_account_requests"}.isdisjoint(snapshot["summary"])
+
+
+@pytest.mark.asyncio
 async def test_registry_snapshot_projects_production_context_from_registry_metadata(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

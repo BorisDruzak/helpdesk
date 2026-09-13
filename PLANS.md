@@ -1,3 +1,101 @@
+# Active: 2026-09-03 Helpdesk / Endpoint legacy cutover
+
+## Goal
+
+Complete the cross-repository cutover in
+`2026-09-03-helpdesk-endpoint-legacy-cutover-plan.md`: Endpoint Platform is
+the only endpoint-agent control plane; Helpdesk retains ticket/process and
+browser UI responsibilities only.
+
+## Scope and constraints
+
+- Execute the E1–E4 and H1–H5 atomic release train, preserving the Endpoint
+  headless runtime and the managed Remote Assist module source.
+- Keep the legacy Helpdesk schema as non-runtime historical residue; no
+  destructive schema drops or automatic downgrades.
+- Produce exact-SHA, contract-digest, package-digest, targeted-test and
+  real-agent release evidence.  The historical full suite is intentionally
+  not a gate.
+- Existing user changes outside this isolated worktree are out of scope.
+
+## Current state
+
+- The accepted Helpdesk baseline is
+  `origin/codex/helpdesk-process-model` at
+  `a5f1d2311406f6565460aa31cc9708d469479601`. It includes both the plan
+  baseline and the required UI-removal commit
+  `e88022956e4670278d151d0af1238f806b1a231a`.
+- The isolated integration branch is `codex/legacy-cutover-integration`.
+  It has not been merged or pushed. Its current fixes remove stale admin
+  rollout metadata, align the browser capability test, make parallel-layer
+  completion ordering deterministic, clean `registry_person_identities` in
+  the `registry_access` test profile, and project primary-device presence
+  through the supplied state provider with a safe `unknown` fallback. It also
+  physically removes the legacy local `run_tool`/GUI-agent debug surfaces,
+  `/ws_ui_test`, and the local UIA agent harness; those absences are guarded
+  by `test_endpoint_diagnostic_cutover_guards.py`.
+- A user-authorized full CI diagnostic run is still executing on frozen
+  commit `5cee2bd2ecdbaf2a6a8c4acf33162aab644aa2b9`. It predates the two
+  latest cleanup/presence fixes and is therefore evidence for further
+  diagnosis, not release acceptance for the current branch.
+- The current Helpdesk lock was verified against the clean Endpoint `main`
+  checkout at `22060e2bd3eae9fff874a64d01d80d18be9ff576`: the raw Git-blob
+  OpenAPI SHA-256 is `2982924427c731b83cfbd203e2fc86533c6e7b0fb4ec234cacd2d96f838fc04f`.
+  Windows checkout CRLF conversion must not be used as contract-digest
+  evidence.
+- The local Helpdesk deletion gate passed on the integration worktree:
+  45 no-DB cutover/route/boundary/resolver/static-page tests are green;
+  `python -m compileall -q server scripts`, `npm --prefix webapp run build`,
+  and `python scripts/verify_workspace.py --workspace .` are green. Static
+  legacy matches are limited to retained migration history and
+  negative-test/audit assertions; active runtime imports are absent.
+- The Endpoint `main` cancel-contract check is green locally: 189 contract
+  and operation-route tests passed, generated contract artifacts are current,
+  and `python -m compileall -q endpoint_contracts endpoint_server pc_agent`
+  passed. This is local contract evidence only; it does not substitute for
+  immutable package or real-agent canary acceptance.
+- The Endpoint headless-boundary subset also passed with a JUnit result of
+  59 tests, zero failures, errors, or skips. It covers the excluded GUI,
+  Helpdesk client and legacy WebSocket surfaces alongside the supported
+  headless lifecycle and verification entrypoints.
+- The current local ALT package subset produced 104 passes and 14 expected
+  platform skips (POSIX ownership/FIFO checks, Linux assembly/harness, and
+  RPM inspection). The obsolete plan reference
+  `pc_agent/tests/test_linux_release_bundle.py` is absent; its current
+  coverage is in `tests/build/test_linux_headless_artifact.py`,
+  `tests/deploy/test_alt_agent_bundle_install.py`, and
+  `tests/packaging/test_alt_rpm_contract.py`. The skipped checks remain
+  required on the approved ALT worker before release acceptance.
+- The Endpoint Windows package/runtime test directory passed locally with 128
+  tests and zero failures, errors, or skips. The required dedicated-VM MSI
+  installation, service, reconnect and rollback canary is still outstanding.
+- Immutable package bytes have now been independently verified without an
+  installation: the staging ALT RPM built from
+  `572f3a0249bd4a49035cc97177279fbbf1e90068` is
+  `endpoint-agent-3.2.38-alt3.x86_64.rpm` with SHA-256
+  `78abe5ecf63fe594aef2eddd4b25657236ff5231413d7996bbb8d9ebd541950c`;
+  `rpm -K`, metadata and the forbidden legacy-payload scan are green. The
+  locally retained `EndpointAgent-3.2.38-x64.msi` has SHA-256
+  `1b377298939121c5e669d90ad91606a627ff073e5ac1bfc0bd0bbe82ad7c4b90`,
+  matching its sidecar's same source revision and initial-runtime tree hash.
+  Neither package was installed or published by this verification.
+- A read-only preflight on the approved ALT staging host confirmed that
+  `endpoint-agent.service` is active but none of
+  `ENDPOINT_AGENT_DEPLOYMENT_ENVIRONMENT`, `CANARY_ENVIRONMENT`, or
+  `CANARY_APPROVED` is configured. The marker-bound staging canary therefore
+  remains fail-closed; no remote configuration, service, or test data was
+  changed.
+
+## Next steps
+
+1. Let the frozen CI run finish and use its exact tracebacks to identify any
+   remaining defects; rerun only the relevant targeted DB layers on the
+   current commit after the parent-owned tunnel is free.
+2. Reconcile the prepared Endpoint cancel/headless release train with the
+   final Helpdesk contract lock, generated artifacts and targeted gates.
+3. Do not merge either integration branch until targeted gates, package
+   evidence and the approved real-agent canaries satisfy the cutover plan.
+
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
 ## 2026-08-31 Staging secure admin-session access

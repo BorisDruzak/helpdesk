@@ -15,7 +15,7 @@ from app.repos import ArtifactsRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import ensure_server_request_id, require_auth
-from consent.service import OPERATION_SUBJECT_TYPES, ConsentAccessError, UserConsentService, serialize_user_consent
+from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
 from domain_ports import (
     ActorRef,
     DomainPortContainer,
@@ -43,7 +43,11 @@ from tickets.handlers import (
     _serialize_message_for_requester,
     _store_resolution_confirmation_state,
 )
-from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.create_flow import (
+    VerifiedRequesterBinding,
+    build_default_priority_payload,
+    create_ticket_with_side_effects,
+)
 from tickets.diagnostic_target import resolve_ticket_diagnostic_target
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom_fields, resolve_ticket_form_pack
@@ -62,7 +66,6 @@ from tickets.chat_idempotency import (
 )
 from tickets.ticket_context import TicketContextBuilder, project_requester_ticket_context
 from tickets.workflow_service import TicketWorkflowService
-from tools.service import ToolExecutionService
 
 _AVAILABILITY_POLICY_FIELDS = (
     "available_without_completed_profile",
@@ -1013,17 +1016,6 @@ async def _handle_web_requester_consent_decision(request: web.Request, decision:
         except ValueError as exc:
             await session.rollback()
             return _error(str(exc), status=400, error_code="VALIDATION_ERROR")
-    if decision == "approved" and row.status == "approved" and row.subject_type in OPERATION_SUBJECT_TYPES:
-        dispatch_result = await ToolExecutionService(request.app.get("state")).resume_approved_operation(
-            row.subject_id,
-            auth_context=auth_context,
-        )
-        if dispatch_result.get("status") != "accepted":
-            return _error(
-                dispatch_result.get("error") or "approved operation dispatch failed",
-                status=500,
-                error_code=dispatch_result.get("error_code") or "APPROVED_OPERATION_DISPATCH_FAILED",
-            )
     return _success({"consent": serialize_user_consent(row)})
 
 
@@ -1185,7 +1177,6 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
             "visibility": "public",
             "requester_person_id": getattr(ticket, "requester_person_id", None),
             "requester_binding_id": getattr(ticket, "requester_binding_id", None),
-            "requester_account_session_id": getattr(ticket, "requester_account_session_id", None),
             "requester_account_mode": getattr(ticket, "requester_account_mode", None),
         }
         if metadata:
@@ -2016,6 +2007,15 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             support_group_code=catalog_process_fields.get("support_group_code"),
             extra_custom_fields=extra_custom_fields,
             requester_account=requester_account,
+            verified_requester_binding=(
+                VerifiedRequesterBinding(
+                    device_id=str(binding.device_id),
+                    person_id=str(person.person_id),
+                    binding_id=str(binding.binding_id),
+                )
+                if account_mode == "confirmed_binding" and person is not None and binding is not None
+                else None
+            ),
             ticket_context=on_behalf_context,
             state=request.app.get("state"),
         )

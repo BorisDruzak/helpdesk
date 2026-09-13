@@ -75,7 +75,6 @@ async def create_operation_user_consent(
         requester_snapshot=requester_snapshot,
         requester_person_id=requester_person_id,
         requester_binding_id=getattr(ticket, "requester_binding_id", None),
-        requester_account_session_id=getattr(ticket, "requester_account_session_id", None),
         requested_by_actor_id=requested_by_actor_id,
         requested_by_role=requested_by_role,
         risk_level=risk_level,

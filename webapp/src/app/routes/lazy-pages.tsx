@@ -56,18 +56,6 @@ export const RequesterDevicesPage = lazy(() =>
   import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDevicesPage })),
 );
 
-export const RequesterDeviceLinkPage = lazy(() =>
-  import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDeviceLinkPage })),
-);
-
-export const DevicePairingPage = lazy(() =>
-  import("../../pages/device-pairing").then((module) => ({ default: module.DevicePairingPage })),
-);
-
-export const DevicePairCodePage = lazy(() =>
-  import("../../pages/device-pairing").then((module) => ({ default: module.DevicePairCodePage })),
-);
-
 export const SettingsPage = lazy(() =>
   import("../../pages/settings").then((module) => ({ default: module.SettingsPage })),
 );
@@ -80,16 +68,8 @@ export const AdminDevicePage = lazy(() =>
   import("../../pages/admin/device-page").then((module) => ({ default: module.AdminDevicePage })),
 );
 
-export const AdminDeviceOperationsPage = lazy(() =>
-  import("../../pages/admin/device-operations-page").then((module) => ({ default: module.AdminDeviceOperationsPage })),
-);
-
 export const AdminOperationDetailPage = lazy(() =>
   import("../../pages/admin/operation-detail-page").then((module) => ({ default: module.AdminOperationDetailPage })),
-);
-
-export const AdminAgentUpdatesPage = lazy(() =>
-  import("../../pages/admin/agent-updates-page").then((module) => ({ default: module.AdminAgentUpdatesPage })),
 );
 
 export const AdminAiIntegrationPage = lazy(() =>
@@ -110,10 +90,6 @@ export const AdminFormsPage = lazy(() =>
 
 export const AdminInventoryPage = lazy(() =>
   import("../../pages/admin/inventory-page").then((module) => ({ default: module.AdminInventoryPage })),
-);
-
-export const AdminModulesPage = lazy(() =>
-  import("../../pages/admin/modules-page").then((module) => ({ default: module.AdminModulesPage })),
 );
 
 export const AdminObserverPage = lazy(() =>

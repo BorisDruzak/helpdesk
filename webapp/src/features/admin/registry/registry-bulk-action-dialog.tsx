@@ -9,9 +9,7 @@ import { RegistryOperationPreview } from "./registry-operation-preview";
 export type RegistryBulkOperation =
   | "devices.assign_location"
   | "devices.assign_department"
-  | "devices.revoke_account_sessions"
-  | "people.assign_department"
-  | "account_sessions.revoke";
+  | "people.assign_department";
 
 export type RegistryBulkDialogState = {
   operation: RegistryBulkOperation;
@@ -30,9 +28,7 @@ type Props = {
 const operationLabels: Record<RegistryBulkOperation, string> = {
   "devices.assign_location": "Назначить локацию устройствам",
   "devices.assign_department": "Назначить подразделение устройствам",
-  "devices.revoke_account_sessions": "Отозвать сессии устройств",
   "people.assign_department": "Назначить подразделение пользователям",
-  "account_sessions.revoke": "Отозвать аккаунт-сессии",
 };
 
 function requiresDepartment(operation: RegistryBulkOperation): boolean {

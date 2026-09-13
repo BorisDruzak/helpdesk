@@ -836,7 +836,7 @@ describe("FormsBuilderPanel", () => {
     expect(screen.getByText("Факты формы будут приложены к запуску после создания тикета.")).toBeInTheDocument();
   });
 
-  it("не отправляет route preview, если обязательные preview-поля пустые", async () => {
+  it("блокирует route preview и показывает ошибку пустого обязательного поля «Кабинет»", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
@@ -871,8 +871,7 @@ describe("FormsBuilderPanel", () => {
     await screen.findByLabelText("Кабинет");
     fireEvent.click(screen.getByRole("button", { name: "Проверить" }));
 
-    expect(await screen.findByText("Заполните обязательные поля preview.")).toBeInTheDocument();
-    expect(screen.getByText("Заполните поле «Кабинет».")).toBeInTheDocument();
+    expect(await screen.findByText(/Заполните поле «Кабинет»/)).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([input, init]) => String(input) === "/api/web/admin/forms/route-preview" && init?.method === "POST")
     ).toBe(false);

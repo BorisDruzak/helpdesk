@@ -56,7 +56,7 @@ export const REQUESTER_FORBIDDEN_VISIBLE_TERMS: readonly ForbiddenVisibleTerm[] 
   { term: "pairing", pattern: /\bpairing\b/i, reason: "Use Привязка устройства." },
   { term: "binding", pattern: /\bbinding\b/i, reason: "Use Привязка устройства." },
   { term: "claim", pattern: /\bclaim\b/i, reason: "Hide registration internals." },
-  { term: "session", pattern: /\bsession\b/i, reason: "Hide account-session internals." },
+  { term: "session", pattern: /\bsession\b/i, reason: "Hide internal session metadata." },
   { term: "registry person", pattern: /\bregistry person\b/i, reason: "Use Профиль or Сотрудник." },
   { term: "verified", pattern: /\bverified\b/i, reason: "Hide identity verification internals." },
   { term: "not verified", pattern: /\bnot verified\b/i, reason: "Hide identity verification internals." },

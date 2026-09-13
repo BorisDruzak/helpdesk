@@ -207,7 +207,6 @@ function snapshot(overrides: Partial<TechPanelV2Snapshot> = {}): TechPanelV2Snap
       observer: "/app/admin/observer",
       inventory: "/app/admin/inventory",
       device_operations: "/app/admin/device-operations",
-      agent_updates: "/app/admin/agent-updates",
       command_center: "/app/support",
       approval_center: "/app/support/approvals",
       logs: "/app/admin/tech?tab=logs",

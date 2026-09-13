@@ -1365,7 +1365,7 @@ describe("SupportWorkspace", () => {
           });
         }
 
-        if (url === "/api/web/support/tickets/ticket-1/tools/run" && method === "POST") {
+        if (url === "/api/web/support/tickets/ticket-1/diagnostics/capabilities/network.diagnostics/run" && method === "POST") {
           postedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
           currentDetail = {
             ...currentDetail,
@@ -1408,17 +1408,9 @@ describe("SupportWorkspace", () => {
           };
           return jsonResponse(
             {
-              status: "success",
-              data: {
-                ticket_id: "ticket-1",
-                device_id: "device-1",
-                tool_name: "network.diagnostics",
-                dispatch_status: "accepted",
-                operation_id: "op-tool-run-1",
-                poll_url: "/api/operations/op-tool-run-1",
-                trace_id: "trace-tool-run-1",
-                message: "Инструмент поставлен в очередь выполнения"
-              }
+              status: "queued",
+              operation_id: "op-tool-run-1",
+              trace_id: "trace-tool-run-1"
             },
             202
           );
@@ -1442,8 +1434,6 @@ describe("SupportWorkspace", () => {
 
     await waitFor(() => {
       expect(postedBody).toEqual({
-        tool_name: "network.diagnostics",
-        preset_id: null,
         params: {
           target: "srv-gateway"
         }

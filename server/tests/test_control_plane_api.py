@@ -24,9 +24,6 @@ async def control_client(patched_get_session, monkeypatch):
             return auth_header.split(" ", 1)[1].strip()
         return auth_header.strip() or None
 
-    async def fake_verify_agent_token(self, token):
-        return None
-
     async def fake_verify_ui_token(self, token):
         if token == ADMIN_TOKEN:
             return {"user_login": "admin-test", "actor_role": "admin", "type": "ui"}
@@ -35,7 +32,6 @@ async def control_client(patched_get_session, monkeypatch):
         return None
 
     monkeypatch.setattr("control_plane.extract_token_from_header", fake_extract_token_from_header)
-    monkeypatch.setattr("control_plane.AuthService.verify_agent_token", fake_verify_agent_token)
     monkeypatch.setattr("control_plane.AuthService.verify_ui_token", fake_verify_ui_token)
     app = create_control_app(initialize_db=False)
     async with TestClient(TestServer(app)) as client:

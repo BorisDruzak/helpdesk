@@ -5,7 +5,7 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { fetchAdminRegistryTimeline, type AdminRegistryPayload, type AdminRegistryTimelineItem } from "../api";
-import { actorRoleLabel, accountModeLabel, formatDateTime, registrySourceLabel, registryStatusLabel, relationshipTypeLabel, statusTone, type RegistrySelection } from "./registry-utils";
+import { actorRoleLabel, formatDateTime, registrySourceLabel, registryStatusLabel, relationshipTypeLabel, statusTone, type RegistrySelection } from "./registry-utils";
 
 type Props = {
   registry: AdminRegistryPayload | null;
@@ -42,9 +42,6 @@ const EVENT_LABELS: Record<string, string> = {
   bulk_action_applied: "Массовая операция выполнена",
   policy_changed: "Политика изменена",
   registry_policy_updated: "Политика реестра изменена",
-  confirmed_binding_session_created: "Аккаунт-сессия создана",
-  account_session_revoked: "Аккаунт-сессия отозвана",
-  account_session_revoked_due_to_binding_change: "Сессия отозвана из-за изменения привязки",
 };
 
 const RELATED_LABELS: Record<string, string> = {
@@ -54,7 +51,6 @@ const RELATED_LABELS: Record<string, string> = {
   person_id: "Пользователь",
   binding_id: "Привязка",
   claim_id: "Заявка",
-  session_id: "Сессия",
   request_id: "Запрос",
   ticket_id: "Тикет",
   identity_id: "Идентичность",
@@ -141,7 +137,7 @@ function TimelineEvent({ event }: { event: AdminRegistryTimelineItem }) {
 export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
   const timelineQuery = useQuery({
     queryKey: ["admin-registry-timeline", selection?.kind, selection?.id],
-    queryFn: () => fetchAdminRegistryTimeline(selection!.kind === "session" ? "account_session" : selection!.kind, selection!.id),
+    queryFn: () => fetchAdminRegistryTimeline(selection!.kind, selection!.id),
     enabled: Boolean(registry && selection),
     retry: false,
   });
@@ -149,7 +145,6 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
   const device = selection.kind === "device" ? registry.assets.find((item) => item.device_id === selection.id) : null;
   const person = selection.kind === "person" ? registry.people.find((item) => item.person_id === selection.id) : null;
   const binding = selection.kind === "binding" ? (registry.bindings ?? registry.active_bindings).find((item) => item.binding_id === selection.id) : null;
-  const session = selection.kind === "session" ? (registry.account_sessions ?? []).find((item) => item.session_id === selection.id) : null;
   const claim = selection.kind === "claim" ? registry.registration_claims.find((item) => item.claim_id === selection.id) : null;
 
   return (
@@ -158,7 +153,7 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
         <div>
           <p className="text-xs font-semibold uppercase text-slate-400">Детали реестра</p>
           <h2 className="text-xl font-semibold text-slate-950">
-            {device?.hostname ?? person?.display_name ?? binding?.binding_id ?? session?.session_id ?? claim?.claim_id ?? "Объект"}
+            {device?.hostname ?? person?.display_name ?? binding?.binding_id ?? claim?.claim_id ?? "Объект"}
           </h2>
         </div>
         <Button aria-label="Закрыть" onClick={onClose} size="icon" variant="ghost">
@@ -180,7 +175,6 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
               <Field label="Зарегистрирован" value={device.active_person_name ?? device.owner_name} />
               <Field label="Текущий пользователь ОС" value={device.latest_presence_user ?? device.current_os_user} />
               <Field label="Последняя связь с агентом" value={formatDateTime(device.last_seen_at)} />
-              <Field label="Аккаунт-сессии" value={device.active_sessions_count ?? 0} />
             </div>
             <section>
               <p className="mb-2 text-sm font-semibold text-slate-950">Активные привязки</p>
@@ -214,7 +208,6 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
               <Field label="Телефон" value={person.phone} />
               <Field label="Статус" value={registryStatusLabel(person.status)} />
               <Field label="Основные устройства" value={person.primary_device_count ?? 0} />
-              <Field label="Активные сессии" value={person.active_session_count ?? 0} />
             </div>
             <section>
               <p className="mb-2 text-sm font-semibold text-slate-950">Идентичности</p>
@@ -248,28 +241,10 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
             <Field label="Источник" value={registrySourceLabel(binding.source)} />
             <Field label="Подтвердил" value={binding.confirmed_by_admin} />
             <Field label="Подтверждена" value={formatDateTime(binding.confirmed_at)} />
-            <Field label="Активные сессии" value={binding.active_sessions_count ?? 0} />
           </CardContent>
         </Card>
       ) : null}
 
-      {session ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Аккаунт-сессия</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <Field label="ID сессии" value={session.session_id} />
-            <Field label="Устройство" value={session.device_id} />
-            <Field label="Аккаунт" value={session.display_name ?? session.login} />
-            <Field label="Режим" value={accountModeLabel(session.account_mode)} />
-            <Field label="Статус" value={registryStatusLabel(session.verification_status)} />
-            <Field label="Базовая привязка" value={session.base_binding_id} />
-            <Field label="Создана" value={formatDateTime(session.created_at)} />
-            <Field label="Отозвана" value={formatDateTime(session.revoked_at)} />
-          </CardContent>
-        </Card>
-      ) : null}
 
       {claim ? (
         <Card>

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import json
 import uuid
 
 import pytest
@@ -18,9 +17,7 @@ from app.db.models import (
     RegistryPersonIdentity,
     UiUser,
 )
-from registry.account_session_service import AccountSessionService
 from registry.effective_identity_service import EffectiveIdentityService
-from registry.registration_service import RegistrationService
 
 
 pytestmark = pytest.mark.db_cleanup("registry_access")
@@ -42,29 +39,6 @@ def _device(device_id: str, *, hostname: str = "effective-identity") -> Device:
         last_seen_at=now,
         last_handshake_at=now,
     )
-
-
-async def _approved_binding(
-    session,
-    device_id: str,
-    email: str = "owner-effective@example.test",
-    *,
-    display_name: str = "Effective Owner",
-) -> dict:
-    service = RegistrationService(session)
-    claim = await service.submit_agent_profile_claim(
-        device_id=device_id,
-        requester_id=email,
-        display_name=display_name,
-        profile={
-            "full_name": display_name,
-            "email": email,
-            "phone": "+10000000001",
-            "relationship_type": "primary_user",
-            "user_confirmed": True,
-        },
-    )
-    return await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
 
 
 def _warning_codes(payload: dict) -> set[str]:
@@ -402,96 +376,6 @@ async def test_agent_machine_token_does_not_resolve_requester_identity(test_engi
     assert payload["person"] is None
     assert payload["identity_source"] == "machine_token"
     assert "agent_machine_identity_not_requester" in _warning_codes(payload)
-
-
-@pytest.mark.asyncio
-async def test_confirmed_account_session_resolves_binding_person_through_session_validation(test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-
-    async with session_maker() as session:
-        session.add(_device(device_id))
-        approved = await _approved_binding(session, device_id)
-        created = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=approved["binding"]["binding_id"],
-        )
-
-        payload = (
-            await EffectiveIdentityService(session).resolve_account_session_identity(
-                device_id=device_id,
-                session_id=created["session"]["session_id"],
-                session_token=created["session_token"],
-            )
-        ).to_dict()
-
-    assert payload["person"]["person_id"] == approved["binding"]["person_id"]
-    assert payload["account_session"]["valid"] is True
-    assert payload["account_session"]["account_mode"] == "confirmed_binding"
-    assert payload["account_session"]["binding_id"] == approved["binding"]["binding_id"]
-
-
-@pytest.mark.asyncio
-async def test_verified_other_account_does_not_use_registered_owner_as_requester_identity(test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-
-    async with session_maker() as session:
-        session.add(_device(device_id))
-        approved = await _approved_binding(session, device_id, email="base-owner@example.test", display_name="Base Owner")
-        account_service = AccountSessionService(session)
-        request = await account_service.create_other_account_login_request(
-            device_id=device_id,
-            requested_account={
-                "full_name": "Unlinked Other",
-                "display_name": "Other",
-                "login": "unlinked-other",
-                "email": "unlinked-other@example.test",
-                "reason": "Temporary replacement",
-            },
-        )
-        approved_request = await account_service.approve_login_request(request["request_id"], reviewed_by="admin")
-
-        payload = (
-            await EffectiveIdentityService(session).resolve_account_session_identity(
-                device_id=device_id,
-                session_id=approved_request["session"]["session_id"],
-                session_token=approved_request["session_token"],
-            )
-        ).to_dict()
-
-    assert payload["account_session"]["valid"] is True
-    assert payload["account_session"]["account_mode"] == "verified_other_account"
-    assert payload["account_session"]["base_person_id"] == approved["binding"]["person_id"]
-    assert payload["account_session"]["person_id"] is None
-    assert payload["person"] is None
-    assert "declared_account_unlinked_registry_person" in _warning_codes(payload)
-
-
-@pytest.mark.asyncio
-async def test_identity_explain_payload_never_exposes_account_session_token(test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-
-    async with session_maker() as session:
-        session.add(_device(device_id))
-        approved = await _approved_binding(session, device_id)
-        created = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=approved["binding"]["binding_id"],
-        )
-        payload = (
-            await EffectiveIdentityService(session).resolve_account_session_identity(
-                device_id=device_id,
-                session_id=created["session"]["session_id"],
-                session_token=created["session_token"],
-            )
-        ).to_dict()
-
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    assert created["session_token"] not in encoded
-    assert "session_token" not in encoded
-    assert "session_token_hash" not in encoded
 
 
 @pytest.mark.asyncio

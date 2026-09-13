@@ -1,9 +1,7 @@
 import { useDeferredValue, useEffect, useState, startTransition } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { DeviceUpdatePanel } from "../agent-updates/device-update-panel";
 import { FormsBuilderPanel } from "../forms-builder/forms-builder-panel";
-import { ModulesPanel } from "../modules/modules-panel";
 import { ObserverQuickPanel } from "../tech/observer-quick-panel";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import {
@@ -83,7 +81,6 @@ export function AdminWorkspace() {
         if (message.deviceId !== selectedDevice?.device_id) {
           return;
         }
-        void queryClient.invalidateQueries({ queryKey: ["admin-device-updates", selectedDevice.device_id] });
         void queryClient.invalidateQueries({ queryKey: ["admin-observer-quick", selectedDevice.device_id] });
         void queryClient.invalidateQueries({ queryKey: ["admin-observer-traces", selectedDevice.device_id] });
         void queryClient.invalidateQueries({ queryKey: ["admin-observer-trace-detail"] });
@@ -104,7 +101,7 @@ export function AdminWorkspace() {
           <div className="workspace-boot__hero-copy">
             <p className="workspace-boot__eyebrow">Контур управления</p>
             <h1>Рабочее место администрирования</h1>
-            <p>Собираем инвентарь устройств, политику rollout и быстрый observer-срез…</p>
+            <p>Собираем инвентарь устройств и быстрый observer-срез…</p>
           </div>
         </div>
       </section>
@@ -147,7 +144,7 @@ export function AdminWorkspace() {
     );
   }
 
-  const { summary, filters, rollout } = devicesQuery.data;
+  const { summary, filters } = devicesQuery.data;
   const bootstrap = bootstrapQuery.data!;
 
   return (
@@ -158,7 +155,7 @@ export function AdminWorkspace() {
           <h1>Рабочее место администрирования</h1>
           <p>
             Тот же единый shell, что и в поддержке: инвентарь слева, активное устройство в центре,
-            раскатка, observer, реестр модулей и конструктор форм в едином операционном интерфейсе.
+            Endpoint-срез, observer и конструктор форм в едином операционном интерфейсе.
           </p>
         </div>
 
@@ -171,10 +168,6 @@ export function AdminWorkspace() {
             <dt>Онлайн сейчас</dt>
             <dd>{summary.online_count}</dd>
           </div>
-          <div>
-            <dt>Rollout targets</dt>
-            <dd>{summary.rollout_targets}</dd>
-          </div>
         </dl>
       </header>
 
@@ -183,7 +176,7 @@ export function AdminWorkspace() {
           <div className="support-workspace__panel-head">
             <div>
               <h2>Инвентарь устройств</h2>
-              <p>Проверяем состав парка, связь агентов и готовность к rollout без возврата в legacy admin shell.</p>
+              <p>Проверяем состав парка, связь агентов и диагностический контекст без возврата в legacy admin shell.</p>
             </div>
           </div>
 
@@ -228,29 +221,6 @@ export function AdminWorkspace() {
             <span>Активные возможности: {bootstrap.features.join(" · ")}</span>
           </div>
 
-          <section className="admin-rollout">
-            <div className="support-ticket-detail__section-head">
-              <h3>Назначения rollout</h3>
-              <span>{rollout.length}</span>
-            </div>
-            {rollout.length ? (
-              <div className="admin-rollout__list">
-                {rollout.map((item) => (
-                  <article key={`${item.target}:${item.channel}:${item.version}`} className="workspace-card">
-                    <p className="workspace-card__code">{item.target}</p>
-                    <h3>
-                      {item.channel}/{item.version}
-                    </h3>
-                    <p>{item.updated_by ? `Обновил ${item.updated_by}` : "Источник обновления не указан"}</p>
-                    <p>Изменено: {formatDateTime(item.updated_at)}</p>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="support-queue-empty">Назначений rollout пока нет. Новый boundary уже готов их показывать.</div>
-            )}
-          </section>
-
           {devices.length ? (
             <div className="admin-device-list">
               {devices.map((device) => (
@@ -274,7 +244,7 @@ export function AdminWorkspace() {
                     <span>{device.agent_version ?? "Версия не указана"}</span>
                     <span>{formatDateTime(device.last_seen_at)}</span>
                   </div>
-                  <p>{device.latest_update.summary ?? "Нет свежих данных по rollout."}</p>
+                  <p>Endpoint Platform управляет жизненным циклом агента и выпусками.</p>
                 </button>
               ))}
             </div>
@@ -314,12 +284,12 @@ export function AdminWorkspace() {
                 <article className="support-snapshot-card">
                   <span>Версия агента</span>
                   <strong>{selectedDevice.agent_version ?? "Неизвестно"}</strong>
-                  <p>Срез нужен для rollout-решений и контроля расхождений по парку устройств.</p>
+                  <p>Срез отражает версию агента, сообщённую устройством.</p>
                 </article>
                 <article className="support-snapshot-card">
-                  <span>Готовность к обновлению</span>
-                  <strong>{selectedDevice.latest_update.label}</strong>
-                  <p>{selectedDevice.latest_update.summary ?? "Нет свежих данных по update workflow."}</p>
+                  <span>Статус подключения</span>
+                  <strong>{selectedDevice.connection_status_label}</strong>
+                  <p>Endpoint Platform управляет жизненным циклом агента и выпусками.</p>
                 </article>
                 <article className="support-snapshot-card">
                   <span>Эндпоинт observer</span>
@@ -327,13 +297,6 @@ export function AdminWorkspace() {
                   <p>Тот же shell показывает быстрый trace-срез и drilldown без legacy tech panel.</p>
                 </article>
               </div>
-
-              <DeviceUpdatePanel
-                device={{
-                  device_id: selectedDevice.device_id,
-                  hostname: selectedDevice.hostname,
-                }}
-              />
 
               <ObserverQuickPanel
                 deviceId={selectedDevice.device_id}
@@ -346,7 +309,6 @@ export function AdminWorkspace() {
         </article>
       </section>
 
-      <ModulesPanel />
       <FormsBuilderPanel />
     </section>
   );

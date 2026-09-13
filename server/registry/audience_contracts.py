@@ -17,7 +17,6 @@ class EffectiveIdentity:
     location: dict[str, Any] | None = None
     access_groups: list[str] = field(default_factory=list)
     audience_groups: list[Any] = field(default_factory=list)
-    account_session: dict[str, Any] | None = None
     warnings: list[WarningItem] = field(default_factory=list)
     sources: dict[str, Any] = field(default_factory=dict)
 
@@ -31,7 +30,6 @@ class EffectiveIdentity:
             "location": self.location,
             "access_groups": self.access_groups,
             "audience_groups": self.audience_groups,
-            "account_session": self.account_session,
             "warnings": self.warnings,
             "sources": self.sources,
         }

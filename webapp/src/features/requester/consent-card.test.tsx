@@ -12,7 +12,6 @@ const baseConsent: RequesterConsent = {
   ticket_id: "550e8400-e29b-41d4-a716-446655440000",
   requester_person_id: "person-requester",
   requester_binding_id: "binding-requester",
-  requester_account_session_id: "session-requester",
   requested_by_actor_id: "support-operator-1",
   requested_by_role: "support",
   risk_level: "remote_view",

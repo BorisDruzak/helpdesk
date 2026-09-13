@@ -223,6 +223,34 @@ async def test_adapter_reads_exact_operation_projection() -> None:
 
 
 @pytest.mark.asyncio
+async def test_adapter_cancels_exact_operation_projection() -> None:
+    received: dict[str, object] = {}
+
+    async def cancel(request: web.Request) -> web.Response:
+        received["path"] = request.path
+        received["query"] = dict(request.query)
+        return _wire_response(_operation_data())
+
+    app = web.Application()
+    app.router.add_post("/api/v1/operations/{operation_id}/cancel", cancel)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).cancel_operation(
+            EndpointOperationRef(external_id=OPERATION_ID)
+        )
+
+        assert isinstance(result, EndpointOperationProjection)
+        assert result.operation.external_id == OPERATION_ID
+        assert received == {
+            "path": f"/api/v1/operations/{OPERATION_ID}/cancel",
+            "query": {},
+        }
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("http_status", "expected_type"),
     (
@@ -374,7 +402,7 @@ def test_container_rejects_invalid_pem_ca_before_composing_http_adapter(
     ca_file = tmp_path / "endpoint-ca.pem"
     ca_file.write_text("test-only-placeholder", encoding="utf-8")
     monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "external")
-    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", "https://endpoint.invalid")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "service-token")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", str(ca_file))
@@ -402,7 +430,7 @@ def test_container_rejects_ca_file_that_ssl_context_cannot_read(
 
     monkeypatch.setattr(container_module.ssl, "create_default_context", fail_ca_read)
     monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "external")
-    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", "https://endpoint.invalid")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "service-token")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", str(ca_file))

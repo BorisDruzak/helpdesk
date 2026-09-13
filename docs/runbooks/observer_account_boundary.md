@@ -2,11 +2,11 @@
 
 ## Meaning
 
-The Observer detected a successful requester/public mutation or projection anomaly that crossed account-session, public access, or role boundaries.
+The Observer detected a successful requester/public mutation or projection anomaly that crossed authenticated web-requester, public-access, or role boundaries.
 
 ## Immediate Checks
 
-- Identify `actor_role`, target ticket, account session and public token state.
+- Identify `actor_role`, target ticket, authenticated requester state and public token state.
 - Confirm whether the event records a successful mutation, not merely a denied attempt.
 - Check requester/public response serializers for forbidden internal fields.
 
@@ -47,7 +47,7 @@ Escalate as critical for wrong-account mutation success, public revoked access s
 
 ## Related Bugs
 
-Inspired by P2/P3 account-session and requester/public boundary regressions.
+Inspired by requester/public boundary regressions.
 
 ## Cleanup and Suppression
 

@@ -24,7 +24,7 @@ from app.db.base import Base
 
 class Ticket(Base):
     """
-    Ticket model for Protocol V3 (расширенная тикетная система).
+    Ticket model for the Helpdesk workflow.
     
     Represents a support ticket bound to a specific device.
     Статусы: canonical ticket status contract from tickets.statuses.CANONICAL_STATUSES.
@@ -451,7 +451,7 @@ sa.event.listen(Ticket, "before_update", _ensure_ticket_requester_id)
 
 class TicketEvent(Base):
     """
-    Ticket event model for Protocol V3.
+    Ticket event model.
     
     Stores all events for tickets with deduplication support.
     Ordered by agent_seq per-ticket.
@@ -1607,7 +1607,7 @@ class TicketChangeLink(Base):
 
 class DeviceEvent(Base):
     """
-    Device event model for Protocol V3.
+    Historical device event model.
     
     Stores events for devices without ticket binding.
     Ordered by device_seq per-device.
@@ -3018,76 +3018,6 @@ class ServerRuntimeSnapshot(Base):
     )
 
 
-class DeviceOutbox(Base):
-    """
-    Device outbox model for Protocol V3.
-    
-    Server-side outbox for reliable command delivery to devices.
-    Commands are persisted before sending and lifecycle-tracked.
-    """
-    __tablename__ = "device_outbox"
-    
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    command_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    command: Mapped[str] = mapped_column(Text, nullable=False)
-    params: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    
-    # Lifecycle tracking
-    status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="pending",
-        index=True
-    )  # pending, sent, delivered, failed
-    
-    # Metadata
-    request_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-    actor_role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
-    
-    # Retry tracking
-    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc)
-    )
-    sent_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True
-    )
-    delivered_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True
-    )
-    failed_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True
-    )
-    
-    # Error tracking
-    error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    __table_args__ = (
-        Index("ix_device_outbox_device_id_status", "device_id", "status"),
-        Index("ix_device_outbox_command_id_status", "command_id", "status"),
-        Index("ix_device_outbox_created_at", "created_at"),
-    )
-    
-    def __repr__(self) -> str:
-        return (
-            f"<DeviceOutbox(id={self.id}, device_id={self.device_id!r}, "
-            f"command_id={self.command_id!r}, command={self.command!r}, "
-            f"status={self.status!r})>"
-        )
-
-
 class RemoteAccessSession(Base):
     """Remote Assist session lifecycle bound to a ticket, device and operator."""
 
@@ -3324,11 +3254,6 @@ class EndpointOperationLink(Base):
     capability_code: Mapped[str] = mapped_column(
         String(128), nullable=False, server_default="context.diagnostic.collect"
     )
-    module_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    module_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    module_spec_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    module_inputs_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    safe_module_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     caller_actor_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     caller_idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
@@ -3367,8 +3292,7 @@ class EndpointOperationLink(Base):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "(capability_code = 'context.diagnostic.collect' AND module_key IS NULL AND module_version IS NULL) "
-            "OR (capability_code = 'endpoint.module.recipe' AND module_key IS NOT NULL AND module_version IS NOT NULL)",
+            "capability_code = 'context.diagnostic.collect'",
             name="ck_endpoint_operation_links_capability_code",
         ),
         sa.CheckConstraint(
@@ -3435,172 +3359,6 @@ class OperationDependency(Base):
         Index("ix_operation_dependencies_status", "status"),
         Index("ix_operation_dependencies_timeout_at", "timeout_at"),
     )
-
-
-class RunnerRolloutPlan(Base):
-    """Fleet rollout plan for the protected agent_recipe_runner managed module."""
-
-    __tablename__ = "runner_rollout_plans"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    module_name: Mapped[str] = mapped_column(String(100), nullable=False, default="agent_recipe_runner")
-    target_version: Mapped[str] = mapped_column(String(50), nullable=False)
-    rollback_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", index=True)
-    strategy: Mapped[str] = mapped_column(String(32), nullable=False, default="canary_waves")
-    canary_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    wave_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
-    max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
-    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    approved_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    paused_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    rolled_back_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-
-    __table_args__ = (
-        Index("ix_runner_rollout_plans_module_status", "module_name", "status"),
-        Index("ix_runner_rollout_plans_target_status", "target_version", "status"),
-    )
-
-
-class RunnerRolloutWave(Base):
-    """A canary or rollout wave inside a runner rollout plan."""
-
-    __tablename__ = "runner_rollout_waves"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    plan_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("runner_rollout_plans.id", ondelete="CASCADE"), nullable=False)
-    wave_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
-    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-
-    __table_args__ = (
-        UniqueConstraint("plan_id", "wave_index", name="uq_runner_rollout_waves_plan_index"),
-        Index("ix_runner_rollout_waves_plan_status", "plan_id", "status"),
-    )
-
-
-class RunnerRolloutTarget(Base):
-    """Per-device target state for a runner rollout plan."""
-
-    __tablename__ = "runner_rollout_targets"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    plan_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("runner_rollout_plans.id", ondelete="CASCADE"), nullable=False)
-    wave_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("runner_rollout_waves.id", ondelete="SET NULL"), nullable=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    module_name: Mapped[str] = mapped_column(String(100), nullable=False, default="agent_recipe_runner")
-    target_version: Mapped[str] = mapped_column(String(50), nullable=False)
-    rollback_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
-    current_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    desired_set_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    failed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    rolled_back_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    last_error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
-
-    __table_args__ = (
-        UniqueConstraint("plan_id", "device_id", name="uq_runner_rollout_targets_plan_device"),
-        Index("ix_runner_rollout_targets_plan_status", "plan_id", "status"),
-        Index("ix_runner_rollout_targets_wave_status", "wave_id", "status"),
-        Index("ix_runner_rollout_targets_device", "device_id"),
-    )
-
-
-class RunnerRolloutEvent(Base):
-    """Audit timeline for runner rollout plan/wave/target actions."""
-
-    __tablename__ = "runner_rollout_events"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("runner_rollout_plans.id", ondelete="CASCADE"), nullable=False)
-    wave_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("runner_rollout_waves.id", ondelete="SET NULL"), nullable=True)
-    target_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("runner_rollout_targets.id", ondelete="SET NULL"), nullable=True)
-    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    actor: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
-
-    __table_args__ = (
-        Index("ix_runner_rollout_events_plan", "plan_id", "created_at"),
-        Index("ix_runner_rollout_events_type", "event_type"),
-    )
-
-
-class Module(Base):
-    """
-    Server-side registry of module artifacts.
-    
-    Stores metadata about uploaded module ZIP files.
-    """
-    __tablename__ = "modules"
-    
-    module_name: Mapped[str] = mapped_column(String(100), primary_key=True)
-    version: Mapped[str] = mapped_column(String(50), primary_key=True)
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
-    size: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    storage_path: Mapped[str] = mapped_column(Text, nullable=False)  # Relative to MODULES_STORAGE_DIR
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc)
-    )
-    uploaded_by: Mapped[str] = mapped_column(String(20), nullable=False, default="admin")  # actor_role
-    manifest_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    validation_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    manifest_summary: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)  # manifest summary (renamed from metadata to avoid conflict with SQLAlchemy Base.metadata)
-    
-    __table_args__ = (
-        Index("ix_modules_sha256", "sha256"),
-        Index("ix_modules_created_at", "created_at"),
-    )
-    
-    def __repr__(self) -> str:
-        return (
-            f"<Module(module_name={self.module_name!r}, version={self.version!r}, "
-            f"sha256={self.sha256[:16]}..., size={self.size})>"
-        )
 
 
 class TicketFormPack(Base):
@@ -4312,204 +4070,6 @@ class HelpdeskPolicyAudit(Base):
     )
 
 
-class AgentBuild(Base):
-    """
-    Server-side registry of agent build artifacts (self-update packages).
-
-    Stores metadata about uploaded agent ZIP packages.
-    Composite PK: (target, channel, version).
-    """
-    __tablename__ = "agent_builds"
-
-    target: Mapped[str] = mapped_column(String(50), primary_key=True)  # e.g. windows_amd64
-    channel: Mapped[str] = mapped_column(String(20), primary_key=True, default="stable")  # stable|beta|dev
-    version: Mapped[str] = mapped_column(String(50), primary_key=True)
-
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
-    size: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    storage_path: Mapped[str] = mapped_column(Text, nullable=False)  # Relative to AGENT_BUILDS_STORAGE_DIR
-    artifact_filename: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # e.g. pc_agent-windows_amd64-3.1.0.zip
-    archive_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # zip | tar.gz
-    mime_type: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)  # application/zip | application/gzip
-
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
-    uploaded_by: Mapped[str] = mapped_column(String(20), nullable=False, default="admin")
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    __table_args__ = (
-        Index("ix_agent_builds_sha256", "sha256"),
-        Index("ix_agent_builds_created_at", "created_at"),
-        Index("ix_agent_builds_target_channel_created_at", "target", "channel", "created_at"),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<AgentBuild(target={self.target!r}, channel={self.channel!r}, "
-            f"version={self.version!r}, sha256={self.sha256[:16]}..., size={self.size})>"
-        )
-
-
-class DeviceModule(Base):
-    """
-    Server-side registry of installed modules on devices (actual state).
-    
-    Tracks which modules are installed/active on each device.
-    source: handshake|command_result|event
-    last_seen_at: последнее подтверждение реального наличия от агента
-    """
-    __tablename__ = "device_modules"
-    
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    module_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    version: Mapped[str] = mapped_column(String(50), nullable=False)
-    
-    installed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    
-    installed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    activated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    last_updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc)
-    )
-    # Новые поля (миграция 037)
-    last_seen_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True,
-        comment="Время последнего подтверждения реального наличия модуля (от агента)"
-    )
-    source: Mapped[Optional[str]] = mapped_column(
-        String(20),
-        nullable=True,
-        comment="Источник обновления: handshake|command_result|event"
-    )
-    
-    state: Mapped[str] = mapped_column(String(20), nullable=False, default="installed", index=True)  # installing|installed|activating|active|failed|missing|removed
-    last_error_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    __table_args__ = (
-        UniqueConstraint("device_id", "module_name", "version", name="uq_device_modules_device_name_version"),
-        Index("ix_device_modules_device_active", "device_id", "active"),
-        Index("ix_device_modules_device_state", "device_id", "state"),
-        Index("ix_device_modules_module_name", "module_name"),
-    )
-    
-    def __repr__(self) -> str:
-        return (
-            f"<DeviceModule(id={self.id}, device_id={self.device_id!r}, "
-            f"module_name={self.module_name!r}, version={self.version!r}, "
-            f"installed={self.installed}, active={self.active}, state={self.state!r})>"
-        )
-
-
-class DeviceDesiredModule(Base):
-    """
-    Желаемое состояние модулей на устройствах (desired state).
-    
-    Server-first источник истины для reconcile engine.
-    state: installed | absent
-    reason: manual | run_tool | policy | reconcile
-    """
-    __tablename__ = "device_desired_modules"
-    
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    module_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    # desired_version: None означает "absent" (желаем удалить)
-    desired_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    desired_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    state: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="installed",
-        comment="Желаемое состояние: installed|absent"
-    )
-    reason: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="manual",
-        comment="Причина изменения: manual|run_tool|policy|reconcile"
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc)
-    )
-    updated_by: Mapped[Optional[str]] = mapped_column(
-        String(50),
-        nullable=True,
-        comment="Кто изменил (actor_role или имя пользователя)"
-    )
-    
-    __table_args__ = (
-        UniqueConstraint("device_id", "module_name", name="uq_device_desired_modules_device_module"),
-        Index("ix_device_desired_modules_device_id", "device_id"),
-        Index("ix_device_desired_modules_state", "state"),
-        Index("ix_device_desired_modules_device_state", "device_id", "state"),
-    )
-    
-    def __repr__(self) -> str:
-        return (
-            f"<DeviceDesiredModule(id={self.id}, device_id={self.device_id!r}, "
-            f"module_name={self.module_name!r}, desired_version={self.desired_version!r}, "
-            f"state={self.state!r}, reason={self.reason!r})>"
-        )
-
-
-class AgentToken(Base):
-    """
-    Agent token model for authentication.
-    
-    Stores SHA256 hashes of tokens (not raw tokens) for security.
-    Supports token rotation with grace period.
-    """
-    __tablename__ = "agent_tokens"
-    
-    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)  # SHA256 hash
-    token_prefix: Mapped[str] = mapped_column(String(8), nullable=False)  # First 8 chars for logs
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc)
-    )
-    expires_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    
-    # Token rotation support
-    replaced_by_token_hash: Mapped[Optional[str]] = mapped_column(
-        String(64),
-        nullable=True,
-        # Foreign key to self for rotation tracking
-    )
-    rotated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    
-    last_used_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    
-    __table_args__ = (
-        Index("ix_agent_tokens_device_id", "device_id"),
-        # Partial index for active tokens (not revoked)
-        Index("ix_agent_tokens_active", "device_id", "revoked_at", postgresql_where=sa.text("revoked_at IS NULL")),
-        Index("ix_agent_tokens_prefix", "token_prefix"),  # For log lookups
-    )
-    
-    def __repr__(self) -> str:
-        return (
-            f"<AgentToken(token_hash={self.token_hash[:16]}..., "
-            f"device_id={self.device_id!r}, revoked_at={self.revoked_at})>"
-        )
-
-
 class UiToken(Base):
     """
     UI token model for authentication.
@@ -4555,45 +4115,6 @@ class UiToken(Base):
             f"user_login={self.user_login!r}, actor_role={self.actor_role!r}, "
             f"revoked_at={self.revoked_at})>"
         )
-
-
-class ConnectionRequest(Base):
-    """
-    Pending or resolved device connection request (agent requests token).
-    status: pending | approved | rejected
-    last_request_at: обновляется при каждом POST от агента; в списке для админки
-    показываются только запросы с last_request_at за последние 30 сек.
-    """
-    __tablename__ = "connection_requests"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    request_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
-    hostname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
-    last_request_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    request_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
-    poll_secret_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    approved_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    approved_token_delivered_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True,
-    )
-
-    def __repr__(self) -> str:
-        return f"<ConnectionRequest(id={self.id}, device_id={self.device_id!r}, status={self.status!r})>"
 
 
 class ServerConfig(Base):
@@ -5403,43 +4924,6 @@ class DownloadAudit(Base):
         )
 
 
-class AgentBuildDownloadAudit(Base):
-    """
-    Download audit model for tracking agent build downloads.
-
-    КРИТИЧНО: Сохраняется token_hash (SHA256), не raw token.
-    """
-    __tablename__ = "agent_build_download_audit"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    token_prefix: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-
-    target: Mapped[str] = mapped_column(String(50), nullable=False)
-    channel: Mapped[str] = mapped_column(String(20), nullable=False)
-    version: Mapped[str] = mapped_column(String(50), nullable=False)
-
-    downloaded_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
-    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
-    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    __table_args__ = (
-        Index("ix_agent_build_dl_audit_token_hash", "token_hash"),
-        Index("ix_agent_build_dl_audit_build", "target", "channel", "version"),
-        Index("ix_agent_build_dl_audit_downloaded_at", "downloaded_at"),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<AgentBuildDownloadAudit(id={self.id}, target={self.target!r}, "
-            f"channel={self.channel!r}, version={self.version!r})>"
-        )
-
-
 class Artifact(Base):
     """
     Артефакт (файл), загруженный агентом: скриншоты, запись экрана.
@@ -5779,99 +5263,6 @@ class DiagnosticCapabilityVersion(Base):
     __table_args__ = (
         Index("ix_diag_capability_versions_capability", "capability_id", "is_current"),
         sa.UniqueConstraint("capability_id", "version", name="uq_diag_capability_versions_capability_version"),
-    )
-
-
-class AgentRecipeVersion(Base):
-    """Concrete declarative recipe implementation for an agent_recipe capability version."""
-
-    __tablename__ = "agent_recipe_versions"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    capability_version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_capability_versions.id", ondelete="CASCADE"), nullable=False)
-    recipe_schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    runner_provider_id: Mapped[str] = mapped_column(Text, nullable=False, default="agent_recipe_runner", server_default="agent_recipe_runner")
-    min_runner_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    primitive_id: Mapped[str] = mapped_column(Text, nullable=False)
-    primitive_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    platforms_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
-    platform_variants_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    recipe_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    parameter_bindings_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    resource_limits_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    redaction_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    validation_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown", server_default="unknown")
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
-
-    __table_args__ = (
-        Index("ix_agent_recipe_versions_capability_version", "capability_version_id"),
-        Index("ix_agent_recipe_versions_primitive", "primitive_id"),
-        Index("ix_agent_recipe_versions_runner", "runner_provider_id"),
-        Index("ix_agent_recipe_versions_validation", "validation_status"),
-    )
-
-
-class AgentRecipePrimitive(Base):
-    """Primitive catalog advertised by protected agent_recipe_runner versions."""
-
-    __tablename__ = "agent_recipe_primitives"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    runner_provider_id: Mapped[str] = mapped_column(Text, nullable=False, default="agent_recipe_runner", server_default="agent_recipe_runner")
-    runner_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    primitive_id: Mapped[str] = mapped_column(Text, nullable=False)
-    primitive_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    platforms_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
-    params_schema: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    output_schema: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    output_contract: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    safety_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    evidence_defaults_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    resource_limits_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    redaction_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
-
-    __table_args__ = (
-        sa.UniqueConstraint(
-            "runner_provider_id",
-            "runner_version",
-            "primitive_id",
-            "primitive_version",
-            name="uq_agent_recipe_primitives_runner_primitive",
-        ),
-        Index("ix_agent_recipe_primitives_runner", "runner_provider_id", "runner_version"),
-        Index("ix_agent_recipe_primitives_primitive", "primitive_id"),
-    )
-
-
-class AgentRecipeTestRun(Base):
-    """Audit trail for recipe validation/live tests."""
-
-    __tablename__ = "agent_recipe_test_runs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    recipe_version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("agent_recipe_versions.id", ondelete="CASCADE"), nullable=False)
-    target_device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    platform: Mapped[str] = mapped_column(String(32), nullable=False)
-    runner_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
-    started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
-    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    result_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    artifacts_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
-    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
-
-    __table_args__ = (
-        Index("ix_agent_recipe_test_runs_recipe", "recipe_version_id"),
-        Index("ix_agent_recipe_test_runs_status", "status"),
-        Index("ix_agent_recipe_test_runs_platform", "platform"),
-        Index("ix_agent_recipe_test_runs_device", "target_device_id"),
     )
 
 

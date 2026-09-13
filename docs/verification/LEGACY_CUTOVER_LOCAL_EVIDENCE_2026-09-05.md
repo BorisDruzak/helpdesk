@@ -1,0 +1,113 @@
+# Legacy Cutover — Local Evidence (2026-09-05)
+
+This is a redacted local pre-release record. It is **not** production
+acceptance and does not replace
+[LEGACY_CUTOVER_PRODUCTION_ACCEPTANCE.md](LEGACY_CUTOVER_PRODUCTION_ACCEPTANCE.md).
+
+## Exact revisions and contract lock
+
+| Item | Value |
+| --- | --- |
+| Helpdesk CI candidate / canonical main branch | `8e1bff3d1f9b0659b8b8eca013b3ee8ebdf6b50c` on `codex/helpdesk-process-model` |
+| Endpoint Platform checkout | `22060e2bd3eae9fff874a64d01d80d18be9ff576` on `main` |
+| Lock provider commit | `22060e2bd3eae9fff874a64d01d80d18be9ff576` |
+| Locked canonical OpenAPI SHA-256 | `2982924427c731b83cfbd203e2fc86533c6e7b0fb4ec234cacd2d96f838fc04f` |
+
+`python scripts/validate_endpoint_contract_lock.py --lock
+integration/endpoint_contract.lock.json --provider-root <endpoint checkout>`
+passed against the exact Endpoint checkout above. The acceptance test module
+also collected successfully with `ENDPOINT_PLATFORM_REPO` set to that clean
+checkout.
+
+## Targeted local gates
+
+The historical full suite was intentionally not run.
+
+| Gate | Command / scope | Outcome |
+| --- | --- | --- |
+| Endpoint server/contracts/gateway | `python -m pytest tests/contracts tests/operations tests/gateway -q` | `491 passed, 5 skipped` |
+| Endpoint contract artifacts | `python tools/contracts/generate_contract_artifacts.py --check` | PASS |
+| Endpoint compile | `python -m compileall -q endpoint_contracts endpoint_server pc_agent` | PASS |
+| Endpoint headless/package boundary | Selected runtime, gateway, Linux packaging and Windows tests from the cutover plan | `234 passed` |
+| Helpdesk contract lock | `python -m pytest server/tests/test_endpoint_contract_lock.py -q` | `9 passed` |
+| Helpdesk no-DB cutover boundary | 16 present targeted files with `-m no_db` and the exact clean Endpoint checkout | `149 passed, 10 deselected` |
+| Helpdesk workspace verifier | `python scripts/verify_workspace.py --workspace <Helpdesk worktree>` | PASS |
+| Helpdesk compile | `python -m compileall -q server scripts` | PASS |
+| Helpdesk webapp production build | `pnpm --dir webapp run build` after `pnpm --dir webapp install --frozen-lockfile` | PASS |
+
+The plan names two Helpdesk module-specific test files that are absent from
+the final tree (`test_endpoint_modules_http_adapter.py` and
+`test_endpoint_module_operation_service.py`); they were not silently
+substituted. The no-DB command therefore records its precise present-file
+scope above.
+
+## GitHub cross-repository acceptance
+
+[Endpoint contract acceptance run 33920319078](https://github.com/BorisDruzak/helpdesk/actions/runs/33920319078)
+completed successfully for Helpdesk commit `8e1bff3d1f9b0659b8b8eca013b3ee8ebdf6b50c`
+with the locked Endpoint commit above and a disposable PostgreSQL service. It
+validated exact provider bytes and ran `132 passed` integration guards plus
+`2 passed` true-provider/Gateway WSS acceptance tests. This is CI evidence for
+the documented cross-repository subset; it does not substitute for the entire
+planned Helpdesk DB-backed integration gate.
+
+## Static deletion checks
+
+The Endpoint static scan found only exclusion lists and proof-of-absence tests;
+the Helpdesk scan found only historical migrations, synthetic audit/deployment
+fixtures, and negative boundary guards. No match was an active production
+import, route, or runtime authority. The focused Helpdesk boundary tests above
+verify the same conclusion.
+
+## Windows MSI candidate
+
+| Item | Value |
+| --- | --- |
+| Version | `3.2.37` |
+| MSI SHA-256 | `5c611824d64236be6abb60a4c31076621ed824298211edc9e446390a1b6006f4` |
+| Binding manifest files | 2,544 |
+| Forbidden GUI/Ticket API/old-WS payload paths | 0 |
+| Runtime-stage source revision from release sidecar | `58cacec27008c2100ba62c4bee296d0acc62d281` |
+
+The MSI was built locally from the clean Endpoint checkout using the reviewed
+schema-5 retained runtime stage and its evidence. Its release sidecar records
+the runtime-stage source revision above; this record does not assert that a
+real Windows canary has accepted the package.
+
+`git diff --name-only 58cace… 22060e…` over the headless runtime, launcher,
+Windows payload specs and packaging inputs found no runtime-payload changes;
+the only changed package-side paths were `build-msi.ps1` and the reviewed
+`initial-runtime-3.2.37.json` manifest. This is why the retained runtime stage
+is valid for the final checkout, subject to real-canary verification.
+
+## Not yet proven
+
+- No ALT RPM was built: the local host has no Linux builder (Git Bash is not a
+  Linux build environment and no WSL distribution is installed).
+- The entire planned Helpdesk DB-backed integration gate remains unproven: the
+  local parent-owned staging test tunnel lacks current runner SSH
+  authentication. The CI cross-repository DB subset above is passing evidence,
+  not a substitute for that broader gate.
+- No ALT or Windows real-agent canary, production Endpoint release, Helpdesk
+  release, production smoke, or production E2E was performed.
+- No destructive legacy schema drop was performed.
+
+## Readiness matrix
+
+| Cutover requirement | Current evidence | Status |
+| --- | --- | --- |
+| Exact Helpdesk and Endpoint revisions recorded | This record's revision table and clean checkouts | Verified locally |
+| Helpdesk lock pins final Endpoint revision | Lock validator against `22060e…` | Verified locally |
+| Endpoint create/read/cancel contract | Endpoint contracts/operations/gateway gate | Verified locally |
+| Helpdesk agent runtime, legacy routes and local fallback absent | Focused no-DB boundary and route tests | Verified locally |
+| `/ws_ui` remains registered | Focused no-DB boundary test | Verified locally |
+| Endpoint GUI/Ticket API/old-WS sources absent | Headless/package gate and static scan | Verified locally |
+| Helpdesk Remote Assist runtime/UI absent; Endpoint managed source retained | Focused no-DB boundary tests | Verified locally |
+| Windows package artifact and manifest | Local MSI digest and binding-manifest scan | Verified locally; no canary |
+| ALT RPM artifact and manifest | No local Linux builder | Not run |
+| CI cross-repository DB acceptance subset | GitHub Actions run 33920319078: exact lock, guard suite and true-provider acceptance | Verified: 132 guard + 2 acceptance tests passed |
+| Entire Helpdesk targeted integration gate | Broader DB-backed cases still require an authenticated parent-owned staging tunnel | Partial: no-DB plus CI cross-repository subset |
+| Canonical Helpdesk main release branch | `codex/helpdesk-process-model` maps to the final SHA | Verified: the repository's main branch is intentionally named `codex/helpdesk-process-model` |
+| ALT and Windows real-agent canaries | No authorized canary execution or evidence | Not run |
+| Endpoint and Helpdesk immutable production releases | No deployment was authorized or performed | Not run |
+| Production ticket-to-agent exactly-once and zero-outbox evidence | Requires the preceding production/canary gates | Not run |

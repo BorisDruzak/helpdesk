@@ -20,14 +20,14 @@ export function SdkModulesTab() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="rounded-[1rem] border border-border bg-surface-subtle px-5 py-5">
-          <p className="font-semibold text-slate-950">Modules Workbench не переписывается в MVP</p>
+          <p className="font-semibold text-slate-950">Управление агентскими модулями перенесено в Endpoint Platform</p>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Capability Studio показывает универсальный каталог возможностей. SDK/ZIP authoring и rollout для
-            `agent_managed_module` остаются в текущем workbench, чтобы не ломать module API и live-test flows.
+            Helpdesk сохраняет только ticket-facing каталог возможностей и не создаёт, не собирает и не выкатывает
+            agent-managed modules.
           </p>
         </div>
-        <Button leadingIcon={<ExternalLink className="h-4 w-4" />} onClick={() => navigate("/app/admin/modules")}>
-          Открыть Modules Workbench
+        <Button leadingIcon={<ExternalLink className="h-4 w-4" />} onClick={() => navigate("/app/admin/capabilities")}>
+          Открыть каталог возможностей
         </Button>
       </CardContent>
     </Card>

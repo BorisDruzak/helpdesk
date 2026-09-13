@@ -65,69 +65,6 @@
       "live_evidence": "pending"
     },
     {
-      "id": "AGENT-AUTH-004",
-      "priority": "P1",
-      "group": "pairing/session delivery",
-      "current_head_status": "reproduced",
-      "fix_status": "fixed-local-focused-tests-green",
-      "release_blocker": true,
-      "pre_fix_evidence": [
-        "python -m pytest server/tests/test_device_fingerprint.py::test_handshake_rebind_keeps_token_on_original_device_when_fingerprint_mismatches -q --tb=short failed before fix: rejected fingerprint mismatch path had already rebound the agent token to the payload device"
-      ],
-      "regression_tests": [
-        "server/tests/test_device_fingerprint.py::test_handshake_rebind_keeps_token_on_original_device_when_fingerprint_mismatches",
-        "server/tests/test_device_fingerprint.py::test_handshake_rebind_uses_expected_original_token_binding"
-      ],
-      "post_fix_verification": [
-        "Targeted AGENT-AUTH-004 no-DB handshake tests: 2 passed in 0.14s"
-      ],
-      "live_evidence": "pending"
-    },
-    {
-      "id": "PAIR-005",
-      "priority": "P1",
-      "group": "pairing/session delivery",
-      "current_head_status": "reproduced",
-      "fix_status": "fixed-local-focused-tests-green",
-      "release_blocker": true,
-      "pre_fix_evidence": [
-        "python -m pytest server/tests/test_browser_pairing_service.py::test_registration_pairing_pickup_waits_for_deliverable_session_before_consuming -q --tb=short failed before fix: pending registration pairing pickup returned status consumed without a session token"
-      ],
-      "regression_tests": [
-        "server/tests/test_browser_pairing_service.py::test_registration_pairing_pickup_waits_for_deliverable_session_before_consuming",
-        "server/tests/test_registration_api.py::test_registration_pairing_approval_surfaces_confirmed_binding_to_agent",
-        "pc_agent/tests/test_account_gate.py::test_main_window_browser_registration_pairing_refreshes_account_state",
-        "pc_agent/tests/test_account_gate.py::test_main_window_browser_registration_keeps_pairing_state_when_account_state_refresh_fails"
-      ],
-      "post_fix_verification": [
-        "Targeted PAIR-005 no-DB browser pairing FSM test: 1 passed in 0.14s",
-        "Focused pc_agent account-gate compatibility tests: 2 passed in 1.09s",
-        "DB-backed API regression was updated but local pytest fixture hung before producing result"
-      ],
-      "live_evidence": "pending"
-    },
-    {
-      "id": "SESSION-006",
-      "priority": "P1",
-      "group": "pairing/session delivery",
-      "current_head_status": "reproduced",
-      "fix_status": "fixed-local-focused-tests-partial",
-      "release_blocker": true,
-      "pre_fix_evidence": [
-        "AccountSessionService used process-local _LOGIN_REQUEST_TOKENS for approved other-account login request delivery; clearing that dict before first agent poll made the approved DB row unable to return the session token"
-      ],
-      "regression_tests": [
-        "server/tests/test_account_session_service.py::test_approved_login_request_session_token_survives_worker_restart_until_first_poll",
-        "server/tests/test_account_session_delivery_no_db.py"
-      ],
-      "post_fix_verification": [
-        "Direct Python account-session delivery helper assertions: ok",
-        "compileall changed Python files: ok",
-        "pytest attempts for the focused DB-backed and no-DB tests hung locally before producing test results"
-      ],
-      "live_evidence": "pending"
-    },
-    {
       "id": "EVENT-007",
       "priority": "P1",
       "group": "chat/timeline",
@@ -428,15 +365,6 @@
       "live_evidence": "not-required-for-p2-code-slice"
     },
     {
-      "id": "TOKEN-031",
-      "priority": "P2",
-      "group": "pairing/session delivery",
-      "current_head_status": "open",
-      "fix_status": "not-started",
-      "release_blocker": false,
-      "verification": "pending-current-head-verification"
-    },
-    {
       "id": "ASSIGN-032",
       "priority": "P2",
       "group": "ticket create/workflow",
@@ -481,15 +409,6 @@
         "Targeted PUBLIC-AUTH-034 no-DB handler test: 1 passed in 0.13s"
       ],
       "live_evidence": "pending"
-    },
-    {
-      "id": "PAIR-035",
-      "priority": "P2",
-      "group": "pairing/session delivery",
-      "current_head_status": "open",
-      "fix_status": "not-started",
-      "release_blocker": false,
-      "verification": "pending-current-head-verification"
     },
     {
       "id": "SCALE-036",

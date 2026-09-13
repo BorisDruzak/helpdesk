@@ -198,7 +198,6 @@ def run_business_smoke(
     create_test_ticket: bool = False,
     run_safe_tool: str | None = None,
     operation_wait_seconds: float = 0.0,
-    check_update_recommendation: bool = False,
 ) -> dict[str, Any]:
     started_at = _now()
     steps: list[dict[str, Any]] = []
@@ -269,14 +268,6 @@ def run_business_smoke(
         except HttpStepError as exc:
             fail_fast("device_operations_optional", f"HTTP {exc.status}: {exc}", started)
 
-    if check_update_recommendation and device_id and not failed:
-        started = time.monotonic()
-        try:
-            smoke_client.request("GET", f"/api/web/admin/devices/{urllib.parse.quote(device_id)}/updates")
-            steps.append(_step("update_recommendation", "success", started))
-        except HttpStepError as exc:
-            fail_fast("update_recommendation", f"HTTP {exc.status}: {exc}", started)
-
     if create_test_ticket and not failed:
         started = time.monotonic()
         if not device_id:
@@ -313,26 +304,24 @@ def run_business_smoke(
 
     if run_safe_tool and not failed:
         started = time.monotonic()
-        if run_safe_tool != "inventory.collect":
-            fail_fast("safe_tool_inventory_collect", "only inventory.collect is allowed by this first-cut smoke", started)
+        if run_safe_tool != "endpoint.context.diagnostic.collect":
+            fail_fast("safe_tool_endpoint_diagnostic", "only endpoint.context.diagnostic.collect is allowed by this smoke", started)
         elif not created_ticket_id:
-            fail_fast("safe_tool_inventory_collect", "--run-safe-tool requires --create-test-ticket in this first cut", started)
+            fail_fast("safe_tool_endpoint_diagnostic", "--run-safe-tool requires --create-test-ticket", started)
         else:
             try:
                 response = smoke_client.request(
                     "POST",
-                    f"/api/web/support/tickets/{urllib.parse.quote(created_ticket_id)}/tools/run",
-                    {"tool_name": run_safe_tool, "preset_id": None, "params": {}},
+                    f"/api/web/support/tickets/{urllib.parse.quote(created_ticket_id)}/diagnostics/capabilities/{urllib.parse.quote(run_safe_tool, safe='')}/run",
+                    {"params": {}},
                 )
                 payload = _response_payload(response)
-                safe_tool_operation_id = str(
-                    _nested(payload, "data", "operation_id") or payload.get("operation_id") or ""
-                ).strip() or None
+                safe_tool_operation_id = str(payload.get("operation_id") or "").strip() or None
                 if not safe_tool_operation_id:
                     raise HttpStepError(response.status, "operation_id missing in tool response")
-                steps.append(_step("safe_tool_inventory_collect", "success", started))
+                steps.append(_step("safe_tool_endpoint_diagnostic", "success", started))
             except HttpStepError as exc:
-                fail_fast("safe_tool_inventory_collect", f"HTTP {exc.status}: {exc}", started)
+                fail_fast("safe_tool_endpoint_diagnostic", f"HTTP {exc.status}: {exc}", started)
 
     if safe_tool_operation_id and operation_wait_seconds > 0 and not failed:
         started = time.monotonic()
@@ -385,9 +374,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--insecure-tls", action="store_true", help="Allow self-signed HTTPS certificates for stand smoke.")
     parser.add_argument("--browser-check", action="store_true")
     parser.add_argument("--create-test-ticket", action="store_true")
-    parser.add_argument("--run-safe-tool", choices=("inventory.collect",))
+    parser.add_argument("--run-safe-tool", choices=("endpoint.context.diagnostic.collect",))
     parser.add_argument("--operation-wait-seconds", type=float, default=0.0)
-    parser.add_argument("--check-update-recommendation", action="store_true")
     return parser.parse_args()
 
 
@@ -407,7 +395,6 @@ def main() -> None:
         create_test_ticket=args.create_test_ticket,
         run_safe_tool=args.run_safe_tool,
         operation_wait_seconds=args.operation_wait_seconds,
-        check_update_recommendation=args.check_update_recommendation,
     )
     print(json.dumps({"status": payload["status"], "output": str(args.output)}, ensure_ascii=False))
     if payload["status"] != "success":

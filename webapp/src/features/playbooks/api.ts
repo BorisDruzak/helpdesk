@@ -30,7 +30,6 @@ export type AdminPlaybookBlockCatalogItem = {
   install_required?: boolean;
   install_policy?: string | null;
   supported_platforms?: string[];
-  min_agent_version?: string | null;
   risk_level?: string | null;
   params_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;

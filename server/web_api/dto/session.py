@@ -27,15 +27,6 @@ class WebSessionRegisterRequest(BaseModel):
     login: str
     password: str
     password_repeat: str
-    device_link_code: str | None = None
-
-
-class WebSessionRegisterDeviceLinkPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    accepted: bool
-    purpose: str
-    expires_at: str | None = None
 
 
 class WebSessionRegisterPayload(BaseModel):
@@ -44,7 +35,6 @@ class WebSessionRegisterPayload(BaseModel):
     user_login: str
     actor_role: str
     next_path: str
-    device_link: WebSessionRegisterDeviceLinkPayload | None = None
 
 
 class WebSessionLogoutPayload(BaseModel):

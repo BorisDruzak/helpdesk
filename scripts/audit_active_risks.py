@@ -16,17 +16,7 @@ DEFAULT_REGISTRY = Path("quality/active_risks.json")
 AUDIT_SCHEMA = "pc_client.active_risk_audit.v1"
 REGISTRY_SCHEMA = "pc_client.active_risks.v1"
 
-REQUIRED_ACTIVE_ARCHIVE_SOURCE_IDS = {
-    "archive.1.1.outbox_ack",
-    "archive.1.2.command_idempotency",
-    "archive.1.3.scheduler_rpc",
-    "archive.1.4.consent_orchestrator",
-    "archive.1.5.module_manager_handshake",
-    "archive.2.2.device_outbox_dispatch",
-    "archive.2.3.sync_run_tool_wait",
-    "archive.2.4.run_tool_entry_paths",
-    "archive.3.3.server_public_base_url",
-}
+REQUIRED_ACTIVE_ARCHIVE_SOURCE_IDS = {"cutover.acceptance"}
 
 ALLOWED_STATUSES = {"active", "mitigated", "accepted", "retired"}
 ALLOWED_PRIORITIES = {"P0", "P1", "P2", "P3"}

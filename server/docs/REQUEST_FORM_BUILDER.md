@@ -151,7 +151,6 @@ The local Knowledge suggestion integration is removed. A future external Knowled
 - Серверная валидация и default pack: `server/tickets/form_catalog.py`
 - HTTP API pack registry: `server/tickets/form_pack_handlers.py`, typed web boundary `server/web_api/admin_handlers.py`
 - Публичная форма: `webapp/src/pages/help/index.tsx`
-- Агентский диалог создания тикета: `pc_agent/ui_gui/chat_panel.py`
 ## 2026-05-11 lifecycle and business preflight
 
 - The typed React boundary now separates draft, validation, publication and preferred rollout:

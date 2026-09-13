@@ -33,14 +33,9 @@ def _descriptor_from_tool(raw_tool: Dict[str, Any], *, default_source: str) -> C
     capability_id = str(raw_tool.get("tool") or raw_tool.get("tool_name") or "").strip()
     module_name = str(raw_tool.get("module") or raw_tool.get("module_name") or "").strip()
     provider_id = str(deployment.get("provider_id") or module_name or capability_id.split(".", 1)[0]).strip()
-    execution_target = str(execution.get("target") or "agent_managed_module").strip()
+    execution_target = str(execution.get("target") or "endpoint_operation").strip()
     source = str(raw_tool.get("source") or default_source)
-    if execution_target == "agent_builtin":
-        provider_type = "agent_builtin"
-    elif execution_target == "agent_managed_module":
-        provider_type = "agent_managed_module"
-    else:
-        provider_type = execution_target
+    provider_type = execution_target
     return CapabilityDescriptor(
         id=capability_id,
         title=str(raw_tool.get("title") or spec.get("title") or spec.get("description") or capability_id),
@@ -53,8 +48,6 @@ def _descriptor_from_tool(raw_tool: Dict[str, Any], *, default_source: str) -> C
         side_effects=bool(safety.get("side_effects", metadata.get("side_effects", False))),
         requires_consent=bool(safety.get("requires_consent", metadata.get("requires_consent", False))),
         requires_device=bool(execution.get("requires_device", False)),
-        requires_agent_online=bool(execution.get("requires_agent_online", False)),
-        supports_auto_install=bool(execution.get("supports_auto_install", False)),
         requires_integration=bool(execution.get("requires_integration", False)),
         integration_key=execution.get("integration_key"),
         requires_credentials=bool(readiness.get("requires_credentials", False)),
@@ -63,9 +56,6 @@ def _descriptor_from_tool(raw_tool: Dict[str, Any], *, default_source: str) -> C
         required_permission=readiness.get("required_permission"),
         policy_key=readiness.get("policy_key"),
         mapping_key=readiness.get("mapping_key"),
-        install_required_on_agent=bool(
-            raw_tool.get("install_required", deployment.get("install_required_on_agent", False))
-        ),
         platforms=list(metadata.get("platforms") or spec.get("platforms") or ["any"]),
         params_schema=dict(raw_tool.get("params_schema") or spec.get("params_schema") or {}),
         output_schema=dict(raw_tool.get("output_schema") or spec.get("output_schema") or {}),
@@ -82,12 +72,10 @@ class CapabilityRegistry:
     def __init__(
         self,
         *,
-        tool_service: Any = None,
         state: Any = None,
         endpoint_diagnostic_execution_mode: str | None = None,
         endpoint_cutover_only: bool = False,
     ) -> None:
-        self.tool_service = tool_service
         self.state = state
         self.endpoint_diagnostic_execution_mode = endpoint_diagnostic_execution_mode
         self.endpoint_cutover_only = endpoint_cutover_only
@@ -95,18 +83,10 @@ class CapabilityRegistry:
     async def list_capabilities(self, *, device_id: Optional[str] = None) -> List[CapabilityDescriptor]:
         capabilities: List[CapabilityDescriptor] = []
         endpoint_mode = self._endpoint_diagnostic_mode()
-        if not self.endpoint_cutover_only and self.tool_service and device_id:
-            device_tools = await self.tool_service.get_tools_list(device_id)
-            capabilities.extend(self._project_tools(device_tools, default_source="builtin"))
-        if not self.endpoint_cutover_only and self.tool_service:
-            server_tools = await self.tool_service.get_tools_from_server(device_id)
-            capabilities.extend(self._project_tools(server_tools, default_source="managed_module"))
         capabilities.extend(list_server_builtin_capabilities())
         capabilities.extend(list_server_connector_capabilities())
         capabilities.extend(list_static_capabilities())
         capabilities.extend(list_endpoint_platform_capabilities(execution_mode=endpoint_mode))
-        if not self.endpoint_cutover_only:
-            capabilities.extend(await self._list_persisted_agent_recipes())
         return self._dedupe(capabilities)
 
     def _endpoint_diagnostic_mode(self) -> str:
@@ -116,7 +96,7 @@ class CapabilityRegistry:
             import config
         except ModuleNotFoundError:
             from server import config  # type: ignore[no-redef]
-        return str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy").strip().lower()
+        return str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "endpoint").strip().lower()
 
     async def resolve_capability(
         self,
@@ -144,17 +124,6 @@ class CapabilityRegistry:
                 continue
             descriptors.append(_descriptor_from_tool(raw_tool, default_source=default_source))
         return descriptors
-
-    async def _list_persisted_agent_recipes(self) -> List[CapabilityDescriptor]:
-        try:
-            from app.db import get_session
-            from diagnostics.agent_recipes_repo import AgentRecipeRepo
-
-            async with get_session() as session:
-                recipes = await AgentRecipeRepo(session).list_published_capabilities()
-                return [recipe.descriptor() for recipe in recipes]
-        except Exception:
-            return []
 
     def _dedupe(self, capabilities: Iterable[CapabilityDescriptor]) -> List[CapabilityDescriptor]:
         by_id: Dict[str, CapabilityDescriptor] = {}

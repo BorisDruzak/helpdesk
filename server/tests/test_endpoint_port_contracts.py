@@ -278,6 +278,7 @@ async def test_unavailable_endpoint_port_fails_closed_for_every_operation() -> N
             idempotency_key="stable-idempotency-key",
         ),
         await port.read_operation(operation_ref_type(external_id="endpoint-operation-1")),
+        await port.cancel_operation(operation_ref_type(external_id="endpoint-operation-1")),
     )
 
     assert availability.status == "unavailable"
@@ -296,7 +297,6 @@ def test_endpoint_configuration_uses_bounded_fail_closed_defaults(
             "ENDPOINT_PORT_MODE",
             "ENDPOINT_EXTERNAL_BASE_URL",
             "ENDPOINT_EXTERNAL_SERVICE_TOKEN",
-            "ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN",
             "ENDPOINT_EXTERNAL_CA_FILE",
             "ENDPOINT_EXTERNAL_TIMEOUT_SECONDS",
             "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE",
@@ -309,10 +309,9 @@ def test_endpoint_configuration_uses_bounded_fail_closed_defaults(
         assert loaded.ENDPOINT_PORT_MODE == "unavailable"
         assert loaded.ENDPOINT_EXTERNAL_BASE_URL == ""
         assert loaded.ENDPOINT_EXTERNAL_SERVICE_TOKEN == ""
-        assert loaded.ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN == ""
         assert loaded.ENDPOINT_EXTERNAL_CA_FILE == ""
         assert loaded.ENDPOINT_EXTERNAL_TIMEOUT_SECONDS == 2.0
-        assert loaded.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE == "legacy"
+        assert loaded.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE == "endpoint"
         assert loaded.ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS == 5
         assert loaded.ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE == 25
 
@@ -347,6 +346,10 @@ def test_container_defaults_to_endpoint_unavailable_and_rejects_unknown_mode(
     with pytest.raises(ValueError, match="ENDPOINT_DIAGNOSTIC_EXECUTION_MODE"):
         DomainPortContainer.from_config()
 
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    with pytest.raises(ValueError, match="ENDPOINT_DIAGNOSTIC_EXECUTION_MODE"):
+        DomainPortContainer.from_config()
+
 
 @pytest.mark.parametrize(
     ("base_url", "token", "ca_file", "expected_code"),
@@ -372,7 +375,7 @@ def test_external_endpoint_configuration_degrades_to_typed_unavailable(
     from domain_ports import DomainPortContainer, UnavailableEndpointPort
 
     monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "external")
-    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", base_url)
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", token)
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", ca_file)

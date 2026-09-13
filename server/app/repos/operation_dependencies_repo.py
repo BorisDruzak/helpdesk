@@ -9,7 +9,7 @@ from typing import Any, Optional
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Operation, OperationDependency
+from app.db.models import OperationDependency
 
 
 class OperationDependenciesRepo:
@@ -66,32 +66,6 @@ class OperationDependenciesRepo:
             select(OperationDependency).where(
                 OperationDependency.dependency_operation_id == dependency_operation_id
             )
-        )
-        return list(result.scalars().all())
-
-    async def list_waiting_runner_dependencies_for_device(
-        self,
-        *,
-        device_id: str,
-        dependency_key: str = "agent_recipe_runner",
-        limit: int = 50,
-    ) -> list[OperationDependency]:
-        result = await self.session.execute(
-            select(OperationDependency)
-            .join(Operation, Operation.operation_id == OperationDependency.operation_id)
-            .where(
-                and_(
-                    Operation.device_id == device_id,
-                    Operation.kind == "agent_recipe",
-                    Operation.status.in_(["queued", "sent", "accepted", "running"]),
-                    Operation.phase.in_(["waiting_dependency", "installing_dependency"]),
-                    OperationDependency.dependency_type == "runner",
-                    OperationDependency.dependency_key == dependency_key,
-                    OperationDependency.status.in_(["pending", "installing"]),
-                )
-            )
-            .order_by(OperationDependency.created_at.asc())
-            .limit(limit)
         )
         return list(result.scalars().all())
 

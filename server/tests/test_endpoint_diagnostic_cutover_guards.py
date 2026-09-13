@@ -64,6 +64,64 @@ def test_ws_ui_route_registration_remains_present():
     assert "web.get('/ws_ui', websocket_ui_handler)" in routes
 
 
+def test_legacy_agent_and_remote_assist_routes_are_not_registered():
+    """Endpoint-only Helpdesk retains browser UI transport, never agent transport."""
+    routes = (ROOT / "server" / "routes.py").read_text(encoding="utf-8")
+
+    assert "web.get('/ws', websocket_handler)" not in routes
+    assert "web.get('/ws/remote-assist/{session_id}'" not in routes
+    assert "/remote-assist/" not in routes
+
+
+def test_legacy_agent_debug_surfaces_are_physically_removed():
+    for relative_path in (
+        "scripts/admin_run_tool.py",
+        "scripts/agent_test_driver.py",
+        "scripts/live_agent_uia_create_ticket.py",
+        "scripts/test_429_semaphore.py",
+        "server/support_console.html",
+        "server/ws_ui_test.html",
+    ):
+        assert not (ROOT / relative_path).exists()
+
+    routes = (ROOT / "server" / "routes.py").read_text(encoding="utf-8")
+    static_handlers = (ROOT / "server" / "static_pages" / "handlers.py").read_text(encoding="utf-8")
+    assert "handle_ws_ui_test" not in routes
+    assert "'/ws_ui_test'" not in routes
+    assert "handle_ws_ui_test" not in static_handlers
+
+
+def test_remote_assist_runtime_and_configuration_are_removed():
+    remote_assist_source = ROOT / "server" / "remote_assist"
+    assert list(remote_assist_source.glob("*.py")) == []
+
+    config_source = (ROOT / "server" / "config.py").read_text(encoding="utf-8")
+    assert "REMOTE_ASSIST_" not in config_source
+
+
+def test_helpdesk_does_not_ship_agent_runtime_sources():
+    assert list((ROOT / "server" / "agents").glob("*.py")) == []
+    assert list((ROOT / "pc_agent").rglob("*.py")) == []
+
+
+def test_server_tests_do_not_depend_on_retired_agent_handshake_fixture():
+    forbidden_symbol = "".join(("ingest_agent_", "handshake"))
+    violations = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "server" / "tests").rglob("*.py")
+        if forbidden_symbol in path.read_text(encoding="utf-8-sig")
+    )
+
+    assert violations == []
+
+
+def test_server_lifecycle_does_not_start_device_outbox_runtime():
+    source = (ROOT / "server" / "server.py").read_text(encoding="utf-8")
+
+    assert "DeviceOutboxSender" not in source
+    assert "recover_pending_commands" not in source
+
+
 def test_endpoint_diagnostic_canary_runbook_preserves_forward_only_rollback_guards():
     runbook = (ROOT / "docs" / "runbooks" / "ENDPOINT_DIAGNOSTIC_CANARY.md").read_text(
         encoding="utf-8"
