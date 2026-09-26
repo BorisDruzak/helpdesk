@@ -68,6 +68,24 @@ def bundle_digest(output_dir: Path) -> str:
     return digest.hexdigest()
 
 
+def archive_bundle_digest(archive_path: Path) -> str:
+    digest = hashlib.sha256()
+    with tarfile.open(archive_path, "r:gz") as archive:
+        files = sorted((item for item in archive.getmembers() if not item.isdir()), key=lambda item: item.name)
+        seen = set()
+        for item in files:
+            relative = Path(item.name).as_posix()
+            if not item.isfile() or not relative.startswith("dist/") or ".." in Path(relative).parts or relative in seen:
+                raise ValueError("web archive contains an unsafe or duplicate entry")
+            seen.add(relative)
+            digest.update(relative.removeprefix("dist/").encode("utf-8") + b"\0")
+            with archive.extractfile(item) as handle:
+                digest.update(hashlib.file_digest(handle, "sha256").digest())
+        if "dist/index.html" not in seen or not any(item.startswith("dist/assets/") for item in seen):
+            raise ValueError("web archive is incomplete")
+    return digest.hexdigest()
+
+
 def main() -> None:
     args = parse_args()
     workspace = args.workspace.resolve()

@@ -90,6 +90,18 @@ def append_webapp_bundle_to_release_archive(
         archive.add(bundle_dir, arcname=f"{release_prefix}/webapp/dist")
 
 
+def append_accepted_webapp_archive(release_archive: Path, accepted: Path, release_prefix: str) -> None:
+    from scripts.build_webapp_bundle import archive_bundle_digest
+    archive_bundle_digest(accepted)  # Reject traversal, links and incomplete payloads.
+    with tarfile.open(accepted, "r:gz") as source, tarfile.open(release_archive, "a") as target:
+        for member in source.getmembers():
+            if member.isfile():
+                name = member.name
+                with source.extractfile(member) as handle:
+                    member.name = f"{release_prefix}/webapp/{name}"
+                    target.addfile(member, handle)
+
+
 def build_webapp_bundle_into_release_archive(
     workspace: Path,
     commit: str,
@@ -210,7 +222,11 @@ def main() -> None:
             cwd=WORKSPACE,
             check=True,
         )
-        build_webapp_bundle_into_release_archive(WORKSPACE, commit, local_archive, release_prefix, expected_digest=expected_digest)
+        if expected_digest is None:
+            build_webapp_bundle_into_release_archive(WORKSPACE, commit, local_archive, release_prefix)
+        else:
+            accepted_bundle = WORKSPACE / "artifacts/ci" / commit / "webapp-dist.tar.gz"
+            append_accepted_webapp_archive(local_archive, accepted_bundle, release_prefix)
         identity = json.dumps({"helpdesk_git_sha": commit}, sort_keys=True).encode("utf-8")
         with tarfile.open(local_archive, "a") as archive:
             info = tarfile.TarInfo(f"{release_prefix}/release-identity.json")

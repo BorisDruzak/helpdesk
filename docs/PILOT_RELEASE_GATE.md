@@ -54,6 +54,11 @@ be overwritten. Production deploy repeats this preflight and validates the
 remote archive digest before extraction. This task does not authorize an
 actual production rollout.
 
+Production packaging copies the accepted CI web archive bytes directly into
+the application archive. It does not rebuild frontend assets after acceptance;
+the gate verifies both the compressed archive digest and its canonical file
+content digest, and rejects links, traversal, duplicates or incomplete bundles.
+
 ## Business Smoke
 
 Use a dedicated smoke account, not a human admin password. For self-signed stand TLS:

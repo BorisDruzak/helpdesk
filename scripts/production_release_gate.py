@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.production_readiness_audit import validate_risk_audit
+from scripts.build_webapp_bundle import archive_bundle_digest
 from scripts.validate_production_config import read_environment
 from scripts.validate_endpoint_contract_lock import validate
 from server.security_profile import production_config_errors
@@ -50,6 +51,8 @@ def validate_production_release(workspace: Path, commit: str, bundle: Path, *, e
     web_digest = metadata.get("webapp_build_digest", "")
     if len(web_digest) != 64 or any(char not in "0123456789abcdef" for char in web_digest):
         raise ValueError("web content digest missing")
+    if archive_bundle_digest(bundle) != web_digest:
+        raise ValueError("web archive content differs from its recorded digest")
     acceptance = json.loads(evidence.read_text(encoding="utf-8"))
     validate_acceptance_evidence(acceptance, commit, lock["provider_commit"], lock["openapi_sha256"], schema, web_digest)
     manifest = dict(helpdesk_git_sha=commit, helpdesk_schema_revision=schema,

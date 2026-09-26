@@ -180,3 +180,17 @@ def test_production_config_is_validated_before_release_switch_or_migration():
 def test_transferred_archive_digest_is_checked_before_extracting():
     command = remote_install_command(RemoteProfile.from_environment({}), "abc123", "/tmp/release.tar", archive_sha256="a" * 64)
     assert command.index("sha256sum") < command.index("sudo tar")
+
+
+def test_production_archives_the_exact_accepted_ci_bundle(tmp_path):
+    from scripts.build_webapp_bundle import create_archive
+    dist = tmp_path / "dist"; (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_bytes(b"exact-ci-bytes\r\n")
+    (dist / "assets/app.js").write_bytes(b"export {}")
+    bundle = tmp_path / "bundle.tar.gz"; create_archive(dist, bundle)
+    release = tmp_path / "release.tar"
+    with tarfile.open(release, "w"):
+        pass
+    deploy_release.append_accepted_webapp_archive(release, bundle, "helpdesk-sha")
+    with tarfile.open(release) as archive:
+        assert archive.extractfile("helpdesk-sha/webapp/dist/index.html").read() == b"exact-ci-bytes\r\n"
