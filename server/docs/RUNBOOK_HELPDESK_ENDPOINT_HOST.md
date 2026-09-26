@@ -17,7 +17,11 @@ bootstrap intentionally does not create database credentials or copy data.
 From the local repository, deploy committed code with:
 
 ```powershell
-python scripts/deploy_helpdesk_release.py --commit <commit>
+python scripts/deploy_helpdesk_release.py --commit <full-sha> `
+  --environment-file <reviewed-local-production-env> `
+  --risk-audit artifacts/release/<full-sha>/risk-audit.json `
+  --readiness-evidence <protected-staging-evidence.json> `
+  --provider-root <clean-locked-provider-checkout> --schema-revision <verified-head>
 python scripts/manage_remote_stack.py smoke server --base-url https://helpdesk.sosnadmin.local
 python scripts/manage_remote_stack.py status all
 ```
@@ -70,3 +74,58 @@ Use the reviewed remote management script above instead.
   credentials.
 - No existing agents are registered on this deployment. Their future
   authentication/connection flow is a separate rollout.
+
+## Production Readiness v1 rollout sequence
+
+The command above is prepared for a separately authorized production rollout.
+Do not run it on the basis of local tests alone. Before starting, verify exact
+SHA/full CI artifact, accepted CI bundle/digests, Endpoint lock/provider evidence,
+current risk dispositions and live staging evidence. Check backup storage free
+space, disk/memory, PostgreSQL connectivity, Nginx syntax, DNS and CA/hostname
+certificate validation. Certificates/private keys remain in root-owned external
+paths; do not use `--insecure-tls` as production acceptance.
+
+The reviewed deploy command validates the frozen RC, packages the accepted web
+bundle, verifies transfer digest, validates remote security, stops only Helpdesk
+writers, selects the immutable candidate, verifies its DB backup before Alembic,
+then restarts only Helpdesk. On failure it does not silently fall back or roll
+back Endpoint. Check HTTPS health, browser login/WSS, real requester/support
+business flow, safe Windows Endpoint diagnostic and correlated bounded audit.
+The candidate is not deployed merely because its manifest exists.
+
+Staging uses `osn-admin@192.168.101.118`, `/opt/helpdesk-staging`,
+`/etc/helpdesk-staging` and `/var/lib/helpdesk-staging`. Windows acceptance uses
+`test_agent_win@192.168.101.120`. Obtain synthetic requester/support credentials,
+scoped Endpoint credential and isolated DB admin access from the approved secret
+channel at runtime. Never substitute the production host or real admin account.
+Restore the original staging dependency configuration after outage testing.
+
+## Operational signals and controlled 72-hour pilot
+
+Use existing `/api/health`, authenticated Tech Panel snapshot, Observer and
+Helpdesk systemd/journal checks. Record API/core liveness, database reachability,
+release SHA/schema revision, backup/restore markers, latest business smoke,
+stuck operations and critical integrity events. Endpoint dependency failure is
+a separate degraded condition; it must not make working Helpdesk core liveness
+fail. The adapter's `availability()` currently reports configuration readiness,
+not network reachability: do not interpret configured as a live provider probe.
+Live safe diagnostic/reconciliation evidence is required for actual availability.
+Missing marker/status is unknown and blocks readiness, not an implied success.
+
+After a separately authorized deployment, restrict the first wave to a small
+operator/requester cohort and safe capabilities; Windows live acceptance only.
+Check at pilot start, each operator shift and after every failure during 72
+hours (do not wait 72 hours inside this implementation task):
+
+- HTTP 5xx rate, application restarts and PostgreSQL errors;
+- authentication failures and stuck ticket/workflow transitions;
+- stuck operations, dependency failures and Windows Agent reconnect;
+- duplicate timeline/operation events and Observer critical integrity events;
+- verified backup success, business smoke and disk growth.
+
+Record exact revision, observation interval, measured counts, redacted evidence,
+owner and disposition. A critical integrity/security failure or loss of core
+business workflow pauses the pilot and invokes the reviewed recovery procedure.
+Pilot completion is a post-deployment operational gate, not covered by unit CI.
+
+ALT Linux Agent acceptance was intentionally excluded from Production Readiness v1.

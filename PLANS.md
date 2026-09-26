@@ -226,6 +226,17 @@ schema changes; no automatic Alembic downgrade or Endpoint rollback.
   Scripts collection failed on the `server` module/package name collision.
   Shared policy moved to `shared/production_security.py`; full scripts layer
   must be rerun. Clean-checkout Endpoint boundary run: 67 passed.
+- After moving shared policy, full local scripts collection passed: 241 tests.
+  This does not turn the earlier exact-SHA full CI red artifact green.
+- Real staging HTTPS login page rendered in Playwright; console 0 errors and
+  0 warnings. Synthetic login, ticket flow and Windows/degraded flow remain
+  unverified; no runtime credentials are present in the named environment inputs.
+- No services were started/restarted/stopped during read-only discovery; the
+  pre-existing active staging service was left in its original state.
+- Remaining implementation/live gates: full business-flow automation, real
+  backup/restore and provider acceptance, Windows/degraded acceptance, actual
+  operational release/schema/dependency evidence and final green manifest.
+  No accepted release manifest has been fabricated.
 
 ## 2026-08-31 Staging secure admin-session access
 
