@@ -350,6 +350,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         str(tmp_path / "scripts" / "run_mutation_smoke.py"),
         "--workspace",
         str(tmp_path),
+        "--json",
     ]
     assert command_by_step["scripts_pytest_no_db"][3] == (
         "scripts\\test_ci_helper.py" if sys.platform == "win32" else "scripts/test_ci_helper.py"

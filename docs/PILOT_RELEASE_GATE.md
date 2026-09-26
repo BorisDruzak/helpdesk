@@ -29,6 +29,9 @@ live staging or Windows Agent acceptance. ALT live acceptance is excluded.
 Freeze a clean exact SHA before full CI. Production preflight forbids dirty or
 bundle bypasses and identical-tree merge CI reuse. Export the exact-SHA GitHub
 CI artifact to `artifacts/ci/<sha>/`, including the web bundle sidecar manifest.
+The canonical mutation step records JSON diagnostics in its log, including
+pytest infrastructure failures; exit codes other than assertion failure do not
+prove that a mutant was killed.
 Then run:
 
 ```powershell
