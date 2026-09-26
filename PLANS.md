@@ -1,4 +1,13 @@
-# Active: 2026-09-03 Helpdesk / Endpoint legacy cutover
+# Active: 2026-09-27 Helpdesk Production Readiness v1
+
+Production Readiness v1 baseline:
+`f2ad220f04e72a86eff00ea13f59a32dcd615b42`
+
+Branch: `codex/helpdesk-production-readiness-v1`. Full exact-SHA CI and live
+staging gates are required. See the active implementation checklist below.
+Prior cutover evidence is historical and does not waive readiness gates.
+
+# Historical: 2026-09-03 Helpdesk / Endpoint legacy cutover
 
 ## Goal
 
@@ -97,6 +106,69 @@ browser UI responsibilities only.
    evidence and the approved real-agent canaries satisfy the cutover plan.
 
 # Helpdesk Bug Remediation and Live Detection Master Plan
+
+## 2026-09-27 Production Readiness v1 — active
+
+Production Readiness v1 baseline:
+`f2ad220f04e72a86eff00ea13f59a32dcd615b42`
+
+- Branch: `codex/helpdesk-production-readiness-v1`, based on fetched remote
+  default `codex/helpdesk-process-model`. Earlier accepted/deployed revisions
+  below are historical evidence, not the current RC identity.
+- Scope: release/security/database/CI/live staging readiness only. Endpoint is
+  read-only. Windows live acceptance only; ALT acceptance is excluded.
+- Production deployment is not authorized by this task. Stop after verified
+  staging acceptance and frozen RC evidence; no readiness claim with open gates.
+- Preserve the user's pre-existing `AGENTS.md` edits outside task commits.
+
+### Repo-grounded implementation plan
+
+1. Baseline/current audit: update this section and extend current-head risk
+   validation around `known_bug_registry.current_head.json`; historical
+   fixed-local records never become current verification automatically.
+2. Provider lock: establish deployed Endpoint SHA using read-only release
+   evidence, then update `integration/endpoint_contract.lock.json` and run
+   `scripts/validate_endpoint_contract_lock.py` plus adapter/contract/boundary
+   suites. Unknown provider SHA blocks integration acceptance.
+3. Security: update `deploy/helpdesk/helpdesk.env.example`, Nginx template,
+   host installer and `server/config.py`; add a secret-free standalone config
+   preflight with regression tests for cookie/HTTP/bind/proxy policy failures.
+4. Database: add verified custom-format backup and isolated restore drill to
+   existing deployment/migration entrypoints; reuse Tech Panel marker paths.
+   Test backup/verification failure prevents migration and restore cleanup.
+5. CI/artifacts: extend canonical workflow and
+   `scripts/release_candidate_preflight.py`; require full exact-SHA CI,
+   exact-SHA web bundle, lock, current risk audit and required staging evidence.
+6. Live staging: real requester/support browser lifecycle, persisted database
+   and audit checks using synthetic accounts, then safe Windows Endpoint
+   diagnostic and reversible dependency degradation. No mocks replace gates.
+7. Operations/manifest/runbook: reuse `server/tech/snapshot.py`, existing release
+   and backup/restore/smoke markers; document strict TLS, production commands,
+   code/schema/restore rollback and the post-deploy 72-hour pilot checklist.
+
+Migration impact: no new schema or destructive cleanup is planned. Deployment
+impact: unsafe configuration and missing backup/evidence become fatal before
+migration. Rollback impact: symlink rollback is insufficient after incompatible
+schema changes; no automatic Alembic downgrade or Endpoint rollback.
+
+### Initial verified checkpoint
+
+- Fetched default baseline: `f2ad220f04e72a86eff00ea13f59a32dcd615b42`.
+- GitNexus group status: all three indexes/contracts current, zero commits
+  behind, no missing repositories. No manual sync was run.
+- Open PR #2 is historical documentation, not readiness implementation.
+- Last GitHub evidence is Endpoint contract workflow only; full CI is unproven.
+- Existing bug registry is historical (`fd232bb9...`), with P0/P1 live evidence
+  pending. Current readiness is **BLOCKED**, not production-ready.
+- Production provider identity, live staging, TLS, backup/restore, Windows
+  operation and degraded acceptance remain unverified.
+- `scripts/production_readiness_audit.py --refresh-source
+  known_bug_registry.current_head.json --commit <full-sha> --audit
+  artifacts/release/<full-sha>/risk-audit.json` creates a current-SHA audit with
+  all historical dispositions unverified. Re-run without `--refresh-source`
+  after supplying actual verification; unresolved high-priority records fail.
+- Workspace scanner now prunes dependency trees and other worktrees before
+  descent. Focused scanner/risk tests and scoped workspace verification passed.
 
 ## 2026-08-31 Staging secure admin-session access
 
