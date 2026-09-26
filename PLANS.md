@@ -1193,3 +1193,8 @@ Next recommended execution slice:
 5. Only then harden live tooling and execute broad live bug hunt.
 
 Do not append chat transcripts or raw logs here. Store detailed evidence under `artifacts/live/<release_run_id>/` and link concise results back into this plan.
+
+
+### Production Readiness v1 — live admin polling regression
+
+Live current-candidate Tech Panel exposed recurring 404/console errors from shell polling of retired /api/web/admin/connection_requests. Remove only the shell legacy enrollment polling/entry; preserve ticket notification count and backend retirement boundary. A new component regression failed before the fix. Existing a534 staging/CI evidence remains historical for that exact SHA; the next commit requires its own full CI and new browser recording. Endpoint dependency status is not yet visible in Tech Panel and remains an operational acceptance gap.

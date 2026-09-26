@@ -32,3 +32,9 @@ Run `python scripts/verify_workspace.py` and the focused contract/boundary
 tests before claiming a Helpdesk cutover change is verified. Production rollout
 requires the reviewed release procedure; never patch deployed directories
 manually.
+
+## Admin shell notifications
+
+The shared shell polls ticket notifications only. Retired Helpdesk agent enrollment
+connection-request routes must not be polled or offered by its notification menu.
+Agent enrollment remains Endpoint-owned; do not restore legacy routes to avoid 404s.

@@ -7,7 +7,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { SearchField } from "../ui/search-field";
 import { Button } from "../ui/button";
 import { Select } from "../ui/select";
-import { fetchAdminConnectionRequests } from "../../features/admin/api";
 
 type WorkspaceOption = {
   label: string;
@@ -15,7 +14,6 @@ type WorkspaceOption = {
 };
 
 type AppTopbarProps = {
-  canViewAdminConnectionRequests: boolean;
   onLogout: () => void;
   onWorkspaceChange: (event: ChangeEvent<HTMLSelectElement>) => void;
   searchPlaceholder: string;
@@ -40,7 +38,6 @@ async function fetchUnreadNotificationCount(): Promise<number> {
 }
 
 export function AppTopbar({
-  canViewAdminConnectionRequests,
   onLogout,
   onWorkspaceChange,
   searchPlaceholder,
@@ -61,22 +58,8 @@ export function AppTopbar({
     refetchInterval: 15_000
   });
 
-  const pendingConnectionsQuery = useQuery({
-    queryKey: ["shell-pending-connection-requests"],
-    queryFn: fetchAdminConnectionRequests,
-    enabled: isAdminWorkspace && canViewAdminConnectionRequests,
-    retry: false,
-    refetchInterval: 5_000
-  });
-
   const unreadCount = unreadNotificationsQuery.data ?? 0;
-  const pendingConnections = pendingConnectionsQuery.data?.connection_requests ?? [];
-  const notificationCount = unreadCount + pendingConnections.length;
-
-  function openAgentRequests() {
-    setNotificationsOpen(false);
-    navigate("/app/admin/inventory?panel=requests");
-  }
+  const notificationCount = unreadCount;
 
   return (
     <header className="sticky top-0 z-20 border-b border-border/80 bg-white/80 backdrop-blur-xl">
@@ -130,38 +113,6 @@ export function AppTopbar({
                       {notificationCount > 0 ? `Новых событий: ${notificationCount}` : "Новых событий нет"}
                     </p>
                   </div>
-
-                  {pendingConnections.length > 0 ? (
-                    <div className="border-b border-border px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-semibold uppercase text-slate-400">Подключения</p>
-                        <button
-                          className="text-xs font-semibold text-brand-700 hover:text-brand-900"
-                          onClick={openAgentRequests}
-                          type="button"
-                        >
-                          Открыть
-                        </button>
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        {pendingConnections.slice(0, 3).map((request) => (
-                          <button
-                            className="w-full rounded-xl bg-amber-50 px-3 py-2 text-left hover:bg-amber-100"
-                            key={request.device_id}
-                            onClick={openAgentRequests}
-                            type="button"
-                          >
-                            <p className="text-sm font-semibold text-amber-950">
-                              {request.hostname || request.device_id.slice(0, 8)}
-                            </p>
-                            <p className="mt-0.5 text-xs text-amber-800">
-                              {request.ip_address || "Новый агент"} ожидает одобрения
-                            </p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
 
                   <div className="px-4 py-3">
                     <button
