@@ -4,6 +4,20 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.parametrize("arguments", [["-c", "alembic.ini", "upgrade", "head"],
+                                      ["revision", "--autogenerate"], ["stamp", "head"]])
+def test_production_rejects_unreviewed_alembic_argument_forms(monkeypatch, tmp_path, arguments):
+    path = Path(__file__).resolve().parents[1] / "server/scripts/run_migrations.py"
+    spec = importlib.util.spec_from_file_location("migration_entrypoint", path)
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "ENV_FILE", tmp_path / "absent")
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://helpdesk@localhost/helpdesk")
+    monkeypatch.setattr(module.sys, "argv", ["run_migrations.py", *arguments])
+    monkeypatch.setattr(module.subprocess, "run", lambda *a, **k: pytest.fail("unsafe Alembic invocation"))
+    assert module.main() == 1
+
+
 def test_failed_backup_never_invokes_alembic(monkeypatch, tmp_path):
     path = Path(__file__).resolve().parents[1] / "server/scripts/run_migrations.py"
     spec = importlib.util.spec_from_file_location("migration_entrypoint", path)

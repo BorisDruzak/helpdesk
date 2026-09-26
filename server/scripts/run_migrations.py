@@ -36,10 +36,14 @@ def main() -> int:
         return 1
 
     argv = sys.argv[1:] if len(sys.argv) > 1 else ["upgrade", "head"]
-    if os.getenv("APP_ENV", "").strip().lower() == "prod" and argv[0] in {"upgrade", "downgrade", "stamp"}:
-        if argv[0] != "upgrade":
-            print("Production downgrade/stamp requires a separately reviewed recovery procedure.", file=sys.stderr)
+    production = os.getenv("APP_ENV", "").strip().lower() == "prod"
+    if production and argv != ["upgrade", "head"]:
+        # Global Alembic options can hide a write command from argv[0]. Only
+        # explicitly bounded read operations may bypass the backup gate.
+        if argv not in (["current"], ["heads"], ["history"]):
+            print("Production accepts upgrade head or bounded read commands only; recovery requires separate review.", file=sys.stderr)
             return 1
+    if production and argv == ["upgrade", "head"]:
         sys.path.insert(0, str(SERVER_DIR.parent))
         from scripts.helpdesk_database_backup import create_verified_backup
         from shared.production_security import production_config_errors

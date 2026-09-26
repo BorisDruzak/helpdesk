@@ -44,7 +44,9 @@ supports the migrated schema. **Restore-required** rollback stops Helpdesk
 writers, restores the verified Helpdesk backup under a reviewed recovery plan,
 then selects the matching release and verifies DB/business health. A code
 symlink rollback alone is not database recovery. Automatic production Alembic
-downgrade/stamp is blocked. Never touch Endpoint releases, services or data.
+downgrade/stamp is blocked. Production accepts only `upgrade head` and bounded
+read commands `current`, `heads`, `history`; alternate/global Alembic argument
+forms require separate review. Never touch Endpoint releases, services or data.
 On backup/migration failure writers remain stopped for operator recovery;
 there is no automatic restart against an unknown schema.
 
