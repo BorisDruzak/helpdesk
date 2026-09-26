@@ -32,6 +32,9 @@ CI artifact to `artifacts/ci/<sha>/`, including the web bundle sidecar manifest.
 The canonical mutation step records JSON diagnostics in its log, including
 pytest infrastructure failures; exit codes other than assertion failure do not
 prove that a mutant was killed.
+Install the existing SQLAlchemy dependency with its `asyncio` extra so greenlet
+is available in a fresh environment. Keep the supported SQLAlchemy 2.0 series;
+the readiness task does not migrate the ORM to 2.1.
 Then run:
 
 ```powershell

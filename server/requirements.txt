@@ -5,4 +5,4 @@ loguru
 pydantic>=2.12,<3
 python-dateutil
 python-dotenv
-SQLAlchemy>=2.0
+SQLAlchemy[asyncio]>=2.0,<2.1
