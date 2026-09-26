@@ -6,6 +6,12 @@ import pytest
 import scripts.deploy_workspace_to_remote as deploy
 
 
+@pytest.fixture(autouse=True)
+def isolate_git_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Deployment flow tests must not run Git in their synthetic Windows workspace."""
+    monkeypatch.setattr(deploy, "detect_commit", lambda workspace: "abc123")
+
+
 def test_build_local_dirty_message_explains_git_only_deploy() -> None:
     message = deploy.build_local_dirty_message([" M server/websocket/agent_handler.py"])
 

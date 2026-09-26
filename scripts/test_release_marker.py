@@ -11,6 +11,12 @@ import scripts.release_server_to_remote as release
 import scripts.write_restore_drill_marker as restore_marker
 
 
+@pytest.fixture(autouse=True)
+def isolate_git_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Marker tests supply synthetic metadata instead of inspecting a Windows path."""
+    monkeypatch.setattr(release, "_workspace_dirty", lambda workspace: False)
+
+
 def test_write_release_marker_local_path(tmp_path: Path) -> None:
     marker_path = tmp_path / "release.json"
 
