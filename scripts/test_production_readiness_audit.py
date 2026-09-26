@@ -17,6 +17,14 @@ def test_verified_current_risk_passes():
     validate_risk_audit(audit(), SHA)
 
 
+@pytest.mark.parametrize("candidate", [{"source_revision": SHA, "bugs": []},
+                                      audit(priority="P2"), audit(release_blocker=False)])
+def test_registry_risks_cannot_be_removed_or_downgraded(candidate):
+    historical = {"bugs": [dict(id="R1", priority="P0", release_blocker=True)]}
+    with pytest.raises(ValueError):
+        validate_risk_audit(candidate, SHA, historical)
+
+
 @pytest.mark.parametrize("override", [
     {"status": "open"}, {"status": "fixed-local"}, {"status": "unknown"},
     {"source_revision": "b" * 40}, {"verification": []},

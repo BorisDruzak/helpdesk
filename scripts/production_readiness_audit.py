@@ -23,7 +23,7 @@ def refresh_risk_audit(historical: dict, commit: str) -> dict:
     }
 
 
-def validate_risk_audit(payload: dict, commit: str) -> None:
+def validate_risk_audit(payload: dict, commit: str, historical: dict | None = None) -> None:
     if payload.get("source_revision") != commit:
         raise ValueError("risk audit does not identify the candidate revision")
     bugs = payload.get("bugs")
@@ -53,12 +53,21 @@ def validate_risk_audit(payload: dict, commit: str) -> None:
                 raise ValueError(f"{identifier}: high-priority disposition is unverified")
             if status == "open" and (priority == "P0" or item["release_blocker"]):
                 raise ValueError(f"{identifier}: open release blocker")
+    if historical is not None:
+        candidates = {item["id"]: item for item in bugs}
+        for original in historical["bugs"]:
+            current = candidates.get(original["id"])
+            if current is None:
+                raise ValueError("historical risk omitted from current audit")
+            if current["priority"] != original["priority"] or current["release_blocker"] != bool(original.get("release_blocker")):
+                raise ValueError("risk priority or blocker flag changed without reviewed registry update")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit", type=Path, required=True)
     parser.add_argument("--commit", required=True)
+    parser.add_argument("--registry", type=Path, default=Path(__file__).resolve().parents[1] / "known_bug_registry.current_head.json")
     parser.add_argument("--refresh-source", type=Path,
                         help="Create an unverified audit from the historical registry; never passes the gate")
     args = parser.parse_args()
@@ -69,7 +78,8 @@ def main() -> None:
             args.audit.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
             print("Unverified current-revision audit created; acceptance remains blocked")
             return
-        validate_risk_audit(json.loads(args.audit.read_text(encoding="utf-8")), args.commit)
+        validate_risk_audit(json.loads(args.audit.read_text(encoding="utf-8")), args.commit,
+                            json.loads(args.registry.read_text(encoding="utf-8")))
     except (ValueError, OSError, TypeError) as error:
         raise SystemExit(f"Readiness risk gate failed: {error}") from None
     print("Current-revision risk gate passed")

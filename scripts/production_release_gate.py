@@ -39,7 +39,8 @@ def validate_production_release(workspace: Path, commit: str, bundle: Path, *, e
     errors = production_config_errors(values)
     if values.get("APP_ENV") != "prod" or errors:
         raise ValueError("production configuration rejected: " + "; ".join(errors))
-    validate_risk_audit(json.loads(risk_audit.read_text(encoding="utf-8")), commit)
+    validate_risk_audit(json.loads(risk_audit.read_text(encoding="utf-8")), commit,
+                        json.loads((workspace / "known_bug_registry.current_head.json").read_text(encoding="utf-8")))
     lock_path = workspace / "integration/endpoint_contract.lock.json"
     validate(lock_path=lock_path, provider_root=provider_root)
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
