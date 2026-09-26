@@ -23,8 +23,9 @@ python scripts/manage_remote_stack.py status all
 ```
 
 The release script creates `/opt/helpdesk/releases/helpdesk-<commit>`, installs
-its private venv, applies `upgrade head` to the fresh Helpdesk database, switches
-`/opt/helpdesk/current`, then restarts `helpdesk-server.service` and
+its private venv, validates security, stops Helpdesk writers, switches
+`/opt/helpdesk/current`, creates and verifies a PostgreSQL custom backup before
+`upgrade head`, then restarts `helpdesk-server.service` and
 `helpdesk-control.service`. The services bind only to `127.0.0.1:8666` and
 `127.0.0.1:8667`; the reviewed Nginx template redirects HTTP to HTTPS on
 `helpdesk.sosnadmin.local`. Supply root-owned external TLS files at
@@ -32,9 +33,16 @@ its private venv, applies `upgrade head` to the fresh Helpdesk database, switche
 0600). The installer refuses missing TLS material or an insecure environment.
 
 To inspect logs, run `python scripts/manage_remote_stack.py logs all --lines 100`.
-Rollback is an operator action: point `current` at a known previous immutable
-release and restart the two Helpdesk services. Do not roll back PostgreSQL by
-copying Endpoint data.
+Rollback is an operator action. **Application-only** rollback switches to a
+known previous immutable release only when schema did not change.
+**Schema-compatible** rollback requires explicit proof that the previous code
+supports the migrated schema. **Restore-required** rollback stops Helpdesk
+writers, restores the verified Helpdesk backup under a reviewed recovery plan,
+then selects the matching release and verifies DB/business health. A code
+symlink rollback alone is not database recovery. Automatic production Alembic
+downgrade/stamp is blocked. Never touch Endpoint releases, services or data.
+On backup/migration failure writers remain stopped for operator recovery;
+there is no automatic restart against an unknown schema.
 
 The browser control-plane lifecycle endpoints are deliberately fail-closed on
 this host: the `helpdesk` process has no privilege to manage system services.

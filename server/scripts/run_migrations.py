@@ -36,6 +36,27 @@ def main() -> int:
         return 1
 
     argv = sys.argv[1:] if len(sys.argv) > 1 else ["upgrade", "head"]
+    if os.getenv("APP_ENV", "").strip().lower() == "prod" and argv[0] in {"upgrade", "downgrade", "stamp"}:
+        if argv[0] != "upgrade":
+            print("Production downgrade/stamp requires a separately reviewed recovery procedure.", file=sys.stderr)
+            return 1
+        sys.path.insert(0, str(SERVER_DIR.parent))
+        from scripts.helpdesk_database_backup import create_verified_backup
+        from server.security_profile import production_config_errors
+        import json
+        try:
+            errors = production_config_errors(os.environ)
+            if errors:
+                raise ValueError("insecure production configuration")
+            identity = json.loads((SERVER_DIR.parent / "release-identity.json").read_text(encoding="utf-8"))
+            data_root = Path(os.environ["PC_CLIENT_SERVER_DATA_ROOT"])
+            if not data_root.is_absolute() or data_root.resolve() == SERVER_DIR.parent.resolve() or SERVER_DIR.parent.resolve() in data_root.resolve().parents:
+                raise ValueError("backup storage must be outside the immutable release")
+            create_verified_backup(os.environ["DATABASE_URL"], data_root / "backups",
+                                   Path(os.environ["TECH_BACKUP_STATUS_PATH"]), identity["helpdesk_git_sha"])
+        except (ValueError, RuntimeError, OSError, KeyError):
+            print("Production migration blocked: secure config and verified backup required.", file=sys.stderr)
+            return 1
     env = os.environ.copy()
     env["PYTHONPATH"] = str(SERVER_DIR)
 

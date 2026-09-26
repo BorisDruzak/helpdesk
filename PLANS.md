@@ -199,6 +199,17 @@ schema changes; no automatic Alembic downgrade or Endpoint rollback.
   scoped workspace verification passed. These are local checks, not deployed
   TLS/browser acceptance; production configuration was not changed.
 
+### Database safety checkpoint
+
+- Production migration entrypoint now requires exact packaged release identity
+  and verified custom backup before Alembic. Deployment stops Helpdesk writers;
+  failed backup/migration leaves them stopped for reviewed recovery.
+- Restore helper validates backup digest/size, uses a random isolated database,
+  compares restored pre-migration schema revision and cleans up on failure.
+- 22 focused backup/migration/deployment tests and workspace verification
+  passed. Real PostgreSQL backup/restore, migration and fresh-DB CI remain
+  unverified pending runtime credentials. No production migration ran.
+
 ## 2026-08-31 Staging secure admin-session access
 
 - **Goal:** make the isolated Helpdesk staging admin login usable through the

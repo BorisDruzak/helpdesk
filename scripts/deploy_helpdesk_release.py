@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import io
+import json
 import re
 import subprocess
 import sys
@@ -57,6 +59,7 @@ def remote_install_command(
             f"sudo chmod -R a-w {release}",
             f"previous_release=$(sudo readlink -f {profile.root} 2>/dev/null || true)",
             f"if [ -n \"$previous_release\" ]; then printf '%s\\n' \"$previous_release\" | sudo install -o root -g root -m 0644 /dev/stdin {previous_release_file}; fi",
+            f"sudo systemctl stop {runtime_services}",
             f"sudo ln -sfn {release} {profile.root}",
             "sudo systemctl daemon-reload",
             f"sudo systemctl start {profile.migrate_service}",
@@ -174,6 +177,12 @@ def main() -> None:
             check=True,
         )
         build_webapp_bundle_into_release_archive(WORKSPACE, commit, local_archive, release_prefix)
+        identity = json.dumps({"helpdesk_git_sha": commit}, sort_keys=True).encode("utf-8")
+        with tarfile.open(local_archive, "a") as archive:
+            info = tarfile.TarInfo(f"{release_prefix}/release-identity.json")
+            info.size = len(identity)
+            info.mode = 0o444
+            archive.addfile(info, io.BytesIO(identity))
         subprocess.run([*_scp_base(profile), str(local_archive), f"{remote}:{remote_archive}"], cwd=WORKSPACE, check=True)
 
     subprocess.run(

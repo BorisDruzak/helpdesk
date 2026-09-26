@@ -66,3 +66,6 @@ This also includes the retired UIA create-ticket harness for the local agent.
   bind and proxy policy; called by runtime `config.validate_security_config()`.
 - `scripts/validate_production_config.py`: safe deployment/systemd preflight;
   optionally reads a root-owned env file and emits key-only errors.
+- `scripts/helpdesk_database_backup.py`: mandatory verified production
+  pre-migration custom backup and isolated restore drill; called by
+  `server/scripts/run_migrations.py`. Reuses Tech Panel backup/restore markers.
