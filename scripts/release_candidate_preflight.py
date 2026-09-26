@@ -32,6 +32,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
     parser.add_argument("--commit")
+    parser.add_argument("--production", action="store_true")
+    parser.add_argument("--environment-file", type=Path)
+    parser.add_argument("--risk-audit", type=Path)
+    parser.add_argument("--readiness-evidence", type=Path)
+    parser.add_argument("--provider-root", type=Path)
+    parser.add_argument("--schema-revision")
     parser.add_argument(
         "--allow-local-dirty",
         action="store_true",
@@ -88,6 +94,16 @@ def main() -> None:
     args = parse_args()
     workspace = args.workspace
     commit = detect_commit(workspace, args.commit)
+    production = getattr(args, "production", False)
+    if production:
+        if args.allow_local_dirty or args.skip_webapp_bundle:
+            raise SystemExit("Production preflight forbids dirty/bundle bypasses")
+        if commit != detect_commit(workspace):
+            raise SystemExit("Production preflight requires the current committed HEAD")
+        if not all(getattr(args, name, None) for name in (
+            "environment_file", "risk_audit", "readiness_evidence", "provider_root", "schema_revision"
+        )):
+            raise SystemExit("Production preflight requires config, risk audit, staging evidence, provider and schema")
     all_dirty_entries = git_status_short(workspace)
     dirty_entries = release_relevant_dirty_entries(all_dirty_entries)
     if dirty_entries and not args.allow_local_dirty:
@@ -103,6 +119,8 @@ def main() -> None:
         print("[release-preflight] generated/untracked artifacts are ignored for release-candidate dirtiness.")
 
     summary_path, artifact_commit, reused_artifact = resolve_green_ci_artifact(workspace, commit)
+    if production and (reused_artifact or artifact_commit != commit):
+        raise SystemExit("Production requires exact-SHA full CI; merge artifact reuse is forbidden")
     print(f"[release-preflight] green_ci_artifact={summary_path}")
     if reused_artifact:
         print(f"[release-preflight] reused_ci_artifact_commit={artifact_commit}")
@@ -110,6 +128,18 @@ def main() -> None:
     if not args.skip_webapp_bundle:
         bundle_path = require_webapp_bundle_artifact(workspace, artifact_commit)
         print(f"[release-preflight] webapp_bundle={bundle_path}")
+
+    if production:
+        from scripts.production_release_gate import validate_production_release
+        try:
+            manifest = validate_production_release(
+                workspace, commit, bundle_path, environment_file=args.environment_file,
+                risk_audit=args.risk_audit, evidence=args.readiness_evidence,
+                provider_root=args.provider_root, schema=args.schema_revision,
+            )
+        except (ValueError, OSError, TypeError, KeyError):
+            raise SystemExit("Production acceptance failed: config/risk/contract/bundle/live evidence must all verify") from None
+        print(f"[release-preflight] immutable_release_manifest={manifest}")
 
     print(
         "[release-preflight] OK: frozen release candidate is ready for full gate. "

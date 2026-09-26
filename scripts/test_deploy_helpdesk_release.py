@@ -73,6 +73,7 @@ def test_webapp_bundle_is_built_from_the_release_commit_not_dirty_workspace(tmp_
             parser.add_argument("--workspace", type=Path, required=True)
             parser.add_argument("--output-dir", type=Path, required=True)
             parser.add_argument("--archive", type=Path, required=True)
+            parser.add_argument("--source-commit")
             args = parser.parse_args()
             args.output_dir.mkdir(parents=True)
             (args.output_dir / "assets").mkdir()
@@ -174,3 +175,8 @@ def test_production_config_is_validated_before_release_switch_or_migration():
     assert "--require-production" in command
     assert command.index("validate_production_config.py") < command.index("sudo ln -sfn")
     assert command.index("validate_production_config.py") < command.index("systemctl start helpdesk-migrate")
+
+
+def test_transferred_archive_digest_is_checked_before_extracting():
+    command = remote_install_command(RemoteProfile.from_environment({}), "abc123", "/tmp/release.tar", archive_sha256="a" * 64)
+    assert command.index("sha256sum") < command.index("sudo tar")

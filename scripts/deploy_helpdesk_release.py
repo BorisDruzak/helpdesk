@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import hashlib
 import json
 import re
 import subprocess
@@ -34,6 +35,7 @@ def remote_install_command(
     remote_archive: str,
     *,
     release_id: str | None = None,
+    archive_sha256: str | None = None,
 ) -> str:
     release = release_path(profile, commit, release_id=release_id)
     deployment_root = Path(profile.root).parent.as_posix()
@@ -42,11 +44,17 @@ def remote_install_command(
     runtime_services = " ".join(
         service for service in (profile.server_service, profile.control_service) if service
     )
+    digest_check = []
+    if archive_sha256 is not None:
+        if not re.fullmatch(r"[0-9a-f]{64}", archive_sha256):
+            raise ValueError("release archive digest must be SHA-256")
+        digest_check = [f"test \"$(sha256sum {remote_archive} | cut -d ' ' -f 1)\" = {archive_sha256}"]
     return " ; ".join(
         [
             "set -eu",
             f"test -f {profile.environment_file}",
             f"test ! -e {release}",
+            *digest_check,
             f"sudo install -d -o root -g root -m 0755 {deployment_root}/releases",
             f"sudo mkdir {release}",
             f"sudo tar -xf {remote_archive} -C {release} --strip-components=1",
@@ -87,6 +95,7 @@ def build_webapp_bundle_into_release_archive(
     commit: str,
     release_archive: Path,
     release_prefix: str,
+    *, expected_digest: str | None = None,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="helpdesk_webapp_bundle_") as temp_dir:
         temp_root = Path(temp_dir)
@@ -111,10 +120,16 @@ def build_webapp_bundle_into_release_archive(
                 str(bundle_dir),
                 "--archive",
                 str(bundle_archive),
+                "--source-commit",
+                commit,
             ],
             cwd=source_workspace,
             check=True,
         )
+        if expected_digest is not None:
+            metadata = json.loads(bundle_archive.with_name(bundle_archive.name + ".manifest.json").read_text(encoding="utf-8"))
+            if metadata.get("helpdesk_git_sha") != commit or metadata.get("webapp_build_digest") != expected_digest:
+                raise RuntimeError("rebuilt web bundle differs from accepted production bundle")
         append_webapp_bundle_to_release_archive(release_archive, bundle_dir, release_prefix)
 
 
@@ -122,6 +137,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", help="Committed Git revision to deploy (defaults to HEAD).")
     parser.add_argument("--remote", help="SSH destination override.")
+    parser.add_argument("--environment-file", type=Path, help="Reviewed local production config, never archived")
+    parser.add_argument("--risk-audit", type=Path)
+    parser.add_argument("--readiness-evidence", type=Path)
+    parser.add_argument("--provider-root", type=Path)
+    parser.add_argument("--schema-revision")
     parser.add_argument(
         "--release-id",
         help="Optional immutable release identifier; use for a retry of an existing commit.",
@@ -163,6 +183,20 @@ def main() -> None:
     profile = RemoteProfile.from_environment()
     remote = args.remote or profile.remote
     commit = _git_commit(args.commit)
+    expected_digest = None
+    if profile.root == "/opt/helpdesk/current":
+        required = (args.environment_file, args.risk_audit, args.readiness_evidence, args.provider_root, args.schema_revision)
+        if not all(required):
+            raise SystemExit("Production deploy requires verified config, risk audit, staging evidence, provider and schema")
+        subprocess.run([
+            sys.executable, str(WORKSPACE / "scripts/release_candidate_preflight.py"),
+            "--workspace", str(WORKSPACE), "--commit", commit, "--production",
+            "--environment-file", str(args.environment_file), "--risk-audit", str(args.risk_audit),
+            "--readiness-evidence", str(args.readiness_evidence), "--provider-root", str(args.provider_root),
+            "--schema-revision", args.schema_revision,
+        ], cwd=WORKSPACE, check=True)
+        manifest = json.loads((WORKSPACE / "artifacts/release" / commit / "release-manifest.json").read_text(encoding="utf-8"))
+        expected_digest = manifest["webapp_build_digest"]
     release_id = args.release_id or commit
     release_path(profile, commit, release_id=release_id)
     archive_name = f"helpdesk-{release_id}.tar"
@@ -176,20 +210,22 @@ def main() -> None:
             cwd=WORKSPACE,
             check=True,
         )
-        build_webapp_bundle_into_release_archive(WORKSPACE, commit, local_archive, release_prefix)
+        build_webapp_bundle_into_release_archive(WORKSPACE, commit, local_archive, release_prefix, expected_digest=expected_digest)
         identity = json.dumps({"helpdesk_git_sha": commit}, sort_keys=True).encode("utf-8")
         with tarfile.open(local_archive, "a") as archive:
             info = tarfile.TarInfo(f"{release_prefix}/release-identity.json")
             info.size = len(identity)
             info.mode = 0o444
             archive.addfile(info, io.BytesIO(identity))
+        with local_archive.open("rb") as handle:
+            archive_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
         subprocess.run([*_scp_base(profile), str(local_archive), f"{remote}:{remote_archive}"], cwd=WORKSPACE, check=True)
 
     subprocess.run(
         [
             *_ssh_base(profile),
             remote,
-            remote_install_command(profile, commit, remote_archive, release_id=release_id),
+            remote_install_command(profile, commit, remote_archive, release_id=release_id, archive_sha256=archive_sha256),
         ],
         cwd=WORKSPACE,
         check=True,

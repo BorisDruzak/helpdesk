@@ -28,3 +28,13 @@ def test_resolve_command_fails_with_clear_error(monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(SystemExit, match="Required command not found on PATH: pnpm"):
         build_webapp_bundle.resolve_command("pnpm")
+
+
+def test_bundle_digest_changes_with_content_and_relative_name(tmp_path):
+    (tmp_path / "index.html").write_text("one")
+    first = build_webapp_bundle.bundle_digest(tmp_path)
+    (tmp_path / "index.html").write_text("two")
+    second = build_webapp_bundle.bundle_digest(tmp_path)
+    (tmp_path / "index.html").rename(tmp_path / "other.html")
+    third = build_webapp_bundle.bundle_digest(tmp_path)
+    assert len({first, second, third}) == 3

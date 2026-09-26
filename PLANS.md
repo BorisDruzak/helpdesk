@@ -210,6 +210,18 @@ schema changes; no automatic Alembic downgrade or Endpoint rollback.
   passed. Real PostgreSQL backup/restore, migration and fresh-DB CI remain
   unverified pending runtime credentials. No production migration ran.
 
+### CI and artifact checkpoint
+
+- Added `Helpdesk production readiness` workflow and mandatory aggregate job
+  `production-readiness` (GitHub branch protection requires administrator action).
+  It runs canonical full CI and the existing real provider contract workflow.
+- Production preflight requires exact-SHA full CI/web metadata, secure config,
+  current risk audit, clean pinned provider and actual staging acceptance.
+  Only successful validation creates an immutable bounded release manifest.
+- Web typecheck/production build passed locally using Node 24.15.0 and
+  pnpm 10.33.0. Build metadata/digest checks are covered by focused tests.
+  Full CI/live staging evidence is not yet green.
+
 ## 2026-08-31 Staging secure admin-session access
 
 - **Goal:** make the isolated Helpdesk staging admin login usable through the

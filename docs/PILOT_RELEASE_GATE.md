@@ -15,7 +15,44 @@ This is the operator checklist for moving a pilot stand from Tech Panel `READY` 
 - `PILOT_MIN_AGENT_VERSION` set to the current approved agent baseline.
 - `TECH_RELEASE_STATUS_PATH` and `TECH_BUSINESS_SMOKE_STATUS_PATH` readable by the running server.
 - Latest release and business smoke markers show `status=success`.
-- Backup/restore markers are optional for the current mini-prod stage; when backup policy is enabled later, `TECH_RESTORE_DRILL_STATUS_PATH` and `TECH_BACKUP_STATUS_PATH` must also be readable and successful.
+- Production Readiness v1 requires successful verified backup and isolated restore
+  markers. Earlier mini-prod optional-backup policy is historical, not a waiver.
+
+## Production Readiness v1
+
+The GitHub administrator must make the `production-readiness` job of **Helpdesk
+production readiness** mandatory. It combines canonical full CI (fresh isolated
+PostgreSQL/migration, Python/scripts, web typecheck/build/Vitest/fixture E2E) and
+the pinned real Endpoint contract workflow. This CI check alone does not prove
+live staging or Windows Agent acceptance. ALT live acceptance is excluded.
+
+Freeze a clean exact SHA before full CI. Production preflight forbids dirty or
+bundle bypasses and identical-tree merge CI reuse. Export the exact-SHA GitHub
+CI artifact to `artifacts/ci/<sha>/`, including the web bundle sidecar manifest.
+Then run:
+
+```powershell
+python scripts/release_candidate_preflight.py --workspace . --production `
+  --environment-file <reviewed-local-env> --risk-audit artifacts/release/<sha>/risk-audit.json `
+  --readiness-evidence <protected-staging-evidence.json> `
+  --provider-root <clean-pinned-provider-checkout> --schema-revision <verified-head>
+```
+
+Required acceptance fields are defined in
+`scripts/production_release_gate.py`: exact candidate/provider/OpenAPI/schema/
+web digest, `configuration_profile=production-v1`, `environment=staging`, and
+successful contract/backup/restore/business/Windows/degraded checks. Historical,
+fixture or skipped results cannot fill these gates. Evidence must be generated
+from actual protected run records, not hand-written success assertions.
+P0/P1 current-revision dispositions are validated separately through the risk
+audit. Missing runtime credentials or staging access means BLOCKED.
+
+Only after every check passes does preflight create
+`artifacts/release/<sha>/release-manifest.json`. It contains bounded fields only,
+never credentials/raw diagnostic output; an existing differing manifest cannot
+be overwritten. Production deploy repeats this preflight and validates the
+remote archive digest before extraction. This task does not authorize an
+actual production rollout.
 
 ## Business Smoke
 

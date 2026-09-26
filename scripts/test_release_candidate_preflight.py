@@ -24,6 +24,14 @@ def test_build_dirty_message_explains_freeze_invalidation() -> None:
     assert "--allow-local-dirty" in message
 
 
+@pytest.mark.parametrize("override", [{"allow_local_dirty": True}, {"skip_webapp_bundle": True}])
+def test_production_rejects_bypasses(monkeypatch, override):
+    monkeypatch.setattr(preflight, "parse_args", lambda: make_args(production=True, **override))
+    monkeypatch.setattr(preflight, "detect_commit", lambda *args: "a" * 40)
+    with pytest.raises(SystemExit, match="forbids"):
+        preflight.main()
+
+
 def test_release_relevant_dirty_entries_ignores_generated_artifacts() -> None:
     assert preflight.release_relevant_dirty_entries(
         [

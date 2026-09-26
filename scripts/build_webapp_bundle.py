@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -19,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--archive", type=Path, required=True)
+    parser.add_argument("--source-commit", help="Exact commit for a git-archive source export")
     parser.add_argument(
         "--skip-install",
         action="store_true",
@@ -55,9 +58,30 @@ def create_archive(output_dir: Path, archive_path: Path) -> None:
         tar.add(output_dir, arcname="dist")
 
 
+def bundle_digest(output_dir: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(output_dir.rglob("*")):
+        if path.is_file():
+            digest.update(path.relative_to(output_dir).as_posix().encode("utf-8") + b"\0")
+            with path.open("rb") as handle:
+                digest.update(hashlib.file_digest(handle, "sha256").digest())
+    return digest.hexdigest()
+
+
 def main() -> None:
     args = parse_args()
     workspace = args.workspace.resolve()
+    if (workspace / ".git").exists():
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace, text=True).strip()
+        if args.source_commit and args.source_commit != commit:
+            raise SystemExit("Web bundle source commit differs from checkout")
+        dirty = subprocess.check_output(["git", "status", "--porcelain", "--", "webapp", "package.json", "pnpm-lock.yaml", ".node-version"], cwd=workspace, text=True)
+        if dirty.strip():
+            raise SystemExit("Web bundle source must be committed and clean")
+    else:
+        commit = args.source_commit
+    if not commit or len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
+        raise SystemExit("Web bundle requires an exact source commit")
     webapp_dir = workspace / "webapp"
     dist_dir = webapp_dir / "dist"
 
@@ -72,6 +96,11 @@ def main() -> None:
     output_dir = args.output_dir.resolve()
     copy_dist_tree(dist_dir, output_dir)
     create_archive(output_dir, args.archive.resolve())
+    archive_path = args.archive.resolve()
+    with archive_path.open("rb") as handle:
+        archive_digest = hashlib.file_digest(handle, "sha256").hexdigest()
+    metadata = dict(helpdesk_git_sha=commit, webapp_build_digest=bundle_digest(output_dir), archive_sha256=archive_digest)
+    archive_path.with_name(archive_path.name + ".manifest.json").write_text(json.dumps(metadata, sort_keys=True) + "\n", encoding="utf-8")
     print(f"[webapp-bundle] bundle directory: {output_dir}")
     print(f"[webapp-bundle] bundle archive: {args.archive.resolve()}")
 
