@@ -66,14 +66,19 @@ Use a dedicated smoke account, not a human admin password. For self-signed stand
 ```powershell
 python scripts/business_smoke.py `
   --base-url https://example.test:9443 `
-  --username $env:BUSINESS_SMOKE_USERNAME `
-  --password $env:BUSINESS_SMOKE_PASSWORD `
   --output $env:TECH_BUSINESS_SMOKE_STATUS_PATH `
   --require-https `
   --require-secure-cookie `
   --browser-check `
   --insecure-tls
 ```
+
+Synthetic credentials are read from runtime `BUSINESS_SMOKE_USERNAME` and
+`BUSINESS_SMOKE_PASSWORD`; keep them off argv and evidence. The browser helper
+verifies TLS by default and requires an actually observed WSS connection.
+`--insecure-tls` is an explicit development/stand option, never production
+TLS acceptance. This smoke remains partial; it cannot replace the full live
+requester/support lifecycle, audit/persistence and Windows/degraded gates.
 
 Optional deeper acceptance requires an explicit test device and ticket:
 
