@@ -30,6 +30,7 @@ TEXT_SUFFIXES = {
 PY_COMPILE_BATCH_SIZE = 120
 SKIP_DIRS = {
     ".git",
+    ".worktrees",
     ".pnpm-store",
     ".run",
     ".vscode",
@@ -67,12 +68,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def iter_files(workspace: Path):
-    for path in workspace.rglob("*"):
-        if not path.is_file():
-            continue
-        if any(part in SKIP_DIRS for part in path.relative_to(workspace).parts):
-            continue
-        yield path
+    # Prune before descending: filtering rglob results still traverses complete
+    # dependency trees and unrelated checkouts, which can stall release gates.
+    for root, directories, filenames in os.walk(workspace, followlinks=False):
+        directories[:] = [name for name in directories if name not in SKIP_DIRS]
+        for name in filenames:
+            path = Path(root) / name
+            if path.is_file():
+                yield path
 
 
 def check_text_files(files: list[Path]) -> list[str]:
