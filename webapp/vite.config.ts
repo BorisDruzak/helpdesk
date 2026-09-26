@@ -9,6 +9,8 @@ export default defineConfig({
     exclude: ["tests/**/*.spec.ts"],
     environment: "jsdom",
     globals: true,
+    // Calendar expectations use this explicit zone on Windows and Linux CI.
+    env: { TZ: "Asia/Yekaterinburg" },
     setupFiles: "./src/test/setup.ts",
     testTimeout: 20000
   }
