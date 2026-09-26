@@ -170,6 +170,26 @@ schema changes; no automatic Alembic downgrade or Endpoint rollback.
 - Workspace scanner now prunes dependency trees and other worktrees before
   descent. Focused scanner/risk tests and scoped workspace verification passed.
 
+### Provider re-lock checkpoint
+
+- Production symlink (read-only SSH) points to
+  `/opt/endpoint-platform/releases/endpoint-platform-abdd5c7ef596`.
+- Exact revision: `abdd5c7ef596bc54277e74ca96cc929a43e07049`. Compared 207
+  deployed source/config files with raw Git blobs: zero digest mismatches.
+  53 non-shipped tool/test/frontend-source files were absent; no manifest or
+  Git metadata was present in the deployed immutable release.
+- Raw canonical OpenAPI SHA-256:
+  `cc1a47c8343091c0bef5942e9a0f5254f7d73cf07d02063ae24a21eedf34d8f1`.
+- Exact clean provider checkout validator passed. Consumer contract/HTTP/port/
+  cutover no-DB run: 66 passed, 1 failed. The failed boundary test scans local
+  ignored `pc_agent/dist` packaging dependencies left from an older checkout;
+  this is not green boundary acceptance. Re-run from clean committed source.
+- DB/provider/Gateway/Windows/live compatibility remains required; re-lock
+  alone is not integration acceptance or production readiness.
+- Staging SSH and Windows VM SSH work. Staging sudo requires runtime approval
+  credentials; no password was retrieved, stored or printed. Live DB gates
+  are pending the approved secret channel.
+
 ## 2026-08-31 Staging secure admin-session access
 
 - **Goal:** make the isolated Helpdesk staging admin login usable through the
