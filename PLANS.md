@@ -1,5 +1,27 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Latest checkpoint (2026-09-27): readiness remains incomplete. Baseline staging
+release `6b0ca5eaae1c71f644f7b8a8a0c5333eed287f9c` passed an actual private
+PostgreSQL backup and disposable restore/drop drill at schema 143. Synthetic
+ticket T-000012 completed requester/support messages and requester-confirmed
+closure; bounded database inspection confirmed closed status, ordered events,
+zero duplicate event/message IDs and no ticket-specific observer integrity rows.
+All synthetic accounts were disabled, queue membership and temporary admin-write
+override removed. This is preparation evidence, not acceptance of the new SHA;
+the recording includes deliberate restart failures and the profile remains pilot.
+
+Full CI at `24efde693d35990a88cda67e1f3ffa0eb73a2dbd` passed earlier layers but
+failed two Inventory v4 checks. A pre-flush ORM counter was genuinely uninitialized;
+an additional no-DB regression reproduced it and passed after explicit initialization.
+The presence test also used a historical fixed date for today's summary; its date
+now follows the snapshot time. Exact-SHA full CI must be rerun before staging deploy.
+
+Windows integration is independently blocked: Endpoint staging release
+`1c96bdc18bc05fc7730435d12da730b8bbb42502` differs from the verified locked
+provider `abdd5c7ef596bc54277e74ca96cc929a43e07049`, and the Windows test VM is
+currently connected to production Endpoint. See the runbook's unresolved staging
+provider boundary. Endpoint remains unchanged; no production acceptance was run.
+
 Production Readiness v1 baseline:
 `f2ad220f04e72a86eff00ea13f59a32dcd615b42`
 

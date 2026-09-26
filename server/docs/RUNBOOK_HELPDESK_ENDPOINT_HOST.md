@@ -113,6 +113,23 @@ scoped Endpoint credential and isolated DB admin access from the approved secret
 channel at runtime. Never substitute the production host or real admin account.
 Restore the original staging dependency configuration after outage testing.
 
+### Unresolved staging provider boundary (2026-09-27)
+
+Read-only inspection found Endpoint staging release
+`1c96bdc18bc05fc7730435d12da730b8bbb42502`, while the verified provider lock is
+`abdd5c7ef596bc54277e74ca96cc929a43e07049`. The dedicated Windows VM's agent
+currently connects to production Endpoint `192.168.100.19:443`; its bounded
+status identifies `endpoint.sosnadmin.local`, agent `3.2.75`, and device
+`9169e45c-9566-4277-b58e-bf76287c2b59`. This is not staging integration evidence.
+
+Keep the Windows integration gate closed. Separate Endpoint work must align
+the isolated provider with the supported locked release, connect the dedicated
+VM to that isolated namespace, verify its device identity, and supply a scoped
+Helpdesk credential for the same provider. Do not perform initial acceptance
+against production, repoint Helpdesk to production, or modify Endpoint/agent
+configuration inside this Helpdesk task. Other Helpdesk-only checks can proceed;
+their success does not waive this gate or permit a successful release manifest.
+
 ## Operational signals and controlled 72-hour pilot
 
 Use existing `/api/health`, authenticated Tech Panel snapshot, Observer and
