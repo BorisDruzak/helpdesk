@@ -2,6 +2,10 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vitest/config";
 
+// Node worker threads inherit the native timezone when they start. Changing
+// only a worker's process.env does not update its native Date timezone on Linux.
+process.env.TZ = "Asia/Yekaterinburg";
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   test: {
@@ -9,8 +13,6 @@ export default defineConfig({
     exclude: ["tests/**/*.spec.ts"],
     environment: "jsdom",
     globals: true,
-    // Calendar expectations use this explicit zone on Windows and Linux CI.
-    env: { TZ: "Asia/Yekaterinburg" },
     setupFiles: "./src/test/setup.ts",
     testTimeout: 20000
   }
