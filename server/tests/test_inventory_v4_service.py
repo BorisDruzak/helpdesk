@@ -99,6 +99,7 @@ async def test_bulk_refresh_preview_operation_and_xlsx_export(test_engine) -> No
 @pytest.mark.asyncio
 async def test_agent_profile_suggestion_apply_ignore_and_presence_summary(test_engine) -> None:
     device_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         session.add(_device(device_id, hostname="pc-01"))
@@ -142,10 +143,10 @@ async def test_agent_profile_suggestion_apply_ignore_and_presence_summary(test_e
         presence = await DevicePresenceService(session).persist_snapshot(
             device_id=device_id,
             snapshot={
-                "collected_at": datetime.now(timezone.utc).isoformat(),
+                "collected_at": now.isoformat(),
                 "session": {"current_user": "ivanova", "session_state": "idle", "idle_seconds": 600, "locked": False},
                 "today": {
-                    "date": "2026-05-19",
+                    "date": now.date().isoformat(),
                     "active_seconds": 3600,
                     "idle_seconds": 600,
                     "locked_seconds": 0,
