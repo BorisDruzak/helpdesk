@@ -44,6 +44,7 @@ from tickets.handlers import (
     _store_resolution_confirmation_state,
 )
 from tickets.create_flow import (
+    TicketInitializationError,
     VerifiedRequesterBinding,
     build_default_priority_payload,
     create_ticket_with_side_effects,
@@ -1976,49 +1977,56 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 },
             )
             return _error(str(exc), status=exc.status, error_code=exc.error_code)
-        created = await create_ticket_with_side_effects(
-            session,
-            device_id=device_id,
-            requester_id=auth_context.actor_id,
-            title=title,
-            description=description,
-            user_display_name=_clean(data.get("user_display_name"), max_length=300)
-            or getattr(person, "display_name", None)
-            or auth_context.actor_id,
-            requester_profile=requester_profile,
-            normalized_priority=normalized_priority,
-            initial_message_text=description,
-            initial_message_sender_role="user",
-            initial_message_from="user",
-            include_public_access=True,
-            ticket_type=ticket_type,
-            category_id=template_context.get("category_id"),
-            service_id=template_context.get("service_id"),
-            subcategory_id=template_context.get("subcategory_id"),
-            sla_policy_id=template_context.get("sla_policy_id"),
-            catalog_service_id=catalog_process_fields.get("catalog_service_id"),
-            catalog_offering_id=catalog_process_fields.get("catalog_offering_id"),
-            service_code=catalog_process_fields.get("service_code"),
-            offering_code=catalog_process_fields.get("offering_code"),
-            request_type=catalog_process_fields.get("request_type"),
-            business_criticality=catalog_process_fields.get("business_criticality"),
-            reporting_category=catalog_process_fields.get("reporting_category"),
-            service_owner_actor_id=catalog_process_fields.get("service_owner_actor_id"),
-            support_group_code=catalog_process_fields.get("support_group_code"),
-            extra_custom_fields=extra_custom_fields,
-            requester_account=requester_account,
-            verified_requester_binding=(
-                VerifiedRequesterBinding(
-                    device_id=str(binding.device_id),
-                    person_id=str(person.person_id),
-                    binding_id=str(binding.binding_id),
-                )
-                if account_mode == "confirmed_binding" and person is not None and binding is not None
-                else None
-            ),
-            ticket_context=on_behalf_context,
-            state=request.app.get("state"),
-        )
+        try:
+            created = await create_ticket_with_side_effects(
+                session,
+                device_id=device_id,
+                requester_id=auth_context.actor_id,
+                title=title,
+                description=description,
+                user_display_name=_clean(data.get("user_display_name"), max_length=300)
+                or getattr(person, "display_name", None)
+                or auth_context.actor_id,
+                requester_profile=requester_profile,
+                normalized_priority=normalized_priority,
+                initial_message_text=description,
+                initial_message_sender_role="user",
+                initial_message_from="user",
+                include_public_access=True,
+                ticket_type=ticket_type,
+                category_id=template_context.get("category_id"),
+                service_id=template_context.get("service_id"),
+                subcategory_id=template_context.get("subcategory_id"),
+                sla_policy_id=template_context.get("sla_policy_id"),
+                catalog_service_id=catalog_process_fields.get("catalog_service_id"),
+                catalog_offering_id=catalog_process_fields.get("catalog_offering_id"),
+                service_code=catalog_process_fields.get("service_code"),
+                offering_code=catalog_process_fields.get("offering_code"),
+                request_type=catalog_process_fields.get("request_type"),
+                business_criticality=catalog_process_fields.get("business_criticality"),
+                reporting_category=catalog_process_fields.get("reporting_category"),
+                service_owner_actor_id=catalog_process_fields.get("service_owner_actor_id"),
+                support_group_code=catalog_process_fields.get("support_group_code"),
+                extra_custom_fields=extra_custom_fields,
+                requester_account=requester_account,
+                verified_requester_binding=(
+                    VerifiedRequesterBinding(
+                        device_id=str(binding.device_id),
+                        person_id=str(person.person_id),
+                        binding_id=str(binding.binding_id),
+                    )
+                    if account_mode == "confirmed_binding" and person is not None and binding is not None
+                    else None
+                ),
+                ticket_context=on_behalf_context,
+                state=request.app.get("state"),
+            )
+        except TicketInitializationError:
+            await session.rollback()
+            return _error(
+                "Не удалось подготовить обращение. Повторите попытку позже.",
+                status=503, error_code="TICKET_INITIALIZATION_UNAVAILABLE",
+            )
         ticket_row = created["ticket"]
         ticket_custom_fields = ticket_row.custom_fields if isinstance(ticket_row.custom_fields, dict) else {}
         await _write_requester_web_observer_event(

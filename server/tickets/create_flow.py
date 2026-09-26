@@ -39,6 +39,14 @@ from playbooks.form_triggers import start_ticket_created_playbooks
 from utils import new_ticket_id
 
 
+class TicketInitializationError(RuntimeError):
+    """A mandatory create stage failed; callers must roll back before replying."""
+
+    def __init__(self, stage: str) -> None:
+        super().__init__("Ticket initialization unavailable")
+        self.stage = stage
+
+
 @dataclass(frozen=True)
 class VerifiedRequesterBinding:
     """A browser-requester binding resolved by trusted server-side composition.
@@ -354,17 +362,20 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
     try:
         await routing.apply_routing(ticket.ticket_id, ticket.device_id, add_events_fn=add_routing_event)
     except Exception as exc:
-        logger.warning(f"[create] routing failed ticket_id={ticket.ticket_id} err={exc}")
+        logger.warning("[create] required initialization failed stage=routing")
+        raise TicketInitializationError("routing") from exc
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     try:
         await sla.start_sla(ticket)
     except Exception as exc:
-        logger.warning(f"[create] sla failed ticket_id={ticket.ticket_id} err={exc}")
+        logger.warning("[create] required initialization failed stage=sla")
+        raise TicketInitializationError("sla") from exc
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     try:
         await start_ola_for_ticket(session, ticket, trigger="ticket_created")
     except Exception as exc:
-        logger.warning(f"[create] ola failed ticket_id={ticket.ticket_id} err={exc}")
+        logger.warning("[create] required initialization failed stage=ola")
+        raise TicketInitializationError("ola") from exc
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     ticket = await _enter_initial_approval_wait_if_required(session, ticket_repo, ticket)
     if ticket and getattr(ticket, "status", None) != "new":

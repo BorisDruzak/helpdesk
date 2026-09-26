@@ -11,6 +11,14 @@
 - `server/runtime_control.py` manages only the Helpdesk server and control
   plane units.
 
+## Ticket creation
+
+- `server/tickets/create_flow.py` initializes ticket routing, SLA and OLA in
+  the caller's transaction. A required stage failure raises
+  `TicketInitializationError`; requester and ticket-create HTTP handlers
+  roll back before returning `TICKET_INITIALIZATION_UNAVAILABLE`/503.
+  A policy service's normal no-policy result is not a failure.
+
 ## Endpoint operation facade
 
 - `server/diagnostics/` projects the Endpoint diagnostic capability, validates

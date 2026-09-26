@@ -1,20 +1,18 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
-Latest checkpoint (2026-09-27): readiness remains incomplete. Baseline staging
-release `6b0ca5eaae1c71f644f7b8a8a0c5333eed287f9c` passed an actual private
-PostgreSQL backup and disposable restore/drop drill at schema 143. Synthetic
-ticket T-000012 completed requester/support messages and requester-confirmed
-closure; bounded database inspection confirmed closed status, ordered events,
-zero duplicate event/message IDs and no ticket-specific observer integrity rows.
-All synthetic accounts were disabled, queue membership and temporary admin-write
-override removed. This is preparation evidence, not acceptance of the new SHA;
-the recording includes deliberate restart failures and the profile remains pilot.
-
-Full CI at `24efde693d35990a88cda67e1f3ffa0eb73a2dbd` passed earlier layers but
-failed two Inventory v4 checks. A pre-flush ORM counter was genuinely uninitialized;
-an additional no-DB regression reproduced it and passed after explicit initialization.
-The presence test also used a historical fixed date for today's summary; its date
-now follows the snapshot time. Exact-SHA full CI must be rerun before staging deploy.
+Latest checkpoint (2026-09-27): candidate
+`4536db17a341a8d3d6f03af61017b95349c4f47c` passed full exact-SHA CI,
+canonical staging installation, backup/restore and requester/support core
+cycles T-000017/T-000018, including a real Endpoint adapter outage. Temporary
+overrides were removed, synthetic accounts disabled and Helpdesk staging stopped.
+This proves core behavior only; full Windows integration and risk closure remain
+incomplete. The original June 25 audit was recovered and all 36 retained risk
+definitions mapped. CREATE-012 was reproduced on that candidate: mandatory
+routing/SLA/OLA exceptions were swallowed. The working-copy fix now returns a
+safe 503 after transaction rollback. Unit regressions and eight isolated
+PostgreSQL API checks passed; temporary test database/role cleanup was verified.
+TEST-040 requester fixtures now follow valid closure states; all 17 browser
+fixture scenarios passed. Earlier CI/live evidence does not accept a subsequent SHA.
 
 Windows integration is independently blocked: Endpoint staging release
 `1c96bdc18bc05fc7730435d12da730b8bbb42502` differs from the verified locked
@@ -1203,3 +1201,21 @@ Live current-candidate Tech Panel exposed recurring 404/console errors from shel
 ### Production Readiness v1 — bounded Endpoint operational signal
 
 Existing Tech Panel Runtime now includes Endpoint dependency read health using the canonical typed adapter and one saved ticket mapping. No new HTTP contract, health target, operation, agent dispatch, or monitoring subsystem. Without mapping, availability remains unknown; API read success cannot substitute for Windows acceptance. Regression coverage checks failure isolation, bounded projection, and missing-target behavior. New exact-SHA CI/live evidence remains required.
+
+### Production Readiness v1 — current risk remediation checkpoint
+
+The original deep audit was recovered from
+`C:\Users\admin-2\Downloads\helpdesk_deep_audit_2026-06-25.md` and all 36
+retained risk definitions were mapped to the current candidate evidence.
+On candidate `4536db17a341a8d3d6f03af61017b95349c4f47c`, CREATE-012 was
+reproduced by fault injection: routing/SLA/OLA exceptions were swallowed.
+The bounded fix now stops required initialization, and both create HTTP routes
+roll back before returning a safe 503. Three unit regressions failed before
+the fix and passed afterward. Eight isolated PostgreSQL API checks passed:
+three injected stages across both create routes leave no ticket or initial
+events, while two normal creation controls succeed. Temporary database, role
+and SSH tunnel were removed. TEST-040 was separately corrected and all 17
+requester browser fixture scenarios passed; fixture results are not live acceptance.
+The accepted 4536 CI/live evidence remains historical for subsequent changes.
+Full CI and staging acceptance must be repeated on the next frozen SHA.
+Other risk dispositions and the isolated Windows/provider gate remain open.

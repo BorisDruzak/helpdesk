@@ -31,7 +31,7 @@ from tickets.assignment_service import (
     TicketAssignmentService,
 )
 from tickets.account_access_service import TicketBindingAccessService
-from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.create_flow import TicketInitializationError, build_default_priority_payload, create_ticket_with_side_effects
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
@@ -1076,26 +1076,33 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             except ValueError as exc:
                 details = exc.args[0] if exc.args else "invalid form payload"
                 return _validation_error({"form_payload": details})
-        created = await create_ticket_with_side_effects(
-            session,
-            device_id=device_id,
-            requester_id=auth_context.actor_id,
-            title=title,
-            description=description,
-            user_display_name=user_display_name,
-            requester_profile=requester_profile,
-            normalized_priority=normalized_priority,
-            initial_message_text=description,
-            initial_message_sender_role="user",
-            initial_message_from="user",
-            include_public_access=True,
-            ticket_type=ticket_type,
-            **template_process_fields,
-            **catalog_process_fields,
-            extra_custom_fields=extra_custom_fields,
-            requester_account=requester_account if auth_context.actor_role != "agent" else None,
-            state=request.app.get("state"),
-        )
+        try:
+            created = await create_ticket_with_side_effects(
+                session,
+                device_id=device_id,
+                requester_id=auth_context.actor_id,
+                title=title,
+                description=description,
+                user_display_name=user_display_name,
+                requester_profile=requester_profile,
+                normalized_priority=normalized_priority,
+                initial_message_text=description,
+                initial_message_sender_role="user",
+                initial_message_from="user",
+                include_public_access=True,
+                ticket_type=ticket_type,
+                **template_process_fields,
+                **catalog_process_fields,
+                extra_custom_fields=extra_custom_fields,
+                requester_account=requester_account if auth_context.actor_role != "agent" else None,
+                state=request.app.get("state"),
+            )
+        except TicketInitializationError:
+            await session.rollback()
+            return _json_error(
+                "Не удалось подготовить обращение. Повторите попытку позже.",
+                status=503, error_code="TICKET_INITIALIZATION_UNAVAILABLE",
+            )
         await session.commit()
         ticket_data = await _ticket_payload(session, created["ticket"])
 

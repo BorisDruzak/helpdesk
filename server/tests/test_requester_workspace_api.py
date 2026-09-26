@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import web
@@ -41,9 +42,48 @@ from routes import setup_routes
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 from tickets.create_flow import VerifiedRequesterBinding, build_default_priority_payload, create_ticket_with_side_effects
 import web_api.requester_handlers as requester_handlers_module
+import tickets.create_flow as create_flow_module
 
 
 pytestmark = pytest.mark.db_cleanup("web_support")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["/api/web/requester/tickets", "/api/tickets/create"])
+@pytest.mark.parametrize("stage", ["routing", "sla", "ola"])
+async def test_ticket_create_initialization_failure_rolls_back_ticket_and_events(
+    test_client, test_engine, monkeypatch, route, stage,
+):
+    marker = "create-initialization-" + uuid.uuid4().hex
+    login = marker + "@example.test"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _person_for_login(session, login=login)
+        await session.commit()
+        before_events = (await session.execute(select(func.count()).select_from(TicketEvent))).scalar_one()
+
+    failure = AsyncMock(side_effect=RuntimeError("private dependency details"))
+    if stage == "routing":
+        monkeypatch.setattr(create_flow_module.TicketRoutingService, "apply_routing", failure)
+    elif stage == "sla":
+        monkeypatch.setattr(create_flow_module.TicketSlaService, "start_sla", failure)
+    else:
+        monkeypatch.setattr(create_flow_module, "start_ola_for_ticket", failure)
+
+    response = await test_client.post(
+        route, headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={"title": marker, "description": "Fault-injected create rollback", "user_display_name": "Readiness test",
+              "device_id": str(uuid.uuid4()) if route == "/api/tickets/create" else None},
+    )
+    assert response.status == 503, await response.text()
+    body = await response.json()
+    assert body["error_code"] == "TICKET_INITIALIZATION_UNAVAILABLE"
+    assert "private dependency details" not in str(body)
+    failure.assert_awaited_once()
+
+    async with session_maker() as session:
+        assert (await session.execute(select(func.count()).select_from(Ticket).where(Ticket.title == marker))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(TicketEvent))).scalar_one() == before_events
 
 
 @pytest.fixture

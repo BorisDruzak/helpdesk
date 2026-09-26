@@ -58,6 +58,13 @@
 
 **Канонические источники создания тикета (DB-first):**
 1. **POST /api/tickets/create** — основной путь из UI; создаёт тикет в PostgreSQL, запускает routing/SLA/OLA, сохраняет начальное сообщение в ticket_events. Для RBAC при создании обязательно задаётся `requester_id` (из AuthContext или device_id при отсутствии контекста).
+
+   Both this route and `POST /api/web/requester/tickets` roll back the entire
+   create transaction when routing, SLA or OLA initialization raises an error.
+   They return HTTP 503 with `error_code=TICKET_INITIALIZATION_UNAVAILABLE`
+   and a safe retry message, without internal dependency details. No ticket or
+   partial initial timeline is committed. Normal no-policy/no-target outcomes
+   remain valid; an exception is not treated as a successful create.
 2. **Команда chat_raise (WebSocket)** — агент инициирует «поддержку»; сервер создаёт тикет в БД с `status="new"` и `requester_id=agent_id`, чтобы тикет участвовал в фильтрации по requester.
 
 **Инварианты:**
