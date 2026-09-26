@@ -9,7 +9,7 @@ Do not include credentials, session cookies, tokens or raw diagnostic results
 in logs, evidence, fixtures or release reports.
 # Production transport preflight
 
-`server/security_profile.py` shares a dependency-free production policy between
+`shared/production_security.py` shares a dependency-free production policy between
 runtime security validation and `scripts/validate_production_config.py`.
 Production requires HTTPS/WSS, secure cookies, DB persistence, explicit loopback
 IPs for API/control, HTTPS public URL and non-wildcard trusted proxy networks.

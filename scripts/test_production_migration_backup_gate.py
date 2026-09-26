@@ -32,7 +32,7 @@ def test_production_downgrade_is_not_automatic_recovery(monkeypatch, tmp_path):
 def test_verified_config_but_failed_backup_blocks_alembic(monkeypatch, tmp_path):
     import json
     import scripts.helpdesk_database_backup as backups
-    import server.security_profile as policy
+    import shared.production_security as policy
     path = Path(__file__).resolve().parents[1] / "server/scripts/run_migrations.py"
     spec = importlib.util.spec_from_file_location("migration_entrypoint", path)
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)

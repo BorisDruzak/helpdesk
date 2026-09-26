@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server.security_profile import production_config_errors
+from shared.production_security import production_config_errors
 
 
 def read_environment(path: Path) -> dict[str, str]:

@@ -221,6 +221,11 @@ schema changes; no automatic Alembic downgrade or Endpoint rollback.
 - Web typecheck/production build passed locally using Node 24.15.0 and
   pnpm 10.33.0. Build metadata/digest checks are covered by focused tests.
   Full CI/live staging evidence is not yet green.
+- Clean-checkout full CI on `933c9669...` passed workspace/build, 454 web unit
+  tests, fixture E2E and inventory/risk/contamination/coverage/mutation audits.
+  Scripts collection failed on the `server` module/package name collision.
+  Shared policy moved to `shared/production_security.py`; full scripts layer
+  must be rerun. Clean-checkout Endpoint boundary run: 67 passed.
 
 ## 2026-08-31 Staging secure admin-session access
 

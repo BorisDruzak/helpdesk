@@ -42,7 +42,7 @@ def main() -> int:
             return 1
         sys.path.insert(0, str(SERVER_DIR.parent))
         from scripts.helpdesk_database_backup import create_verified_backup
-        from server.security_profile import production_config_errors
+        from shared.production_security import production_config_errors
         import json
         try:
             errors = production_config_errors(os.environ)

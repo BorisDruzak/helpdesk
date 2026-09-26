@@ -10,7 +10,7 @@ from scripts.production_readiness_audit import validate_risk_audit
 from scripts.build_webapp_bundle import archive_bundle_digest
 from scripts.validate_production_config import read_environment
 from scripts.validate_endpoint_contract_lock import validate
-from server.security_profile import production_config_errors
+from shared.production_security import production_config_errors
 
 
 REQUIRED_ACCEPTANCE = (

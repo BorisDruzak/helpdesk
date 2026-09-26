@@ -1,6 +1,6 @@
 import pytest
 
-from server.security_profile import production_config_errors
+from shared.production_security import production_config_errors
 
 
 def secure():
