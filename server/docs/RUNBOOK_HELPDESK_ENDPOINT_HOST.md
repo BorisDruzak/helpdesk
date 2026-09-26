@@ -84,6 +84,12 @@ Use the reviewed remote management script above instead.
 
 ## Production Readiness v1 rollout sequence
 
+Runtime commands in `scripts/manage_remote_stack.py` use the same
+`HELPDESK_SERVER_SERVICE` and optional `HELPDESK_CONTROL_SERVICE` profile as the
+release installer. For staging set the server unit to `helpdesk-staging.service`
+and the control unit to an empty value when no separate control service exists.
+An explicit request for an unconfigured control service fails before SSH dispatch.
+
 The command above is prepared for a separately authorized production rollout.
 Do not run it on the basis of local tests alone. Before starting, verify exact
 SHA/full CI artifact, accepted CI bundle/digests, Endpoint lock/provider evidence,
@@ -94,8 +100,8 @@ paths; do not use `--insecure-tls` as production acceptance.
 
 The reviewed deploy command validates the frozen RC, packages the accepted web
 bundle, verifies transfer digest, validates remote security, stops only Helpdesk
-writers, selects the immutable candidate, verifies its DB backup before Alembic,
-then restarts only Helpdesk. On failure it does not silently fall back or roll
+writers, verifies its DB backup before Alembic, migrates the immutable candidate,
+then switches the active release and restarts only Helpdesk. On failure it does not silently fall back or roll
 back Endpoint. Check HTTPS health, browser login/WSS, real requester/support
 business flow, safe Windows Endpoint diagnostic and correlated bounded audit.
 The candidate is not deployed merely because its manifest exists.

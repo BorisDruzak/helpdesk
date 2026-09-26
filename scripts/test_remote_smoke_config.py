@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import pytest
 from argparse import Namespace
 from pathlib import Path
 
@@ -57,6 +58,16 @@ def test_remote_management_script_bootstraps_workspace_for_direct_execution() ->
     source = (Path(manage_remote_stack.__file__).resolve()).read_text(encoding="utf-8")
 
     assert "sys.path.insert(0, str(WORKSPACE))" in source
+
+
+def test_remote_management_targets_only_configured_staging_units(monkeypatch) -> None:
+    monkeypatch.setenv("HELPDESK_SERVER_SERVICE", "helpdesk-staging.service")
+    monkeypatch.setenv("HELPDESK_CONTROL_SERVICE", "")
+    args = Namespace(action="restart", target="all")
+    assert manage_remote_stack.build_remote_command(args) == "sudo systemctl restart helpdesk-staging.service"
+    args.target = "control"
+    with pytest.raises(ValueError, match="not configured"):
+        manage_remote_stack.build_remote_command(args)
 
 
 def test_runtime_smoke_uses_env_https_url_and_insecure_tls(monkeypatch) -> None:
