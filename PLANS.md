@@ -22,6 +22,14 @@ the correction; six isolated PostgreSQL checks passed afterward, including
 rollback after session insertion/serialization and successful public authorization.
 Temporary test database/role/tunnel cleanup was verified.
 
+SUPPORT-025 command-center/summary failure regressions reproduced false 200
+empty responses; the bounded fix returns safe 503 and shows unavailable UI
+states instead of empty-task/zero-summary claims. A refetch failure preserves
+cached tasks with a warning. Twelve server checks, nine component checks,
+TypeScript/build and a controlled real-browser degradation scenario passed.
+SUPPORT-026 malformed `limit` is fixed for support queue/summary; other
+historically listed handlers still need current-condition verification.
+
 Windows integration is independently blocked: Endpoint staging release
 `1c96bdc18bc05fc7730435d12da730b8bbb42502` differs from the verified locked
 provider `abdd5c7ef596bc54277e74ca96cc929a43e07049`, and the Windows test VM is
@@ -1238,3 +1246,15 @@ retains the previous owned transaction. Five no-DB regressions failed before
 the fix and passed afterward; six real PostgreSQL checks passed. Retry
 idempotency remains a separate CREATE-011 requirement. Full next-SHA CI/live
 acceptance and Windows/provider alignment remain pending.
+
+### Production Readiness v1 — explicit support read degradation
+
+Support command-center/workspace-summary exceptions return `DB_UNAVAILABLE`/503.
+Queue/summary malformed limit values return `VALIDATION_ERROR`/400. Six
+server regressions failed before the correction; the focused server suite
+passed afterward. Component regressions initially exposed misleading empty
+task/zero-count states; all nine checks pass with explicit unavailable labels
+and cached-data retention on refetch failure. A current built-bundle browser
+fixture run passed, with only the controlled 503 responses/resource errors,
+no unexpected responses or page exceptions, and a screenshot inspected for
+Russian text. These are focused regressions, not next-SHA live acceptance.

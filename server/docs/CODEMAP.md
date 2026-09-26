@@ -24,6 +24,16 @@
   caller's session; `AuthTokensRepo` flushes without committing in that mode.
   Standalone public authorization retains its owned transaction.
 
+## Support reads
+
+- `server/web_api/support_handlers.py` returns `DB_UNAVAILABLE`/503 when
+  command-center or workspace-summary reads fail, without a successful empty
+  payload or internal exception details. Queue and summary malformed `limit`
+  values return `VALIDATION_ERROR`/400 before database access.
+- `webapp/src/pages/support/command-center-page.tsx` shows explicit errors and
+  unavailable summary counts on first-load failure. A refetch failure keeps
+  previously loaded tasks visible together with the error warning.
+
 ## Endpoint operation facade
 
 - `server/diagnostics/` projects the Endpoint diagnostic capability, validates
