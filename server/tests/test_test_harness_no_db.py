@@ -23,6 +23,12 @@ def _load_test_harness():
 test_harness = _load_test_harness()
 
 
+def _simulate_windows_harness(monkeypatch):
+    # Patch only this harness module; pathlib and pytest must keep the real OS.
+    platform = SimpleNamespace(**{**vars(test_harness.os), "name": "nt"})
+    monkeypatch.setattr(test_harness, "os", platform)
+
+
 pytestmark = pytest.mark.no_db
 
 
@@ -292,7 +298,7 @@ def test_should_auto_fallback_only_for_default_windows_flow(monkeypatch):
     monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
     monkeypatch.delenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", raising=False)
-    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    _simulate_windows_harness(monkeypatch)
 
     assert test_harness._should_auto_fallback_to_shared_test_db() is True
 
@@ -304,7 +310,7 @@ def test_windows_default_resolve_uses_isolated_test_db(monkeypatch):
     monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
     monkeypatch.delenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", raising=False)
-    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    _simulate_windows_harness(monkeypatch)
     monkeypatch.setattr(test_harness, "_ensure_windows_test_db_tunnel", lambda: None)
     monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_HOST", "127.0.0.1")
     monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_PORT", 55432)
@@ -322,7 +328,7 @@ def test_windows_shared_debug_resolve_uses_tunnel(monkeypatch):
     monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
     monkeypatch.setenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", "1")
-    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    _simulate_windows_harness(monkeypatch)
     monkeypatch.setattr(test_harness, "_ensure_windows_test_db_tunnel", lambda: None)
     monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_HOST", "127.0.0.1")
     monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_PORT", 55432)
@@ -474,7 +480,7 @@ def test_pytest_configure_registers_migration_clone_marker():
 def test_windows_isolated_alembic_upgrade_uses_subprocess(monkeypatch):
     calls = []
 
-    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    _simulate_windows_harness(monkeypatch)
     monkeypatch.setattr(
         test_harness.subprocess,
         "run",
