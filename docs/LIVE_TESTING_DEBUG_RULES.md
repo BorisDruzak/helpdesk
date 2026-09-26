@@ -33,6 +33,14 @@ tests before claiming a Helpdesk cutover change is verified. Production rollout
 requires the reviewed release procedure; never patch deployed directories
 manually.
 
+## Requester fixture lifecycle
+
+Requester fixture tests must follow the server lifecycle policy: a
+`waiting_on_user` ticket permits a reply but cannot confirm a solution.
+Confirmation requires `resolved` plus a pending confirmation marker; after
+successful confirmation the fixture must report `closed` and remove the action.
+These checks remain fixture regression evidence, not live backend acceptance.
+
 ## Admin shell notifications
 
 The shared shell polls ticket notifications only. Retired Helpdesk agent enrollment
