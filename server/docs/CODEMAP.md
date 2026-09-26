@@ -18,6 +18,11 @@
   `TicketInitializationError`; requester and ticket-create HTTP handlers
   roll back before returning `TICKET_INITIALIZATION_UNAVAILABLE`/503.
   A policy service's normal no-policy result is not a failure.
+- `server/tickets/public_ticket_handlers.py` keeps public ticket creation,
+  required routing/SLA/OLA and public-session issuance in one transaction.
+  It constructs the response before committing. `AuthService` accepts the
+  caller's session; `AuthTokensRepo` flushes without committing in that mode.
+  Standalone public authorization retains its owned transaction.
 
 ## Endpoint operation facade
 

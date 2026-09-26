@@ -274,20 +274,23 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
 
                 await routing.apply_routing(ticket_id, placeholder_device_id, add_events_fn=add_routing_event)
                 ticket = await ticket_repo.get_ticket(ticket_id)
-            except Exception as routing_err:
-                logger.warning(f"[public_create] routing failed: {routing_err}")
+            except Exception:
+                logger.warning("[public_create] required initialization failed stage=routing")
+                raise
 
             try:
                 sla = TicketSlaService(db_session, ticket_repo)
                 await sla.start_sla(ticket)
                 ticket = await ticket_repo.get_ticket(ticket_id)
-            except Exception as sla_err:
-                logger.warning(f"[public_create] sla start failed: {sla_err}")
+            except Exception:
+                logger.warning("[public_create] required initialization failed stage=sla")
+                raise
 
             try:
                 await start_ola_for_ticket(db_session, ticket, trigger="ticket_created")
-            except Exception as ola_err:
-                logger.warning(f"[public_create] OLA start failed: {ola_err}")
+            except Exception:
+                logger.warning("[public_create] required initialization failed stage=ola")
+                raise
 
             if ticket and not getattr(ticket, "assignee_id", None):
                 try:
@@ -358,28 +361,29 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                 logger.warning(
                     f"[public_create] playbook form triggers failed ticket_id={ticket_id}: {playbook_err}"
                 )
-            await db_session.commit()
+            auth_service = AuthService(request.app["state"])
+            public_token = await auth_service.generate_ticket_public_session_token(
+                ticket_id=ticket_id,
+                actor_id=requester_id,
+                expires_minutes=PUBLIC_TICKET_SESSION_MINUTES,
+                session=db_session,
+            )
             ticket = await ticket_repo.get_ticket(ticket_id)
-    except Exception as exc:
-        logger.error(f"[public_create] failed: {exc}", exc_info=True)
+            response = web.json_response(
+                {
+                    "status": "ok",
+                    "ticket": ticket_to_dict(ticket, visibility="requester"),
+                    "initial_message_id": initial_message_id,
+                    "public_access_code": public_access_code,
+                    "public_token": public_token,
+                    "public_token_expires_at": public_token_expires_at.isoformat(),
+                }
+            )
+    except Exception:
+        logger.error("[public_create] transaction failed")
         return web.json_response({"status": "error", "error": "service_unavailable"}, status=503)
 
-    auth_service = AuthService(request.app["state"])
-    public_token = await auth_service.generate_ticket_public_session_token(
-        ticket_id=ticket_id,
-        actor_id=requester_id,
-        expires_minutes=PUBLIC_TICKET_SESSION_MINUTES,
-    )
-    return web.json_response(
-        {
-            "status": "ok",
-            "ticket": ticket_to_dict(ticket, visibility="requester"),
-            "initial_message_id": initial_message_id,
-            "public_access_code": public_access_code,
-            "public_token": public_token,
-            "public_token_expires_at": public_token_expires_at.isoformat(),
-        }
-    )
+    return response
 
 
 async def handle_public_ticket_authorize(request: web.Request) -> web.Response:

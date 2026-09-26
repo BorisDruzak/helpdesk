@@ -14,6 +14,14 @@ PostgreSQL API checks passed; temporary test database/role cleanup was verified.
 TEST-040 requester fixtures now follow valid closure states; all 17 browser
 fixture scenarios passed. Earlier CI/live evidence does not accept a subsequent SHA.
 
+The separate public-create route also reproduced CREATE-012/CREATE-013:
+required initialization errors were swallowed and token issuance followed the
+ticket commit. The next bounded fix issues the public session and constructs
+the response in the caller's transaction. Five unit regressions failed before
+the correction; six isolated PostgreSQL checks passed afterward, including
+rollback after session insertion/serialization and successful public authorization.
+Temporary test database/role/tunnel cleanup was verified.
+
 Windows integration is independently blocked: Endpoint staging release
 `1c96bdc18bc05fc7730435d12da730b8bbb42502` differs from the verified locked
 provider `abdd5c7ef596bc54277e74ca96cc929a43e07049`, and the Windows test VM is
@@ -1219,3 +1227,14 @@ requester browser fixture scenarios passed; fixture results are not live accepta
 The accepted 4536 CI/live evidence remains historical for subsequent changes.
 Full CI and staging acceptance must be repeated on the next frozen SHA.
 Other risk dispositions and the isolated Windows/provider gate remain open.
+
+### Production Readiness v1 — public create atomicity
+
+`/public_api/tickets/create` now rolls back required routing/SLA/OLA errors,
+public-session issuance errors and response serialization errors together.
+`AuthService` accepts an internal caller-owned session; `AuthTokensRepo`
+flushes in that mode without committing. Standalone public authorization
+retains the previous owned transaction. Five no-DB regressions failed before
+the fix and passed afterward; six real PostgreSQL checks passed. Retry
+idempotency remains a separate CREATE-011 requirement. Full next-SHA CI/live
+acceptance and Windows/provider alignment remain pending.

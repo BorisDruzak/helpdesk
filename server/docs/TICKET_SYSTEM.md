@@ -65,6 +65,12 @@
    and a safe retry message, without internal dependency details. No ticket or
    partial initial timeline is committed. Normal no-policy/no-target outcomes
    remain valid; an exception is not treated as a successful create.
+
+   `POST /public_api/tickets/create` also treats routing/SLA/OLA exceptions as
+   failures. Public-session issuance and response serialization occur before
+   the create transaction commits. Any failure returns `service_unavailable`/503
+   and rolls back the ticket, events and public-session record together.
+   Public authorization still creates its session in a separate owned transaction.
 2. **Команда chat_raise (WebSocket)** — агент инициирует «поддержку»; сервер создаёт тикет в БД с `status="new"` и `requester_id=agent_id`, чтобы тикет участвовал в фильтрации по requester.
 
 **Инварианты:**
