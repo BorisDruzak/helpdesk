@@ -177,6 +177,18 @@ def test_production_config_is_validated_before_release_switch_or_migration():
     assert command.index("validate_production_config.py") < command.index("systemctl start helpdesk-migrate")
 
 
+def test_candidate_migration_finishes_before_current_release_switch():
+    command = remote_install_command(RemoteProfile.from_environment({}), "abc123", "/tmp/release.tar")
+    assert command.index("systemctl start helpdesk-migrate.service") < command.index("sudo ln -sfn")
+    assert "WorkingDirectory=/opt/helpdesk/releases/helpdesk-abc123/server" in command
+    assert "trap" in command
+    assert "test ! -e /run/systemd/system/helpdesk-migrate.service.d/readiness-release.conf" in command
+    assert "ExecStartPre=" not in command
+    assert "User=" not in command
+    assert "EnvironmentFile=" not in command
+    assert command.index("trap - EXIT") < command.index("sudo ln -sfn")
+
+
 def test_transferred_archive_digest_is_checked_before_extracting():
     command = remote_install_command(RemoteProfile.from_environment({}), "abc123", "/tmp/release.tar", archive_sha256="a" * 64)
     assert command.index("sha256sum") < command.index("sudo tar")

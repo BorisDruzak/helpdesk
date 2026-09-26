@@ -27,9 +27,14 @@ python scripts/manage_remote_stack.py status all
 ```
 
 The release script creates `/opt/helpdesk/releases/helpdesk-<commit>`, installs
-its private venv, validates security, stops Helpdesk writers, switches
-`/opt/helpdesk/current`, creates and verifies a PostgreSQL custom backup before
-`upgrade head`, then restarts `helpdesk-server.service` and
+its private venv, validates security and stops Helpdesk writers. A temporary
+runtime drop-in points the reviewed migration unit at the candidate's server
+directory and Python; user, environment, sandbox and preparatory commands are
+inherited. Backup verification and `upgrade head` finish before switching
+`/opt/helpdesk/current`. The drop-in is removed and systemd reloaded on success
+or failure; an existing drop-in blocks deployment. Existing preparatory commands
+must remain valid before the switch, including on a rebuilt host. The script
+then restarts `helpdesk-server.service` and
 `helpdesk-control.service`. The services bind only to `127.0.0.1:8666` and
 `127.0.0.1:8667`; the reviewed Nginx template redirects HTTP to HTTPS on
 `helpdesk.sosnadmin.local`. Supply root-owned external TLS files at

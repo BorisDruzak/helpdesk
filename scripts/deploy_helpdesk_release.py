@@ -8,6 +8,7 @@ import io
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,17 @@ def remote_install_command(
     deployment_root = Path(profile.root).parent.as_posix()
     previous_release_file = f"{Path(profile.environment_file).parent.as_posix()}/previous-release"
     release_venv = f"{release}/{profile.release_venv_path}"
+    override_directory = f"/run/systemd/system/{profile.migrate_service}.d"
+    override_file = f"{override_directory}/readiness-release.conf"
+    # Override only the candidate paths. Existing user, environment, sandbox
+    # and preparatory commands remain inherited from the reviewed unit.
+    override = (
+        "[Service]\n"
+        f"WorkingDirectory={release}/server\n"
+        "ExecStart=\n"
+        f"ExecStart={release_venv}/bin/python scripts/run_migrations.py upgrade head\n"
+    )
+    cleanup = f"sudo rm -f {override_file}; sudo systemctl daemon-reload"
     runtime_services = " ".join(
         service for service in (profile.server_service, profile.control_service) if service
     )
@@ -65,12 +77,19 @@ def remote_install_command(
             + (" --require-production" if profile.root == "/opt/helpdesk/current" else ""),
             f"sudo chown -R root:root {release}",
             f"sudo chmod -R a-w {release}",
+            f"test ! -e {override_file}",
             f"previous_release=$(sudo readlink -f {profile.root} 2>/dev/null || true)",
             f"if [ -n \"$previous_release\" ]; then printf '%s\\n' \"$previous_release\" | sudo install -o root -g root -m 0644 /dev/stdin {previous_release_file}; fi",
             f"sudo systemctl stop {runtime_services}",
-            f"sudo ln -sfn {release} {profile.root}",
+            f"sudo install -d -o root -g root -m 0755 {override_directory}",
+            f"trap {shlex.quote(cleanup)} EXIT",
+            f"printf '%s' {shlex.quote(override)} | sudo install -o root -g root -m 0644 /dev/stdin {override_file}",
             "sudo systemctl daemon-reload",
+            f"sudo systemctl stop {profile.migrate_service}",
             f"sudo systemctl start {profile.migrate_service}",
+            cleanup,
+            "trap - EXIT",
+            f"sudo ln -sfn {release} {profile.root}",
             f"sudo systemctl restart {runtime_services}",
             f"sudo systemctl is-active {runtime_services}",
         ]
