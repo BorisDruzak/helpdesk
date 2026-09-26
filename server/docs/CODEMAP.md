@@ -60,3 +60,9 @@ This also includes the retired UIA create-ticket harness for the local agent.
   surfaces.
 - `server/tests/test_endpoint_contract_lock.py` protects the consumed Endpoint
   API contract.
+# Production security policy
+
+- `server/security_profile.py`: shared dependency-free production transport,
+  bind and proxy policy; called by runtime `config.validate_security_config()`.
+- `scripts/validate_production_config.py`: safe deployment/systemd preflight;
+  optionally reads a root-owned env file and emits key-only errors.

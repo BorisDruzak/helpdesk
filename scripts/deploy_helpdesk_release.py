@@ -51,6 +51,8 @@ def remote_install_command(
             f"sudo rm -f {remote_archive}",
             f"sudo python3 -m venv {release_venv}",
             f"sudo {release_venv}/bin/pip install --disable-pip-version-check --no-input -r {release}/server/requirements.txt",
+            f"sudo {release_venv}/bin/python {release}/scripts/validate_production_config.py --environment-file {profile.environment_file}"
+            + (" --require-production" if profile.root == "/opt/helpdesk/current" else ""),
             f"sudo chown -R root:root {release}",
             f"sudo chmod -R a-w {release}",
             f"previous_release=$(sudo readlink -f {profile.root} 2>/dev/null || true)",

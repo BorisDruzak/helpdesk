@@ -190,6 +190,15 @@ schema changes; no automatic Alembic downgrade or Endpoint rollback.
   credentials; no password was retrieved, stored or printed. Live DB gates
   are pending the approved secret channel.
 
+### Security checkpoint
+
+- Production env/Nginx templates now require HTTPS/WSS, secure cookie, explicit
+  loopback and proxy policy. Host installer validates external root-owned TLS
+  material. Runtime/deploy/systemd share the same transport policy.
+- 31 config/deployment tests, 7 no-DB auth tests, example-env validation and
+  scoped workspace verification passed. These are local checks, not deployed
+  TLS/browser acceptance; production configuration was not changed.
+
 ## 2026-08-31 Staging secure admin-session access
 
 - **Goal:** make the isolated Helpdesk staging admin login usable through the

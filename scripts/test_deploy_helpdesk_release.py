@@ -167,3 +167,10 @@ def test_ssh_base_adds_tty_only_for_explicit_interactive_profile() -> None:
     profile = RemoteProfile.from_environment({"HELPDESK_SSH_TTY": "true"})
 
     assert _ssh_base(profile)[:2] == ["ssh", "-tt"]
+
+
+def test_production_config_is_validated_before_release_switch_or_migration():
+    command = remote_install_command(RemoteProfile.from_environment({}), "abc123", "/tmp/release.tar")
+    assert "--require-production" in command
+    assert command.index("validate_production_config.py") < command.index("sudo ln -sfn")
+    assert command.index("validate_production_config.py") < command.index("systemctl start helpdesk-migrate")
