@@ -1,6 +1,7 @@
 """Read-only Tech Panel v2 snapshot/readiness read model."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from datetime import datetime, timezone, timedelta
@@ -17,8 +18,11 @@ from app.db.models import (
     AgentRuntimeAudit,
     Device,
     Operation,
+    Ticket,
 )
 from app.repos.observer_integrity_repo import ObserverIntegrityRepo
+from domain_ports import DomainPortContainer
+from domain_ports.endpoint import EndpointDeviceProjection, EndpointDeviceRef
 import auth.middleware as auth_middleware
 from config import OPERATION_ACCEPTED_TIMEOUT, OPERATION_DELIVERY_TIMEOUT, OPERATION_EXECUTION_TIMEOUT
 
@@ -323,6 +327,10 @@ def build_readiness_gates(
             evidence=f"status={business_status_raw}",
         )
     )
+    endpoint = next((item for item in runtime.get("services", []) if item.get("key") == "endpoint_dependency"), None)
+    if endpoint is not None:
+        gates.append(_gate("endpoint_dependency", "Зависимость Endpoint", "ok" if endpoint.get("status") == "ok" else "warning",
+            "warning", "Состояние Endpoint не определяет liveness основного Helpdesk.", evidence=endpoint.get("details")))
     return gates
 
 
@@ -473,6 +481,37 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
         "schedulers": schedulers,
         "scheduler_details": {},
     }
+
+
+async def build_endpoint_dependency_snapshot(*, database_reachable: bool, endpoint_port: Any = None) -> dict[str, Any]:
+    """Read one saved device through the typed adapter, never treat config as live health."""
+    signal = {"key": "endpoint_dependency", "title": "Зависимость Endpoint", "status": "unknown",
+              "details": "Доступность не проверена: PostgreSQL недоступен.", "last_seen_at": None}
+    if not database_reachable:
+        return signal
+    try:
+        port = endpoint_port if endpoint_port is not None else DomainPortContainer.from_config().endpoint
+        availability = await asyncio.wait_for(port.availability(), timeout=2.0)
+        if availability.status != "available":
+            signal.update(status="degraded", details="Адаптер Endpoint не готов; основной Helpdesk работает отдельно.")
+            return signal
+        async with get_session() as session:
+            device_ref = await session.scalar(select(Ticket.endpoint_device_ref)
+                .where(Ticket.endpoint_device_ref.is_not(None))
+                .order_by(Ticket.updated_at.desc(), Ticket.ticket_id.desc()).limit(1))
+        if not device_ref:
+            signal["details"] = "Доступность не проверена: нет сохранённой привязки устройства."
+            return signal
+        target = EndpointDeviceRef(external_id=device_ref)
+        result = await asyncio.wait_for(port.read_device(target), timeout=2.0)
+        if isinstance(result, EndpointDeviceProjection) and result.device == target and not result.retired:
+            signal.update(status="ok", details="Endpoint HTTPS API ответил на read-only запрос; выполнение агентом не проверяется.", last_seen_at=_now_iso())
+        else:
+            signal.update(status="degraded", details="Endpoint не подтвердил безопасную проекцию устройства; основной Helpdesk работает отдельно.")
+    except Exception:
+        # Transport, timeout, configuration and projection failures must not escape to core liveness.
+        signal.update(status="degraded", details="Проверка зависимости Endpoint недоступна; основной Helpdesk работает отдельно.")
+    return signal
 
 
 async def _connection_policy_snapshot(database_reachable: bool) -> dict[str, Any]:
@@ -772,6 +811,7 @@ async def build_tech_panel_v2_snapshot(request: web.Request, overview: dict[str,
     database["last_backup"] = build_backup_status(config_values)
     database["last_restore_drill"] = build_restore_drill_status(config_values)
     runtime = build_runtime_snapshot(request, overview, config_values)
+    runtime["services"].append(await build_endpoint_dependency_snapshot(database_reachable=bool(database.get("reachable"))))
     security = await build_security_snapshot(overview, config_values, bool(database.get("reachable")))
     agents = await build_agents_snapshot(overview, config_values, bool(database.get("reachable")))
     operations = await build_operations_snapshot(overview, bool(database.get("reachable")))

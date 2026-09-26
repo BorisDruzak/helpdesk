@@ -69,3 +69,5 @@ This also includes the retired UIA create-ticket harness for the local agent.
 - `scripts/helpdesk_database_backup.py`: mandatory verified production
   pre-migration custom backup and isolated restore drill; called by
   `server/scripts/run_migrations.py`. Reuses Tech Panel backup/restore markers.
+
+- Tech Panel Runtime includes a bounded Endpoint dependency signal: one typed read-only device request using a saved ticket mapping, two-second timeout, no raw DTO/credentials/identifiers in the snapshot. Configuration readiness alone is not live health; absent mapping is unknown. Dependency failure warns without changing core liveness.

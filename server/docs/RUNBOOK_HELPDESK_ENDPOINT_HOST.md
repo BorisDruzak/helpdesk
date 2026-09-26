@@ -159,3 +159,12 @@ business workflow pauses the pilot and invokes the reviewed recovery procedure.
 Pilot completion is a post-deployment operational gate, not covered by unit CI.
 
 ALT Linux Agent acceptance was intentionally excluded from Production Readiness v1.
+
+### Endpoint dependency operational signal
+
+Tech Panel Runtime shows Endpoint separately from core API/DB health. It probes one
+saved verified ticket device mapping through the existing HTTPS typed adapter,
+with a two-second limit and no operation creation. Missing mapping means unknown,
+not healthy. Configuration readiness does not prove network availability. A
+success proves only bounded API read reachability, not Windows execution or
+release compatibility. Degradation is a warning; core liveness remains separate.

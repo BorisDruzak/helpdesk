@@ -452,3 +452,78 @@ def test_agent_baseline_excludes_pending_stubs_and_non_numeric_canaries():
     assert _is_agent_baseline_candidate(protocol_version="pending", agent_version="") is False
     assert _is_agent_baseline_candidate(protocol_version="ws_ticket_v3", agent_version="observer-canary") is False
     assert _is_agent_baseline_candidate(protocol_version="ws_ticket_v3", agent_version="3.1.19") is True
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize(("outcome", "expected"), [("available", "ok"), ("unavailable", "degraded"), ("forbidden", "degraded"), ("invalid_projection", "degraded"), ("exception", "degraded"), ("timeout", "degraded"), ("retired", "degraded"), ("mismatch", "degraded")])
+async def test_endpoint_dependency_is_bounded_and_does_not_change_core_health(monkeypatch, outcome, expected):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from domain_ports.endpoint import EndpointAvailability, EndpointDeviceRef, EndpointDeviceProjection, EndpointUnavailable, EndpointForbidden, EndpointInvalidProjection
+    from tech import snapshot as module
+
+    class Port:
+        async def availability(self):
+            return EndpointAvailability(status="available", code="endpoint_external")
+        async def read_device(self, device):
+            assert device.external_id == "verified-ref"
+            if outcome == "timeout":
+                raise TimeoutError("transport-details-must-not-escape")
+            if outcome in {"retired", "mismatch"}:
+                return EndpointDeviceProjection(device=EndpointDeviceRef(external_id="another-ref") if outcome == "mismatch" else device, display_name="private-hostname", retired=outcome == "retired", last_seen_at=None)
+            if outcome == "exception":
+                raise RuntimeError("credential=must-never-escape")
+            return {"available": EndpointDeviceProjection(device=device, display_name="private-hostname", retired=False, last_seen_at=None),
+                    "unavailable": EndpointUnavailable(), "forbidden": EndpointForbidden(), "invalid_projection": EndpointInvalidProjection()}[outcome]
+    async def scalar(_query):
+        return "verified-ref"
+    @asynccontextmanager
+    async def session():
+        yield SimpleNamespace(scalar=scalar)
+    monkeypatch.setattr(module, "get_session", session)
+    result = await module.build_endpoint_dependency_snapshot(database_reachable=True, endpoint_port=Port())
+    assert result["key"] == "endpoint_dependency" and result["status"] == expected
+    assert "private-hostname" not in str(result) and "credential" not in str(result) and "verified-ref" not in str(result)
+    assert module.build_database_snapshot_from_overview({"postgres_health": {"reachable": True}})["reachable"] is True
+
+
+@pytest.mark.no_db
+async def test_endpoint_configuration_is_not_proof_of_live_availability(monkeypatch):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from domain_ports.endpoint import EndpointAvailability
+    from tech import snapshot as module
+    class Port:
+        async def availability(self):
+            return EndpointAvailability(status="available", code="endpoint_external")
+        async def read_device(self, _device):
+            pytest.fail("No synthetic health target may be invented")
+    async def scalar(_query):
+        return None
+    @asynccontextmanager
+    async def session():
+        yield SimpleNamespace(scalar=scalar)
+    monkeypatch.setattr(module, "get_session", session)
+    result = await module.build_endpoint_dependency_snapshot(database_reachable=True, endpoint_port=Port())
+    assert result["status"] == "unknown"
+    assert result["details"] == "Доступность не проверена: нет сохранённой привязки устройства."
+
+
+@pytest.mark.no_db
+async def test_endpoint_unconfigured_or_database_down_never_dispatches_device_read():
+    from domain_ports.unavailable import UnavailableEndpointPort
+    from tech.snapshot import build_endpoint_dependency_snapshot
+    unconfigured = await build_endpoint_dependency_snapshot(database_reachable=True, endpoint_port=UnavailableEndpointPort())
+    database_down = await build_endpoint_dependency_snapshot(database_reachable=False, endpoint_port=object())
+    assert unconfigured["status"] == "degraded"
+    assert database_down["status"] == "unknown"
+
+
+@pytest.mark.no_db
+def test_endpoint_dependency_failure_is_a_warning_not_core_blocker():
+    from tech.snapshot import build_readiness_gates
+    gates = build_readiness_gates(config_values={}, database={}, security={},
+        runtime={"services": [{"key": "endpoint_dependency", "status": "degraded", "details": "safe unavailable"}]}, agents={}, smoke={})
+    dependency = next(item for item in gates if item["key"] == "endpoint_dependency")
+    assert dependency["status"] == "warning"
+    assert dependency["severity"] == "warning"

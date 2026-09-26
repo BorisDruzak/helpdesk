@@ -1198,3 +1198,8 @@ Do not append chat transcripts or raw logs here. Store detailed evidence under `
 ### Production Readiness v1 — live admin polling regression
 
 Live current-candidate Tech Panel exposed recurring 404/console errors from shell polling of retired /api/web/admin/connection_requests. Remove only the shell legacy enrollment polling/entry; preserve ticket notification count and backend retirement boundary. A new component regression failed before the fix. Existing a534 staging/CI evidence remains historical for that exact SHA; the next commit requires its own full CI and new browser recording. Endpoint dependency status is not yet visible in Tech Panel and remains an operational acceptance gap.
+
+
+### Production Readiness v1 — bounded Endpoint operational signal
+
+Existing Tech Panel Runtime now includes Endpoint dependency read health using the canonical typed adapter and one saved ticket mapping. No new HTTP contract, health target, operation, agent dispatch, or monitoring subsystem. Without mapping, availability remains unknown; API read success cannot substitute for Windows acceptance. Regression coverage checks failure isolation, bounded projection, and missing-target behavior. New exact-SHA CI/live evidence remains required.
