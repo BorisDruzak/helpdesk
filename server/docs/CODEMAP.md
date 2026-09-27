@@ -27,6 +27,16 @@
   by preview/create. A display name alone does not satisfy `contact_required`;
   profile phone/e-mail and explicitly supplied contact fields remain accepted.
 
+## Requester ticket authorization
+
+- `server/requester/identity_service.py` shares one access predicate between
+  recent-ticket lists and direct ticket lookup. `get_ticket` queries the exact
+  ID or code rather than searching a bounded list of 300 recent tickets.
+  Legacy actor/person/active-binding scopes and strict neutral requester
+  reference/snapshot validation are preserved. Policy annotation runs only
+  for the authorized result. Regression checks are in
+  `server/tests/test_requester_ticket_lookup.py` and its no-DB companion.
+
 ## Workflow transaction failures
 
 - `server/tickets/workflow_service.py` locks and refreshes the ticket before

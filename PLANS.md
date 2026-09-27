@@ -1,5 +1,15 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+HISTORY-023 was reproduced during CREATE-011 authorization preparation:
+`RequesterIdentityResolver.get_ticket` searched only the latest 300 tickets.
+The working-copy correction shares the existing access predicate with a direct
+ID/code query. Three no-DB regressions reproduced the bounded lookup and now
+pass; the 21-case lookup/reference suite passes. Two isolated PostgreSQL checks
+passed in 537.96 seconds: an old ticket after 301 newer requests and
+neutral/legacy authorization, including revoked active identity. Temporary
+database/role/tunnel cleanup was verified. CREATE-011 durable idempotency
+remains unimplemented; this prerequisite does not close that risk.
+
 Latest checkpoint (2026-09-27): candidate
 `4536db17a341a8d3d6f03af61017b95349c4f47c` passed full exact-SHA CI,
 canonical staging installation, backup/restore and requester/support core
