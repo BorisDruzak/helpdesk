@@ -29,6 +29,14 @@
   `OPERATION_STATE_CONFLICT`/409; the requester handler rolls back the decision
   and its ticket event. Missing or no-longer-waiting operation subjects also
   return this conflict. Endpoint dispatch remains outside this service.
+- Approval also requires an `endpoint_operation` with a persisted, unsubmitted
+  `EndpointOperationLink` for `context.diagnostic.collect`. Missing or retired
+  delivery returns `OPERATION_DELIVERY_UNAVAILABLE`/409 and rolls back the
+  decision and event; denial remains available for legacy subjects.
+  `endpoint_operation_reconciler.py` claims only queued/sent/accepted/running
+  operations and cancellation monitoring, never local consent holds.
+  `test_consent_endpoint_delivery_persistence.py` covers the PostgreSQL hold,
+  durable retry after a transport failure and orphan approval rollback.
 
 ## Ticket creation
 

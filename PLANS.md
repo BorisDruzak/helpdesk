@@ -333,10 +333,35 @@ Production Readiness v1 baseline:
    and backup/restore/smoke markers; document strict TLS, production commands,
    code/schema/restore rollback and the post-deploy 72-hour pilot checklist.
 
-Migration impact: no new schema or destructive cleanup is planned. Deployment
+Migration impact: requester idempotency requires revision 144; preserving full
+diagnostic actor logins requires revision 145. Neither migration removes data.
+The consent-delivery investigation below requires no further schema change. Deployment
 impact: unsafe configuration and missing backup/evidence become fatal before
 migration. Rollback impact: symlink rollback is insufficient after incompatible
 schema changes; no automatic Alembic downgrade or Endpoint rollback.
+
+### Consent delivery follow-up — current investigation
+
+- Frozen checkpoint `8989e7afdb67b02e7bc0364e17e861346a3e1158` passed exact-SHA
+  full CI, canonical staging install/schema 145, backup/isolated restore, real
+  requester/support core, core continuity during an adapter outage and Tech Panel
+  identity/DB/dependency checks. It is still not production-ready: Windows
+  staging alignment and blocking/unverified risks remain open. Staging is stopped.
+- Real isolated PostgreSQL reproduced a reconciler claim before consent approval.
+  A separate no-DB regression reproduced approval of a historical orphan. The
+  second PostgreSQL case initially failed on a missing required fixture field;
+  that fixture failure is preserved separately and is not behavioral evidence.
+- The correction limits claims to delivery/cancellation states and requires a
+  pending durable Endpoint link before approval. Denial, requester scope, event
+  rollback and Endpoint-only execution remain intact. Boundary docs are updated.
+  Focused no-DB checks passed (38 tests), as did all four real PostgreSQL
+  recovery/orphan/CAS cases (616.64 seconds). Waiting/denied/unknown states were
+  not claimed. Temporary test role, databases and tunnel were removed. The
+  provider is modeled here; this is not actual Windows/agent acceptance.
+  A clean tracked snapshot with current consent files also passed all cutover
+  guards and consent no-DB cases (28 tests); ignored local packaging is preserved.
+- A changed candidate must obtain its own exact-SHA CI and current staging proof;
+  the accepted 8989 artifacts remain evidence for 8989 only. Endpoint is unchanged.
 
 ### Initial verified checkpoint
 

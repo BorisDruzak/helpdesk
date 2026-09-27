@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DeviceUserBinding, Ticket, UserConsentRequest
 from app.repos.operations_repo import OperationsRepo
+from app.repos.endpoint_operation_links_repo import EndpointOperationLinksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.user_consent_repo import UserConsentRepo
 from app.services.operation_service import OperationService
@@ -437,6 +438,23 @@ class UserConsentService:
             )
         service = OperationService(self.session, publisher=self.publisher)
         if decision == "approved":
+            link = (
+                await EndpointOperationLinksRepo(self.session).get_by_operation_id(row.subject_id)
+                if operation.kind == "endpoint_operation" else None
+            )
+            if (
+                link is None
+                or link.remote_status != "create_pending"
+                or link.endpoint_operation_ref is not None
+                or link.capability_code != "context.diagnostic.collect"
+                or not link.endpoint_device_ref
+                or not link.create_idempotency_key
+            ):
+                raise ConsentAccessError(
+                    "Доставка операции недоступна. Обратитесь в службу поддержки.",
+                    error_code="OPERATION_DELIVERY_UNAVAILABLE",
+                    status=409,
+                )
             changed = await service.approve_consent(row.subject_id, decided_by=actor_id, reason=reason)
         else:
             changed = await service.deny_consent(row.subject_id, decided_by=actor_id, reason=reason)

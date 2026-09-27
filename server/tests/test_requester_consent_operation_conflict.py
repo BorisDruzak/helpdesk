@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Operation, Ticket, TicketEvent, UserConsentRequest
 from app.repos.operations_repo import OperationsRepo
+from app.repos.endpoint_operation_links_repo import EndpointOperationLinksRepo
 from tests.conftest import TEST_UI_USER_PREFIX
 from tests.test_requester_workspace_api import _headers, _person_for_login
 
@@ -27,7 +28,10 @@ async def test_browser_consent_conflict_rolls_back_decision_and_allows_retry(tes
         person = await _person_for_login(session, login=login)
         session.add(Ticket(ticket_id=ticket_id, device_id=device_id, title="Consent race", description="Synthetic regression", status="in_progress", requester_person_id=person.person_id))
         await session.flush()
-        session.add(Operation(operation_id=operation_id, ticket_id=ticket_id, device_id=device_id, kind="tool_call", actor_role="support", trace_id=str(uuid.uuid4()), status="waiting_consent", queued_at=now, started_at=now))
+        session.add(Operation(operation_id=operation_id, ticket_id=ticket_id, device_id=device_id, kind="endpoint_operation", actor_role="support", trace_id=str(uuid.uuid4()), status="waiting_consent", queued_at=now, started_at=now))
+        await session.flush()
+        await EndpointOperationLinksRepo(session).create_pending(operation_id=operation_id,
+            endpoint_device_ref=device_id, create_idempotency_key=f"consent-race-{marker}", next_attempt_at=now)
         session.add(UserConsentRequest(consent_id=consent_id, subject_type="operation", subject_id=operation_id, ticket_id=ticket_id, requester_person_id=person.person_id, title="Synthetic consent", status="pending", expires_at=now + timedelta(hours=1)))
         await session.commit()
 
