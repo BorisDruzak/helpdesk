@@ -21,6 +21,8 @@
   Resolver failure raises `TicketInitializationError("requester_identity")`
   and returns the existing safe 503 after rollback. Verified binding and
   public-create composition retain their existing boundaries.
+  Authorized emergency/profile-optional forms also support authenticated actors
+  with no Registry identity and no person claim; these tickets remain unlinked.
 
 - `server/requester/create_idempotency.py` owns durable requester-create
   reservations. `POST /api/web/requester/tickets` requires an 8–128-character

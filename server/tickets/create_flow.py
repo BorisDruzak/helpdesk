@@ -54,9 +54,9 @@ class RequesterIdentityMismatch(ValueError):
         super().__init__("Requester identity is not verified")
 
 
-async def _verify_browser_requester_identity(session, *, actor_id: str, claimed_person_id: str | None, state: Any) -> str:
+async def _verify_browser_requester_identity(session, *, actor_id: str, claimed_person_id: str | None, state: Any) -> str | None:
     claimed = str(claimed_person_id or "").strip()
-    if not actor_id or not claimed:
+    if not actor_id or (claimed_person_id is not None and not claimed):
         raise RequesterIdentityMismatch()
     from requester.identity_service import RequesterIdentityResolver
 
@@ -65,6 +65,10 @@ async def _verify_browser_requester_identity(session, *, actor_id: str, claimed_
     except Exception as exc:
         logger.warning("[create] requester identity verification unavailable")
         raise TicketInitializationError("requester_identity") from exc
+    # Authorized emergency/profile-optional forms also serve web actors who
+    # have no Registry identity. They must remain unlinked to any person.
+    if person is None and claimed_person_id is None:
+        return None
     if person is None or str(person.person_id) != claimed:
         raise RequesterIdentityMismatch()
     return str(person.person_id)

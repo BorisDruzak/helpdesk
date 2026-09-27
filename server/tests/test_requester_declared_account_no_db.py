@@ -14,6 +14,14 @@ pytestmark = pytest.mark.no_db
 
 
 @pytest.mark.asyncio
+async def test_authenticated_unregistered_actor_without_person_claim_stays_unlinked(monkeypatch):
+    resolve = AsyncMock(return_value=None)
+    monkeypatch.setattr(identity_service, "RequesterIdentityResolver", lambda *args, **kwargs: SimpleNamespace(resolve_person_for_web_user=resolve))
+    assert await create_flow._verify_browser_requester_identity(object(), actor_id="unregistered-actor", claimed_person_id=None, state=None) is None
+    resolve.assert_awaited_once_with("unregistered-actor")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("resolved", ["claimed", "foreign", None])
 async def test_browser_claim_requires_matching_server_identity(monkeypatch, resolved):
     resolve = AsyncMock(return_value=SimpleNamespace(person_id=resolved) if resolved else None)

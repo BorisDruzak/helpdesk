@@ -941,6 +941,10 @@ async def test_incomplete_profile_can_create_only_allowed_emergency_form(test_cl
 
     assert ticket is not None
     assert setup_ticket is not None
+    assert ticket.requester_person_id is None
+    assert setup_ticket.requester_person_id is None
+    assert ticket.requester_id == login
+    assert setup_ticket.requester_id == login
     assert ticket.queue_id == triage_queue.id
     assert setup_ticket.queue_id == triage_queue.id
     assert ticket.requester_registration_status == "no_device"
@@ -1018,7 +1022,7 @@ async def test_no_agent_user_cannot_create_normal_form_without_agent_binding(tes
 
 
 @pytest.mark.asyncio
-async def test_profile_completion_required_flag_can_disable_no_device_create_gate(test_client, monkeypatch):
+async def test_profile_completion_required_flag_can_disable_no_device_create_gate(test_client, test_engine, monkeypatch):
     import requester.identity_service as identity_service_module
 
     config_proxy = getattr(identity_service_module, "config_module", SimpleNamespace())
@@ -1055,6 +1059,10 @@ async def test_profile_completion_required_flag_can_disable_no_device_create_gat
     create_payload = await create_response.json()
     assert create_response.status == 200, create_payload
     assert create_payload["data"]["ticket_id"]
+    async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
+        ticket = await session.get(Ticket, create_payload["data"]["ticket_id"])
+        assert ticket.requester_person_id is None
+        assert ticket.requester_id == login
 
 
 @pytest.mark.asyncio

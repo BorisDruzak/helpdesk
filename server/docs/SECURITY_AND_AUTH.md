@@ -15,6 +15,9 @@ requester fields or constructing Customer History context. Identity mismatch
 returns REQUESTER_IDENTITY_FORBIDDEN/403 with transaction rollback; unavailable
 identity verification returns the existing typed initialization 503 and rolls
 back. Public session and trusted verified-binding boundaries remain unchanged.
+An authenticated actor without a Registry identity and without a person claim
+can still use authorized emergency/profile-optional forms. Those tickets remain
+unlinked to a person; a supplied foreign person ID is still forbidden.
 
 # Production transport preflight
 

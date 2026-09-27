@@ -1,5 +1,15 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+ACCOUNT-033 compatibility follow-up: CI 36288251203 for 535ab028 failed
+two existing unregistered-requester emergency/profile-optional cases. The
+correction keeps an authenticated actor with no resolved person and no
+person claim unlinked. A new unit case failed before the fix; the focused
+identity/initialization/idempotency suite passes 27 cases. Five real
+PostgreSQL cases passed in 637.01 seconds, covering both failing controls
+and foreign-ID/unavailable/retry regressions. Temporary role absence and
+zero residual owned databases were verified. New full CI/live/risk proof
+remains pending; the previous red CI artifact is preserved, not accepted.
+
 ACCOUNT-033 current-boundary repro: legacy create with a forged
 browser_no_device person ID persisted a foreign requester and emitted a Customer
 History event. The two-case isolated run had one pass/one fail in 544.32 seconds;
