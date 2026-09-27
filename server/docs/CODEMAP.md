@@ -11,6 +11,13 @@
 - `server/runtime_control.py` manages only the Helpdesk server and control
   plane units.
 
+## UI-user creation conflicts
+
+- `server/app/repos/ui_users_repo.py` rolls back failed user creation and emits
+  a constant conflict message. The reported `ValueError` suppresses the SQL
+  exception chain so password hashes cannot appear in its formatted traceback.
+  Regression coverage lives in `server/tests/test_ui_users_repo_no_db.py`.
+
 ## Requester consent decisions
 
 - `server/consent/service.py` requires the operation lifecycle transition to

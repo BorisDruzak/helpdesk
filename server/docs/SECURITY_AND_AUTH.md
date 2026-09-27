@@ -8,6 +8,10 @@ are owned by Endpoint Platform and are not accepted or issued by Helpdesk.
 Do not include credentials, session cookies, tokens or raw diagnostic results
 in logs, evidence, fixtures or release reports.
 
+UI-user creation conflicts emit a constant log message after rollback. SQL
+statements, database parameters and the underlying exception chain are omitted
+from the reported conflict, because they can contain a password hash.
+
 Browser requester identity is resolved from the authenticated actor's verified
 server identity. A client-supplied requester_account dictionary cannot authorize
 a person claim. Shared creation verifies browser_no_device before assigning

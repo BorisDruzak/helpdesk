@@ -1,5 +1,13 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Security logging follow-up: a synthetic IntegrityError regression confirmed
+that a UI-user creation conflict logged SQL parameters including password_hash.
+The repository now emits a constant conflict message after rollback and raises
+the existing ValueError without displaying the underlying exception chain.
+Duplicate-login refusal and authorization behavior are unchanged. The combined
+39-case focused suite and workspace verifier pass. New exact-SHA CI is required
+before release acceptance.
+
 CONSENT-021 current-boundary follow-up: failed operation transitions were
 ignored for approval/denial (two unit failures). Missing/changed subjects were
 also silently accepted (six further unit failures). The service now raises
