@@ -1,5 +1,52 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Latest acceptance checkpoint (2026-09-27 10:20 UTC): exact candidate
+`fbf415f96c11d28508bca7df43b502c31dbf5997` passed full CI run 36310079198,
+all 18 required layers and the accepted immutable web bundle. Staging installed
+that candidate at schema 145; its PostgreSQL backup and actual isolated restore
+passed. Existing Windows 3.2.75 agent diagnostic completed successfully through
+the actual browser, Helpdesk facade and strict HTTPS Endpoint API (T-000029;
+safe diagnostic_v1 result available). The requester confirmed the solution and
+the DB audit found no duplicate events/messages or high/critical integrity
+events. A separate T-000030 completed the same business cycle during actual
+Endpoint unavailability; its browser had no console/page/HTTP errors and real
+WSS frames. The temporary outage override was removed and synthetic actors
+disabled. Detailed redacted receipts are in artifacts/staging-fbf-*.
+
+The browser correction is merged and remotely verified on
+`codex/helpdesk-process-model` at
+`8c4b35fc469b50af3f01caeffed53e8e2179c6f2`; its Git tree equals the tested
+candidate tree. This does not grant the merge SHA exact-SHA production CI.
+DNS now resolves helpdesk.sosnadmin.local to 192.168.100.19. Production remains
+on its previous release, with its historical insecure bootstrap profile and
+HTTP-only Helpdesk Nginx site; secure configuration/TLS preparation is not a
+deployment claim.
+
+Remaining release work: finish current-revision historical risk dispositions,
+before issuing an accepted manifest. The user explicitly accepted SCALE-036
+as open/nonblocking only for exactly one server process, one worker and one
+backend. HA/active-active/multiple workers/scaling remain prohibited. The
+production evidence gate now rejects missing or unsupported staging/production
+topology and records the accepted target topology in the immutable manifest.
+Eighteen new regression cases failed before implementation; 42 release policy
+tests now pass. This is a release gate, not a continuous runtime ownership
+monitor or an HA correctness claim. Freeze a new SHA, require exact-SHA full
+CI and renew staging acceptance before production. Then use the
+canonical independent Helpdesk production release/configuration procedure,
+verified production backup/recovery and HTTPS/WSS/business/Windows checks.
+
+Scenario A checklist remains partial: the fresh cases proved support messages,
+requester visibility and confirmed closure, but a separate requester reply
+followed by support visibility (steps 9/10) still needs final-candidate evidence.
+Do not promote the whole business smoke from these partial receipts alone.
+Pinned Endpoint packaging/updater regressions: 52 passed locally; this is not
+an actual MSI install/repair/upgrade claim. After validation, Helpdesk staging
+and Endpoint staging API/worker are stopped; Windows agent is Running with its
+original protected production enrollment restored. The scoped single-instance
+risk disposition is explicitly approved and recorded in the historical
+registry; changing topology automatically fails the release gate again.
+No database ownership guard or runtime HA mechanism has been implemented.
+
 Windows live diagnostic follow-up: the existing Windows 3.2.75 staging agent
 is enrolled to the supported Endpoint provider. T-000028 mapping verification
 returned 200, but the browser run returned 400: the client omitted the required

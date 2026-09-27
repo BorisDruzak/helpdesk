@@ -626,8 +626,16 @@
       "group": "scaling/protocol risk",
       "current_head_status": "open",
       "fix_status": "not-started",
-      "release_blocker": true,
-      "verification": "pending-current-head-verification",
+      "release_blocker": false,
+      "verification": "Owner-reviewed Production Readiness v1 single-instance limitation; current candidate still requires verified deployment topology evidence.",
+      "accepted_architectural_limitation": {
+        "status": "open",
+        "scope": "Production Readiness v1 single-instance deployment only",
+        "constraint": "Exactly one active Helpdesk server instance/process, one application worker and one Helpdesk backend. HA, active-active and horizontal scaling are prohibited until separate process-local runtime state implementation and acceptance.",
+        "reopen_gate": "Any deployment topology change to more than one instance, multiple application workers, HA/load-balancing or parallel Helpdesk backends makes SCALE-036 a release blocker again.",
+        "approved_by": "user",
+        "approved_at": "2026-09-27"
+      },
       "original_definition": {
         "priority": "P1",
         "historical_status": "documented-risk",

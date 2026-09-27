@@ -3,6 +3,14 @@
 This document records the post-cutover ownership boundary. It supersedes the
 former Helpdesk agent-transport and Protocol V3 descriptions.
 
+Production Readiness v1 has one active Helpdesk server process, one application
+worker and one proxy backend. Process-local UI state is an open architectural
+limitation (SCALE-036), accepted only within this single-instance scope. HA,
+active-active, multiple workers/backends and horizontal scaling are prohibited;
+a topology change reopens the release blocker. See the deployment topology
+evidence and fail-closed gate in
+[the host runbook](../server/docs/RUNBOOK_HELPDESK_ENDPOINT_HOST.md).
+
 | Area | Owner | Helpdesk responsibility | Forbidden in Helpdesk |
 |---|---|---|---|
 | Agent enrollment, gateway, command delivery and execution | Endpoint Platform | Consume versioned HTTP contracts only | `/ws` agent endpoint, device outbox, command sender, agent tokens |

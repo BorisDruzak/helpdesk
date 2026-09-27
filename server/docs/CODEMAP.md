@@ -139,6 +139,10 @@
 - `server/diagnostics/` projects the Endpoint diagnostic capability, validates
   ticket access and stores reconciled evidence.
 - `server/endpoint/` contains the HTTP adapter and versioned contract types.
+- `server/endpoint_adapter/wire.py` validates the published multi-capability
+  device response. The HTTP adapter projects only `context.diagnostic.collect`
+  into Helpdesk; its read-only risk, consent and parameter schema remain exact.
+  Other published descriptors never authorize additional Helpdesk operations.
 - `server/app/repos/` persists ticket, operation and Endpoint facade state.
 - `server/tests/test_endpoint_operation_persistence.py` checks PostgreSQL
   rollback before remote dispatch and persisted-key replay after a simulated

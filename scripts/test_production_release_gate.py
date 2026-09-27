@@ -16,7 +16,13 @@ def evidence():
                 schema_revision="143", webapp_build_digest=DIGEST, configuration_profile="production-v1",
                 environment="staging", backup_status="success", restore_drill_status="success",
                 business_smoke="success", windows_endpoint_acceptance="success",
-                endpoint_degraded_acceptance="success", contract_acceptance="success")
+                endpoint_degraded_acceptance="success", contract_acceptance="success",
+                staging_deployment_topology=topology(), production_deployment_topology=topology())
+
+
+def topology():
+    return dict(server_instances=1, application_workers=1, helpdesk_backends=1,
+                ha_enabled=False, load_balancing_enabled=False)
 
 
 def test_exact_staging_acceptance_passes():
@@ -33,4 +39,23 @@ def test_exact_staging_acceptance_passes():
 def test_missing_or_mismatched_evidence_fails(name, value):
     payload = evidence(); payload[name] = value
     with pytest.raises(ValueError):
+        validate_acceptance_evidence(payload, SHA, PROVIDER, DIGEST, "143", DIGEST)
+
+
+@pytest.mark.parametrize("surface", ["staging_deployment_topology", "production_deployment_topology"])
+@pytest.mark.parametrize("field,value", [
+    ("server_instances", 2), ("application_workers", 2), ("helpdesk_backends", 2),
+    ("ha_enabled", True), ("load_balancing_enabled", True),
+    ("server_instances", True), ("application_workers", "1"), ("helpdesk_backends", 0),
+])
+def test_topology_change_reopens_scale036_gate(surface, field, value):
+    payload = evidence(); payload[surface][field] = value
+    with pytest.raises(ValueError, match="SCALE-036"):
+        validate_acceptance_evidence(payload, SHA, PROVIDER, DIGEST, "143", DIGEST)
+
+
+@pytest.mark.parametrize("surface", ["staging_deployment_topology", "production_deployment_topology"])
+def test_missing_topology_cannot_use_single_instance_risk_exception(surface):
+    payload = evidence(); del payload[surface]
+    with pytest.raises(ValueError, match="SCALE-036"):
         validate_acceptance_evidence(payload, SHA, PROVIDER, DIGEST, "143", DIGEST)
