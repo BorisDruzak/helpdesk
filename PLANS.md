@@ -1,5 +1,16 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Endpoint operation durability follow-up: two new PostgreSQL regressions pass
+in 563.45 seconds. A failure after local link insertion rolls back operation,
+diagnostic session/step and link before any remote request. A simulated worker
+exit after remote create leaves its committed lease and replay key; a separate
+worker reclaims after expiry and reuses the same key. The provider is a stub
+implementing the published idempotency contract, so this does not prove real
+Endpoint/Windows delivery. Temporary role/database/tunnel cleanup was verified;
+Helpdesk staging was independently confirmed inactive with MainPID=0.
+Current-source event/chat boundaries passed six checks, and the overlong-login
+boundary passed one check. Real Windows and full release acceptance remain open.
+
 Runtime database logging follow-up: a configured-engine regression reproduced
 bound SQL parameter disclosure in formatted errors. The runtime engine now
 enables hide_parameters=True. This changes error/log representation only;

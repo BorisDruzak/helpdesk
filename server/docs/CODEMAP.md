@@ -124,6 +124,10 @@
   ticket access and stores reconciled evidence.
 - `server/endpoint/` contains the HTTP adapter and versioned contract types.
 - `server/app/repos/` persists ticket, operation and Endpoint facade state.
+- `server/tests/test_endpoint_operation_persistence.py` checks PostgreSQL
+  rollback before remote dispatch and persisted-key replay after a simulated
+  worker exit/lease expiry. Its idempotent provider is a stub; real provider
+  transport and Windows acceptance remain separate gates.
 - `server/web_api/support_handlers.py` exposes the canonical support
   diagnostic route and its browser compatibility alias.
 - `server/web_api/requester_handlers.py` derives a `VerifiedRequesterBinding`
