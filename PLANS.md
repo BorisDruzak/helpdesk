@@ -1,5 +1,41 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Current accepted rollout (2026-09-27): frozen runtime candidate
+`bd3090bd72633a83be5e5f83a894ac959306cf74` passed exact-SHA full CI
+36316004862 (18 layers; one existing frontend timing failure passed the
+same-SHA failed-job rerun). The accepted artifact, schema 145 and immutable
+manifest bind fresh staging and production receipts under
+`artifacts/release/bd3090bd72633a83be5e5f83a894ac959306cf74/`.
+Staging T-000033 and production T-000003 completed all 17 business steps,
+including requester reply/support visibility, real existing Windows 3.2.75
+agent diagnostic terminal success, and requester-confirmed closure. Staging
+T-000034 completed the core flow during actual Endpoint unavailability.
+Quiesced production backup and actual isolated restore passed at schema 145.
+Production runs the independent HTTPS/WSS Helpdesk release `bd309...-offline1`,
+with one server process/worker/backend and zero restarts on this release.
+Release/full, business/success and backup/restore markers are readable by the
+Helpdesk account. Actual Tech Panel has zero blockers and two warnings:
+inventory scheduler unknown and no configured minimum agent version.
+
+All functional changes are merged and remote-verified in
+`codex/helpdesk-process-model` at
+`581bdd22d46ba92e2bd64fcc6d0504d125471cbe`; its tree equals the tested runtime
+candidate. Subsequent documentation commits are not the deployed runtime SHA.
+Production remains running as authorized. Helpdesk and Endpoint staging
+services are stopped, temporary actors disabled and memberships removed;
+Windows original protected production enrollment is restored.
+The initial admin handoff exists only in root-owned mode-0600
+`/etc/helpdesk/initial-admin-handoff.json`; rotate after first operator login.
+
+31 historical risk dispositions are verified, five remain open/nonblocking
+for the accepted v1 scope. SCALE-036 is explicitly accepted only for exactly
+one active server process, worker and backend; any HA/scaling/topology change
+reopens the blocker. A 72-hour post-rollout observation has not elapsed.
+Packaging unit checks do not claim an actual MSI install/repair drill, and
+HTTP facade replay checks do not claim agent ACK/crash replay acceptance.
+The older checkpoints below are historical and superseded by this rollout.
+
+
 Latest acceptance checkpoint (2026-09-27 10:20 UTC): exact candidate
 `fbf415f96c11d28508bca7df43b502c31dbf5997` passed full CI run 36310079198,
 all 18 required layers and the accepted immutable web bundle. Staging installed

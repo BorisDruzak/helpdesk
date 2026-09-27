@@ -87,6 +87,33 @@ The browser control-plane lifecycle endpoints are deliberately fail-closed on
 this host: the `helpdesk` process has no privilege to manage system services.
 Use the reviewed remote management script above instead.
 
+## Accepted host adaptations (2026-09-27)
+
+The accepted frozen runtime is `bd3090bd72633a83be5e5f83a894ac959306cf74`,
+schema 145, installed as an immutable `helpdesk-<sha>-offline1` release.
+The migration, quiesced backup, symlink switch and service restart use the
+canonical remote release command. Indexed pip access timed out on this host;
+the bounded installation used `--no-index` and a SHA-verified wheelhouse with
+Linux package versions identical to the accepted staging runtime. Keep source,
+archive and wheel hashes with the release receipt; an offline suffix does not
+permit changing application code or skipping the production evidence gate.
+
+For a Windows-exported bootstrap script, use an LF derivative verified byte
+for byte against the committed Git blob before running the canonical host
+installer. Do not patch deployed application files. Production DB auth remains
+enabled and config fallback disabled. Config initialization must also avoid
+insecure built-in users: an empty user map selects defaults, so this rollout
+uses a protected random disabled fallback identity. It does not reset existing
+DB users or weaken the minimum password policy.
+
+Use the approved CA explicitly when the Linux operator trust store lacks the
+internal issuer; never waive TLS verification. The release and business smoke
+markers refer to the accepted frozen candidate; actual post-deploy process,
+proxy topology, restore and Windows receipts are required independently.
+Production is authorized to remain running. Stop isolated staging services
+and restore protected Windows enrollment after validation. The 72-hour pilot
+remains a post-rollout observation, not an elapsed acceptance claim.
+
 ## Security and staged acceptance
 
 - `/etc/helpdesk/helpdesk.env` is root-owned, mode 0600, and is never committed
@@ -101,9 +128,14 @@ Use the reviewed remote management script above instead.
   inherited environment before starting either service. Existing historical
   HTTP bootstrap deployments are not production-ready merely because these
   assets were updated. Verify real DNS, CA/hostname TLS and browser WSS.
-- The Helpdesk database is intentionally empty: no tickets, users, agents,
-  tokens, attachments or audit data were migrated. Create the first administrator
-  separately after the owner chooses its credentials.
+- The initial independent Helpdesk database was created without migrating
+  Endpoint or legacy application data. Seed the canonical request catalog
+  through the project catalog script before the first requester preview.
+  Bootstrap only the initial administrator through the canonical user script;
+  use a policy-compliant protected credential and rotate it after handoff.
+  The accepted 2026-09-27 rollout retains the initial admin handoff only at
+  `/etc/helpdesk/initial-admin-handoff.json`, root-owned mode 0600. Never copy
+  its content into release evidence or command arguments.
 - Endpoint Operations integration remains fail-closed until Endpoint accepts a
   dedicated least-privilege Helpdesk service identity. Do not reuse Endpoint
   credentials.
