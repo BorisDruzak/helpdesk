@@ -1,5 +1,15 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+CREATE-011 was published as f5f85ecc5b8c5dd4adabf20f77ac727c1312b1aa.
+Its first full CI failed at the no-DB harness test's historical 169-table count;
+migration 144 correctly adds table 170. The focused cleanup/idempotency suite
+passes 57 cases after updating count/order and asserting web_support coverage.
+Local full no-DB coverage had 838 passes and one separate guard failure caused
+by an ignored old pc_agent/dist build; no pc_agent Python source is tracked.
+The clean CI guard passed before the cleanup-count failure. Preserve that
+local build and the guard; do not report the local full run as passing.
+Endpoint contract acceptance passed, but full CI and live acceptance remain open.
+
 CREATE-011 working-copy implementation adds actor/key/payload hashes and a
 ticket link through forward migration 144. The canonical requester POST now
 requires an Idempotency-Key, reserves it in the ticket transaction, rechecks

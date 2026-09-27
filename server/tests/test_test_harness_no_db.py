@@ -591,8 +591,9 @@ def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 169
-    assert full_tables[:4] == (
+    assert len(full_tables) == 170
+    assert full_tables[:5] == (
+        "requester_ticket_create_requests",
         "observer_integrity_check_runs",
         "observer_integrity_events",
         "observer_known_contamination",
@@ -607,6 +608,7 @@ def test_full_cleanup_profile_preserves_current_table_scope():
     } <= set(full_tables)
     assert not RETIRED_KNOWLEDGE_AI_TABLES & set(full_tables)
     assert full_tables[-3:] == ("modules", "ticket_retention_runs", "tickets")
+    assert "requester_ticket_create_requests" in test_harness.CLEANUP_TABLES_BY_PROFILE["web_support"]
 
 
 @pytest.mark.asyncio
