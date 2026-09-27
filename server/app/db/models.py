@@ -469,7 +469,7 @@ class TicketEvent(Base):
     Ticket event model.
     
     Stores all events for tickets with deduplication support.
-    Ordered by agent_seq per-ticket.
+    Ticket timelines are ordered globally by created_at and id.
     """
     __tablename__ = "ticket_events"
     

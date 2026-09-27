@@ -118,6 +118,14 @@
   unavailable summary counts on first-load failure. A refetch failure keeps
   previously loaded tasks visible together with the error warning.
 
+## Ticket event retries
+
+- `server/tests/test_ticket_event_idempotency_concurrency.py` checks real
+  PostgreSQL server-event deduplication after two concurrent retries have both
+  passed their preliminary SELECT, for both event IDs and message IDs.
+  Migration `132` owns the partial unique indexes; the test does not substitute
+  for actual browser/WSS acceptance.
+
 ## Endpoint operation facade
 
 - `server/diagnostics/` projects the Endpoint diagnostic capability, validates

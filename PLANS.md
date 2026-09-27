@@ -1,5 +1,11 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Server-event retry races: two real PostgreSQL cases pass in 552.75 seconds.
+Both retries complete a negative preliminary SELECT before insertion; the
+existing revision-132 indexes still preserve one event for event_id and
+message_id. The temporary role/database/tunnel were removed. This closes the
+concurrency evidence gap locally; exact final-SHA CI acceptance remains required.
+
 Diagnostic actor length: a real isolated PostgreSQL regression on revision
 144 failed with StringDataRightTruncationError for a valid 100-character
 support login. The facade stores the login in a 36-character diagnostic
