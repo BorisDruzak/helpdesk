@@ -1434,3 +1434,15 @@ and cached-data retention on refetch failure. A current built-bundle browser
 fixture run passed, with only the controlled 503 responses/resource errors,
 no unexpected responses or page exceptions, and a screenshot inspected for
 Russian text. These are focused regressions, not next-SHA live acceptance.
+
+### Production Readiness v1 — consent conflict presentation
+
+Candidate 2df69b1e passed its exact full CI, contract artifact and isolated
+backup/restore. Its actual staging orphan-consent approval returned 409 and
+rolled back consent/event/operation state correctly, but the requester ticket
+page incorrectly displayed the solution-confirmation error. A bounded UI fix
+uses consent context and safe delivery/state-conflict messages. Three component
+regressions failed before the change; all 93 requester tests pass afterward,
+and the frontend build/workspace checks pass. Fresh candidate CI and actual
+browser acceptance remain required. The synthetic orphan was denied through
+the browser and all three temporary accounts were disabled; staging was stopped.

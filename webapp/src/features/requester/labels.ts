@@ -39,6 +39,9 @@ export function requesterErrorMessage(error: unknown, fallback: string, context:
     return "Обращение не найдено или недоступно.";
   }
   if (status === 409) {
+    if (context.domain === "consent") {
+      return "Запрос согласия изменился. Обновите страницу и попробуйте еще раз.";
+    }
     if (context.operation === "feedback") {
       return "Оценку уже нельзя сохранить для этого обращения.";
     }
@@ -63,6 +66,8 @@ export function requesterErrorMessage(error: unknown, fallback: string, context:
 }
 
 const REQUESTER_SAFE_ERROR_MESSAGES: Record<string, string> = {
+  OPERATION_DELIVERY_UNAVAILABLE: "Доставка операции недоступна. Обратитесь в службу поддержки.",
+  OPERATION_STATE_CONFLICT: "Состояние операции изменилось. Обновите страницу и попробуйте еще раз.",
   CREATE_REQUEST_CONFLICT: "Этот запрос уже использован. Проверьте ранее созданное обращение.",
   INVALID_TICKET_STATUS: "Это действие сейчас недоступно для обращения.",
   NOT_FOUND: "Обращение не найдено или недоступно.",

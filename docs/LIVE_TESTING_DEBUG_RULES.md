@@ -35,6 +35,12 @@ manually.
 
 ## Requester fixture lifecycle
 
+Consent decision conflicts use consent-specific Russian messages. A missing
+durable operation delivery (`OPERATION_DELIVERY_UNAVAILABLE`) directs the
+requester to support; an operation state conflict asks them to refresh. Neither
+error implies ticket closure or a successful consent decision. Unknown consent
+conflicts retain a safe refresh message and never display backend details.
+
 Requester fixture tests must follow the server lifecycle policy: a
 `waiting_on_user` ticket permits a reply but cannot confirm a solution.
 Confirmation requires `resolved` plus a pending confirmation marker; after
