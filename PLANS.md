@@ -1,5 +1,18 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Windows live diagnostic follow-up: the existing Windows 3.2.75 staging agent
+is enrolled to the supported Endpoint provider. T-000028 mapping verification
+returned 200, but the browser run returned 400: the client omitted the required
+caller idempotency key. Separately, the empty Endpoint parameter schema exposed
+an erroneous `type` input. The UI now retains actor/ticket-scoped intent keys
+across uncertain responses and reloads, clears only the accepted key, and
+renders no fields for empty object schemas. Both regressions failed before the
+fix; 17 diagnostic tests, production web build and workspace verification pass.
+No schema or provider contract change is required. This follow-up invalidates
+the previous frozen candidate for final acceptance: new exact-SHA CI, staging
+Windows completion and release evidence remain required. Production is not yet
+deployed; the existing multi-instance blocker remains open.
+
 Server-event retry races: two real PostgreSQL cases pass in 552.75 seconds.
 Both retries complete a negative preliminary SELECT before insertion; the
 existing revision-132 indexes still preserve one event for event_id and

@@ -9,6 +9,7 @@ import { DiagnosticProviderConfigPanel } from "./provider-config-panel";
 vi.mock("../auth/session-provider", () => ({
   useSession: () => ({
     session: {
+      user_login: "diagnostic-test-support",
       permissions: [
         "ticket.tool.run",
         "module.tool.run.low_risk",
@@ -38,9 +39,54 @@ function renderWithQueryClient(ui: ReactNode) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  sessionStorage.clear();
 });
 
 describe("DiagnosticCenterPanel", () => {
+  it("reuses the Endpoint caller key after an uncertain response and renews it after acceptance", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/run")) {
+        requests.push(JSON.parse(String(init?.body)));
+        if (requests.length === 1) throw new TypeError("Network response lost");
+        return jsonResponse({ status: "queued", operation_id: "local-op", execution_target: "endpoint_operation" }, 202);
+      }
+      if (url.endsWith("/diagnostics/overview")) return jsonResponse({ status: "success", data: {
+        ticket_id: "ticket-1", status: "unknown", summary: "Нет данных.",
+        profile: { id: "generic", version: "1", title: "Generic", recommended_capabilities: [], recommended_playbooks: [], required_evidence_kinds: [], optional_evidence_kinds: [] },
+        evidence_counts: {}, perspectives: {}, latest_evidence: [], latest_operations: [], latest_playbooks: [], endpoint_operations: [],
+        remote_assist: { count: 0, latest: null }, observer: { root_trace_id: null, available: false }, artifacts: { count: 0, items: [] }, findings: [], recommended_actions: [],
+      }});
+      if (url.endsWith("/diagnostics/capabilities")) return jsonResponse({ status: "ok", count: 1, capabilities: [{
+        id: "endpoint.context.diagnostic.collect", title: "Endpoint diagnostic", provider_id: "endpoint_platform",
+        execution_target: "endpoint_operation", risk_level: "low", readiness: "available", actions: ["run"],
+        requires_consent: false, requires_integration: false, install_required_on_agent: false,
+        params_schema: { type: "object", additionalProperties: false, maxProperties: 0 },
+      }] });
+      if (url.endsWith("/diagnostics/evidence")) return jsonResponse({ status: "ok", evidence: [] });
+      if (url.endsWith("/diagnostics/sessions")) return jsonResponse({ status: "ok", sessions: [] });
+      if (url.endsWith("/diagnostics/findings")) return jsonResponse({ status: "ok", findings: [] });
+      return jsonResponse({ status: "error" }, 500);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const view = renderWithQueryClient(<DiagnosticCenterPanel ticketId="ticket-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Запустить" }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].idempotency_key).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/);
+    expect(requests[0].params).toEqual({});
+    expect(screen.queryByLabelText("type")).not.toBeInTheDocument();
+    view.unmount();
+    renderWithQueryClient(<DiagnosticCenterPanel ticketId="ticket-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Запустить" }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1].idempotency_key).toEqual(requests[0].idempotency_key);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Запустить" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Запустить" }));
+    await waitFor(() => expect(requests).toHaveLength(3));
+    expect(requests[2].idempotency_key).not.toEqual(requests[1].idempotency_key);
+  });
+
   it("presents safe Endpoint Platform states and guidance without sensitive remote details", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

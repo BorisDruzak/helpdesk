@@ -98,7 +98,9 @@ export function normalizeCapabilityParamSchema(
       ? paramsSchema.required.map((item) => String(item ?? "")).filter(Boolean)
       : [],
   );
-  const properties = isRecord(paramsSchema.properties) ? paramsSchema.properties : paramsSchema;
+  const properties = isRecord(paramsSchema.properties)
+    ? paramsSchema.properties
+    : paramsSchema.type === "object" ? {} : paramsSchema;
 
   return Object.entries(properties)
     .filter(([name, rawField]) => name !== "required" && name !== "properties" && Boolean(rawField))
