@@ -42,6 +42,12 @@ Temporary database/role/tunnel cleanup was verified. Published b9cb055 passed
 all 18 full CI layers, but these newer workflow changes still require their
 own exact-SHA CI and live acceptance.
 
+CREATE-014 was reproduced with two cases: a display name alone satisfied
+emergency `contact_required`. Preview/create share the corrected check; seven
+focused contact regressions passed, preserving profile phone/e-mail and
+explicit contact fields. This is not proof of contact deliverability or live
+acceptance. The combined focused no-DB suite passed all 22 checks.
+
 Windows integration is independently blocked: Endpoint staging release
 `1c96bdc18bc05fc7730435d12da730b8bbb42502` differs from the verified locked
 provider `abdd5c7ef596bc54277e74ca96cc929a43e07049`, and the Windows test VM is

@@ -17,6 +17,10 @@
 - Workflow side effects are observable. SLA and required approval side effects are critical; OLA, public-session revocation on `closed`, and notification-style side effects are non-critical unless their policy explicitly marks them critical. Failures are logged with structured context, counted by workflow side-effect metrics, attached to the transition payload and written as `workflow_side_effect_failed` ticket events with redacted error messages. Public-token verification also denies `closed` / `canceled` ticket state before updating session usage, so terminal ticket access fails closed even if revocation side effects fail or lag.
 - Policy Health lives at `server/tickets/policy_health_service.py`, `server/web_api/policy_health_handlers.py` and `/app/admin/policy-health`. Admin/auditor endpoints are `GET /api/web/admin/helpdesk/policy-health`, `GET /api/web/admin/helpdesk/policy-health/{template_code}`, and `POST /api/web/admin/helpdesk/policy-health/simulate`; support/requester/public are denied. Simulation is dry-run but runtime-equivalent: it overlays effective registry policies, builds an unsaved ticket context and calls the real routing, priority, SLA, OLA, approval, closure, visibility and diagnostic resolvers.
 
+Emergency requester forms with `contact_required` use the same contact check
+in preview and create. A display name alone is not a contact; profile phone or
+e-mail and explicitly supplied form/request contact fields remain accepted.
+
 ### Required queue and take-in-work transactions
 
 Support take-in-work commits the status transition together with self-assignment.

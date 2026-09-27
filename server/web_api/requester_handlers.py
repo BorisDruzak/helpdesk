@@ -294,7 +294,7 @@ async def _resolve_requester_self_device_context(
 
 
 def _has_contact_for_emergency(person: RegistryPerson | None, form_payload: dict[str, Any], data: dict[str, Any]) -> bool:
-    for value in (getattr(person, "phone", None), getattr(person, "email", None), data.get("user_display_name")):
+    for value in (getattr(person, "phone", None), getattr(person, "email", None)):
         if _clean(value, max_length=240):
             return True
     for source in (form_payload, data):

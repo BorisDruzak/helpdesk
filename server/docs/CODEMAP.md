@@ -23,6 +23,9 @@
   It constructs the response before committing. `AuthService` accepts the
   caller's session; `AuthTokensRepo` flushes without committing in that mode.
   Standalone public authorization retains its owned transaction.
+- `server/web_api/requester_handlers.py::_has_contact_for_emergency` is shared
+  by preview/create. A display name alone does not satisfy `contact_required`;
+  profile phone/e-mail and explicitly supplied contact fields remain accepted.
 
 ## Workflow transaction failures
 
