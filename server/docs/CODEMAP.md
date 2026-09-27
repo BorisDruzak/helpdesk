@@ -128,6 +128,9 @@
   rollback before remote dispatch and persisted-key replay after a simulated
   worker exit/lease expiry. Its idempotent provider is a stub; real provider
   transport and Windows acceptance remain separate gates.
+  It also checks complete diagnostic-session/link attribution for a supported
+  100-character UI login. Revision `145` widens the diagnostic-session actor
+  column to match `UiUser.user_login`, preserving nullable/UUID compatibility.
 - `server/web_api/support_handlers.py` exposes the canonical support
   diagnostic route and its browser compatibility alias.
 - `server/web_api/requester_handlers.py` derives a `VerifiedRequesterBinding`

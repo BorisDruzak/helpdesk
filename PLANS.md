@@ -1,5 +1,16 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Diagnostic actor length: a real isolated PostgreSQL regression on revision
+144 failed with StringDataRightTruncationError for a valid 100-character
+support login. The facade stores the login in a 36-character diagnostic
+session column. Revision 145 and the ORM widen that column to 100 without
+truncating attribution or changing authorization. Fresh-migration PostgreSQL
+verification passes all three cases in 590.02 seconds, including both existing
+durability cases; temporary role/database/tunnel cleanup was verified.
+Push CI for 3317ec678e866c1ce0fcd8b50eff967cb2400d30 was strictly accepted
+across 18 layers. Its reviewed historical-risk dispositions are 24 verified,
+nine open and three unverified; full release acceptance remains blocked.
+
 Endpoint operation durability follow-up: two new PostgreSQL regressions pass
 in 563.45 seconds. A failure after local link insertion rolls back operation,
 diagnostic session/step and link before any remote request. A simulated worker

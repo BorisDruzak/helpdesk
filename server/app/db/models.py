@@ -4991,7 +4991,7 @@ class DiagnosticSession(Base):
     profile_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", server_default="draft", index=True)
     trigger_source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    started_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    started_by_user_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"), index=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

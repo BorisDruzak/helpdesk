@@ -51,7 +51,7 @@ class _IdempotentProvider:
         return self.operations[idempotency_key]
 
 
-async def _setup(test_engine):
+async def _setup(test_engine, *, actor_id="support-fixture"):
     maker = async_sessionmaker(test_engine, expire_on_commit=False, autoflush=False)
     ticket_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
@@ -59,7 +59,7 @@ async def _setup(test_engine):
         session.add(Ticket(ticket_id=ticket_id, device_id=None, title="Durability regression",
                            description="Synthetic fixture", status="queued"))
         await session.commit()
-    actor = SimpleNamespace(actor_id="support-fixture", actor_role="support")
+    actor = SimpleNamespace(actor_id=actor_id, actor_role="support")
     device_ref = str(uuid.uuid4())
     key = "durability-" + uuid.uuid4().hex
     operation_id = deterministic_endpoint_operation_id(
@@ -75,6 +75,24 @@ async def _setup(test_engine):
     )
     request = EndpointDiagnosticOperationRequest(ticket_id=ticket_id, idempotency_key=key)
     return maker, ticket_id, operation_id, actor, service, request, now
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_operation_preserves_maximum_length_ui_actor(test_engine):
+    actor_id = "support-" + "x" * 92  # UiUser.user_login permits 100 characters.
+    maker, ticket_id, operation_id, actor, service, request, _ = await _setup(
+        test_engine, actor_id=actor_id,
+    )
+    result = await service.create(actor=actor, request=request)
+    assert result.operation_id == operation_id
+    assert await _counts(maker, ticket_id, operation_id) == (1, 1, 1, 1)
+    async with maker() as session:
+        diagnostic = (await session.execute(select(DiagnosticSession).where(
+            DiagnosticSession.ticket_id == ticket_id))).scalar_one()
+        link = (await session.execute(select(EndpointOperationLink).where(
+            EndpointOperationLink.operation_id == operation_id))).scalar_one()
+        assert diagnostic.started_by_user_id == actor_id
+        assert link.caller_actor_id == actor_id
 
 
 async def _counts(maker, ticket_id, operation_id):
