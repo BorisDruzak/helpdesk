@@ -17,6 +17,11 @@ repository.
 
 ## Endpoint operation validation
 
+- The diagnostic UI sends an actor/ticket-scoped caller idempotency key. Keep
+  the key in session storage after an uncertain response, including reloads;
+  clear it only after Helpdesk confirms an operation ID. Storage failure must
+  prevent dispatch. Empty object parameter schemas expose no input fields.
+
 - Verify the canonical ticket diagnostic route creates an Endpoint-backed
   operation facade and reconciles safe terminal evidence.
 - Verify a facade-owned cancellation reaches Endpoint and a terminal result is

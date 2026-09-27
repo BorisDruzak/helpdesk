@@ -302,7 +302,7 @@ export async function listTicketDiagnosticCapabilities(ticketId: string): Promis
 export async function runTicketDiagnosticCapability(
   ticketId: string,
   capabilityId: string,
-  payload: { params?: Record<string, unknown>; session_id?: string | null; timeout_ms?: number } = {},
+  payload: { params?: Record<string, unknown>; session_id?: string | null; timeout_ms?: number; idempotency_key?: string } = {},
 ): Promise<DiagnosticCapabilityRunResult> {
   const response = await fetch(
     `${ticketDiagnosticsBase(ticketId)}/capabilities/${encodeURIComponent(capabilityId)}/run`,

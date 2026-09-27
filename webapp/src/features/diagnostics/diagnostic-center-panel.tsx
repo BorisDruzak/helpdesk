@@ -41,6 +41,7 @@ import {
   type EndpointDiagnosticOperation,
 } from "./api";
 import { normalizeCapabilityParamSchema } from "./params-schema";
+import { clearEndpointRunKey, pendingEndpointRunKey } from "./endpoint-run-intent";
 
 type DiagnosticCenterPanelProps = {
   ticketId: string;
@@ -368,9 +369,21 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
   };
 
   const runCapabilityMutation = useMutation({
-    mutationFn: ({ capability, params }: { capability: DiagnosticCapability; params: Record<string, unknown> }) =>
-      runTicketDiagnosticCapability(ticketId, capability.id, { params }),
-    onSuccess: async (result) => {
+    mutationFn: async ({ capability, params, actor, targetTicket }: {
+      capability: DiagnosticCapability; params: Record<string, unknown>; actor: string; targetTicket: string;
+    }) => {
+      const idempotencyKey = isEndpointDiagnosticCapability(capability)
+        ? pendingEndpointRunKey(actor, targetTicket) : undefined;
+      const result = await runTicketDiagnosticCapability(targetTicket, capability.id, {
+        params,
+        ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+      });
+      return { result, idempotencyKey };
+    },
+    onSuccess: async ({ result, idempotencyKey }, variables) => {
+      if (idempotencyKey && result.operation_id) {
+        clearEndpointRunKey(variables.actor, variables.targetTicket, idempotencyKey);
+      }
       setLastRunResult(result);
       setLastActionMessage(summarizeRunResult(result));
       await invalidateDiagnostics();
@@ -510,6 +523,12 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
         <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           {lastActionMessage}
         </div>
+      ) : null}
+
+      {runCapabilityMutation.isError ? (
+        <p role="alert" className="text-sm text-rose-700">
+          Не удалось подтвердить запуск диагностики. Повторите попытку.
+        </p>
       ) : null}
 
       <div className="flex flex-wrap gap-2">
@@ -792,6 +811,8 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                             runCapabilityMutation.mutate({
                               capability: selectedCapability,
                               params: capabilityParamsById[selectedCapability.id] ?? {},
+                              actor: session?.user_login ?? "",
+                              targetTicket: ticketId,
                             })
                           }
                         >
