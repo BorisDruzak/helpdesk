@@ -430,12 +430,22 @@ class UserConsentService:
             return
         operation = await OperationsRepo(self.session).get_by_operation_id(row.subject_id)
         if operation is None or operation.status != "waiting_consent":
-            return
+            raise ConsentAccessError(
+                "Состояние операции изменилось. Обновите обращение и повторите решение.",
+                error_code="OPERATION_STATE_CONFLICT",
+                status=409,
+            )
         service = OperationService(self.session, publisher=self.publisher)
         if decision == "approved":
-            await service.approve_consent(row.subject_id, decided_by=actor_id, reason=reason)
+            changed = await service.approve_consent(row.subject_id, decided_by=actor_id, reason=reason)
         else:
-            await service.deny_consent(row.subject_id, decided_by=actor_id, reason=reason)
+            changed = await service.deny_consent(row.subject_id, decided_by=actor_id, reason=reason)
+        if not changed:
+            raise ConsentAccessError(
+                "Состояние операции изменилось. Обновите обращение и повторите решение.",
+                error_code="OPERATION_STATE_CONFLICT",
+                status=409,
+            )
 
     async def _append_ticket_event(
         self,

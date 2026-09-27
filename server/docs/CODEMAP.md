@@ -11,6 +11,15 @@
 - `server/runtime_control.py` manages only the Helpdesk server and control
   plane units.
 
+## Requester consent decisions
+
+- `server/consent/service.py` requires the operation lifecycle transition to
+  succeed before a browser consent decision can be committed. A failed
+  compare-and-set raises `ConsentAccessError` with
+  `OPERATION_STATE_CONFLICT`/409; the requester handler rolls back the decision
+  and its ticket event. Missing or no-longer-waiting operation subjects also
+  return this conflict. Endpoint dispatch remains outside this service.
+
 ## Ticket creation
 
 - `server/tickets/create_flow.py` verifies `browser_no_device` requester identity

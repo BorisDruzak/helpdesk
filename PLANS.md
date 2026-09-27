@@ -1,5 +1,16 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+CONSENT-021 current-boundary follow-up: failed operation transitions were
+ignored for approval/denial (two unit failures). Missing/changed subjects were
+also silently accepted (six further unit failures). The service now raises
+safe OPERATION_STATE_CONFLICT/409; the browser handler rolls back the decision
+and ticket event. Eleven consent unit cases and the combined 38-case suite
+pass. The real PostgreSQL CAS-conflict/retry suite passed two cases in 556.84
+seconds after correcting an oversized fixture device ID to a UUID. The initial
+fixture failure is retained separately. Both runs verified temporary-role
+absence and zero residual owned databases. Full new-SHA CI/live/risk acceptance
+remains pending; no Endpoint configuration or production operation changed.
+
 ACCOUNT-033 compatibility follow-up: CI 36288251203 for 535ab028 failed
 two existing unregistered-requester emergency/profile-optional cases. The
 correction keeps an authenticated actor with no resolved person and no
