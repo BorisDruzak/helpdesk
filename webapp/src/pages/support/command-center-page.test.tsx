@@ -209,6 +209,38 @@ afterEach(() => {
 });
 
 describe("SupportCommandCenterPage", () => {
+  it("shows unavailable state without claiming there are no tasks", async () => {
+    vi.mocked(fetchOperatorCommandCenter).mockRejectedValue(new Error("Unavailable"));
+    vi.mocked(fetchSupportWorkspaceSummary).mockRejectedValue(new Error("Unavailable"));
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Не удалось загрузить Центр действий" })).toBeInTheDocument();
+    expect(screen.queryByText("Нет срочных действий")).not.toBeInTheDocument();
+    expect(screen.queryByText("Нет задач после фильтра")).not.toBeInTheDocument();
+    expect(screen.queryAllByText("0 в summary")).toHaveLength(0);
+    expect(screen.queryByText("0 SLA risk")).not.toBeInTheDocument();
+  });
+
+  it("shows summary failure while retaining successfully loaded tasks", async () => {
+    vi.mocked(fetchOperatorCommandCenter).mockResolvedValue(payload());
+    vi.mocked(fetchSupportWorkspaceSummary).mockRejectedValue(new Error("Unavailable"));
+    renderPage();
+
+    expect(await screen.findByText("Не удалось загрузить сводку рабочего пространства. Повторите попытку позже.")).toBeInTheDocument();
+    expect(screen.getAllByText("Настроить VPN").length).toBeGreaterThan(0);
+  });
+
+  it("retains previously loaded tasks with a visible refetch failure", async () => {
+    vi.mocked(fetchOperatorCommandCenter).mockResolvedValueOnce(payload()).mockRejectedValue(new Error("Unavailable"));
+    vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue(summary());
+    renderPage();
+    await screen.findByText("Спасти SLA");
+    fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
+
+    expect(await screen.findByRole("heading", { name: "Не удалось загрузить Центр действий" })).toBeInTheDocument();
+    expect(screen.getAllByText("Настроить VPN").length).toBeGreaterThan(0);
+  });
+
   it("renders Action Inbox title and task-first rows", async () => {
     vi.mocked(fetchOperatorCommandCenter).mockResolvedValue(payload());
     vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue(summary());

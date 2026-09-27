@@ -1,11 +1,41 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.db import engine as db_engine
 
 
 pytestmark = pytest.mark.no_db
+
+
+@pytest.mark.asyncio
+async def test_runtime_engine_suppresses_sensitive_sql_parameters(monkeypatch):
+    monkeypatch.setattr(db_engine, "_engine", None)
+    monkeypatch.setattr(db_engine, "_session_maker", None)
+
+    @asynccontextmanager
+    async def ping_session():
+        yield SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(scalar=lambda: 1)))
+
+    monkeypatch.setattr(db_engine, "get_session", ping_session)
+    await db_engine.init_db("postgresql+asyncpg://localhost/fixture")
+    configured = db_engine.get_engine()
+    try:
+        marker = "private-fixture-value"
+        error = IntegrityError(
+            "INSERT INTO ui_users (password_hash) VALUES ($1)",
+            {"password_hash": marker}, RuntimeError("database failure"),
+            hide_parameters=configured.sync_engine.hide_parameters,
+        )
+        assert marker not in str(error)
+        assert "SQL parameters hidden" in str(error)
+    finally:
+        await configured.dispose()
 
 
 def test_load_engine_pool_options_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

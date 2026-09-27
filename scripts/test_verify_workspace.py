@@ -11,6 +11,15 @@ def test_verify_workspace_tracks_harness_text_files() -> None:
     assert ".cursor" not in verify.SKIP_DIRS
 
 
+def test_iter_files_prunes_dependencies_and_other_worktrees(tmp_path: Path) -> None:
+    (tmp_path / "main.py").write_text("pass", encoding="utf-8")
+    for directory in ("node_modules", ".worktrees", "artifacts"):
+        nested = tmp_path / directory / "nested"
+        nested.mkdir(parents=True)
+        (nested / "broken.py").write_bytes(b"\x00")
+    assert list(verify.iter_files(tmp_path)) == [tmp_path / "main.py"]
+
+
 def test_run_docs_links_returns_no_failures_on_success(monkeypatch, tmp_path: Path) -> None:
     def fake_run(*args, **kwargs):
         return subprocess.CompletedProcess(args[0], 0, stdout=b"ok\n", stderr=b"")

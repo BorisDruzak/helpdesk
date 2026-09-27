@@ -510,9 +510,11 @@ describe("AdminRequestTemplateStudioPage", () => {
 
     renderPage();
 
-    const publishButton = await screen.findByRole("button", { name: "Опубликовать из Studio" });
-    await waitFor(() => expect(publishButton).toBeEnabled());
-    fireEvent.click(publishButton);
+    // Initial shell/selection can render before the parallel form query settles.
+    // Publish only after the selected form is present, as an operator would.
+    await screen.findAllByText("Форма почтового ящика");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Опубликовать из Studio" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Опубликовать из Studio" }));
 
     await waitFor(
       () => {

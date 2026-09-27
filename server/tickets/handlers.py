@@ -31,7 +31,7 @@ from tickets.assignment_service import (
     TicketAssignmentService,
 )
 from tickets.account_access_service import TicketBindingAccessService
-from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.create_flow import RequesterIdentityMismatch, TicketInitializationError, build_default_priority_payload, create_ticket_with_side_effects
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
@@ -61,7 +61,7 @@ from tickets.statuses import (
     normalize_ticket_priority_inputs,
     resolve_status,
 )
-from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
+from tickets.workflow_service import TicketWorkflowService, WorkflowTransitionConflict, validate_transition_for_ticket
 from tickets.visibility_policy import apply_ticket_visibility_payload_async
 from utils import new_ticket_id
 from websocket.ui_handler import push_ticket_event_committed
@@ -1076,26 +1076,39 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             except ValueError as exc:
                 details = exc.args[0] if exc.args else "invalid form payload"
                 return _validation_error({"form_payload": details})
-        created = await create_ticket_with_side_effects(
-            session,
-            device_id=device_id,
-            requester_id=auth_context.actor_id,
-            title=title,
-            description=description,
-            user_display_name=user_display_name,
-            requester_profile=requester_profile,
-            normalized_priority=normalized_priority,
-            initial_message_text=description,
-            initial_message_sender_role="user",
-            initial_message_from="user",
-            include_public_access=True,
-            ticket_type=ticket_type,
-            **template_process_fields,
-            **catalog_process_fields,
-            extra_custom_fields=extra_custom_fields,
-            requester_account=requester_account if auth_context.actor_role != "agent" else None,
-            state=request.app.get("state"),
-        )
+        try:
+            created = await create_ticket_with_side_effects(
+                session,
+                device_id=device_id,
+                requester_id=auth_context.actor_id,
+                title=title,
+                description=description,
+                user_display_name=user_display_name,
+                requester_profile=requester_profile,
+                normalized_priority=normalized_priority,
+                initial_message_text=description,
+                initial_message_sender_role="user",
+                initial_message_from="user",
+                include_public_access=True,
+                ticket_type=ticket_type,
+                **template_process_fields,
+                **catalog_process_fields,
+                extra_custom_fields=extra_custom_fields,
+                requester_account=requester_account if auth_context.actor_role != "agent" else None,
+                state=request.app.get("state"),
+            )
+        except RequesterIdentityMismatch:
+            await session.rollback()
+            return _json_error(
+                "Заявитель не соответствует подтверждённой учётной записи.",
+                status=403, error_code="REQUESTER_IDENTITY_FORBIDDEN",
+            )
+        except TicketInitializationError:
+            await session.rollback()
+            return _json_error(
+                "Не удалось подготовить обращение. Повторите попытку позже.",
+                status=503, error_code="TICKET_INITIALIZATION_UNAVAILABLE",
+            )
         await session.commit()
         ticket_data = await _ticket_payload(session, created["ticket"])
 
@@ -1834,6 +1847,9 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
                 root_cause=data.get("root_cause"),
                 source="api",
             )
+        except WorkflowTransitionConflict as exc:
+            await session.rollback()
+            return _json_error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
         except ValueError as exc:
             return _validation_error({"workflow_policy": str(exc)})
         followup_result = None
@@ -1927,8 +1943,11 @@ async def handle_ticket_reroute(request: web.Request) -> web.Response:
         try:
             await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
             await start_ola_for_ticket(session, ticket, trigger="queue_changed")
-        except Exception as exc:
-            logger.warning(f"[reroute] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+        except Exception:
+            logger.bind(ticket_id=ticket.ticket_id).warning("[reroute] required OLA update failed")
+            await session.rollback()
+            return _json_error("Не удалось обновить сроки очереди. Повторите попытку позже.",
+                               status=503, error_code="REROUTE_ACTION_FAILED")
         if getattr(ticket, "queue_id", None) != previous_queue_id:
             ticket, queue_events = await _reconcile_queue_scope_state(
                 session,
@@ -1999,8 +2018,11 @@ async def handle_ticket_queue(request: web.Request) -> web.Response:
         try:
             await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
             await start_ola_for_ticket(session, ticket, trigger="queue_changed")
-        except Exception as exc:
-            logger.warning(f"[queue_change] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+        except Exception:
+            logger.bind(ticket_id=ticket.ticket_id).warning("[queue_change] required OLA update failed")
+            await session.rollback()
+            return _json_error("Не удалось обновить сроки очереди. Повторите попытку позже.",
+                               status=503, error_code="QUEUE_ACTION_FAILED")
         captured: List[tuple[str, Dict[str, Any], Optional[tuple]]] = []
         if queue_id != old_queue_id:
             ticket, captured = await _reconcile_queue_scope_state(

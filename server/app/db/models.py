@@ -449,12 +449,27 @@ sa.event.listen(Ticket, "before_insert", _ensure_ticket_requester_id)
 sa.event.listen(Ticket, "before_update", _ensure_ticket_requester_id)
 
 
+class RequesterTicketCreateRequest(Base):
+    """Durable, actor-scoped request keys; no response bodies or access codes."""
+    __tablename__ = "requester_ticket_create_requests"
+
+    actor_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_id: Mapped[Optional[str]] = mapped_column(
+        String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(),
+    )
+
+
 class TicketEvent(Base):
     """
     Ticket event model.
     
     Stores all events for tickets with deduplication support.
-    Ordered by agent_seq per-ticket.
+    Ticket timelines are ordered globally by created_at and id.
     """
     __tablename__ = "ticket_events"
     
@@ -4976,7 +4991,7 @@ class DiagnosticSession(Base):
     profile_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", server_default="draft", index=True)
     trigger_source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    started_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    started_by_user_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"), index=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -49,6 +49,7 @@ _REMOTE_TO_LOCAL: dict[str, tuple[str, str]] = {
     "expired": ("timed_out", "endpoint_expired"),
 }
 _LOCAL_PROGRESS = {"queued": 0, "sent": 1, "accepted": 2, "running": 3}
+_RECONCILABLE_LOCAL = frozenset((*_LOCAL_PROGRESS, "cancel_requested"))
 _LOGGER = logging.getLogger(__name__)
 
 __all__ = ("endpoint_operation_correlation_ref",)
@@ -353,7 +354,7 @@ class SqlAlchemyEndpointOperationReconcileStore:
                             EndpointOperationLink.lease_until.is_(None),
                             EndpointOperationLink.lease_until <= now,
                         ),
-                        Operation.status.notin_(tuple(_TERMINAL_LOCAL)),
+                        Operation.status.in_(tuple(_RECONCILABLE_LOCAL)),
                     )
                     .order_by(EndpointOperationLink.next_attempt_at.asc(), EndpointOperationLink.link_id.asc())
                     .limit(limit)

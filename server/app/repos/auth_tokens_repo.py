@@ -152,7 +152,10 @@ class AuthTokensRepo:
         ticket_id: str,
         actor_id: str,
         expires_at: datetime,
+        *,
+        commit: bool = True,
     ) -> Tuple[str, TicketPublicSession]:
+        """Persist a session; commit=False keeps it in the caller's transaction."""
         token_hash = self.hash_token(token)
         token_prefix = self.get_token_prefix(token)
 
@@ -168,15 +171,18 @@ class AuthTokensRepo:
         )
         self.session.add(record)
         try:
-            await self.session.commit()
-            await self.session.refresh(record)
+            if commit:
+                await self.session.commit()
+                await self.session.refresh(record)
+            else:
+                await self.session.flush()
             logger.info(
                 f"[AuthTokensRepo] Created public ticket session: ticket_id={ticket_id}, prefix={token_prefix}"
             )
             return token, record
-        except IntegrityError as e:
+        except IntegrityError:
             await self.session.rollback()
-            logger.error(f"[AuthTokensRepo] Failed to create public ticket session: {e}")
+            logger.error("[AuthTokensRepo] Failed to create public ticket session")
             raise
 
     async def verify_ticket_public_session(self, token: str) -> Optional[TicketPublicSession]:

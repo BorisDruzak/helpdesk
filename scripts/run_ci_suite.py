@@ -1092,6 +1092,7 @@ def _mutation_smoke_command(workspace: Path) -> list[str]:
         str(workspace / "scripts" / "run_mutation_smoke.py"),
         "--workspace",
         str(workspace),
+        "--json",
     ]
 
 

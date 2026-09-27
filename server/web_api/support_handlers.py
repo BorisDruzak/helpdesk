@@ -110,7 +110,7 @@ from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.purge_service import TicketPurgeBlockedError, TicketPurgeService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
-from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
+from tickets.workflow_service import TicketWorkflowService, WorkflowTransitionConflict, validate_transition_for_ticket
 from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
@@ -4026,8 +4026,8 @@ async def handle_web_support_queue_mass_action(request: web.Request):
                         try:
                             await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
                             await start_ola_for_ticket(session, refreshed, trigger="queue_changed")
-                        except Exception as exc:
-                            logger.warning(f"[web_support_queue_mass_action] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+                        except Exception:
+                            raise RuntimeError("Не удалось обновить сроки очереди") from None
                         event_payload = {"queue_id": queue_id, "previous_queue_id": old_queue_id, "actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role, "reason": reason, "bulk_action": True}
                         event_result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="queue_changed", payload=event_payload)
                         await session.commit()
@@ -4177,7 +4177,10 @@ async def handle_web_support_queue(request: web.Request):
     requested_smart_view = request.query.get("smart_view")
     smart_view = normalize_smart_view_id(requested_smart_view)
     query = str(request.query.get("query", "") or "").strip()
-    limit = min(max(int(request.query.get("limit", "200")), 1), 300)
+    try:
+        limit = min(max(int(request.query.get("limit", "200")), 1), 300)
+    except ValueError:
+        return _support_json_error("Параметр limit должен быть целым числом", status=400, error_code="VALIDATION_ERROR")
     include_hidden = _parse_bool_query(request.query.get("include_hidden"))
     include_archived = _parse_bool_query(request.query.get("include_archived"))
 
@@ -4560,30 +4563,20 @@ async def handle_web_support_command_center(request: web.Request):
                 logger.warning(log_message)
             else:
                 logger.info(log_message)
-    except Exception as exc:
-        logger.warning(
-            f"[web_support_command_center] DB unavailable, returning empty command center: "
-            f"actor_id={auth_context.actor_id}, error={exc}"
-        )
-        payload = build_operator_command_center_payload(
-            [],
-            scope=effective_scope,
-            queue=queue,
-            assignee=assignee,
-            query=query,
-            limit_per_section=limit_per_section,
-            window_hours=window_hours,
-            sla_risk_minutes=sla_risk_minutes,
-            ola_risk_minutes=ola_risk_minutes,
-            metadata={**metadata, "degraded": True},
-        )
+    except Exception:
+        logger.warning("[web_support_command_center] read failed")
+        return _support_json_error("Не удалось загрузить Центр действий. Повторите попытку позже.",
+                                   status=503, error_code="DB_UNAVAILABLE")
     return json_model_response(SuccessResponse[OperatorCommandCenterPayload](data=payload))
 
 
 @require_auth("admin", "support")
 async def handle_web_support_workspace_summary(request: web.Request):
     auth_context = request["auth_context"]
-    limit = min(max(int(request.query.get("limit", "1000")), 1), 2000)
+    try:
+        limit = min(max(int(request.query.get("limit", "1000")), 1), 2000)
+    except ValueError:
+        return _support_json_error("Параметр limit должен быть целым числом", status=400, error_code="VALIDATION_ERROR")
     try:
         async with get_session() as session:
             state = await _load_support_queue_state(session, auth_context, limit=limit)
@@ -4601,23 +4594,10 @@ async def handle_web_support_workspace_summary(request: web.Request):
             smart_view_counts=smart_view_counts,
             smart_view_options=[SupportFilterOption(**option) for option in state.smart_options],
         )
-    except Exception as exc:
-        logger.warning(
-            f"[web_support_workspace_summary] DB unavailable, returning empty summary: "
-            f"actor_id={auth_context.actor_id}, error={exc}"
-        )
-        empty_smart_options = smart_view_options()
-        empty_smart_counts = [
-            SupportCountItem(value=str(option.get("value") or ""), label=str(option.get("label") or ""), count=0)
-            for option in empty_smart_options
-            if str(option.get("value") or "").strip()
-        ]
-        payload = SupportWorkspaceSummaryPayload(
-            views=_workspace_summary_view_counts(empty_smart_counts),
-            queues=[],
-            smart_view_counts=empty_smart_counts,
-            smart_view_options=[SupportFilterOption(**option) for option in empty_smart_options],
-        )
+    except Exception:
+        logger.warning("[web_support_workspace_summary] read failed")
+        return _support_json_error("Не удалось загрузить сводку рабочего пространства. Повторите попытку позже.",
+                                   status=503, error_code="DB_UNAVAILABLE")
     return json_model_response(SuccessResponse[SupportWorkspaceSummaryPayload](data=payload))
 
 
@@ -5625,6 +5605,9 @@ async def handle_web_support_change_status(request: web.Request):
                     internal_comment=data.get("internal_comment"),
                     source="web_support_api",
                 )
+            except WorkflowTransitionConflict as exc:
+                await session.rollback()
+                return _support_json_error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
             except ValueError as exc:
                 message = str(exc)
                 if message.startswith("approval_policy"):
@@ -5677,10 +5660,12 @@ async def handle_web_support_change_status(request: web.Request):
                         close_ola=True,
                     )
                     ticket = await repo.get_ticket(ticket.ticket_id) or ticket
-                except TicketAssignmentError as exc:
-                    logger.info(
-                        f"[web_support_status] take_in_work assignment skipped: "
-                        f"ticket_id={ticket.ticket_id} actor_id={auth_context.actor_id} error={exc}"
+                except TicketAssignmentError:
+                    logger.bind(ticket_id=ticket.ticket_id).info("[web_support_status] take_in_work assignment rejected")
+                    await session.rollback()
+                    return _support_json_error(
+                        "Не удалось назначить исполнителя. Обращение не переведено в работу.",
+                        status=409, error_code="ASSIGNMENT_CONFLICT",
                     )
 
             closure_policy_payload = (result.get("event_payload") or {}).get("closure_policy")
@@ -5903,8 +5888,11 @@ async def handle_web_support_change_queue(request: web.Request):
             try:
                 await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
                 await start_ola_for_ticket(session, ticket, trigger="queue_changed")
-            except Exception as exc:
-                logger.warning(f"[web_support_queue_change] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+            except Exception:
+                logger.bind(ticket_id=ticket.ticket_id).warning("[web_support_queue_change] required OLA update failed")
+                await session.rollback()
+                return _support_json_error("Не удалось обновить сроки очереди. Повторите попытку позже.",
+                                           status=503, error_code="QUEUE_ACTION_FAILED")
             captured = []
             if queue_id != old_queue_id:
                 ticket, captured = await _reconcile_queue_scope_state(session, repo, ticket, actor_id=auth_context.actor_id, actor_role=auth_context.actor_role, reason_prefix="manual_queue_change")
@@ -5979,8 +5967,11 @@ async def handle_web_support_reroute_ticket(request: web.Request):
             try:
                 await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
                 await start_ola_for_ticket(session, ticket, trigger="queue_changed")
-            except Exception as exc:
-                logger.warning(f"[web_support_reroute] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+            except Exception:
+                logger.bind(ticket_id=ticket.ticket_id).warning("[web_support_reroute] required OLA update failed")
+                await session.rollback()
+                return _support_json_error("Не удалось обновить сроки очереди. Повторите попытку позже.",
+                                           status=503, error_code="REROUTE_ACTION_FAILED")
             if getattr(ticket, "queue_id", None) != previous_queue_id:
                 ticket, queue_events = await _reconcile_queue_scope_state(session, repo, ticket, actor_id=auth_context.actor_id, actor_role=auth_context.actor_role, reason_prefix="reroute")
                 captured.extend(queue_events)

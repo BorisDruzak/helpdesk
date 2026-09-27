@@ -24,7 +24,14 @@
       "post_fix_verification": [
         "DB targeted pytest group: 7 passed in 479.50s"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P0",
+        "historical_status": "static-confirmed",
+        "surface": "Регистрация / Registry",
+        "condition": "При включённой self-registration web-login без доказательства владения может разрешиться в существующий Registry person через совпадение `email`, `windows_login` или `ad`. Это даёт чужие профиль, устройства и обращения.",
+        "source_line": 57
+      }
     },
     {
       "id": "ID-002",
@@ -43,7 +50,14 @@
         "DB targeted pytest group: 7 passed in 479.50s",
         "manual direct Alembic upgrade reached revision 131 in 454.17s"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P0",
+        "historical_status": "static-confirmed",
+        "surface": "Регистрация / авторизация",
+        "condition": "`ui_users.user_login` case-sensitive, а Registry identity нормализуется в lower-case. Аккаунты `Alice` и `alice` могут существовать одновременно, но разрешаться в одного person.",
+        "source_line": 58
+      }
     },
     {
       "id": "CLAIM-003",
@@ -62,7 +76,14 @@
         "Targeted CLAIM-003 race test: 1 passed in 14.87s",
         "Focused public-claim pytest set: 4 passed in 32.22s"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Public ticket claim",
+        "condition": "Claim выполняется как read/check/update без row lock или compare-and-set. Два параллельных claim могут оба пройти проверку, последний владелец перезапишет первого.",
+        "source_line": 59
+      }
     },
     {
       "id": "EVENT-007",
@@ -82,7 +103,14 @@
         "pytest server/tests/test_ticket_events_repo_no_db.py: ok",
         "compileall changed Python files: ok"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Чат / timeline",
+        "condition": "`get_events()` сортирует по `agent_seq NULLS LAST`, то есть сначала все agent events, затем server events. Это не глобальная хронология. Последующий `LIMIT 200` может полностью скрыть support-chat и ранний контекст.",
+        "source_line": 63
+      }
     },
     {
       "id": "EVENT-008",
@@ -104,7 +132,14 @@
         "python -m alembic -c alembic.ini history -r 131:132: ok",
         "pytest server/tests/test_migration_schema_contract.py: hung locally before result"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "high-confidence",
+        "surface": "Чат / events",
+        "condition": "Для server events используется pre-SELECT по `event_id/message_id` и обычный INSERT. В просмотренных миграциях не найден надёжный unique constraint для этих ключей. Параллельные retry могут создать дубли.",
+        "source_line": 64
+      }
     },
     {
       "id": "CHAT-009",
@@ -127,7 +162,14 @@
         "python -m py_compile changed server/test modules: ok",
         "DB-backed support endpoint pytest target hung locally before result"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Support chat",
+        "condition": "Неизвестное `visibility` автоматически заменяется на `public`. Опечатка в `internal` может раскрыть внутреннюю заметку requester-у.",
+        "source_line": 65
+      }
     },
     {
       "id": "CHAT-010",
@@ -153,7 +195,14 @@
         "python -m py_compile changed server/test modules: ok",
         "DB-backed support/requester retry happy-path pytest targets hung locally before result"
       ],
-      "live_evidence": "not-required-for-p2-code-slice"
+      "live_evidence": "not-required-for-p2-code-slice",
+      "original_definition": {
+        "priority": "P2",
+        "historical_status": "static-confirmed",
+        "surface": "Support chat",
+        "condition": "`message_id` молча обрезается до 120 символов; повтор с тем же префиксом считается retry. При совпавшем ID payload не сравнивается с исходным.",
+        "source_line": 66
+      }
     },
     {
       "id": "CREATE-011",
@@ -162,7 +211,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Создание обращения",
+        "condition": "Requester create не принимает и не сохраняет доменный idempotency key. Timeout, double-click или browser retry создают второй тикет.",
+        "source_line": 67
+      }
     },
     {
       "id": "CREATE-012",
@@ -171,7 +227,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Создание обращения",
+        "condition": "Ошибки routing, SLA и OLA логируются и проглатываются. UI может получить успешное создание тикета без очереди/сроков и без typed degraded result.",
+        "source_line": 68
+      }
     },
     {
       "id": "CREATE-013",
@@ -180,7 +243,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Public create",
+        "condition": "Public ticket коммитится до выдачи public session token. Ошибка token issuance возвращает failure после фактического создания; retry без idempotency создаёт дубль.",
+        "source_line": 69
+      }
     },
     {
       "id": "CREATE-014",
@@ -189,7 +259,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": false,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P2",
+        "historical_status": "static-confirmed",
+        "surface": "Emergency form",
+        "condition": "`_has_contact_for_emergency()` считает `user_display_name` достаточным контактом. Форма проходит без достижимого телефона/e-mail.",
+        "source_line": 70
+      }
     },
     {
       "id": "WORKFLOW-015",
@@ -198,7 +275,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Статусы",
+        "condition": "Status transition не защищён row lock, version column или CAS. Параллельные действия валидируются от одного `from_status`, запускают side effects и завершаются last-write-wins.",
+        "source_line": 71
+      }
     },
     {
       "id": "WORKFLOW-016",
@@ -207,7 +291,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Take in work",
+        "condition": "Статус `in_progress` коммитится даже при ошибке auto-assignment. Получается «в работе» без исполнителя.",
+        "source_line": 72
+      }
     },
     {
       "id": "WORKFLOW-017",
@@ -216,7 +307,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Queue / OLA",
+        "condition": "Queue change сохраняется даже при ошибке закрытия/старта OLA. Queue и OLA могут расходиться.",
+        "source_line": 73
+      }
     },
     {
       "id": "CLOSE-018",
@@ -235,7 +333,14 @@
         "Targeted CLOSE-018 terminal public-session test: 2 passed in 18.64s",
         "Focused ticket device/public-session pytest file: 4 passed in 30.55s"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Закрытие",
+        "condition": "Отзыв public sessions после закрытия помечен non-critical. При ошибке тикет закрыт, но ранее выданный public token продолжает проходить проверку.",
+        "source_line": 74
+      }
     },
     {
       "id": "TOOL-019",
@@ -244,7 +349,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Запуск модулей/tools",
+        "condition": "При ошибке записи `tool_call_started` команда всё равно отправляется агенту. Привилегированная операция может исполниться без полного audit trace.",
+        "source_line": 75
+      }
     },
     {
       "id": "MODULE-020",
@@ -253,7 +365,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Auto-install module",
+        "condition": "Auto-install жёстко подменяет инициатора на `admin`, пишет desired state от имени admin и теряет исходный `auth_context`. Атрибуция и проверка полномочий недостоверны.",
+        "source_line": 76
+      }
     },
     {
       "id": "CONSENT-021",
@@ -262,7 +381,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Consent / operation",
+        "condition": "Решение consent коммитится до resume/dispatch операции. При dispatch failure consent остаётся approved, а операция не гарантированно возобновляется.",
+        "source_line": 77
+      }
     },
     {
       "id": "PLAYBOOK-022",
@@ -271,7 +397,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": false,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P2",
+        "historical_status": "static-confirmed",
+        "surface": "Playbook",
+        "condition": "Idempotency key для запуска playbook необязателен. Double-click/повтор может запустить второй run.",
+        "source_line": 78
+      }
     },
     {
       "id": "HISTORY-023",
@@ -280,7 +413,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "История requester",
+        "condition": "`get_ticket()` ищет тикет через список последних 300 заявок. 301-е и более старые обращения владельца возвращают 404 по прямой ссылке.",
+        "source_line": 79
+      }
     },
     {
       "id": "HISTORY-024",
@@ -289,7 +429,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": false,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P2",
+        "historical_status": "static-confirmed",
+        "surface": "Customer History",
+        "condition": "История affected person строится сканированием только 1000 последних тикетов системы. Старые on-behalf обращения исчезают из контекста сотрудника.",
+        "source_line": 80
+      }
     },
     {
       "id": "SUPPORT-025",
@@ -298,7 +445,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Support workspace",
+        "condition": "При DB error command center/workspace summary возвращают `200` и пустые данные. Оператор видит «нет обращений» вместо явной деградации.",
+        "source_line": 81
+      }
     },
     {
       "id": "SUPPORT-026",
@@ -307,7 +461,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": false,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P2",
+        "historical_status": "static-confirmed",
+        "surface": "Query validation",
+        "condition": "В нескольких handlers `int(limit)` выполняется без typed validation; `?limit=abc` приводит к 500 вместо 400.",
+        "source_line": 82
+      }
     },
     {
       "id": "INSTALL-027",
@@ -316,7 +477,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "high-confidence",
+        "surface": "Agent update",
+        "condition": "DB backup восстанавливается при verify failure, но не при publish failure после verify. Если verify мигрирует `storage.db`, rollback неполный. `current.json` записывается неатомарно.",
+        "source_line": 83
+      }
     },
     {
       "id": "INSTALL-028",
@@ -325,7 +493,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "runtime-candidate",
+        "surface": "Initial installation",
+        "condition": "В репозитории найден build/install layout и self-update, но не найден канонический MSI/MSIX/NSIS/WiX installer с install/uninstall/repair/startup/UAC/signing contract. Возможно, упаковка внешняя; внутри проекта initial install не доказан.",
+        "source_line": 84
+      }
     },
     {
       "id": "AUTH-029",
@@ -344,7 +519,14 @@
         "Targeted AUTH-029 test: 1 passed in 466.18s",
         "Full ui_users repo test file: 2 passed in 17.18s"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Login protection",
+        "condition": "Failed-attempt counter обновляется read-modify-write без atomic UPDATE/lock. Параллельные попытки могут терять increments и задерживать lockout.",
+        "source_line": 85
+      }
     },
     {
       "id": "AUTH-030",
@@ -362,7 +544,14 @@
       "post_fix_verification": [
         "No-DB registration pytest group: 3 passed in 0.77s"
       ],
-      "live_evidence": "not-required-for-p2-code-slice"
+      "live_evidence": "not-required-for-p2-code-slice",
+      "original_definition": {
+        "priority": "P2",
+        "historical_status": "static-confirmed",
+        "surface": "Registration validation",
+        "condition": "Регистрация допускает login до 128 символов, DTO не ограничивает длину, а DB column имеет длину 100. Значения 101–128 заканчиваются DB error/500.",
+        "source_line": 86
+      }
     },
     {
       "id": "ASSIGN-032",
@@ -371,7 +560,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": false,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P2",
+        "historical_status": "static-confirmed",
+        "surface": "Assignment",
+        "condition": "Manual assignment проверяет нагрузку count-then-update без блокировки. Параллельные назначения могут превысить `MAX_ACTIVE_TICKETS_PER_OPERATOR`.",
+        "source_line": 88
+      }
     },
     {
       "id": "ACCOUNT-033",
@@ -390,7 +586,14 @@
         "Targeted ACCOUNT-033 test: 1 passed in 15.11s",
         "Full ticket account access file: 10 passed in 61.29s"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "static-confirmed",
+        "surface": "Other account",
+        "condition": "В режиме `unverified_other_account` заявленный email/login всё равно может разрешиться в существующий `requester_person_id`. Это позволяет загрязнять Customer History чужого сотрудника.",
+        "source_line": 89
+      }
     },
     {
       "id": "PUBLIC-AUTH-034",
@@ -408,7 +611,14 @@
       "post_fix_verification": [
         "Targeted PUBLIC-AUTH-034 no-DB handler test: 1 passed in 0.13s"
       ],
-      "live_evidence": "pending"
+      "live_evidence": "pending",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "runtime-candidate",
+        "surface": "Public code auth",
+        "condition": "В handler обмена 8-символьного кода не видны attempt counter/cooldown/lock. Наличие proxy rate limiting нужно доказать; иначе возможен online brute force/abuse.",
+        "source_line": 90
+      }
     },
     {
       "id": "SCALE-036",
@@ -417,7 +627,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "documented-risk",
+        "surface": "Multi-instance",
+        "condition": "DeviceOutbox/process-local runtime state не гарантирует корректность нескольких server instances. Горизонтальное масштабирование остаётся заблокированным.",
+        "source_line": 92
+      }
     },
     {
       "id": "PROTOCOL-037",
@@ -426,7 +643,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "documented-risk",
+        "surface": "Protocol V3",
+        "condition": "Restart/replay terminal result и ACK persistence имеют зарегистрированный риск потери/дублирования terminal outcome.",
+        "source_line": 93
+      }
     },
     {
       "id": "TOOL-038",
@@ -435,7 +659,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1",
+        "historical_status": "documented-risk",
+        "surface": "Tool paths",
+        "condition": "Legacy/sync execution paths не полностью сведены к `ToolExecutionService`; инвариант start-event-before-command покрыт не всеми путями.",
+        "source_line": 94
+      }
     },
     {
       "id": "TEST-039",
@@ -444,7 +675,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P0 release",
+        "historical_status": "static-confirmed",
+        "surface": "UI tests",
+        "condition": "Playwright запускается против `support_fixture_server.py`, а не против настоящего backend/DB/WS/agent. Такой слой не является E2E доказательством.",
+        "source_line": 95
+      }
     },
     {
       "id": "TEST-040",
@@ -453,7 +691,14 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P1 test integrity",
+        "historical_status": "static-confirmed",
+        "surface": "Fixture drift",
+        "condition": "Mocked requester ticket имеет `waiting_on_user` одновременно с `can_confirm_solution=true`; тест закрывает состояние, которое реальный API не разрешает.",
+        "source_line": 96
+      }
     },
     {
       "id": "RELEASE-041",
@@ -462,7 +707,21 @@
       "current_head_status": "open",
       "fix_status": "not-started",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "verification": "pending-current-head-verification",
+      "original_definition": {
+        "priority": "P0 release",
+        "historical_status": "repository evidence",
+        "surface": "Live validation",
+        "condition": "17 critical behavior scenarios существуют как blocked scaffolds. Свежего pass summary для exact commit/environment/schema нет.",
+        "source_line": 97
+      }
     }
-  ]
+  ],
+  "definition_recovery": {
+    "recovered_at": "2026-09-27",
+    "source_file": "helpdesk_deep_audit_2026-06-25.md",
+    "source_sha256": "4db7c72ffb814856479e22042acf7c6a796774abe5ae9b4e1ec2709f7744cb57",
+    "source_reviewed_sha": "a0b47ee1a28f8168c753c87aea913ab9287039e1",
+    "note": "Original conditions recovered for all 36 retained IDs. Existing head/status/evidence fields remain the historical June snapshot, not a current readiness verdict. Current acceptance must be bound to its candidate SHA."
+  }
 }

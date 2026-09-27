@@ -10,6 +10,16 @@ Helpdesk operations.
 
 ## Release and lifecycle
 
+Requester-create idempotency requires forward migration 144 before starting
+the candidate. It adds `requester_ticket_create_requests` to the Helpdesk
+database only. Keep its key tombstones when tickets are deleted; do not purge
+keys to retry a request. The canonical requester POST now requires
+`Idempotency-Key`, so deploy its accepted web bundle from the same SHA and
+update any direct callers to retain a key across retries. Old callers without
+a key receive 400. No new environment variable or dependency is required.
+Rollback follows the existing application/restore procedure, never a schema
+downgrade.
+
 For a new/rebuilt host, install the root-only environment first and then run
 `sudo deploy/helpdesk/install_helpdesk_host.sh` from a reviewed release. The
 bootstrap intentionally does not create database credentials or copy data.
@@ -17,21 +27,43 @@ bootstrap intentionally does not create database credentials or copy data.
 From the local repository, deploy committed code with:
 
 ```powershell
-python scripts/deploy_helpdesk_release.py --commit <commit>
-python scripts/manage_remote_stack.py smoke server --base-url http://192.168.100.19:8080
+python scripts/deploy_helpdesk_release.py --commit <full-sha> `
+  --environment-file <reviewed-local-production-env> `
+  --risk-audit artifacts/release/<full-sha>/risk-audit.json `
+  --readiness-evidence <protected-staging-evidence.json> `
+  --provider-root <clean-locked-provider-checkout> --schema-revision <verified-head>
+python scripts/manage_remote_stack.py smoke server --base-url https://helpdesk.sosnadmin.local
 python scripts/manage_remote_stack.py status all
 ```
 
 The release script creates `/opt/helpdesk/releases/helpdesk-<commit>`, installs
-its private venv, applies `upgrade head` to the fresh Helpdesk database, switches
-`/opt/helpdesk/current`, then restarts `helpdesk-server.service` and
+its private venv, validates security and stops Helpdesk writers. A temporary
+runtime drop-in points the reviewed migration unit at the candidate's server
+directory and Python; user, environment, sandbox and preparatory commands are
+inherited. Backup verification and `upgrade head` finish before switching
+`/opt/helpdesk/current`. The drop-in is removed and systemd reloaded on success
+or failure; an existing drop-in blocks deployment. Existing preparatory commands
+must remain valid before the switch, including on a rebuilt host. The script
+then restarts `helpdesk-server.service` and
 `helpdesk-control.service`. The services bind only to `127.0.0.1:8666` and
-`127.0.0.1:8667`; Nginx exposes the temporary bootstrap vhost on port 8080.
+`127.0.0.1:8667`; the reviewed Nginx template redirects HTTP to HTTPS on
+`helpdesk.sosnadmin.local`. Supply root-owned external TLS files at
+`/etc/helpdesk/tls/fullchain.pem` and `/etc/helpdesk/tls/privkey.pem` (key mode
+0600). The installer refuses missing TLS material or an insecure environment.
 
 To inspect logs, run `python scripts/manage_remote_stack.py logs all --lines 100`.
-Rollback is an operator action: point `current` at a known previous immutable
-release and restart the two Helpdesk services. Do not roll back PostgreSQL by
-copying Endpoint data.
+Rollback is an operator action. **Application-only** rollback switches to a
+known previous immutable release only when schema did not change.
+**Schema-compatible** rollback requires explicit proof that the previous code
+supports the migrated schema. **Restore-required** rollback stops Helpdesk
+writers, restores the verified Helpdesk backup under a reviewed recovery plan,
+then selects the matching release and verifies DB/business health. A code
+symlink rollback alone is not database recovery. Automatic production Alembic
+downgrade/stamp is blocked. Production accepts only `upgrade head` and bounded
+read commands `current`, `heads`, `history`; alternate/global Alembic argument
+forms require separate review. Never touch Endpoint releases, services or data.
+On backup/migration failure writers remain stopped for operator recovery;
+there is no automatic restart against an unknown schema.
 
 The browser control-plane lifecycle endpoints are deliberately fail-closed on
 this host: the `helpdesk` process has no privilege to manage system services.
@@ -42,9 +74,15 @@ Use the reviewed remote management script above instead.
 - `/etc/helpdesk/helpdesk.env` is root-owned, mode 0600, and is never committed
   or printed. Runtime data is in `/var/lib/helpdesk`; legacy runtime copying is
   disabled for this clean deployment.
-- This is a temporary IP-only HTTP bootstrap restricted at Nginx. It is not the
-  final TLS configuration. Before wider access, create the Helpdesk FQDN, enable
-  HTTPS/WSS, secure cookies and strict HTTPS settings.
+- The checked-in production profile requires `APP_ENV=prod`, HTTPS/WSS,
+  secure cookies, database persistence, loopback backend/control binds and an
+  explicit trusted proxy policy. Insecure auth defaults are forbidden.
+  Run `python scripts/validate_production_config.py --environment-file
+  <root-owned-env> --require-production` before deployment. The deploy script
+  repeats validation before switching `current`; systemd also validates the
+  inherited environment before starting either service. Existing historical
+  HTTP bootstrap deployments are not production-ready merely because these
+  assets were updated. Verify real DNS, CA/hostname TLS and browser WSS.
 - The Helpdesk database is intentionally empty: no tickets, users, agents,
   tokens, attachments or audit data were migrated. Create the first administrator
   separately after the owner chooses its credentials.
@@ -53,3 +91,90 @@ Use the reviewed remote management script above instead.
   credentials.
 - No existing agents are registered on this deployment. Their future
   authentication/connection flow is a separate rollout.
+
+## Production Readiness v1 rollout sequence
+
+Runtime commands in `scripts/manage_remote_stack.py` use the same
+`HELPDESK_SERVER_SERVICE` and optional `HELPDESK_CONTROL_SERVICE` profile as the
+release installer. For staging set the server unit to `helpdesk-staging.service`
+and the control unit to an empty value when no separate control service exists.
+An explicit request for an unconfigured control service fails before SSH dispatch.
+
+The command above is prepared for a separately authorized production rollout.
+Do not run it on the basis of local tests alone. Before starting, verify exact
+SHA/full CI artifact, accepted CI bundle/digests, Endpoint lock/provider evidence,
+current risk dispositions and live staging evidence. Check backup storage free
+space, disk/memory, PostgreSQL connectivity, Nginx syntax, DNS and CA/hostname
+certificate validation. Certificates/private keys remain in root-owned external
+paths; do not use `--insecure-tls` as production acceptance.
+
+The reviewed deploy command validates the frozen RC, packages the accepted web
+bundle, verifies transfer digest, validates remote security, stops only Helpdesk
+writers, verifies its DB backup before Alembic, migrates the immutable candidate,
+then switches the active release and restarts only Helpdesk. On failure it does not silently fall back or roll
+back Endpoint. Check HTTPS health, browser login/WSS, real requester/support
+business flow, safe Windows Endpoint diagnostic and correlated bounded audit.
+The candidate is not deployed merely because its manifest exists.
+
+Staging uses `osn-admin@192.168.101.118`, `/opt/helpdesk-staging`,
+`/etc/helpdesk-staging` and `/var/lib/helpdesk-staging`. Windows acceptance uses
+`test_agent_win@192.168.101.120`. Obtain synthetic requester/support credentials,
+scoped Endpoint credential and isolated DB admin access from the approved secret
+channel at runtime. Never substitute the production host or real admin account.
+Restore the original staging dependency configuration after outage testing.
+
+### Unresolved staging provider boundary (2026-09-27)
+
+Read-only inspection found Endpoint staging release
+`1c96bdc18bc05fc7730435d12da730b8bbb42502`, while the verified provider lock is
+`abdd5c7ef596bc54277e74ca96cc929a43e07049`. The dedicated Windows VM's agent
+currently connects to production Endpoint `192.168.100.19:443`; its bounded
+status identifies `endpoint.sosnadmin.local`, agent `3.2.75`, and device
+`9169e45c-9566-4277-b58e-bf76287c2b59`. This is not staging integration evidence.
+
+Keep the Windows integration gate closed. Separate Endpoint work must align
+the isolated provider with the supported locked release, connect the dedicated
+VM to that isolated namespace, verify its device identity, and supply a scoped
+Helpdesk credential for the same provider. Do not perform initial acceptance
+against production, repoint Helpdesk to production, or modify Endpoint/agent
+configuration inside this Helpdesk task. Other Helpdesk-only checks can proceed;
+their success does not waive this gate or permit a successful release manifest.
+
+## Operational signals and controlled 72-hour pilot
+
+Use existing `/api/health`, authenticated Tech Panel snapshot, Observer and
+Helpdesk systemd/journal checks. Record API/core liveness, database reachability,
+release SHA/schema revision, backup/restore markers, latest business smoke,
+stuck operations and critical integrity events. Endpoint dependency failure is
+a separate degraded condition; it must not make working Helpdesk core liveness
+fail. The adapter's `availability()` currently reports configuration readiness,
+not network reachability: do not interpret configured as a live provider probe.
+Live safe diagnostic/reconciliation evidence is required for actual availability.
+Missing marker/status is unknown and blocks readiness, not an implied success.
+
+After a separately authorized deployment, restrict the first wave to a small
+operator/requester cohort and safe capabilities; Windows live acceptance only.
+Check at pilot start, each operator shift and after every failure during 72
+hours (do not wait 72 hours inside this implementation task):
+
+- HTTP 5xx rate, application restarts and PostgreSQL errors;
+- authentication failures and stuck ticket/workflow transitions;
+- stuck operations, dependency failures and Windows Agent reconnect;
+- duplicate timeline/operation events and Observer critical integrity events;
+- verified backup success, business smoke and disk growth.
+
+Record exact revision, observation interval, measured counts, redacted evidence,
+owner and disposition. A critical integrity/security failure or loss of core
+business workflow pauses the pilot and invokes the reviewed recovery procedure.
+Pilot completion is a post-deployment operational gate, not covered by unit CI.
+
+ALT Linux Agent acceptance was intentionally excluded from Production Readiness v1.
+
+### Endpoint dependency operational signal
+
+Tech Panel Runtime shows Endpoint separately from core API/DB health. It probes one
+saved verified ticket device mapping through the existing HTTPS typed adapter,
+with a two-second limit and no operation creation. Missing mapping means unknown,
+not healthy. Configuration readiness does not prove network availability. A
+success proves only bounded API read reachability, not Windows execution or
+release compatibility. Degradation is a warning; core liveness remains separate.

@@ -7,6 +7,14 @@ import pytest
 import scripts.release_server_to_remote as release
 
 
+@pytest.fixture(autouse=True)
+def isolate_git_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Flow tests use a synthetic workspace and must not inspect the host Git repo."""
+    monkeypatch.setattr(release, "detect_commit", lambda workspace: "abc123")
+    monkeypatch.setattr(release, "_workspace_dirty", lambda workspace: False)
+    monkeypatch.setattr(release, "collect_remote_alembic_revisions", lambda **kwargs: ("143", "143"))
+
+
 def make_args(**overrides: object) -> argparse.Namespace:
     values: dict[str, object] = {
         "workspace": Path(r"C:\Users\admin-2\CodexProjects\pc_client"),

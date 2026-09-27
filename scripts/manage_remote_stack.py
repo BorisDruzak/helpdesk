@@ -42,11 +42,14 @@ def ssh_base_command() -> list[str]:
 
 
 def build_remote_command(args: argparse.Namespace) -> str:
+    profile = RemoteProfile.from_environment()
     units = {
-        "server": ["helpdesk-server.service"],
-        "control": ["helpdesk-control.service"],
-        "all": ["helpdesk-server.service", "helpdesk-control.service"],
+        "server": [profile.server_service],
+        "control": [profile.control_service] if profile.control_service else [],
+        "all": [profile.server_service, *([profile.control_service] if profile.control_service else [])],
     }[args.target]
+    if not units:
+        raise ValueError(f"Remote service target is not configured: {args.target}")
     quoted_units = " ".join(shlex.quote(unit) for unit in units)
 
     if args.action in {"start", "stop", "restart"}:

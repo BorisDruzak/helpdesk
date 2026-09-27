@@ -31,6 +31,10 @@ from observer.web_event_writer import write_web_cabinet_observer_event
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
 from requester.identity_service import RequesterIdentityResolver, RequesterProfileValidationError
+from requester.create_idempotency import (
+    CreateRequestConflict, CreateRequestKey, RequesterCreateLedger,
+    created_ticket_response, replay_created_ticket,
+)
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
 from tickets.handlers import (
@@ -44,6 +48,8 @@ from tickets.handlers import (
     _store_resolution_confirmation_state,
 )
 from tickets.create_flow import (
+    RequesterIdentityMismatch,
+    TicketInitializationError,
     VerifiedRequesterBinding,
     build_default_priority_payload,
     create_ticket_with_side_effects,
@@ -65,7 +71,7 @@ from tickets.chat_idempotency import (
     normalize_chat_message_id,
 )
 from tickets.ticket_context import TicketContextBuilder, project_requester_ticket_context
-from tickets.workflow_service import TicketWorkflowService
+from tickets.workflow_service import TicketWorkflowService, WorkflowTransitionConflict
 
 _AVAILABILITY_POLICY_FIELDS = (
     "available_without_completed_profile",
@@ -293,7 +299,7 @@ async def _resolve_requester_self_device_context(
 
 
 def _has_contact_for_emergency(person: RegistryPerson | None, form_payload: dict[str, Any], data: dict[str, Any]) -> bool:
-    for value in (getattr(person, "phone", None), getattr(person, "email", None), data.get("user_display_name")):
+    for value in (getattr(person, "phone", None), getattr(person, "email", None)):
         if _clean(value, max_length=240):
             return True
     for source in (form_payload, data):
@@ -1306,6 +1312,9 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
                 reason=_clean(data.get("reason"), max_length=200) or "requester_confirmed_resolution",
                 source="requester_workspace",
             )
+        except WorkflowTransitionConflict as exc:
+            await session.rollback()
+            return _error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
         except ValueError as exc:
             return _error(str(exc), status=400, error_code="WORKFLOW_POLICY_ERROR")
 
@@ -1737,6 +1746,12 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     if not isinstance(data, dict):
         return _error("JSON body must be an object", status=400)
 
+    key_header = request.headers.get("Idempotency-Key")
+    try:
+        request_key = CreateRequestKey.parse(auth_context.actor_id, key_header, data)
+    except (ValueError, RecursionError):
+        return _error("Некорректный ключ или данные повторного запроса.", status=400, error_code="VALIDATION_ERROR")
+
     supplied_device_id = _clean(data.get("device_id"), max_length=80)
     description = _clean(data.get("description"), max_length=5000)
     if not description:
@@ -1752,6 +1767,15 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
+        ledger = RequesterCreateLedger(session)
+        try:
+            completed = await ledger.lookup(request_key)
+            if completed is not None:
+                return _success(await replay_created_ticket(session, completed, resolver, actor_id=auth_context.actor_id))
+        except CreateRequestConflict as exc:
+            return _error(str(exc), status=409, error_code="CREATE_REQUEST_CONFLICT")
+        except PermissionError:
+            return _error("Обращение недоступно.", status=404, error_code="TICKET_NOT_FOUND")
         profile_schema = await RequesterProfileSchemaService(session).get_schema()
         try:
             person, binding, device_id, account_mode, request_context, primary_device_resolution = await _resolve_requester_self_device_context(
@@ -1976,49 +2000,72 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 },
             )
             return _error(str(exc), status=exc.status, error_code=exc.error_code)
-        created = await create_ticket_with_side_effects(
-            session,
-            device_id=device_id,
-            requester_id=auth_context.actor_id,
-            title=title,
-            description=description,
-            user_display_name=_clean(data.get("user_display_name"), max_length=300)
-            or getattr(person, "display_name", None)
-            or auth_context.actor_id,
-            requester_profile=requester_profile,
-            normalized_priority=normalized_priority,
-            initial_message_text=description,
-            initial_message_sender_role="user",
-            initial_message_from="user",
-            include_public_access=True,
-            ticket_type=ticket_type,
-            category_id=template_context.get("category_id"),
-            service_id=template_context.get("service_id"),
-            subcategory_id=template_context.get("subcategory_id"),
-            sla_policy_id=template_context.get("sla_policy_id"),
-            catalog_service_id=catalog_process_fields.get("catalog_service_id"),
-            catalog_offering_id=catalog_process_fields.get("catalog_offering_id"),
-            service_code=catalog_process_fields.get("service_code"),
-            offering_code=catalog_process_fields.get("offering_code"),
-            request_type=catalog_process_fields.get("request_type"),
-            business_criticality=catalog_process_fields.get("business_criticality"),
-            reporting_category=catalog_process_fields.get("reporting_category"),
-            service_owner_actor_id=catalog_process_fields.get("service_owner_actor_id"),
-            support_group_code=catalog_process_fields.get("support_group_code"),
-            extra_custom_fields=extra_custom_fields,
-            requester_account=requester_account,
-            verified_requester_binding=(
-                VerifiedRequesterBinding(
-                    device_id=str(binding.device_id),
-                    person_id=str(person.person_id),
-                    binding_id=str(binding.binding_id),
-                )
-                if account_mode == "confirmed_binding" and person is not None and binding is not None
-                else None
-            ),
-            ticket_context=on_behalf_context,
-            state=request.app.get("state"),
-        )
+        try:
+            completed = await ledger.reserve(request_key)
+            if completed is not None:
+                return _success(await replay_created_ticket(session, completed, resolver, actor_id=auth_context.actor_id))
+        except CreateRequestConflict as exc:
+            await session.rollback()
+            return _error(str(exc), status=409, error_code="CREATE_REQUEST_CONFLICT")
+        except PermissionError:
+            await session.rollback()
+            return _error("Обращение недоступно.", status=404, error_code="TICKET_NOT_FOUND")
+        try:
+            created = await create_ticket_with_side_effects(
+                session,
+                device_id=device_id,
+                requester_id=auth_context.actor_id,
+                title=title,
+                description=description,
+                user_display_name=_clean(data.get("user_display_name"), max_length=300)
+                or getattr(person, "display_name", None)
+                or auth_context.actor_id,
+                requester_profile=requester_profile,
+                normalized_priority=normalized_priority,
+                initial_message_text=description,
+                initial_message_sender_role="user",
+                initial_message_from="user",
+                include_public_access=True,
+                ticket_type=ticket_type,
+                category_id=template_context.get("category_id"),
+                service_id=template_context.get("service_id"),
+                subcategory_id=template_context.get("subcategory_id"),
+                sla_policy_id=template_context.get("sla_policy_id"),
+                catalog_service_id=catalog_process_fields.get("catalog_service_id"),
+                catalog_offering_id=catalog_process_fields.get("catalog_offering_id"),
+                service_code=catalog_process_fields.get("service_code"),
+                offering_code=catalog_process_fields.get("offering_code"),
+                request_type=catalog_process_fields.get("request_type"),
+                business_criticality=catalog_process_fields.get("business_criticality"),
+                reporting_category=catalog_process_fields.get("reporting_category"),
+                service_owner_actor_id=catalog_process_fields.get("service_owner_actor_id"),
+                support_group_code=catalog_process_fields.get("support_group_code"),
+                extra_custom_fields=extra_custom_fields,
+                requester_account=requester_account,
+                verified_requester_binding=(
+                    VerifiedRequesterBinding(
+                        device_id=str(binding.device_id),
+                        person_id=str(person.person_id),
+                        binding_id=str(binding.binding_id),
+                    )
+                    if account_mode == "confirmed_binding" and person is not None and binding is not None
+                    else None
+                ),
+                ticket_context=on_behalf_context,
+                state=request.app.get("state"),
+            )
+        except RequesterIdentityMismatch:
+            await session.rollback()
+            return _error(
+                "Заявитель не соответствует подтверждённой учётной записи.",
+                status=403, error_code="REQUESTER_IDENTITY_FORBIDDEN",
+            )
+        except TicketInitializationError:
+            await session.rollback()
+            return _error(
+                "Не удалось подготовить обращение. Повторите попытку позже.",
+                status=503, error_code="TICKET_INITIALIZATION_UNAVAILABLE",
+            )
         ticket_row = created["ticket"]
         ticket_custom_fields = ticket_row.custom_fields if isinstance(ticket_row.custom_fields, dict) else {}
         await _write_requester_web_observer_event(
@@ -2077,15 +2124,8 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 account_mode=account_mode,
             ),
         )
+        await ledger.complete(request_key, created["ticket_id"])
+        response = _success(created_ticket_response(created["ticket"], created.get("public_access_code")))
         await session.commit()
-        ticket = ticket_to_dict(created["ticket"], visibility="requester")
 
-    return _success(
-        {
-            "ticket": ticket,
-            "ticket_id": created["ticket_id"],
-            "ticket_code": ticket.get("ticket_code"),
-            "public_access_code": created.get("public_access_code"),
-            "public_access_url": ticket.get("public_access_url"),
-        }
-    )
+    return response

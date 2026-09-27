@@ -104,7 +104,7 @@ class _WebCabinetCheckSession:
         return 1
 
 def _headers(token: str, *, request_id: str | None = None) -> dict[str, str]:
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": uuid.uuid4().hex}
     if request_id:
         headers["X-Request-ID"] = request_id
     return headers

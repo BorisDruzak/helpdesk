@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 from pathlib import Path
 
 import scripts.business_smoke as business_smoke
@@ -196,3 +197,27 @@ def test_business_smoke_writes_failed_marker_on_failed_step(tmp_path: Path) -> N
     assert payload["steps"][0]["key"] == "require_https"
     assert payload["steps"][0]["status"] == "failed"
     assert "secret" not in output.read_text(encoding="utf-8")
+@pytest.mark.parametrize("websocket,expected", [(None, "failed"), ("ws://unsafe.test/ws_ui", "failed"), ("wss://stand.test/ws_ui", "success")])
+def test_browser_smoke_requires_observed_wss_and_trusted_tls(monkeypatch, websocket, expected):
+    import sys
+    from types import SimpleNamespace
+    observed = []
+    handlers = {}
+    def goto(*args, **kwargs):
+        if websocket:
+            handlers["websocket"](SimpleNamespace(url=websocket, on=lambda event, callback: callback({})))
+    page = SimpleNamespace(on=lambda event, callback: handlers.update({event: callback}), goto=goto)
+    context = SimpleNamespace(request=SimpleNamespace(post=lambda *a, **k: SimpleNamespace(ok=True)), new_page=lambda: page)
+    def new_context(**kwargs):
+        observed.append(kwargs)
+        return context
+    browser = SimpleNamespace(new_context=new_context, close=lambda: None)
+    class Playwright:
+        def __enter__(self):
+            return SimpleNamespace(chromium=SimpleNamespace(launch=lambda **kwargs: browser))
+        def __exit__(self, *args):
+            pass
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", SimpleNamespace(sync_playwright=Playwright))
+    result = business_smoke.run_browser_https_wss_check(base_url="https://stand.test", username="synthetic", password="runtime-only", timeout=1)
+    assert observed == [{"ignore_https_errors": False}]
+    assert next(step for step in result if step["key"] == "browser_wss")["status"] == expected

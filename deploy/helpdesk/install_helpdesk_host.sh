@@ -15,6 +15,12 @@ if [[ ! -f "${env_file}" ]]; then
   exit 1
 fi
 
+python3 "${script_dir}/../../scripts/validate_production_config.py" --environment-file "${env_file}" --require-production
+for tls_file in /etc/helpdesk/tls/fullchain.pem /etc/helpdesk/tls/privkey.pem; do
+  [[ -f "${tls_file}" && "$(stat -c %U "${tls_file}")" == root ]] || { echo "Missing root-owned TLS file" >&2; exit 1; }
+done
+[[ "$(stat -c %a /etc/helpdesk/tls/privkey.pem)" == 600 ]] || { echo "TLS private key must have mode 0600" >&2; exit 1; }
+
 if ! getent group helpdesk >/dev/null; then
   groupadd --system helpdesk
 fi

@@ -1,5 +1,37 @@
 # Runbook: Backup и Restore (PostgreSQL)
 
+## Helpdesk production migration gate
+
+The canonical `server/scripts/run_migrations.py upgrade head` refuses production
+migration until a custom-format `pg_dump` succeeds, SHA-256 and size are computed
+and `pg_restore --list` succeeds. Backups live under
+`PC_CLIENT_SERVER_DATA_ROOT/backups` (directory 0700, archives 0600), outside the
+immutable release. `TECH_BACKUP_STATUS_PATH` gets an atomic marker with exact
+release SHA, source schema revision, database, digest and verification status.
+The deployment archive supplies `release-identity.json`; missing identity,
+insecure configuration, missing storage or failed backup prevents Alembic.
+Credentials remain runtime inputs and are never command arguments/evidence.
+
+Run an isolated restore drill through the reviewed release:
+
+```bash
+python scripts/helpdesk_database_backup.py --restore-drill \
+  --backup-marker /var/lib/helpdesk/backup-status.json \
+  --output /var/lib/helpdesk/restore-drill-status.json
+```
+
+Supply `HELPDESK_RESTORE_ADMIN_URL` through the approved secret channel at
+runtime. The helper validates backup digest/size, creates only a random
+`helpdesk_restore_<uuid>` database using template0, restores with exit-on-error,
+checks the pre-migration revision and schema/query smoke, and drops that same
+database even on restore failure. Failed cleanup is fatal. The restored backup
+represents the pre-migration revision, not necessarily the new candidate head;
+fresh/migration CI validates the candidate head separately. A local helper unit
+test is not evidence of a successful real PostgreSQL restore drill.
+
+Code/schema/restore rollback distinctions are in
+[the Helpdesk host runbook](RUNBOOK_HELPDESK_ENDPOINT_HOST.md).
+
 ## Базовый уровень (Stage 12)
 
 - **Daily base backup:** pg_basebackup.

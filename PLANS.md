@@ -1,4 +1,200 @@
-# Active: 2026-09-03 Helpdesk / Endpoint legacy cutover
+# Active: 2026-09-27 Helpdesk Production Readiness v1
+
+Server-event retry races: two real PostgreSQL cases pass in 552.75 seconds.
+Both retries complete a negative preliminary SELECT before insertion; the
+existing revision-132 indexes still preserve one event for event_id and
+message_id. The temporary role/database/tunnel were removed. This closes the
+concurrency evidence gap locally; exact final-SHA CI acceptance remains required.
+
+Diagnostic actor length: a real isolated PostgreSQL regression on revision
+144 failed with StringDataRightTruncationError for a valid 100-character
+support login. The facade stores the login in a 36-character diagnostic
+session column. Revision 145 and the ORM widen that column to 100 without
+truncating attribution or changing authorization. Fresh-migration PostgreSQL
+verification passes all three cases in 590.02 seconds, including both existing
+durability cases; temporary role/database/tunnel cleanup was verified.
+Push CI for 3317ec678e866c1ce0fcd8b50eff967cb2400d30 was strictly accepted
+across 18 layers. Its reviewed historical-risk dispositions are 24 verified,
+nine open and three unverified; full release acceptance remains blocked.
+
+Endpoint operation durability follow-up: two new PostgreSQL regressions pass
+in 563.45 seconds. A failure after local link insertion rolls back operation,
+diagnostic session/step and link before any remote request. A simulated worker
+exit after remote create leaves its committed lease and replay key; a separate
+worker reclaims after expiry and reuses the same key. The provider is a stub
+implementing the published idempotency contract, so this does not prove real
+Endpoint/Windows delivery. Temporary role/database/tunnel cleanup was verified;
+Helpdesk staging was independently confirmed inactive with MainPID=0.
+Current-source event/chat boundaries passed six checks, and the overlong-login
+boundary passed one check. Real Windows and full release acceptance remain open.
+
+Runtime database logging follow-up: a configured-engine regression reproduced
+bound SQL parameter disclosure in formatted errors. The runtime engine now
+enables hide_parameters=True. This changes error/log representation only;
+SQL execution, pool options and transaction behavior remain unchanged.
+The combined 43-case focused suite and workspace verifier pass. New exact-SHA
+full CI remains required before release acceptance.
+
+Security logging follow-up: a synthetic IntegrityError regression confirmed
+that a UI-user creation conflict logged SQL parameters including password_hash.
+The repository now emits a constant conflict message after rollback and raises
+the existing ValueError without displaying the underlying exception chain.
+Duplicate-login refusal and authorization behavior are unchanged. The combined
+39-case focused suite and workspace verifier pass. New exact-SHA CI is required
+before release acceptance.
+
+CONSENT-021 current-boundary follow-up: failed operation transitions were
+ignored for approval/denial (two unit failures). Missing/changed subjects were
+also silently accepted (six further unit failures). The service now raises
+safe OPERATION_STATE_CONFLICT/409; the browser handler rolls back the decision
+and ticket event. Eleven consent unit cases and the combined 38-case suite
+pass. The real PostgreSQL CAS-conflict/retry suite passed two cases in 556.84
+seconds after correcting an oversized fixture device ID to a UUID. The initial
+fixture failure is retained separately. Both runs verified temporary-role
+absence and zero residual owned databases. Full new-SHA CI/live/risk acceptance
+remains pending; no Endpoint configuration or production operation changed.
+
+ACCOUNT-033 compatibility follow-up: CI 36288251203 for 535ab028 failed
+two existing unregistered-requester emergency/profile-optional cases. The
+correction keeps an authenticated actor with no resolved person and no
+person claim unlinked. A new unit case failed before the fix; the focused
+identity/initialization/idempotency suite passes 27 cases. Five real
+PostgreSQL cases passed in 637.01 seconds, covering both failing controls
+and foreign-ID/unavailable/retry regressions. Temporary role absence and
+zero residual owned databases were verified. New full CI/live/risk proof
+remains pending; the previous red CI artifact is preserved, not accepted.
+
+ACCOUNT-033 current-boundary repro: legacy create with a forged
+browser_no_device person ID persisted a foreign requester and emitted a Customer
+History event. The two-case isolated run had one pass/one fail in 544.32 seconds;
+temporary role cleanup was verified. The working-copy fix verifies server
+identity before assigning any requester/person/context fields, rejects mismatch
+with rollback/403 and converts identity lookup failure to typed rollback/503.
+Seven new no-DB cases initially failed; the combined 26-case suite now passes.
+Three direct create-flow fixtures now supply real verified UI-login identities.
+Seven expanded PostgreSQL cases, including history, unavailable/retry and normal
+requester/on-behalf controls, passed in 667.59 seconds; temporary role cleanup
+was verified. New exact-SHA CI/live proof remains open.
+
+CREATE-011 was published as f5f85ecc5b8c5dd4adabf20f77ac727c1312b1aa.
+Its first full CI failed at the no-DB harness test's historical 169-table count;
+migration 144 correctly adds table 170. The focused cleanup/idempotency suite
+passes 57 cases after updating count/order and asserting web_support coverage.
+Local full no-DB coverage had 838 passes and one separate guard failure caused
+by an ignored old pc_agent/dist build; no pc_agent Python source is tracked.
+The clean CI guard passed before the cleanup-count failure. Preserve that
+local build and the guard; do not report the local full run as passing.
+Follow-up c68bbaec0877c4cab7ec4790a05c5ae7a2a52f37 passed full exact-SHA CI:
+18 effective layers and all 25 idempotency cases passed in the downloaded,
+strictly validated artifact. The identity correction above requires its own
+new exact-SHA CI; live acceptance and full risk closure remain open.
+
+CREATE-011 working-copy implementation adds actor/key/payload hashes and a
+ticket link through forward migration 144. The canonical requester POST now
+requires an Idempotency-Key, reserves it in the ticket transaction, rechecks
+current ticket access on replay and rejects changed bodies/deleted-ticket
+tombstones. The browser persists account/intent-scoped pending keys through
+failure and refresh; a conflict allows an explicit separate intent. Initial
+PostgreSQL coverage passed eight cases in 688.17 seconds with fresh migrations
+and verified temporary database/role/tunnel cleanup. That run used the earlier
+optional-header wrapper; mandatory-key validation and removal of the redundant
+wrapper followed it. Twenty-five focused no-DB checks, 39 frontend checks,
+TypeScript/build and all 19 requester Chromium fixture cases pass. The expanded
+PostgreSQL run completed with 18 passes and one incorrect test expectation:
+the form/device preflight legitimately returns 403, not 400. Only that test
+expectation changed; its two parameter cases then passed in a fresh isolated
+database in 549.35 seconds, covering all 19 selected cases across the runs.
+Temporary role cleanup was verified after both runs. Final exact-SHA CI and
+live staging acceptance are still required; this is not risk closure.
+
+HISTORY-023 was reproduced during CREATE-011 authorization preparation:
+`RequesterIdentityResolver.get_ticket` searched only the latest 300 tickets.
+The working-copy correction shares the existing access predicate with a direct
+ID/code query. Three no-DB regressions reproduced the bounded lookup and now
+pass; the 21-case lookup/reference suite passes. Two isolated PostgreSQL checks
+passed in 537.96 seconds: an old ticket after 301 newer requests and
+neutral/legacy authorization, including revoked active identity. Temporary
+database/role/tunnel cleanup was verified. The published HISTORY-023 commit
+`5a02c89be3a7f9d905db26786542f15bc1be5dc1` passed full exact-SHA CI with 18
+effective layers and all five lookup cases. CREATE-011 implementation is
+described above; this prerequisite alone does not close that risk.
+
+Latest live checkpoint (2026-09-27; historical for subsequent changes): candidate
+`4536db17a341a8d3d6f03af61017b95349c4f47c` passed full exact-SHA CI,
+canonical staging installation, backup/restore and requester/support core
+cycles T-000017/T-000018, including a real Endpoint adapter outage. Temporary
+overrides were removed, synthetic accounts disabled and Helpdesk staging stopped.
+This proves core behavior only; full Windows integration and risk closure remain
+incomplete. The original June 25 audit was recovered and all 36 retained risk
+definitions mapped. CREATE-012 was reproduced on that candidate: mandatory
+routing/SLA/OLA exceptions were swallowed. The working-copy fix now returns a
+safe 503 after transaction rollback. Unit regressions and eight isolated
+PostgreSQL API checks passed; temporary test database/role cleanup was verified.
+TEST-040 requester fixtures now follow valid closure states; all 17 browser
+fixture scenarios passed. Earlier CI/live evidence does not accept a subsequent SHA.
+
+The separate public-create route also reproduced CREATE-012/CREATE-013:
+required initialization errors were swallowed and token issuance followed the
+ticket commit. The next bounded fix issues the public session and constructs
+the response in the caller's transaction. Five unit regressions failed before
+the correction; six isolated PostgreSQL checks passed afterward, including
+rollback after session insertion/serialization and successful public authorization.
+Temporary test database/role/tunnel cleanup was verified.
+
+SUPPORT-025 command-center/summary failure regressions reproduced false 200
+empty responses; the bounded fix returns safe 503 and shows unavailable UI
+states instead of empty-task/zero-summary claims. A refetch failure preserves
+cached tasks with a warning. Twelve server checks, nine component checks,
+TypeScript/build and a controlled real-browser degradation scenario passed.
+SUPPORT-026 malformed `limit` is fixed for support queue/summary; other
+historically listed handlers still need current-condition verification.
+
+WORKFLOW-016/017 were reproduced in the current handlers: take-in-work ignored
+assignment rejection and queue mutations swallowed required OLA failures.
+The bounded correction rolls back these mutations before a safe error response;
+mass queue changes preserve earlier successful items and roll back the failed
+item. Eleven HTTP regressions failed before the fix; the focused no-DB suite
+passed afterward. Fifteen isolated PostgreSQL checks passed: failure leaves
+status, assignment, queue, timers and events unchanged; a mixed mass action
+keeps the earlier successful item. Normal status/queue controls also passed.
+Temporary database/role/tunnel cleanup was verified. Published b9cb055 passed
+all 18 full CI layers, but these newer workflow changes still require their
+own exact-SHA CI and live acceptance.
+
+CREATE-014 was reproduced with two cases: a display name alone satisfied
+emergency `contact_required`. Preview/create share the corrected check; seven
+focused contact regressions passed, preserving profile phone/e-mail and
+explicit contact fields. This is not proof of contact deliverability or live
+acceptance. The combined focused no-DB suite passed all 22 checks.
+
+WORKFLOW-015 was reproduced: a stale `from_status` reached policy execution.
+The working-copy correction locks/refreshes the row before side effects and
+maps stale explicit transitions to a safe 409. Automatic reply transitions
+choose their target under the lock and skip unavailable/duplicate fallbacks.
+Review also identified `autoflush=False`; locked reads now explicitly flush
+pending same-transaction writes before refresh. Twenty-six focused no-DB checks
+passed. The expanded isolated PostgreSQL run passed six checks: competing
+different/same-target transitions have one winner and one status event, a
+pending assignment survives with autoflush disabled, and normal reply, wait
+ledger and quality-reopen controls succeed. Temporary database/role/tunnel
+cleanup was verified. All 36 original conditions are now preserved in the
+historical registry with the audit hash/line provenance and unchanged statuses.
+No current-SHA release acceptance is claimed from these focused results.
+
+Windows integration is independently blocked: Endpoint staging release
+`1c96bdc18bc05fc7730435d12da730b8bbb42502` differs from the verified locked
+provider `abdd5c7ef596bc54277e74ca96cc929a43e07049`, and the Windows test VM is
+currently connected to production Endpoint. See the runbook's unresolved staging
+provider boundary. Endpoint remains unchanged; no production acceptance was run.
+
+Production Readiness v1 baseline:
+`f2ad220f04e72a86eff00ea13f59a32dcd615b42`
+
+Branch: `codex/helpdesk-production-readiness-v1`. Full exact-SHA CI and live
+staging gates are required. See the active implementation checklist below.
+Prior cutover evidence is historical and does not waive readiness gates.
+
+# Historical: 2026-09-03 Helpdesk / Endpoint legacy cutover
 
 ## Goal
 
@@ -97,6 +293,162 @@ browser UI responsibilities only.
    evidence and the approved real-agent canaries satisfy the cutover plan.
 
 # Helpdesk Bug Remediation and Live Detection Master Plan
+
+## 2026-09-27 Production Readiness v1 — active
+
+Production Readiness v1 baseline:
+`f2ad220f04e72a86eff00ea13f59a32dcd615b42`
+
+- Branch: `codex/helpdesk-production-readiness-v1`, based on fetched remote
+  default `codex/helpdesk-process-model`. Earlier accepted/deployed revisions
+  below are historical evidence, not the current RC identity.
+- Scope: release/security/database/CI/live staging readiness only. Endpoint is
+  read-only. Windows live acceptance only; ALT acceptance is excluded.
+- Production deployment is not authorized by this task. Stop after verified
+  staging acceptance and frozen RC evidence; no readiness claim with open gates.
+- Preserve the user's pre-existing `AGENTS.md` edits outside task commits.
+
+### Repo-grounded implementation plan
+
+1. Baseline/current audit: update this section and extend current-head risk
+   validation around `known_bug_registry.current_head.json`; historical
+   fixed-local records never become current verification automatically.
+2. Provider lock: establish deployed Endpoint SHA using read-only release
+   evidence, then update `integration/endpoint_contract.lock.json` and run
+   `scripts/validate_endpoint_contract_lock.py` plus adapter/contract/boundary
+   suites. Unknown provider SHA blocks integration acceptance.
+3. Security: update `deploy/helpdesk/helpdesk.env.example`, Nginx template,
+   host installer and `server/config.py`; add a secret-free standalone config
+   preflight with regression tests for cookie/HTTP/bind/proxy policy failures.
+4. Database: add verified custom-format backup and isolated restore drill to
+   existing deployment/migration entrypoints; reuse Tech Panel marker paths.
+   Test backup/verification failure prevents migration and restore cleanup.
+5. CI/artifacts: extend canonical workflow and
+   `scripts/release_candidate_preflight.py`; require full exact-SHA CI,
+   exact-SHA web bundle, lock, current risk audit and required staging evidence.
+6. Live staging: real requester/support browser lifecycle, persisted database
+   and audit checks using synthetic accounts, then safe Windows Endpoint
+   diagnostic and reversible dependency degradation. No mocks replace gates.
+7. Operations/manifest/runbook: reuse `server/tech/snapshot.py`, existing release
+   and backup/restore/smoke markers; document strict TLS, production commands,
+   code/schema/restore rollback and the post-deploy 72-hour pilot checklist.
+
+Migration impact: requester idempotency requires revision 144; preserving full
+diagnostic actor logins requires revision 145. Neither migration removes data.
+The consent-delivery investigation below requires no further schema change. Deployment
+impact: unsafe configuration and missing backup/evidence become fatal before
+migration. Rollback impact: symlink rollback is insufficient after incompatible
+schema changes; no automatic Alembic downgrade or Endpoint rollback.
+
+### Consent delivery follow-up — current investigation
+
+- Frozen checkpoint `8989e7afdb67b02e7bc0364e17e861346a3e1158` passed exact-SHA
+  full CI, canonical staging install/schema 145, backup/isolated restore, real
+  requester/support core, core continuity during an adapter outage and Tech Panel
+  identity/DB/dependency checks. It is still not production-ready: Windows
+  staging alignment and blocking/unverified risks remain open. Staging is stopped.
+- Real isolated PostgreSQL reproduced a reconciler claim before consent approval.
+  A separate no-DB regression reproduced approval of a historical orphan. The
+  second PostgreSQL case initially failed on a missing required fixture field;
+  that fixture failure is preserved separately and is not behavioral evidence.
+- The correction limits claims to delivery/cancellation states and requires a
+  pending durable Endpoint link before approval. Denial, requester scope, event
+  rollback and Endpoint-only execution remain intact. Boundary docs are updated.
+  Focused no-DB checks passed (38 tests), as did all four real PostgreSQL
+  recovery/orphan/CAS cases (616.64 seconds). Waiting/denied/unknown states were
+  not claimed. Temporary test role, databases and tunnel were removed. The
+  provider is modeled here; this is not actual Windows/agent acceptance.
+  A clean tracked snapshot with current consent files also passed all cutover
+  guards and consent no-DB cases (28 tests); ignored local packaging is preserved.
+- A changed candidate must obtain its own exact-SHA CI and current staging proof;
+  the accepted 8989 artifacts remain evidence for 8989 only. Endpoint is unchanged.
+
+### Initial verified checkpoint
+
+- Fetched default baseline: `f2ad220f04e72a86eff00ea13f59a32dcd615b42`.
+- GitNexus group status: all three indexes/contracts current, zero commits
+  behind, no missing repositories. No manual sync was run.
+- Open PR #2 is historical documentation, not readiness implementation.
+- Last GitHub evidence is Endpoint contract workflow only; full CI is unproven.
+- Existing bug registry is historical (`fd232bb9...`), with P0/P1 live evidence
+  pending. Current readiness is **BLOCKED**, not production-ready.
+- Production provider identity, live staging, TLS, backup/restore, Windows
+  operation and degraded acceptance remain unverified.
+- `scripts/production_readiness_audit.py --refresh-source
+  known_bug_registry.current_head.json --commit <full-sha> --audit
+  artifacts/release/<full-sha>/risk-audit.json` creates a current-SHA audit with
+  all historical dispositions unverified. Re-run without `--refresh-source`
+  after supplying actual verification; unresolved high-priority records fail.
+- Workspace scanner now prunes dependency trees and other worktrees before
+  descent. Focused scanner/risk tests and scoped workspace verification passed.
+
+### Provider re-lock checkpoint
+
+- Production symlink (read-only SSH) points to
+  `/opt/endpoint-platform/releases/endpoint-platform-abdd5c7ef596`.
+- Exact revision: `abdd5c7ef596bc54277e74ca96cc929a43e07049`. Compared 207
+  deployed source/config files with raw Git blobs: zero digest mismatches.
+  53 non-shipped tool/test/frontend-source files were absent; no manifest or
+  Git metadata was present in the deployed immutable release.
+- Raw canonical OpenAPI SHA-256:
+  `cc1a47c8343091c0bef5942e9a0f5254f7d73cf07d02063ae24a21eedf34d8f1`.
+- Exact clean provider checkout validator passed. Consumer contract/HTTP/port/
+  cutover no-DB run: 66 passed, 1 failed. The failed boundary test scans local
+  ignored `pc_agent/dist` packaging dependencies left from an older checkout;
+  this is not green boundary acceptance. Re-run from clean committed source.
+- DB/provider/Gateway/Windows/live compatibility remains required; re-lock
+  alone is not integration acceptance or production readiness.
+- Staging SSH and Windows VM SSH work. Staging sudo requires runtime approval
+  credentials; no password was retrieved, stored or printed. Live DB gates
+  are pending the approved secret channel.
+
+### Security checkpoint
+
+- Production env/Nginx templates now require HTTPS/WSS, secure cookie, explicit
+  loopback and proxy policy. Host installer validates external root-owned TLS
+  material. Runtime/deploy/systemd share the same transport policy.
+- 31 config/deployment tests, 7 no-DB auth tests, example-env validation and
+  scoped workspace verification passed. These are local checks, not deployed
+  TLS/browser acceptance; production configuration was not changed.
+
+### Database safety checkpoint
+
+- Production migration entrypoint now requires exact packaged release identity
+  and verified custom backup before Alembic. Deployment stops Helpdesk writers;
+  failed backup/migration leaves them stopped for reviewed recovery.
+- Restore helper validates backup digest/size, uses a random isolated database,
+  compares restored pre-migration schema revision and cleans up on failure.
+- 22 focused backup/migration/deployment tests and workspace verification
+  passed. Real PostgreSQL backup/restore, migration and fresh-DB CI remain
+  unverified pending runtime credentials. No production migration ran.
+
+### CI and artifact checkpoint
+
+- Added `Helpdesk production readiness` workflow and mandatory aggregate job
+  `production-readiness` (GitHub branch protection requires administrator action).
+  It runs canonical full CI and the existing real provider contract workflow.
+- Production preflight requires exact-SHA full CI/web metadata, secure config,
+  current risk audit, clean pinned provider and actual staging acceptance.
+  Only successful validation creates an immutable bounded release manifest.
+- Web typecheck/production build passed locally using Node 24.15.0 and
+  pnpm 10.33.0. Build metadata/digest checks are covered by focused tests.
+  Full CI/live staging evidence is not yet green.
+- Clean-checkout full CI on `933c9669...` passed workspace/build, 454 web unit
+  tests, fixture E2E and inventory/risk/contamination/coverage/mutation audits.
+  Scripts collection failed on the `server` module/package name collision.
+  Shared policy moved to `shared/production_security.py`; full scripts layer
+  must be rerun. Clean-checkout Endpoint boundary run: 67 passed.
+- After moving shared policy, full local scripts collection passed: 241 tests.
+  This does not turn the earlier exact-SHA full CI red artifact green.
+- Real staging HTTPS login page rendered in Playwright; console 0 errors and
+  0 warnings. Synthetic login, ticket flow and Windows/degraded flow remain
+  unverified; no runtime credentials are present in the named environment inputs.
+- No services were started/restarted/stopped during read-only discovery; the
+  pre-existing active staging service was left in its original state.
+- Remaining implementation/live gates: full business-flow automation, real
+  backup/restore and provider acceptance, Windows/degraded acceptance, actual
+  operational release/schema/dependency evidence and final green manifest.
+  No accepted release manifest has been fabricated.
 
 ## 2026-08-31 Staging secure admin-session access
 
@@ -1031,3 +1383,66 @@ Next recommended execution slice:
 5. Only then harden live tooling and execute broad live bug hunt.
 
 Do not append chat transcripts or raw logs here. Store detailed evidence under `artifacts/live/<release_run_id>/` and link concise results back into this plan.
+
+
+### Production Readiness v1 — live admin polling regression
+
+Live current-candidate Tech Panel exposed recurring 404/console errors from shell polling of retired /api/web/admin/connection_requests. Remove only the shell legacy enrollment polling/entry; preserve ticket notification count and backend retirement boundary. A new component regression failed before the fix. Existing a534 staging/CI evidence remains historical for that exact SHA; the next commit requires its own full CI and new browser recording. Endpoint dependency status is not yet visible in Tech Panel and remains an operational acceptance gap.
+
+
+### Production Readiness v1 — bounded Endpoint operational signal
+
+Existing Tech Panel Runtime now includes Endpoint dependency read health using the canonical typed adapter and one saved ticket mapping. No new HTTP contract, health target, operation, agent dispatch, or monitoring subsystem. Without mapping, availability remains unknown; API read success cannot substitute for Windows acceptance. Regression coverage checks failure isolation, bounded projection, and missing-target behavior. New exact-SHA CI/live evidence remains required.
+
+### Production Readiness v1 — current risk remediation checkpoint
+
+The original deep audit was recovered from
+`C:\Users\admin-2\Downloads\helpdesk_deep_audit_2026-06-25.md` and all 36
+retained risk definitions were mapped to the current candidate evidence.
+On candidate `4536db17a341a8d3d6f03af61017b95349c4f47c`, CREATE-012 was
+reproduced by fault injection: routing/SLA/OLA exceptions were swallowed.
+The bounded fix now stops required initialization, and both create HTTP routes
+roll back before returning a safe 503. Three unit regressions failed before
+the fix and passed afterward. Eight isolated PostgreSQL API checks passed:
+three injected stages across both create routes leave no ticket or initial
+events, while two normal creation controls succeed. Temporary database, role
+and SSH tunnel were removed. TEST-040 was separately corrected and all 17
+requester browser fixture scenarios passed; fixture results are not live acceptance.
+The accepted 4536 CI/live evidence remains historical for subsequent changes.
+Full CI and staging acceptance must be repeated on the next frozen SHA.
+Other risk dispositions and the isolated Windows/provider gate remain open.
+
+### Production Readiness v1 — public create atomicity
+
+`/public_api/tickets/create` now rolls back required routing/SLA/OLA errors,
+public-session issuance errors and response serialization errors together.
+`AuthService` accepts an internal caller-owned session; `AuthTokensRepo`
+flushes in that mode without committing. Standalone public authorization
+retains the previous owned transaction. Five no-DB regressions failed before
+the fix and passed afterward; six real PostgreSQL checks passed. Retry
+idempotency remains a separate CREATE-011 requirement. Full next-SHA CI/live
+acceptance and Windows/provider alignment remain pending.
+
+### Production Readiness v1 — explicit support read degradation
+
+Support command-center/workspace-summary exceptions return `DB_UNAVAILABLE`/503.
+Queue/summary malformed limit values return `VALIDATION_ERROR`/400. Six
+server regressions failed before the correction; the focused server suite
+passed afterward. Component regressions initially exposed misleading empty
+task/zero-count states; all nine checks pass with explicit unavailable labels
+and cached-data retention on refetch failure. A current built-bundle browser
+fixture run passed, with only the controlled 503 responses/resource errors,
+no unexpected responses or page exceptions, and a screenshot inspected for
+Russian text. These are focused regressions, not next-SHA live acceptance.
+
+### Production Readiness v1 — consent conflict presentation
+
+Candidate 2df69b1e passed its exact full CI, contract artifact and isolated
+backup/restore. Its actual staging orphan-consent approval returned 409 and
+rolled back consent/event/operation state correctly, but the requester ticket
+page incorrectly displayed the solution-confirmation error. A bounded UI fix
+uses consent context and safe delivery/state-conflict messages. Three component
+regressions failed before the change; all 93 requester tests pass afterward,
+and the frontend build/workspace checks pass. Fresh candidate CI and actual
+browser acceptance remain required. The synthetic orphan was denied through
+the browser and all three temporary accounts were disabled; staging was stopped.

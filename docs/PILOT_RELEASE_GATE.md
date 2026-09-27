@@ -15,7 +15,55 @@ This is the operator checklist for moving a pilot stand from Tech Panel `READY` 
 - `PILOT_MIN_AGENT_VERSION` set to the current approved agent baseline.
 - `TECH_RELEASE_STATUS_PATH` and `TECH_BUSINESS_SMOKE_STATUS_PATH` readable by the running server.
 - Latest release and business smoke markers show `status=success`.
-- Backup/restore markers are optional for the current mini-prod stage; when backup policy is enabled later, `TECH_RESTORE_DRILL_STATUS_PATH` and `TECH_BACKUP_STATUS_PATH` must also be readable and successful.
+- Production Readiness v1 requires successful verified backup and isolated restore
+  markers. Earlier mini-prod optional-backup policy is historical, not a waiver.
+
+## Production Readiness v1
+
+The GitHub administrator must make the `production-readiness` job of **Helpdesk
+production readiness** mandatory. It combines canonical full CI (fresh isolated
+PostgreSQL/migration, Python/scripts, web typecheck/build/Vitest/fixture E2E) and
+the pinned real Endpoint contract workflow. This CI check alone does not prove
+live staging or Windows Agent acceptance. ALT live acceptance is excluded.
+
+Freeze a clean exact SHA before full CI. Production preflight forbids dirty or
+bundle bypasses and identical-tree merge CI reuse. Export the exact-SHA GitHub
+CI artifact to `artifacts/ci/<sha>/`, including the web bundle sidecar manifest.
+The canonical mutation step records JSON diagnostics in its log, including
+pytest infrastructure failures; exit codes other than assertion failure do not
+prove that a mutant was killed.
+Install the existing SQLAlchemy dependency with its `asyncio` extra so greenlet
+is available in a fresh environment. Keep the supported SQLAlchemy 2.0 series;
+the readiness task does not migrate the ORM to 2.1.
+Then run:
+
+```powershell
+python scripts/release_candidate_preflight.py --workspace . --production `
+  --environment-file <reviewed-local-env> --risk-audit artifacts/release/<sha>/risk-audit.json `
+  --readiness-evidence <protected-staging-evidence.json> `
+  --provider-root <clean-pinned-provider-checkout> --schema-revision <verified-head>
+```
+
+Required acceptance fields are defined in
+`scripts/production_release_gate.py`: exact candidate/provider/OpenAPI/schema/
+web digest, `configuration_profile=production-v1`, `environment=staging`, and
+successful contract/backup/restore/business/Windows/degraded checks. Historical,
+fixture or skipped results cannot fill these gates. Evidence must be generated
+from actual protected run records, not hand-written success assertions.
+P0/P1 current-revision dispositions are validated separately through the risk
+audit. Missing runtime credentials or staging access means BLOCKED.
+
+Only after every check passes does preflight create
+`artifacts/release/<sha>/release-manifest.json`. It contains bounded fields only,
+never credentials/raw diagnostic output; an existing differing manifest cannot
+be overwritten. Production deploy repeats this preflight and validates the
+remote archive digest before extraction. This task does not authorize an
+actual production rollout.
+
+Production packaging copies the accepted CI web archive bytes directly into
+the application archive. It does not rebuild frontend assets after acceptance;
+the gate verifies both the compressed archive digest and its canonical file
+content digest, and rejects links, traversal, duplicates or incomplete bundles.
 
 ## Business Smoke
 
@@ -24,14 +72,19 @@ Use a dedicated smoke account, not a human admin password. For self-signed stand
 ```powershell
 python scripts/business_smoke.py `
   --base-url https://example.test:9443 `
-  --username $env:BUSINESS_SMOKE_USERNAME `
-  --password $env:BUSINESS_SMOKE_PASSWORD `
   --output $env:TECH_BUSINESS_SMOKE_STATUS_PATH `
   --require-https `
   --require-secure-cookie `
   --browser-check `
   --insecure-tls
 ```
+
+Synthetic credentials are read from runtime `BUSINESS_SMOKE_USERNAME` and
+`BUSINESS_SMOKE_PASSWORD`; keep them off argv and evidence. The browser helper
+verifies TLS by default and requires an actually observed WSS connection.
+`--insecure-tls` is an explicit development/stand option, never production
+TLS acceptance. This smoke remains partial; it cannot replace the full live
+requester/support lifecycle, audit/persistence and Windows/degraded gates.
 
 Optional deeper acceptance requires an explicit test device and ticket:
 

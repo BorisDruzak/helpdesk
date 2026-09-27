@@ -39,6 +39,19 @@ afterEach(() => {
 });
 
 describe("RequesterTicketsPage", () => {
+  it.each([
+    ["OPERATION_DELIVERY_UNAVAILABLE", "Доставка операции недоступна. Обратитесь в службу поддержки."],
+    ["OPERATION_STATE_CONFLICT", "Состояние операции изменилось. Обновите страницу и попробуйте еще раз."],
+    ["UNKNOWN_CONSENT_CONFLICT", "Запрос согласия изменился. Обновите страницу и попробуйте еще раз."],
+  ])("keeps a rejected consent pending and explains %s", async (code, message) => {
+    installTicketsMock({ consentFailure: code });
+    renderTicketsPage("/app/requester/tickets/REQ-1001");
+    fireEvent.click(await screen.findByRole("button", { name: "Разрешить запрос согласия" }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Разрешить запрос согласия" })).toBeEnabled();
+    expect(screen.queryByText("Решение уже нельзя подтвердить для этого обращения.")).not.toBeInTheDocument();
+  });
+
   it("renders requester tickets with filters, search and human request numbers", async () => {
     installTicketsMock();
     renderTicketsPage();
@@ -174,7 +187,7 @@ describe("RequesterTicketsPage", () => {
   });
 });
 
-function installTicketsMock(options: { allowClosedReopen?: boolean; initialDetailStatus?: string; messageFails?: boolean } = {}) {
+function installTicketsMock(options: { allowClosedReopen?: boolean; initialDetailStatus?: string; messageFails?: boolean; consentFailure?: string } = {}) {
   let consentStatus = "pending";
   let detailStatus = options.initialDetailStatus ?? "resolved";
   let feedbackSubmitted = false;
@@ -315,6 +328,9 @@ function installTicketsMock(options: { allowClosedReopen?: boolean; initialDetai
       return jsonResponse({ status: "success", data: { message_id: "m-1" } });
     }
     if (url === "/api/web/requester/consents/consent-1/approve") {
+      if (options.consentFailure) {
+        return jsonResponse({ status: "error", error_code: options.consentFailure, message: "Internal details must stay hidden" }, 409);
+      }
       consentStatus = "approved";
       return jsonResponse({ status: "success", data: { consent: { consent_id: "consent-1", status: "approved" } } });
     }

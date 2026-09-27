@@ -107,6 +107,7 @@ async def init_db(database_url: Optional[str] = None) -> None:
     _engine = create_async_engine(
         database_url,
         echo=False,  # Set to True for SQL query logging
+        hide_parameters=True,  # Keep sensitive values out of logs and exceptions.
         pool_pre_ping=True,  # Verify connections before using
         **pool_options,
     )

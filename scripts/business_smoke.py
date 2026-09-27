@@ -129,7 +129,7 @@ def _redact_error(value: Any) -> str:
     return SECRET_PATTERN.sub(lambda match: f"{match.group(1)}=***REDACTED***", text)[:240]
 
 
-def run_browser_https_wss_check(*, base_url: str, username: str, password: str, timeout: float) -> list[dict[str, Any]]:
+def run_browser_https_wss_check(*, base_url: str, username: str, password: str, timeout: float, insecure_tls: bool = False) -> list[dict[str, Any]]:
     started = time.monotonic()
     try:
         from playwright.sync_api import sync_playwright
@@ -141,18 +141,27 @@ def run_browser_https_wss_check(*, base_url: str, username: str, password: str, 
 
     mixed_content_errors: list[str] = []
     websocket_urls: list[str] = []
+    connected_wss: list[str] = []
+    browser_errors: list[bool] = []
+    unexpected_5xx: list[int] = []
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(ignore_https_errors=True)
+            context = browser.new_context(ignore_https_errors=insecure_tls)
             page = context.new_page()
-            page.on(
-                "console",
-                lambda message: mixed_content_errors.append(message.text)
-                if "mixed content" in message.text.lower()
-                else None,
-            )
-            page.on("websocket", lambda websocket: websocket_urls.append(websocket.url))
+            def console_message(message):
+                if "mixed content" in message.text.lower():
+                    mixed_content_errors.append("Mixed content was observed")
+                if message.type == "error":
+                    browser_errors.append(True)
+            def websocket_observed(websocket):
+                websocket_urls.append(websocket.url)
+                if websocket.url.lower().startswith("wss://"):
+                    websocket.on("framereceived", lambda _frame: connected_wss.append("wss"))
+            page.on("console", console_message)
+            page.on("pageerror", lambda _error: browser_errors.append(True))
+            page.on("response", lambda response: unexpected_5xx.append(response.status) if response.status >= 500 else None)
+            page.on("websocket", websocket_observed)
             login_response = context.request.post(
                 f"{base_url.rstrip('/')}/api/web/session/login",
                 data=json.dumps({"login": username, "password": password}),
@@ -177,8 +186,14 @@ def run_browser_https_wss_check(*, base_url: str, username: str, password: str, 
     insecure_ws = [url for url in websocket_urls if url.lower().startswith("ws://")]
     if insecure_ws:
         steps.append(_step("browser_wss", "failed", started, error=f"insecure websocket URL observed: {insecure_ws[0]}"))
+    elif not connected_wss:
+        steps.append(_step("browser_wss", "failed", started, error="No WSS server frame was observed"))
     else:
         steps.append(_step("browser_wss", "success", started))
+    steps.append(_step("browser_console", "failed" if browser_errors else "success", started,
+                       error="Browser errors observed" if browser_errors else None))
+    steps.append(_step("browser_http", "failed" if unexpected_5xx else "success", started,
+                       error="Unexpected HTTP 5xx observed" if unexpected_5xx else None))
     return steps
 
 
@@ -239,6 +254,7 @@ def run_business_smoke(
             username=username,
             password=password,
             timeout=timeout,
+            insecure_tls=bool(insecure_tls),
         )
         steps.extend(browser_steps)
         if any(step.get("status") == "failed" for step in browser_steps):
@@ -363,8 +379,8 @@ def run_business_smoke(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
-    parser.add_argument("--username", required=True)
-    parser.add_argument("--password", required=True)
+    parser.add_argument("--username", default=os.getenv("BUSINESS_SMOKE_USERNAME"))
+    parser.add_argument("--password", default=os.getenv("BUSINESS_SMOKE_PASSWORD"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--device-id")
@@ -376,7 +392,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--create-test-ticket", action="store_true")
     parser.add_argument("--run-safe-tool", choices=("endpoint.context.diagnostic.collect",))
     parser.add_argument("--operation-wait-seconds", type=float, default=0.0)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.username or not args.password:
+        parser.error("dedicated synthetic credentials are required through BUSINESS_SMOKE_USERNAME/PASSWORD")
+    return args
 
 
 def main() -> None:

@@ -848,7 +848,7 @@ class RequesterIdentityResolver:
                 return person, binding
         raise PermissionError("device is not owned by requester")
 
-    async def list_tickets(self, *, actor_id: str, limit: int = 100) -> list[Ticket]:
+    async def _ticket_access_clause(self, *, actor_id: str):
         person = await self.resolve_person_for_web_user(actor_id)
         bindings = await self.list_active_bindings(person.person_id if person else None)
         binding_ids = [binding.binding_id for binding in bindings]
@@ -870,9 +870,13 @@ class RequesterIdentityResolver:
             clauses.append(
                 and_(legacy_scope, Ticket.requester_binding_id.in_(binding_ids))
             )
+        return or_(*clauses)
+
+    async def list_tickets(self, *, actor_id: str, limit: int = 100) -> list[Ticket]:
+        access_clause = await self._ticket_access_clause(actor_id=actor_id)
         result = await self.session.execute(
             select(Ticket)
-            .where(or_(*clauses))
+            .where(access_clause)
             .order_by(desc(Ticket.created_at))
             .limit(max(1, min(int(limit or 100), 300)))
         )
@@ -882,11 +886,18 @@ class RequesterIdentityResolver:
 
     async def get_ticket(self, *, actor_id: str, ticket_id: str) -> Ticket | None:
         ticket_ref = str(ticket_id or "").strip()
-        tickets = await self.list_tickets(actor_id=actor_id, limit=300)
-        for ticket in tickets:
-            if ticket.ticket_id == ticket_ref or str(getattr(ticket, "ticket_code", "") or "") == ticket_ref:
-                return ticket
-        return None
+        if not ticket_ref:
+            return None
+        access_clause = await self._ticket_access_clause(actor_id=actor_id)
+        result = await self.session.execute(
+            select(Ticket)
+            .where(access_clause)
+            .where(or_(Ticket.ticket_id == ticket_ref, Ticket.ticket_code == ticket_ref))
+        )
+        ticket = result.scalar_one_or_none()
+        if ticket is not None:
+            await annotate_requester_ticket_policy_state(self.session, [ticket])
+        return ticket
 
     async def count_open_tickets(self, *, actor_id: str) -> int:
         tickets = await self.list_tickets(actor_id=actor_id, limit=300)

@@ -17,6 +17,7 @@ from quality.policy_service import QualityPolicyService
 from quality.reopen_service import TicketReopenService
 from quality.review_service import QualityReviewService
 from tickets.account_access_service import TicketBindingAccessService
+from tickets.workflow_service import WorkflowTransitionConflict
 
 
 def _ok(**payload: Any) -> web.Response:
@@ -137,6 +138,8 @@ async def handle_ticket_reopen(request: web.Request) -> web.Response:
             )
             await session.commit()
             return _ok(ticket_id=result["ticket_id"], ticket_status=result["status"], reopen_id=result["reopen_id"])
+    except WorkflowTransitionConflict as exc:
+        return _error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
     except ValueError as exc:
         return _error(str(exc), status=400)
 
@@ -200,6 +203,8 @@ async def handle_public_ticket_reopen(request: web.Request) -> web.Response:
             )
             await session.commit()
             return _ok(ticket_id=result["ticket_id"], ticket_status=result["status"], reopen_id=result["reopen_id"])
+    except WorkflowTransitionConflict as exc:
+        return _error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
     except ValueError as exc:
         return _error(str(exc), status=400)
 

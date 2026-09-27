@@ -414,12 +414,14 @@ function TopTaskFilters({
 
 function ActionCenterLeftPane({
   summary,
+  summaryUnavailable = false,
   activeFilter,
   queue,
   onFilterChange,
   onQueueChange,
 }: {
   summary?: SupportWorkspaceSummaryPayload;
+  summaryUnavailable?: boolean;
   activeFilter: ActionFilterId;
   queue: string;
   onFilterChange: (filter: ActionFilterId) => void;
@@ -428,9 +430,9 @@ function ActionCenterLeftPane({
   const views: Array<{ id: ActionFilterId; label: string; detail: string; icon: ReactNode }> = [
     { id: "my_work", label: "Моя работа", detail: "ответы, SLA, операции", icon: <Inbox className="h-4 w-4" /> },
     { id: "team_queue", label: "Командная очередь", detail: "все доступные действия", icon: <ListChecks className="h-4 w-4" /> },
-    { id: "new_unassigned", label: "Новые без владельца", detail: `${summary?.views.unassigned ?? 0} в summary`, icon: <UserPlus className="h-4 w-4" /> },
-    { id: "sla_ola", label: "SLA/OLA", detail: `${summary?.views.sla_risk ?? 0} SLA risk`, icon: <Clock3 className="h-4 w-4" /> },
-    { id: "unread_user_messages", label: "Ответы пользователей", detail: `${summary?.views.requester_replied ?? 0} в summary`, icon: <MessageSquare className="h-4 w-4" /> },
+    { id: "new_unassigned", label: "Новые без владельца", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.unassigned ?? 0} в summary`, icon: <UserPlus className="h-4 w-4" /> },
+    { id: "sla_ola", label: "SLA/OLA", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.sla_risk ?? 0} SLA risk`, icon: <Clock3 className="h-4 w-4" /> },
+    { id: "unread_user_messages", label: "Ответы пользователей", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.requester_replied ?? 0} в summary`, icon: <MessageSquare className="h-4 w-4" /> },
     { id: "failed_operation", label: "Операции", detail: "ошибки и retry", icon: <Wrench className="h-4 w-4" /> },
     { id: "pending_approval", label: "Согласования и consent", detail: "approval / consent", icon: <Bell className="h-4 w-4" /> },
     { id: "closure_blocked", label: "Закрытие", detail: "блокеры решения", icon: <FileCheck2 className="h-4 w-4" /> },
@@ -969,12 +971,18 @@ export function SupportCommandCenterPage() {
         </header>
 
         {commandCenterQuery.isError ? <ErrorState /> : null}
+        {summaryQuery.isError ? (
+          <div role="alert" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Не удалось загрузить сводку рабочего пространства. Повторите попытку позже.
+          </div>
+        ) : null}
 
-        <TopTaskFilters data={data} totalTasks={tasks.length} activeFilter={activeFilter} onFilterChange={setActiveFilter} />
+        {data ? <TopTaskFilters data={data} totalTasks={tasks.length} activeFilter={activeFilter} onFilterChange={setActiveFilter} /> : null}
 
         <section className="grid gap-4 xl:grid-cols-[280px_minmax(520px,1fr)_400px] 2xl:grid-cols-[300px_minmax(620px,1fr)_440px]">
           <ActionCenterLeftPane
             summary={summaryQuery.data}
+            summaryUnavailable={summaryQuery.isLoadingError}
             activeFilter={activeFilter}
             queue={queue}
             onFilterChange={setActiveFilter}
@@ -982,7 +990,9 @@ export function SupportCommandCenterPage() {
           />
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <NextActionSummary tasks={filteredTasks} />
+              {commandCenterQuery.isLoadingError ? (
+                <span className="text-sm text-slate-600">Данные Центра действий недоступны</span>
+              ) : <NextActionSummary tasks={filteredTasks} />}
               <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" aria-label="Режим просмотра">
                 <button
                   type="button"
@@ -1002,7 +1012,7 @@ export function SupportCommandCenterPage() {
                 </button>
               </div>
             </div>
-            {viewMode === "inbox" ? (
+            {commandCenterQuery.isLoadingError ? null : viewMode === "inbox" ? (
               <ActionInbox tasks={filteredTasks} selectedTaskId={selectedTaskId} onSelectTask={(task) => setSelectedTaskId(task.id)} />
             ) : (
               <KanbanActionBoard columns={kanbanColumns} selectedTaskId={selectedTaskId} onSelectTask={(task) => setSelectedTaskId(task.id)} />

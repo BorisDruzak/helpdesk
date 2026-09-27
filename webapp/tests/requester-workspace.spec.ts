@@ -117,6 +117,14 @@ async function installRequesterMocks(page: Page) {
     return fulfillJson(route, { status: "success", data: { tickets: [ticket] } });
   });
 
+  await page.route("**/api/web/requester/tickets/REQ-1002", (route) =>
+    fulfillJson(route, { status: "success", data: {
+      ticket: { ...ticket, ticket_id: "550e8400-e29b-41d4-a716-446655440002", ticket_code: "REQ-1002",
+        status: "new", requester_status_label: "Новое", public_status_label: "Новое", next_action_label: "Ожидает обработки" },
+      messages: [], events: [],
+    } }),
+  );
+
   await page.route(`**/api/web/requester/tickets/${ticketCode}`, (route) =>
     fulfillJson(route, {
       status: "success",
@@ -125,7 +133,7 @@ async function installRequesterMocks(page: Page) {
           ...ticket,
           actions: {
             can_send_message: true,
-            can_confirm_solution: true,
+            can_confirm_solution: false,
             can_reopen: false,
             can_rate_solution: false,
           },
@@ -228,7 +236,11 @@ async function installRequesterMocks(page: Page) {
   );
 
   await page.route(`**/api/web/requester/tickets/${ticketCode}/close`, (route) =>
-    fulfillJson(route, { status: "success", data: { ticket_id: ticketId, status: "closed" } }),
+    route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "error", error: "ticket can be closed only from resolved", error_code: "INVALID_TICKET_STATUS" }),
+    }),
   );
 
   await page.route(`**/api/web/requester/tickets/${ticketCode}/feedback`, (route) =>
@@ -550,7 +562,104 @@ test("requester workspace is not exposed when archived user has no requester wor
   await expect(page.getByText("VPN access problem")).toBeHidden();
 });
 
-test("requester ticket message and close mutations stay available through policy actions", async ({ page }) => {
+test("requester waiting ticket does not offer solution confirmation", async ({ page }) => {
+  const detailResponse = page.waitForResponse(`**/api/web/requester/tickets/${ticketCode}`);
+  await page.goto(`/app/requester/tickets/${ticketCode}`);
+  const detail = await (await detailResponse).json();
+  expect(detail.data.ticket.status).toBe("waiting_on_user");
+  expect(detail.data.ticket.actions.can_confirm_solution).toBe(false);
+  await expect(page.getByRole("button", { name: "Подтвердить решение" })).toBeHidden();
+});
+
+test("requester create retains its key across a lost response and browser reload", async ({ page }) => {
+  const keys: string[] = [];
+  const pageErrors: string[] = [];
+  let unexpectedConsoleErrors = 0;
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && !/Failed to load resource.*(?:ERR_CONNECTION_RESET|ERR_FAILED)/.test(message.text())) unexpectedConsoleErrors++;
+  });
+  await page.route("**/api/web/requester/tickets", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    keys.push(route.request().headers()["idempotency-key"]);
+    if (keys.length === 1) return route.abort("connectionreset");
+    return fulfillJson(route, {
+      status: "success",
+      data: { ticket_id: "550e8400-e29b-41d4-a716-446655440002", ticket_code: "REQ-1002",
+              ticket: { ticket_id: "550e8400-e29b-41d4-a716-446655440002", ticket_code: "REQ-1002" } },
+    });
+  });
+  await page.goto("/app/requester/new");
+  await page.getByLabel("Категория обращения").selectOption("form:vpn_access");
+  await page.getByLabel("Impact").selectOption("me");
+  await page.getByRole("button", { name: "Создать обращение" }).click();
+  await expect.poll(() => keys.length).toBe(1);
+  await expect(page.getByRole("button", { name: "Создать обращение" })).toBeEnabled();
+  await page.reload();
+  await expect(page.getByLabel("Impact")).toHaveValue("me");
+  const detailResponse = page.waitForResponse((response) => response.url().endsWith("/api/web/requester/tickets/REQ-1002") && response.request().method() === "GET");
+  await page.getByRole("button", { name: "Создать обращение" }).click();
+  await expect(page).toHaveURL(/\/app\/requester\/tickets\/REQ-1002$/);
+  expect((await detailResponse).status()).toBe(200);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBeTruthy();
+  expect(keys[1]).toBe(keys[0]);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("pc_client.requester.create_intent.v1")))).toEqual([]);
+  expect(pageErrors).toEqual([]);
+  expect(unexpectedConsoleErrors).toBe(0);
+});
+
+test("requester create conflict requires an explicit separate request", async ({ page }, testInfo) => {
+  const keys: string[] = [];
+  const pageErrors: string[] = [];
+  const unexpectedResponses: number[] = [];
+  let unexpectedConsoleErrors = 0;
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && !/Failed to load resource.*status of 409/.test(message.text())) unexpectedConsoleErrors++;
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400 && !(response.url().endsWith("/api/web/requester/tickets") && response.status() === 409)) {
+      unexpectedResponses.push(response.status());
+    }
+  });
+  await page.route("**/api/web/requester/tickets", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    keys.push(route.request().headers()["idempotency-key"]);
+    if (keys.length === 1) return route.fulfill({
+      status: 409, contentType: "application/json",
+      body: JSON.stringify({ status: "error", error_code: "CREATE_REQUEST_CONFLICT", error: "Этот запрос уже использован." }),
+    });
+    return fulfillJson(route, {
+      status: "success", data: { ticket_id: "550e8400-e29b-41d4-a716-446655440002", ticket_code: "REQ-1002",
+        ticket: { ticket_id: "550e8400-e29b-41d4-a716-446655440002", ticket_code: "REQ-1002" } },
+    });
+  });
+  await page.goto("/app/requester/new");
+  await page.getByLabel("Категория обращения").selectOption("form:vpn_access");
+  await page.getByLabel("Impact").selectOption("me");
+  await page.getByRole("button", { name: "Создать обращение" }).click();
+  await expect(page.getByRole("link", { name: "Проверить обращения" })).toBeVisible();
+  const restart = page.getByRole("button", { name: "Начать отдельное обращение" });
+  await expect(restart).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("create-conflict.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath("create-conflict-mobile.png"), fullPage: true });
+  await restart.click();
+  const detailResponse = page.waitForResponse((response) => response.url().endsWith("/api/web/requester/tickets/REQ-1002") && response.request().method() === "GET");
+  await page.getByRole("button", { name: "Создать обращение" }).click();
+  await expect(page).toHaveURL(/\/app\/requester\/tickets\/REQ-1002$/);
+  expect((await detailResponse).status()).toBe(200);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBeTruthy();
+  expect(keys[1]).not.toBe(keys[0]);
+  expect(pageErrors).toEqual([]);
+  expect(unexpectedResponses).toEqual([]);
+  expect(unexpectedConsoleErrors).toBe(0);
+});
+
+test("requester reply and confirmation use distinct valid ticket states", async ({ page }) => {
   await page.goto(`/app/requester/tickets/${ticketCode}`);
 
   const messageRequest = page.waitForRequest(`**/api/web/requester/tickets/${ticketCode}/message`);
@@ -558,9 +667,46 @@ test("requester ticket message and close mutations stay available through policy
   await page.getByRole("button", { name: "Отправить" }).click();
   await messageRequest;
 
+  let status: "resolved" | "closed" = "resolved";
+  await page.unroute(`**/api/web/requester/tickets/${ticketCode}`);
+  await page.route(`**/api/web/requester/tickets/${ticketCode}`, (route) =>
+    fulfillJson(route, {
+      status: "success",
+      data: {
+        ticket: {
+          ticket_id: ticketId,
+          ticket_code: ticketCode,
+          title: "VPN access problem",
+          status,
+          requester_status_label: status === "resolved" ? "Решено" : "Закрыто",
+          public_status_label: status === "resolved" ? "Решено" : "Закрыто",
+          custom_fields: { resolution_confirmation: { pending: status === "resolved" } },
+          actions: {
+            can_send_message: false,
+            can_confirm_solution: status === "resolved",
+            can_reopen: false,
+            can_rate_solution: false,
+          },
+        },
+        messages: [],
+        events: [],
+      },
+    }),
+  );
+  await page.unroute(`**/api/web/requester/tickets/${ticketCode}/close`);
+  await page.route(`**/api/web/requester/tickets/${ticketCode}/close`, async (route) => {
+    expect(status).toBe("resolved");
+    status = "closed";
+    await fulfillJson(route, { status: "success", data: { ticket_id: ticketId, status } });
+  });
+  await page.reload();
+  await expect(page.getByLabel("Ответ заявителя")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Подтвердить решение" })).toBeVisible();
   const closeRequest = page.waitForRequest(`**/api/web/requester/tickets/${ticketCode}/close`);
   await page.getByRole("button", { name: "Подтвердить решение" }).click();
   await closeRequest;
+  await expect(page.getByText("Закрыто", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Подтвердить решение" })).toBeHidden();
 });
 
 test("requester rating and reopen actions render from ticket policy capabilities", async ({ page }) => {

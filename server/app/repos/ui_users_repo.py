@@ -62,7 +62,7 @@ class UiUsersRepo:
         actor_role: str = DEFAULT_USER_ROLE,
         actor_id: Optional[str] = None,
     ) -> UiUser:
-        """Создать пользователя. Роль нормализуется к admin при невалидной."""
+        """Создать пользователя; отклонить невалидную роль и дубликат логина."""
         login = normalize_user_login(user_login)
         if not login or len(login) > MAX_USER_LOGIN_LENGTH:
             raise ValueError("Invalid user_login")
@@ -86,10 +86,10 @@ class UiUsersRepo:
             await self.session.commit()
             await self.session.refresh(user)
             return user
-        except IntegrityError as e:
+        except IntegrityError:
             await self.session.rollback()
-            logger.error(f"[UiUsersRepo] create_user conflict: {e}")
-            raise ValueError("User already exists") from e
+            logger.error("[UiUsersRepo] create_user conflict")
+            raise ValueError("User already exists") from None
 
     async def update_user(
         self,

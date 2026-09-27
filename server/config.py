@@ -458,6 +458,10 @@ def is_strict_runtime_mode() -> bool:
 def validate_security_config() -> None:
     """Fail fast for pilot/production configs that would expose auth surfaces."""
     errors: list[str] = []
+    from shared.production_security import production_config_errors
+    profile_values = dict(globals())
+    profile_values["CONTROL_HOST"] = os.getenv("CONTROL_HOST", "0.0.0.0")
+    errors.extend(production_config_errors(profile_values))
     strict_mode = is_strict_runtime_mode()
     if APP_ENV not in VALID_APP_ENVS:
         errors.append(f"APP_ENV must be one of {sorted(VALID_APP_ENVS)}, got {APP_ENV!r}")

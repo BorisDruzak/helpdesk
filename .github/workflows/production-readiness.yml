@@ -1,0 +1,73 @@
+name: Helpdesk production readiness
+
+on:
+  pull_request:
+  push:
+    branches:
+      - codex/helpdesk-process-model
+      - codex/helpdesk-production-readiness-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: helpdesk-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TEST_DATABASE_ADMIN_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/pc_support_test_readiness
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: python -m pip install -r requirements-ci.txt
+      - run: python scripts/bootstrap_web_toolchain.py
+      - run: pnpm --dir webapp install --frozen-lockfile
+      - run: pnpm --dir webapp exec playwright install --with-deps chromium
+      - name: Compile committed Python
+        run: python -m compileall -q server scripts shared
+      - name: Canonical full CI with isolated PostgreSQL and fresh migrations
+        run: python scripts/run_ci_suite.py --workspace "$GITHUB_WORKSPACE"
+      - name: Upload exact-SHA full CI and web bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: helpdesk-full-ci-${{ github.sha }}
+          path: artifacts/ci/${{ github.sha }}/
+          if-no-files-found: error
+  endpoint-contract:
+    uses: ./.github/workflows/endpoint-contract-acceptance.yml
+  production-readiness:
+    if: always()
+    needs: [full-ci, endpoint-contract]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all release CI layers
+        env:
+          FULL_CI_RESULT: ${{ needs.full-ci.result }}
+          CONTRACT_RESULT: ${{ needs.endpoint-contract.result }}
+        run: test "$FULL_CI_RESULT" = success && test "$CONTRACT_RESULT" = success

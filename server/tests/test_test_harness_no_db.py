@@ -23,6 +23,12 @@ def _load_test_harness():
 test_harness = _load_test_harness()
 
 
+def _simulate_windows_harness(monkeypatch):
+    # Patch only this harness module; pathlib and pytest must keep the real OS.
+    platform = SimpleNamespace(**{**vars(test_harness.os), "name": "nt"})
+    monkeypatch.setattr(test_harness, "os", platform)
+
+
 pytestmark = pytest.mark.no_db
 
 
@@ -292,7 +298,7 @@ def test_should_auto_fallback_only_for_default_windows_flow(monkeypatch):
     monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
     monkeypatch.delenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", raising=False)
-    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    _simulate_windows_harness(monkeypatch)
 
     assert test_harness._should_auto_fallback_to_shared_test_db() is True
 
@@ -304,7 +310,7 @@ def test_windows_default_resolve_uses_isolated_test_db(monkeypatch):
     monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
     monkeypatch.delenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", raising=False)
-    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    _simulate_windows_harness(monkeypatch)
     monkeypatch.setattr(test_harness, "_ensure_windows_test_db_tunnel", lambda: None)
     monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_HOST", "127.0.0.1")
     monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_PORT", 55432)
@@ -322,7 +328,7 @@ def test_windows_shared_debug_resolve_uses_tunnel(monkeypatch):
     monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
     monkeypatch.setenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", "1")
-    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    _simulate_windows_harness(monkeypatch)
     monkeypatch.setattr(test_harness, "_ensure_windows_test_db_tunnel", lambda: None)
     monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_HOST", "127.0.0.1")
     monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_PORT", 55432)
@@ -474,7 +480,7 @@ def test_pytest_configure_registers_migration_clone_marker():
 def test_windows_isolated_alembic_upgrade_uses_subprocess(monkeypatch):
     calls = []
 
-    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    _simulate_windows_harness(monkeypatch)
     monkeypatch.setattr(
         test_harness.subprocess,
         "run",
@@ -585,8 +591,9 @@ def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 169
-    assert full_tables[:4] == (
+    assert len(full_tables) == 170
+    assert full_tables[:5] == (
+        "requester_ticket_create_requests",
         "observer_integrity_check_runs",
         "observer_integrity_events",
         "observer_known_contamination",
@@ -601,6 +608,7 @@ def test_full_cleanup_profile_preserves_current_table_scope():
     } <= set(full_tables)
     assert not RETIRED_KNOWLEDGE_AI_TABLES & set(full_tables)
     assert full_tables[-3:] == ("modules", "ticket_retention_runs", "tickets")
+    assert "requester_ticket_create_requests" in test_harness.CLEANUP_TABLES_BY_PROFILE["web_support"]
 
 
 @pytest.mark.asyncio

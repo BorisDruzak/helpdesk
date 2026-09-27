@@ -6,6 +6,14 @@
 **Миграции:** Alembic, каталог `server/app/db/migrations/versions/`.  
 **Модели:** `server/app/db/models.py`.
 
+Revision `145` widens `diagnostic_sessions.started_by_user_id` from
+`varchar(36)` to `varchar(100)`, matching the supported UI login length.
+The field stores the authenticated actor login, not just a UUID. Existing
+values and nullable semantics remain intact; attribution is never truncated.
+Apply the migration through the reviewed Helpdesk release procedure before
+acceptance. It is forward-only: roll back the application release without
+narrowing the column, which could reject already stored long logins.
+
 ---
 
 ## Роль PostgreSQL (Source of Truth)

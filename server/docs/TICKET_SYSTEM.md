@@ -17,6 +17,34 @@
 - Workflow side effects are observable. SLA and required approval side effects are critical; OLA, public-session revocation on `closed`, and notification-style side effects are non-critical unless their policy explicitly marks them critical. Failures are logged with structured context, counted by workflow side-effect metrics, attached to the transition payload and written as `workflow_side_effect_failed` ticket events with redacted error messages. Public-token verification also denies `closed` / `canceled` ticket state before updating session usage, so terminal ticket access fails closed even if revocation side effects fail or lag.
 - Policy Health lives at `server/tickets/policy_health_service.py`, `server/web_api/policy_health_handlers.py` and `/app/admin/policy-health`. Admin/auditor endpoints are `GET /api/web/admin/helpdesk/policy-health`, `GET /api/web/admin/helpdesk/policy-health/{template_code}`, and `POST /api/web/admin/helpdesk/policy-health/simulate`; support/requester/public are denied. Simulation is dry-run but runtime-equivalent: it overlays effective registry policies, builds an unsaved ticket context and calls the real routing, priority, SLA, OLA, approval, closure, visibility and diagnostic resolvers.
 
+Emergency requester forms with `contact_required` use the same contact check
+in preview and create. A display name alone is not a contact; profile phone or
+e-mail and explicitly supplied form/request contact fields remain accepted.
+
+### Required queue and take-in-work transactions
+
+Status transitions acquire a PostgreSQL row lock and refresh the ticket before
+running policies or lifecycle side effects. If the caller's `from_status` is
+stale, the service raises `WorkflowTransitionConflict`; explicit status,
+requester confirmation and reopen APIs return `WORKFLOW_CONFLICT`/409 after
+rollback. The transaction keeps the lock until commit/rollback. Pending writes
+are flushed before refresh so `autoflush=False` does not discard an assignment
+or policy update from the same transaction. Automatic requester-reply targets
+are chosen under that lock; unavailable or duplicate fallback transitions are
+no-ops. This does not replace concurrency controls for unrelated field edits.
+
+Support take-in-work commits the status transition together with self-assignment.
+An assignment rejection returns `ASSIGNMENT_CONFLICT`/409 after rollback;
+unexpected assignment errors return `STATUS_ACTION_FAILED`/503 after rollback.
+The legacy and support queue-change/reroute endpoints require OLA close/restart
+to succeed in the queue transaction. An OLA exception rolls back queue, timer
+and event changes and returns a safe 503 (`QUEUE_ACTION_FAILED` or
+`REROUTE_ACTION_FAILED`), without broadcasting the failed mutation.
+Mass queue changes keep the existing partial-result contract: failure rolls back
+only the current item and reports an error item; earlier committed successes
+remain applied. These rules do not change the separately observable workflow
+side-effect policy for ordinary status transitions.
+
 ## P1 Service Catalog and Runtime Governance (2026-05-14)
 
 - Service Catalog is a process/requester layer, not a replacement for CMDB `registry_services`. Catalog services live in `helpdesk_services`, offerings live in `helpdesk_service_offerings`, and either may link to existing registry data without changing registry snapshots or service picker semantics.
@@ -58,6 +86,19 @@
 
 **Канонические источники создания тикета (DB-first):**
 1. **POST /api/tickets/create** — основной путь из UI; создаёт тикет в PostgreSQL, запускает routing/SLA/OLA, сохраняет начальное сообщение в ticket_events. Для RBAC при создании обязательно задаётся `requester_id` (из AuthContext или device_id при отсутствии контекста).
+
+   Both this route and `POST /api/web/requester/tickets` roll back the entire
+   create transaction when routing, SLA or OLA initialization raises an error.
+   They return HTTP 503 with `error_code=TICKET_INITIALIZATION_UNAVAILABLE`
+   and a safe retry message, without internal dependency details. No ticket or
+   partial initial timeline is committed. Normal no-policy/no-target outcomes
+   remain valid; an exception is not treated as a successful create.
+
+   `POST /public_api/tickets/create` also treats routing/SLA/OLA exceptions as
+   failures. Public-session issuance and response serialization occur before
+   the create transaction commits. Any failure returns `service_unavailable`/503
+   and rolls back the ticket, events and public-session record together.
+   Public authorization still creates its session in a separate owned transaction.
 2. **Команда chat_raise (WebSocket)** — агент инициирует «поддержку»; сервер создаёт тикет в БД с `status="new"` и `requester_id=agent_id`, чтобы тикет участвовал в фильтрации по requester.
 
 **Инварианты:**
@@ -71,6 +112,10 @@
 - Diagnostic execution resolves the runtime target through `server/tickets/diagnostic_target.py`. Endpoint Platform capabilities prefer `custom_fields.ticket_context.diagnostic_target.device_id`, then the flat `custom_fields.target_device_id`, then legacy `ticket.device_id` only for tickets without a context snapshot. Offline, missing, or ambiguous targets produce `diagnostic_autorun_skipped` evidence instead of dispatching to the creator's current device.
 - Customer History v1 lives in `server/customer_history/*` as a product read model over tickets, ticket events, chat messages, Registry bindings/sessions, diagnostics operations, compact `ObserverTrace` summaries, SLA fields and sanitized legacy Knowledge-attempt metadata. Support/admin routes are `GET /api/web/support/people/{person_id}/history`, `GET /api/web/support/tickets/{ticket_id}/history`, `GET /api/web/support/tickets/{ticket_id}/context-pack`, `POST /api/web/support/tickets/{ticket_id}/llm-context/preview` and `GET /api/web/admin/history/search`; requester-safe routes are `GET /api/web/requester/history` and `GET /api/web/requester/tickets/{ticket_id}/history`. A history subject is an opaque requester external ref: valid neutral rows match only the exact `requester_external_ref` and matching snapshot pair; malformed neutral rows never fall back. Legacy `requester_person_id`, creator and affected aliases remain read-only compatibility history only on rows with no neutral fields; `Ticket.requester_id` is never a person-history alias. Support URL compatibility preserves the decoded opaque path ref exactly, including whitespace and case; requester routes derive the ref from verified middleware identity and ignore query/body candidates. Projections are role-aware and recursively redact passwords, tokens, cookies, sessions, auth headers, raw metadata, access/pairing codes, trace/span attrs and large attachment bodies; requester/LLM projections include only the redacted historical shape, never local Knowledge content. On-behalf tickets appear in creator and affected person history with relationship markers, and history uses safe ticket/operation/observer refs instead of raw trace/operation ids for linkable context. Support ticket detail embeds compact `customer_history` and `llm_context_preview`; the preview is deterministic, bounded, can append related recent history after the current ticket and never calls an LLM API.
 - Catalog create stores `tickets.service_code`, `tickets.offering_code`, `tickets.request_type`, reporting dimensions and `custom_fields.service_catalog`. Legacy `tickets.service_id` remains category/service hierarchy compatibility and is not overloaded as catalog service identity.
+- `POST /api/web/requester/tickets` requires `Idempotency-Key` (8–128 ASCII characters: letters, digits, `.`, `_`, `:`, `-`). Keep the key for the same pending submission across timeout/retry; a distinct submission needs a new key. Missing/invalid keys return 400 before database access; a changed JSON body under the same actor/key returns `CREATE_REQUEST_CONFLICT`/409. Actor/key/canonical JSON hashes and ticket identity are committed atomically in `requester_ticket_create_requests` (migration 144). A duplicate returns the existing ticket with current requester authorization, without new creation events, routing or public-token issuance. Deleted tickets leave a key tombstone rather than permitting duplicate creation. The browser keeps pending keys in account/intent-scoped sessionStorage and offers an explicit separate request after a conflict. This requirement applies to the canonical requester route; public creation and legacy `/api/tickets/create` do not require this header.
+- Browser requester identity is server-authoritative in the shared create-flow. Before any requester/person/context assignment, `browser_no_device` must match the authenticated actor's verified server identity; legacy client `requester_account` data cannot assign another person's Customer History. Mismatch returns `REQUESTER_IDENTITY_FORBIDDEN`/403 with rollback; identity lookup failure returns the existing typed create-initialization 503 with rollback. Canonical requester composition and trusted verified-binding composition keep their authorization checks. This security correction adds no migration, environment variable or dependency.
+- Authorized emergency/profile-optional forms remain available to authenticated web actors without a Registry identity and without a person claim. Their tickets retain the authenticated actor ID and remain unlinked to any person; this does not permit client-supplied foreign person IDs.
+- Authenticated requester ticket lookup by ID or code applies the same access predicate as the recent-ticket list directly in SQL. Older authorized tickets remain accessible beyond the list's 300-row limit; strict neutral requester reference/snapshot validation and legacy actor/person/active-binding scopes still apply.
 - Support ticket list включает queue-less active tickets как triage backlog; detail/snapshot для таких тикетов не должен давать `403`.
 - `GET /api/tickets/{ticket_id}` поддерживает `since_event_id` для incremental refresh и reverse pagination через `before_event_id` + `limit`; агентский GUI открывает тикет с tail-page и догружает старую историю вверх без полного reload всей ленты.
 - При переходе в `resolved` support/admin отправляет requester structured `confirmation_request`, если effective `closure_policy.requester_confirmation.required` не отключён; `closed` для таких тикетов разрешён только после подтверждения requester.

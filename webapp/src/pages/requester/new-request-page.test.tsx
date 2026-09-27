@@ -6,6 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RequesterNewRequestPage } from "./new-request-page";
 
+vi.mock("../../features/auth/session-provider", () => ({
+  useSession: () => ({ session: { user_login: "test-requester" }, status: "authenticated" }),
+}));
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -234,6 +238,41 @@ describe("RequesterNewRequestPage", () => {
     expect(await screen.findByText("Минимум 10 символов.")).toBeInTheDocument();
     expect(screen.getByLabelText("Кратко")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/new");
+  });
+
+  it("retains a pending key after failure and across page reload", async () => {
+    const fetchMock = installNewRequestMock({ createError: { status: 503, message: "Unavailable" } });
+    const view = renderPage();
+    await fillLaptopForm();
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+    const requests = () => fetchMock.mock.calls.filter(([url, init]) => url === "/api/web/requester/tickets" && init?.method === "POST");
+    await waitFor(() => {
+      expect(requests()).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Создать обращение" })).toBeEnabled();
+    });
+    const firstKey = new Headers(requests()[0][1]?.headers).get("Idempotency-Key");
+    expect(firstKey).toBeTruthy();
+    view.unmount();
+    renderPage();
+    await screen.findByDisplayValue("Ноутбук не включается");
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+    await waitFor(() => expect(requests()).toHaveLength(2));
+    expect(new Headers(requests()[1][1]?.headers).get("Idempotency-Key")).toBe(firstKey);
+  });
+
+  it("requires an explicit new intent after a create conflict", async () => {
+    const fetchMock = installNewRequestMock({ createError: { status: 409, code: "CREATE_REQUEST_CONFLICT", message: "Request already used" } });
+    renderPage();
+    await fillLaptopForm();
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+    const restart = await screen.findByRole("button", { name: "Начать отдельное обращение" });
+    expect(screen.getByRole("link", { name: "Проверить обращения" })).toHaveAttribute("href", "/app/requester/tickets");
+    const requests = () => fetchMock.mock.calls.filter(([url, init]) => url === "/api/web/requester/tickets" && init?.method === "POST");
+    const firstKey = new Headers(requests()[0][1]?.headers).get("Idempotency-Key");
+    fireEvent.click(restart);
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+    await waitFor(() => expect(requests()).toHaveLength(2));
+    expect(new Headers(requests()[1][1]?.headers).get("Idempotency-Key")).not.toBe(firstKey);
   });
 
   it("keeps policy-allowed setup-help forms available for incomplete profiles", async () => {

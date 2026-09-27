@@ -11,6 +11,50 @@ async function loginSupport(page: Page) {
   await page.getByRole("button", { name: "Войти" }).click();
 }
 
+test("operator sees unavailable reads instead of an empty healthy workspace", async ({ page }, testInfo) => {
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const unexpectedResponses: string[] = [];
+  const expectedFailures: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
+  page.on("response", (response) => {
+    if (response.status() < 400) return;
+    const path = new URL(response.url()).pathname;
+    const evidence = `${response.status()} ${path}`;
+    if (response.status() === 503 && ["/api/web/support/command-center", "/api/web/support/workspace/summary"].includes(path)) {
+      expectedFailures.push(evidence);
+    } else unexpectedResponses.push(evidence);
+  });
+  // The shared fixture has no notification endpoint; keep this unrelated read healthy.
+  await page.route("**/api/web/notifications/unread_count", (request) => request.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok", unread_count: 0 }),
+  }));
+  for (const route of ["**/api/web/support/command-center*", "**/api/web/support/workspace/summary*"]) {
+    await page.route(route, (request) => request.fulfill({
+      status: 503, contentType: "application/json",
+      body: JSON.stringify({ status: "error", error: "Сервис временно недоступен", error_code: "DB_UNAVAILABLE" }),
+    }));
+  }
+
+  await loginSupport(page);
+  await expect(page.getByRole("heading", { name: "Не удалось загрузить Центр действий" })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("Не удалось загрузить сводку рабочего пространства");
+  await expect(page.getByText("Нет срочных действий")).toBeHidden();
+  await expect(page.getByText("Нет задач после фильтра")).toBeHidden();
+  await expect(page.getByText("0 в summary")).toHaveCount(0);
+  await expect(page.getByText("0 SLA risk")).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+  expect(unexpectedResponses).toEqual([]);
+  expect(expectedFailures).toContain("503 /api/web/support/command-center");
+  expect(expectedFailures).toContain("503 /api/web/support/workspace/summary");
+  expect(consoleErrors.filter((message) => !message.includes("503"))).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("support-read-unavailable.png"), fullPage: true });
+  await testInfo.attach("read-degradation-evidence", {
+    body: JSON.stringify({ pageErrors, consoleErrors, unexpectedResponses, expectedFailures }), contentType: "application/json",
+  });
+});
+
 test("оператор открывает tickets workspace через новый shell", async ({ page }) => {
   await loginSupport(page);
 

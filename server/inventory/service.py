@@ -1029,6 +1029,8 @@ class DeviceInventoryService:
             filters={"mode": mode, **(filters or {})},
             wave=dict(wave),
             total_count=int(preview.get("selected_count") or 0),
+            # Column defaults apply at INSERT; this counter is used before flush.
+            skipped_count=0,
         )
         self.session.add(operation)
         for index, item in enumerate(preview.get("items") or []):

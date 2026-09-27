@@ -11,12 +11,142 @@
 - `server/runtime_control.py` manages only the Helpdesk server and control
   plane units.
 
+## UI-user creation conflicts
+
+- `server/app/repos/ui_users_repo.py` rolls back failed user creation and emits
+  a constant conflict message. The reported `ValueError` suppresses the SQL
+  exception chain so password hashes cannot appear in its formatted traceback.
+  Regression coverage lives in `server/tests/test_ui_users_repo_no_db.py`.
+- `server/app/db/engine.py` hides bound SQL parameter values in runtime engine
+  logs and statement errors. `server/tests/test_db_engine_pool_config.py`
+  verifies this against the configured SQLAlchemy engine without a DB connection.
+
+## Requester consent decisions
+
+- `server/consent/service.py` requires the operation lifecycle transition to
+  succeed before a browser consent decision can be committed. A failed
+  compare-and-set raises `ConsentAccessError` with
+  `OPERATION_STATE_CONFLICT`/409; the requester handler rolls back the decision
+  and its ticket event. Missing or no-longer-waiting operation subjects also
+  return this conflict. Endpoint dispatch remains outside this service.
+- Approval also requires an `endpoint_operation` with a persisted, unsubmitted
+  `EndpointOperationLink` for `context.diagnostic.collect`. Missing or retired
+  delivery returns `OPERATION_DELIVERY_UNAVAILABLE`/409 and rolls back the
+  decision and event; denial remains available for legacy subjects.
+  `endpoint_operation_reconciler.py` claims only queued/sent/accepted/running
+  operations and cancellation monitoring, never local consent holds.
+  `test_consent_endpoint_delivery_persistence.py` covers the PostgreSQL hold,
+  durable retry after a transport failure and orphan approval rollback.
+
+## Ticket creation
+
+- `server/tickets/create_flow.py` verifies `browser_no_device` requester identity
+  against `RequesterIdentityResolver.resolve_person_for_web_user` before
+  assigning any requester/person/context fields. A client account dictionary
+  is not an authorization claim. Mismatch raises `RequesterIdentityMismatch`;
+  both create handlers roll back and return `REQUESTER_IDENTITY_FORBIDDEN`/403.
+  Resolver failure raises `TicketInitializationError("requester_identity")`
+  and returns the existing safe 503 after rollback. Verified binding and
+  public-create composition retain their existing boundaries.
+  Authorized emergency/profile-optional forms also support authenticated actors
+  with no Registry identity and no person claim; these tickets remain unlinked.
+
+- `server/requester/create_idempotency.py` owns durable requester-create
+  reservations. `POST /api/web/requester/tickets` requires an 8–128-character
+  ASCII `Idempotency-Key`; actor/key/payload hashes and the ticket link live in
+  `requester_ticket_create_requests` (forward migration 144). Reservation,
+  ticket side effects and response construction share one transaction. A
+  concurrent duplicate waits for the first commit or rollback; a changed body
+  or deleted-ticket tombstone returns `CREATE_REQUEST_CONFLICT`/409.
+- A replay uses `RequesterIdentityResolver.get_ticket` with current actor
+  scope. It reads an existing public-access event only after authorization
+  and returns its code only if it still matches the ticket's current hash.
+  The ledger never stores response bodies or codes and does not reissue tokens.
+- `webapp/src/features/requester/create-intent.ts` retains the pending key in
+  actor/intent-scoped sessionStorage. The requester form reuses it after a
+  failure or refresh and clears it after success. A conflict offers ticket
+  review and an explicit separate intent; unavailable storage stops submission.
+
+- `server/tickets/create_flow.py` initializes ticket routing, SLA and OLA in
+  the caller's transaction. A required stage failure raises
+  `TicketInitializationError`; requester and ticket-create HTTP handlers
+  roll back before returning `TICKET_INITIALIZATION_UNAVAILABLE`/503.
+  A policy service's normal no-policy result is not a failure.
+- `server/tickets/public_ticket_handlers.py` keeps public ticket creation,
+  required routing/SLA/OLA and public-session issuance in one transaction.
+  It constructs the response before committing. `AuthService` accepts the
+  caller's session; `AuthTokensRepo` flushes without committing in that mode.
+  Standalone public authorization retains its owned transaction.
+- `server/web_api/requester_handlers.py::_has_contact_for_emergency` is shared
+  by preview/create. A display name alone does not satisfy `contact_required`;
+  profile phone/e-mail and explicitly supplied contact fields remain accepted.
+
+## Requester ticket authorization
+
+- `server/requester/identity_service.py` shares one access predicate between
+  recent-ticket lists and direct ticket lookup. `get_ticket` queries the exact
+  ID or code rather than searching a bounded list of 300 recent tickets.
+  Legacy actor/person/active-binding scopes and strict neutral requester
+  reference/snapshot validation are preserved. Policy annotation runs only
+  for the authorized result. Regression checks are in
+  `server/tests/test_requester_ticket_lookup.py` and its no-DB companion.
+
+## Workflow transaction failures
+
+- `server/tickets/workflow_service.py` locks and refreshes the ticket before
+  policies or lifecycle side effects. A stale `from_status` raises
+  `WorkflowTransitionConflict`; status/confirmation/reopen HTTP handlers return
+  `WORKFLOW_CONFLICT`/409 after rollback. `TicketEventsRepo.get_ticket` keeps
+  ordinary reads unchanged; `for_update=True` flushes pending writes before
+  refreshing because production sessions disable autoflush. The caller owns
+  commit/rollback and therefore the lifetime of the row lock.
+- Automatic reply transitions choose their target under the same row lock.
+  An unavailable or duplicate fallback is a no-op instead of restoring a stale
+  status. Concurrency and pending-assignment checks live in
+  `server/tests/test_workflow_concurrency.py` and its no-DB companion.
+- Support take-in-work keeps the status transition and self-assignment in one
+  transaction. Assignment rejection rolls back before `ASSIGNMENT_CONFLICT`/409;
+  unexpected failures roll back through the session context and return 503.
+- Legacy and support queue-change/reroute handlers require both OLA close and
+  restart to succeed. Failure rolls back queue, timers and events before a safe
+  503 response and before broadcasting. Mass queue changes retain per-item
+  transactions: a failed item rolls back and reports an error, while previously
+  committed successful items remain applied.
+- `server/tests/test_workflow_atomicity_no_db.py` checks HTTP error/broadcast
+  ordering; `server/tests/test_workflow_atomicity.py` checks persisted state,
+  events and mixed-result mass actions with isolated PostgreSQL.
+
+## Support reads
+
+- `server/web_api/support_handlers.py` returns `DB_UNAVAILABLE`/503 when
+  command-center or workspace-summary reads fail, without a successful empty
+  payload or internal exception details. Queue and summary malformed `limit`
+  values return `VALIDATION_ERROR`/400 before database access.
+- `webapp/src/pages/support/command-center-page.tsx` shows explicit errors and
+  unavailable summary counts on first-load failure. A refetch failure keeps
+  previously loaded tasks visible together with the error warning.
+
+## Ticket event retries
+
+- `server/tests/test_ticket_event_idempotency_concurrency.py` checks real
+  PostgreSQL server-event deduplication after two concurrent retries have both
+  passed their preliminary SELECT, for both event IDs and message IDs.
+  Migration `132` owns the partial unique indexes; the test does not substitute
+  for actual browser/WSS acceptance.
+
 ## Endpoint operation facade
 
 - `server/diagnostics/` projects the Endpoint diagnostic capability, validates
   ticket access and stores reconciled evidence.
 - `server/endpoint/` contains the HTTP adapter and versioned contract types.
 - `server/app/repos/` persists ticket, operation and Endpoint facade state.
+- `server/tests/test_endpoint_operation_persistence.py` checks PostgreSQL
+  rollback before remote dispatch and persisted-key replay after a simulated
+  worker exit/lease expiry. Its idempotent provider is a stub; real provider
+  transport and Windows acceptance remain separate gates.
+  It also checks complete diagnostic-session/link attribution for a supported
+  100-character UI login. Revision `145` widens the diagnostic-session actor
+  column to match `UiUser.user_login`, preserving nullable/UUID compatibility.
 - `server/web_api/support_handlers.py` exposes the canonical support
   diagnostic route and its browser compatibility alias.
 - `server/web_api/requester_handlers.py` derives a `VerifiedRequesterBinding`
@@ -60,3 +190,14 @@ This also includes the retired UIA create-ticket harness for the local agent.
   surfaces.
 - `server/tests/test_endpoint_contract_lock.py` protects the consumed Endpoint
   API contract.
+# Production security policy
+
+- `shared/production_security.py`: shared dependency-free production transport,
+  bind and proxy policy; called by runtime `config.validate_security_config()`.
+- `scripts/validate_production_config.py`: safe deployment/systemd preflight;
+  optionally reads a root-owned env file and emits key-only errors.
+- `scripts/helpdesk_database_backup.py`: mandatory verified production
+  pre-migration custom backup and isolated restore drill; called by
+  `server/scripts/run_migrations.py`. Reuses Tech Panel backup/restore markers.
+
+- Tech Panel Runtime includes a bounded Endpoint dependency signal: one typed read-only device request using a saved ticket mapping, two-second timeout, no raw DTO/credentials/identifiers in the snapshot. Configuration readiness alone is not live health; absent mapping is unknown. Dependency failure warns without changing core liveness.

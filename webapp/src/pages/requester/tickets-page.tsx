@@ -153,7 +153,7 @@ export function RequesterTicketsPage() {
       await detailQuery.refetch();
       setNotice(decision === "approved" ? "Согласие подтверждено" : "Согласие отклонено");
     } catch (exc) {
-      setNotice(requesterErrorMessage(exc, "Не удалось сохранить решение", { operation: "close" }));
+      setNotice(requesterErrorMessage(exc, "Не удалось сохранить решение", { domain: "consent" }));
     } finally {
       setActionSubmitting(false);
     }

@@ -1,4 +1,4 @@
-"""Shared ticket creation flow for HTTP, agent WS, and legacy chat entrypoints."""
+"""Shared ticket creation flow for Helpdesk HTTP entrypoints."""
 
 from __future__ import annotations
 
@@ -37,6 +37,41 @@ from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.workflow_service import TicketWorkflowService
 from playbooks.form_triggers import start_ticket_created_playbooks
 from utils import new_ticket_id
+
+
+class TicketInitializationError(RuntimeError):
+    """A mandatory create stage failed; callers must roll back before replying."""
+
+    def __init__(self, stage: str) -> None:
+        super().__init__("Ticket initialization unavailable")
+        self.stage = stage
+
+
+class RequesterIdentityMismatch(ValueError):
+    """A claimed browser requester is not the actor's verified server identity."""
+
+    def __init__(self) -> None:
+        super().__init__("Requester identity is not verified")
+
+
+async def _verify_browser_requester_identity(session, *, actor_id: str, claimed_person_id: str | None, state: Any) -> str | None:
+    claimed = str(claimed_person_id or "").strip()
+    if not actor_id or (claimed_person_id is not None and not claimed):
+        raise RequesterIdentityMismatch()
+    from requester.identity_service import RequesterIdentityResolver
+
+    try:
+        person = await RequesterIdentityResolver(session, state=state).resolve_person_for_web_user(actor_id)
+    except Exception as exc:
+        logger.warning("[create] requester identity verification unavailable")
+        raise TicketInitializationError("requester_identity") from exc
+    # Authorized emergency/profile-optional forms also serve web actors who
+    # have no Registry identity. They must remain unlinked to any person.
+    if person is None and claimed_person_id is None:
+        return None
+    if person is None or str(person.person_id) != claimed:
+        raise RequesterIdentityMismatch()
+    return str(person.person_id)
 
 
 @dataclass(frozen=True)
@@ -354,17 +389,20 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
     try:
         await routing.apply_routing(ticket.ticket_id, ticket.device_id, add_events_fn=add_routing_event)
     except Exception as exc:
-        logger.warning(f"[create] routing failed ticket_id={ticket.ticket_id} err={exc}")
+        logger.warning("[create] required initialization failed stage=routing")
+        raise TicketInitializationError("routing") from exc
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     try:
         await sla.start_sla(ticket)
     except Exception as exc:
-        logger.warning(f"[create] sla failed ticket_id={ticket.ticket_id} err={exc}")
+        logger.warning("[create] required initialization failed stage=sla")
+        raise TicketInitializationError("sla") from exc
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     try:
         await start_ola_for_ticket(session, ticket, trigger="ticket_created")
     except Exception as exc:
-        logger.warning(f"[create] ola failed ticket_id={ticket.ticket_id} err={exc}")
+        logger.warning("[create] required initialization failed stage=ola")
+        raise TicketInitializationError("ola") from exc
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
     ticket = await _enter_initial_approval_wait_if_required(session, ticket_repo, ticket)
     if ticket and getattr(ticket, "status", None) != "new":
@@ -470,6 +508,12 @@ async def create_ticket_with_side_effects(
             account_mode = ""
     elif account_mode not in {"", "browser_no_device"}:
         account_mode = ""
+    verified_browser_person_id = None
+    if account_mode == "browser_no_device":
+        verified_browser_person_id = await _verify_browser_requester_identity(
+            session, actor_id=requester_id,
+            claimed_person_id=(requester_account or {}).get("person_id"), state=state,
+        )
     skip_profile_ingest = account_mode == "browser_no_device"
     if requester_profile:
         if existing_active_binding is None and not skip_profile_ingest:
@@ -525,7 +569,8 @@ async def create_ticket_with_side_effects(
                 "validation": "web_requester_binding_verified",
             }
         elif account_mode == "browser_no_device":
-            requester_person_id = str((requester_account or {}).get("person_id") or "").strip() or None
+            requester_person_id = verified_browser_person_id
+            verified_requester_person_id = verified_browser_person_id
             requester_binding_id = None
             requester_registration_status = "no_device"
             requester_registration_context = {
@@ -574,20 +619,6 @@ async def create_ticket_with_side_effects(
         logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
     except Exception as exc:
         logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
-
-    if account_mode == "browser_no_device" and requester_person_id:
-        try:
-            from requester.identity_service import RequesterIdentityResolver
-
-            server_person = await RequesterIdentityResolver(session, state=state).resolve_person_for_web_user(
-                requester_id
-            )
-            if server_person is not None and str(server_person.person_id) == str(requester_person_id):
-                verified_requester_person_id = str(server_person.person_id)
-        except Exception as exc:
-            logger.warning(
-                f"[create] web requester identity verification failed ticket_id={ticket_id} err={exc}"
-            )
 
     if isinstance(requester_account_context, dict):
         requester_account_mode = str(requester_account_context.get("account_mode") or "").strip() or None

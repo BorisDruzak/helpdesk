@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 from loguru import logger
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.db.models import RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
@@ -272,19 +273,28 @@ class AuthService:
         ticket_id: str,
         actor_id: str,
         expires_minutes: int,
+        *,
+        session: AsyncSession | None = None,
     ) -> str:
+        """Issue a token in the supplied transaction, or an owned one by default."""
         raw_token = self._generate_raw_token()
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
-        async with get_session() as session:
-            repo = AuthTokensRepo(session)
+        async def issue(target_session: AsyncSession, *, commit: bool) -> str:
+            repo = AuthTokensRepo(target_session)
             token, _ = await repo.create_ticket_public_session(
                 token=raw_token,
                 ticket_id=ticket_id,
                 actor_id=actor_id,
                 expires_at=expires_at,
+                commit=commit,
             )
             logger.info(f"[AuthService] Generated public ticket session: ticket_id={ticket_id}")
             return token
+
+        if session is not None:
+            return await issue(session, commit=False)
+        async with get_session() as owned_session:
+            return await issue(owned_session, commit=True)
     
     async def verify_ui_token(self, token: str) -> Optional[dict]:
         """

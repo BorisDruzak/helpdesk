@@ -8,6 +8,7 @@ User=helpdesk
 Group=helpdesk
 WorkingDirectory=/opt/helpdesk/current/server
 EnvironmentFile=/etc/helpdesk/helpdesk.env
+ExecStartPre=/opt/helpdesk/current/server/venv/bin/python ../scripts/validate_production_config.py --require-production
 ExecStart=/opt/helpdesk/current/server/venv/bin/python scripts/run_migrations.py upgrade head
 NoNewPrivileges=true
 PrivateTmp=true
