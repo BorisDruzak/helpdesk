@@ -271,7 +271,7 @@ class ExternalEndpointHttpAdapter(EndpointPort):
             return payload  # type: ignore[return-value]
         try:
             wire = DeviceCapabilitiesWireV1.model_validate(payload)
-            result = EndpointCapabilitiesProjection(device=EndpointDeviceRef(external_id=str(wire.device_id)), items=tuple(item.model_dump() for item in wire.capabilities))
+            result = EndpointCapabilitiesProjection(device=EndpointDeviceRef(external_id=str(wire.device_id)), items=tuple(item.model_dump() for item in wire.capabilities if item.capability == "context.diagnostic.collect"))
         except ValidationError:
             return EndpointInvalidProjection()
         if result.device != device:

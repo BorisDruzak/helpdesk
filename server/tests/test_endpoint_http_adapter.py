@@ -109,9 +109,11 @@ async def test_adapter_reads_exact_device_projection_without_putting_ref_in_quer
 
 
 @pytest.mark.asyncio
-async def test_adapter_reads_exact_capabilities_projection() -> None:
+@pytest.mark.parametrize("include_other_capability", [False, True])
+@pytest.mark.parametrize("invalid_field", [None, "capability", "risk", "parameter_schema_version", "consent_required", "transport", "unexpected"])
+async def test_adapter_reads_exact_capabilities_projection(include_other_capability: bool, invalid_field: str | None) -> None:
     async def capabilities(_request: web.Request) -> web.Response:
-        return _wire_response({"schema_version": "endpoint_device_capabilities_v1", "device_id": DEVICE_ID, "capabilities": [
+        payload = {"schema_version": "endpoint_device_capabilities_v1", "device_id": DEVICE_ID, "capabilities": [
                         {
                             "capability": "context.diagnostic.collect",
                             "available": True,
@@ -120,7 +122,17 @@ async def test_adapter_reads_exact_capabilities_projection() -> None:
                             "consent_required": False,
                             "parameter_schema_version": "diagnostic_collection_parameters_v1",
                         }
-                    ]})
+                    ] + ([{
+                        "capability": "dns.resolve",
+                        "available": True,
+                        "transport": "gateway_wss",
+                        "risk": "safe_read",
+                        "consent_required": False,
+                        "parameter_schema_version": "dns_resolve_parameters_v1",
+                    }] if include_other_capability else [])}
+        if invalid_field:
+            payload["capabilities"][0][invalid_field] = True if invalid_field == "consent_required" else "invalid"
+        return _wire_response(payload)
 
     app = web.Application()
     app.router.add_get("/api/v1/devices/{device_id}/capabilities", capabilities)
@@ -129,8 +141,12 @@ async def test_adapter_reads_exact_capabilities_projection() -> None:
     try:
         result = await _adapter(server).list_capabilities(EndpointDeviceRef(external_id=DEVICE_ID))
 
+        if invalid_field:
+            assert isinstance(result, EndpointInvalidProjection)
+            return
         assert isinstance(result, EndpointCapabilitiesProjection)
         assert result.items[0].capability == "context.diagnostic.collect"
+        assert len(result.items) == 1
     finally:
         await server.close()
 
