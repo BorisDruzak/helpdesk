@@ -415,7 +415,7 @@ describe("authenticated requester api", () => {
       form_payload: { summary: "No boot" },
       ticket_context: { affected_person_id: "person-affected", on_behalf_reason: "phone call" },
       ticket_type: "incident",
-    });
+    }, "test-request-key-123");
 
     expect(result.ticket_id).toBe("T-52");
     expect(fetchMock).toHaveBeenCalledWith(

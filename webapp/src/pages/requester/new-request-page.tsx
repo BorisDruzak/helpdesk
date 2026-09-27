@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useSession } from "../../features/auth/session-provider";
+import { pendingCreateKey, clearCreateKey } from "../../features/requester/create-intent";
 
-import { createRequesterTicket, previewRequesterTicket, searchRequesterOnBehalfPeople } from "../../features/requester/api";
+import { createRequesterTicket, previewRequesterTicket, RequesterApiError, searchRequesterOnBehalfPeople } from "../../features/requester/api";
 import {
   requesterInvalidations,
   requesterTicketRouteParam,
@@ -316,6 +318,8 @@ function uniqueMessages(messages: string[]): string[] {
 }
 
 export function RequesterNewRequestPage() {
+  const { session } = useSession();
+  const [createConflict, setCreateConflict] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -703,7 +707,10 @@ export function RequesterNewRequestPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const result = await createRequesterTicket(buildCreatePayload());
+      const actor = session?.user_login || "";
+      const result = await createRequesterTicket(buildCreatePayload(), pendingCreateKey(actor, requestIntent));
+      clearCreateKey(actor, requestIntent);
+      setCreateConflict(false);
       removeNewRequestDraft(requestDraftStorageKey);
       const ticketRouteParam = requesterTicketRouteParam({
         ticket_id: result.ticket?.ticket_id ?? result.ticket_id,
@@ -716,6 +723,7 @@ export function RequesterNewRequestPage() {
       }
       navigate(`/app/requester/tickets/${encodeURIComponent(ticketRouteParam)}`);
     } catch (exc) {
+      setCreateConflict(exc instanceof RequesterApiError && exc.code === "CREATE_REQUEST_CONFLICT");
       applyRequesterInlineError(exc, "Не удалось создать обращение", "create");
     } finally {
       setSubmitting(false);
@@ -778,6 +786,21 @@ export function RequesterNewRequestPage() {
         draftStatusLabel="Черновик"
         error={error}
       >
+        {createConflict ? (
+          <div className="rounded-panel border border-amber-300 bg-amber-50 p-4 text-sm text-slate-900">
+            <p>Предыдущий запрос мог создать обращение. Проверьте список перед созданием отдельного обращения.</p>
+            <Link className="mr-4 underline" to="/app/requester/tickets">Проверить обращения</Link>
+            <button type="button" className="mt-3 underline" onClick={() => {
+              try {
+                clearCreateKey(session?.user_login || "", requestIntent);
+                setCreateConflict(false);
+                setError(null);
+              } catch {
+                setError("Не удалось начать отдельное обращение. Проверьте доступ к хранилищу браузера.");
+              }
+            }}>Начать отдельное обращение</button>
+          </div>
+        ) : null}
         <DetailsStepPanel
           categoryError={categoryError}
           categoryInputRef={(element) => {

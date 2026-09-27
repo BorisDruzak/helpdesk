@@ -1273,6 +1273,7 @@ def ensure_db_ready(request):
 
 
 FULL_CLEANUP_TABLES = (
+    "requester_ticket_create_requests",
     "observer_integrity_check_runs",
     "observer_integrity_events",
     "observer_known_contamination",
@@ -1659,6 +1660,7 @@ CLEANUP_TABLES_BY_PROFILE = {
         "ui_users",
     ),
     "web_support": _cleanup_profile_subset(
+        "requester_ticket_create_requests",
         "observer_integrity_check_runs",
         "observer_integrity_events",
         "observer_known_contamination",

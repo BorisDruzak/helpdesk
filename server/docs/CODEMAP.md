@@ -13,6 +13,22 @@
 
 ## Ticket creation
 
+- `server/requester/create_idempotency.py` owns durable requester-create
+  reservations. `POST /api/web/requester/tickets` requires an 8–128-character
+  ASCII `Idempotency-Key`; actor/key/payload hashes and the ticket link live in
+  `requester_ticket_create_requests` (forward migration 144). Reservation,
+  ticket side effects and response construction share one transaction. A
+  concurrent duplicate waits for the first commit or rollback; a changed body
+  or deleted-ticket tombstone returns `CREATE_REQUEST_CONFLICT`/409.
+- A replay uses `RequesterIdentityResolver.get_ticket` with current actor
+  scope. It reads an existing public-access event only after authorization
+  and returns its code only if it still matches the ticket's current hash.
+  The ledger never stores response bodies or codes and does not reissue tokens.
+- `webapp/src/features/requester/create-intent.ts` retains the pending key in
+  actor/intent-scoped sessionStorage. The requester form reuses it after a
+  failure or refresh and clears it after success. A conflict offers ticket
+  review and an explicit separate intent; unavailable storage stops submission.
+
 - `server/tickets/create_flow.py` initializes ticket routing, SLA and OLA in
   the caller's transaction. A required stage failure raises
   `TicketInitializationError`; requester and ticket-create HTTP handlers

@@ -266,11 +266,12 @@ export async function searchRequesterOnBehalfPeople(params: {
 
 export async function createRequesterTicket(
   payload: RequesterTicketCreatePayload,
+  idempotencyKey: string,
 ): Promise<RequesterTicketCreateResult> {
   const response = await fetch("/api/web/requester/tickets", {
     method: "POST",
     credentials: "same-origin",
-    headers: publicHeaders(null, true),
+    headers: { ...publicHeaders(null, true), "Idempotency-Key": idempotencyKey },
     body: JSON.stringify(payload),
   });
   return readSuccess<RequesterTicketCreateResult>(response, "Не удалось создать обращение");

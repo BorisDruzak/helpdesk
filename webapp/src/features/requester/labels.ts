@@ -63,6 +63,7 @@ export function requesterErrorMessage(error: unknown, fallback: string, context:
 }
 
 const REQUESTER_SAFE_ERROR_MESSAGES: Record<string, string> = {
+  CREATE_REQUEST_CONFLICT: "Этот запрос уже использован. Проверьте ранее созданное обращение.",
   INVALID_TICKET_STATUS: "Это действие сейчас недоступно для обращения.",
   NOT_FOUND: "Обращение не найдено или недоступно.",
   QUALITY_FEEDBACK_ERROR: "Оценку не удалось сохранить. Проверьте данные и попробуйте еще раз.",

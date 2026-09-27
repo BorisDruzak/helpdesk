@@ -449,6 +449,21 @@ sa.event.listen(Ticket, "before_insert", _ensure_ticket_requester_id)
 sa.event.listen(Ticket, "before_update", _ensure_ticket_requester_id)
 
 
+class RequesterTicketCreateRequest(Base):
+    """Durable, actor-scoped request keys; no response bodies or access codes."""
+    __tablename__ = "requester_ticket_create_requests"
+
+    actor_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_id: Mapped[Optional[str]] = mapped_column(
+        String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(),
+    )
+
+
 class TicketEvent(Base):
     """
     Ticket event model.

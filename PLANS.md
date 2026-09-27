@@ -1,5 +1,23 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+CREATE-011 working-copy implementation adds actor/key/payload hashes and a
+ticket link through forward migration 144. The canonical requester POST now
+requires an Idempotency-Key, reserves it in the ticket transaction, rechecks
+current ticket access on replay and rejects changed bodies/deleted-ticket
+tombstones. The browser persists account/intent-scoped pending keys through
+failure and refresh; a conflict allows an explicit separate intent. Initial
+PostgreSQL coverage passed eight cases in 688.17 seconds with fresh migrations
+and verified temporary database/role/tunnel cleanup. That run used the earlier
+optional-header wrapper; mandatory-key validation and removal of the redundant
+wrapper followed it. Twenty-five focused no-DB checks, 39 frontend checks,
+TypeScript/build and all 19 requester Chromium fixture cases pass. The expanded
+PostgreSQL run completed with 18 passes and one incorrect test expectation:
+the form/device preflight legitimately returns 403, not 400. Only that test
+expectation changed; its two parameter cases then passed in a fresh isolated
+database in 549.35 seconds, covering all 19 selected cases across the runs.
+Temporary role cleanup was verified after both runs. Final exact-SHA CI and
+live staging acceptance are still required; this is not risk closure.
+
 HISTORY-023 was reproduced during CREATE-011 authorization preparation:
 `RequesterIdentityResolver.get_ticket` searched only the latest 300 tickets.
 The working-copy correction shares the existing access predicate with a direct
@@ -7,10 +25,12 @@ ID/code query. Three no-DB regressions reproduced the bounded lookup and now
 pass; the 21-case lookup/reference suite passes. Two isolated PostgreSQL checks
 passed in 537.96 seconds: an old ticket after 301 newer requests and
 neutral/legacy authorization, including revoked active identity. Temporary
-database/role/tunnel cleanup was verified. CREATE-011 durable idempotency
-remains unimplemented; this prerequisite does not close that risk.
+database/role/tunnel cleanup was verified. The published HISTORY-023 commit
+`5a02c89be3a7f9d905db26786542f15bc1be5dc1` passed full exact-SHA CI with 18
+effective layers and all five lookup cases. CREATE-011 implementation is
+described above; this prerequisite alone does not close that risk.
 
-Latest checkpoint (2026-09-27): candidate
+Latest live checkpoint (2026-09-27; historical for subsequent changes): candidate
 `4536db17a341a8d3d6f03af61017b95349c4f47c` passed full exact-SHA CI,
 canonical staging installation, backup/restore and requester/support core
 cycles T-000017/T-000018, including a real Endpoint adapter outage. Temporary

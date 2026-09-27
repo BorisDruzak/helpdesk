@@ -110,7 +110,7 @@ async def web_requester_client():
 
 
 def _headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {token}", "Idempotency-Key": uuid.uuid4().hex}
 
 
 def _admin_headers() -> dict[str, str]:

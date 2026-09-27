@@ -31,6 +31,10 @@ from observer.web_event_writer import write_web_cabinet_observer_event
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
 from requester.identity_service import RequesterIdentityResolver, RequesterProfileValidationError
+from requester.create_idempotency import (
+    CreateRequestConflict, CreateRequestKey, RequesterCreateLedger,
+    created_ticket_response, replay_created_ticket,
+)
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
 from tickets.handlers import (
@@ -1741,6 +1745,12 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     if not isinstance(data, dict):
         return _error("JSON body must be an object", status=400)
 
+    key_header = request.headers.get("Idempotency-Key")
+    try:
+        request_key = CreateRequestKey.parse(auth_context.actor_id, key_header, data)
+    except (ValueError, RecursionError):
+        return _error("Некорректный ключ или данные повторного запроса.", status=400, error_code="VALIDATION_ERROR")
+
     supplied_device_id = _clean(data.get("device_id"), max_length=80)
     description = _clean(data.get("description"), max_length=5000)
     if not description:
@@ -1756,6 +1766,15 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
+        ledger = RequesterCreateLedger(session)
+        try:
+            completed = await ledger.lookup(request_key)
+            if completed is not None:
+                return _success(await replay_created_ticket(session, completed, resolver, actor_id=auth_context.actor_id))
+        except CreateRequestConflict as exc:
+            return _error(str(exc), status=409, error_code="CREATE_REQUEST_CONFLICT")
+        except PermissionError:
+            return _error("Обращение недоступно.", status=404, error_code="TICKET_NOT_FOUND")
         profile_schema = await RequesterProfileSchemaService(session).get_schema()
         try:
             person, binding, device_id, account_mode, request_context, primary_device_resolution = await _resolve_requester_self_device_context(
@@ -1981,6 +2000,16 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             )
             return _error(str(exc), status=exc.status, error_code=exc.error_code)
         try:
+            completed = await ledger.reserve(request_key)
+            if completed is not None:
+                return _success(await replay_created_ticket(session, completed, resolver, actor_id=auth_context.actor_id))
+        except CreateRequestConflict as exc:
+            await session.rollback()
+            return _error(str(exc), status=409, error_code="CREATE_REQUEST_CONFLICT")
+        except PermissionError:
+            await session.rollback()
+            return _error("Обращение недоступно.", status=404, error_code="TICKET_NOT_FOUND")
+        try:
             created = await create_ticket_with_side_effects(
                 session,
                 device_id=device_id,
@@ -2088,15 +2117,8 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 account_mode=account_mode,
             ),
         )
+        await ledger.complete(request_key, created["ticket_id"])
+        response = _success(created_ticket_response(created["ticket"], created.get("public_access_code")))
         await session.commit()
-        ticket = ticket_to_dict(created["ticket"], visibility="requester")
 
-    return _success(
-        {
-            "ticket": ticket,
-            "ticket_id": created["ticket_id"],
-            "ticket_code": ticket.get("ticket_code"),
-            "public_access_code": created.get("public_access_code"),
-            "public_access_url": ticket.get("public_access_url"),
-        }
-    )
+    return response

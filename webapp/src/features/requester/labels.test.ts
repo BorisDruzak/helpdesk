@@ -34,6 +34,7 @@ describe("requester labels", () => {
     expect(requesterErrorMessage({ status: 404 }, "Не удалось загрузить устройство", { domain: "device" })).toBe("Устройство не найдено или недоступно.");
     expect(requesterErrorMessage({ status: 404 }, "Не удалось загрузить профиль", { domain: "profile" })).toBe("Профиль не найден или недоступен.");
     expect(requesterErrorMessage({ status: 409 }, "Не удалось сохранить оценку", { operation: "feedback" })).toBe("Оценку уже нельзя сохранить для этого обращения.");
+    expect(requesterErrorMessage({ status: 409, code: "CREATE_REQUEST_CONFLICT" }, "Не удалось создать обращение", { operation: "create" })).toBe("Этот запрос уже использован. Проверьте ранее созданное обращение.");
     expect(requesterErrorMessage({ status: 409 }, "Не удалось вернуть обращение в работу", { operation: "reopen" })).toBe("Обращение уже нельзя вернуть в работу.");
     expect(requesterErrorMessage({ status: 500, message: "Traceback leaked" }, "Не удалось загрузить кабинет")).toBe("Сервис временно недоступен. Попробуйте позже.");
     expect(requesterTicketNextActionLabel({ ticket_id: "T-1", status: "waiting_on_user" })).toBe("Нужен ваш ответ");

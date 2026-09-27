@@ -10,6 +10,16 @@ Helpdesk operations.
 
 ## Release and lifecycle
 
+Requester-create idempotency requires forward migration 144 before starting
+the candidate. It adds `requester_ticket_create_requests` to the Helpdesk
+database only. Keep its key tombstones when tickets are deleted; do not purge
+keys to retry a request. The canonical requester POST now requires
+`Idempotency-Key`, so deploy its accepted web bundle from the same SHA and
+update any direct callers to retain a key across retries. Old callers without
+a key receive 400. No new environment variable or dependency is required.
+Rollback follows the existing application/restore procedure, never a schema
+downgrade.
+
 For a new/rebuilt host, install the root-only environment first and then run
 `sudo deploy/helpdesk/install_helpdesk_host.sh` from a reviewed release. The
 bootstrap intentionally does not create database credentials or copy data.

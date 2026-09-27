@@ -21,6 +21,7 @@ name = "ticket runtime rows"
 classification = "ephemeral_test_data"
 tables = [
   "tickets",
+  "requester_ticket_create_requests",
   "ticket_action_log",
   "ticket_admin_audit",
   "ticket_admin_audit_archive",
