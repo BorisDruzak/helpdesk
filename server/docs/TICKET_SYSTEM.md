@@ -17,6 +17,20 @@
 - Workflow side effects are observable. SLA and required approval side effects are critical; OLA, public-session revocation on `closed`, and notification-style side effects are non-critical unless their policy explicitly marks them critical. Failures are logged with structured context, counted by workflow side-effect metrics, attached to the transition payload and written as `workflow_side_effect_failed` ticket events with redacted error messages. Public-token verification also denies `closed` / `canceled` ticket state before updating session usage, so terminal ticket access fails closed even if revocation side effects fail or lag.
 - Policy Health lives at `server/tickets/policy_health_service.py`, `server/web_api/policy_health_handlers.py` and `/app/admin/policy-health`. Admin/auditor endpoints are `GET /api/web/admin/helpdesk/policy-health`, `GET /api/web/admin/helpdesk/policy-health/{template_code}`, and `POST /api/web/admin/helpdesk/policy-health/simulate`; support/requester/public are denied. Simulation is dry-run but runtime-equivalent: it overlays effective registry policies, builds an unsaved ticket context and calls the real routing, priority, SLA, OLA, approval, closure, visibility and diagnostic resolvers.
 
+### Required queue and take-in-work transactions
+
+Support take-in-work commits the status transition together with self-assignment.
+An assignment rejection returns `ASSIGNMENT_CONFLICT`/409 after rollback;
+unexpected assignment errors return `STATUS_ACTION_FAILED`/503 after rollback.
+The legacy and support queue-change/reroute endpoints require OLA close/restart
+to succeed in the queue transaction. An OLA exception rolls back queue, timer
+and event changes and returns a safe 503 (`QUEUE_ACTION_FAILED` or
+`REROUTE_ACTION_FAILED`), without broadcasting the failed mutation.
+Mass queue changes keep the existing partial-result contract: failure rolls back
+only the current item and reports an error item; earlier committed successes
+remain applied. These rules do not change the separately observable workflow
+side-effect policy for ordinary status transitions.
+
 ## P1 Service Catalog and Runtime Governance (2026-05-14)
 
 - Service Catalog is a process/requester layer, not a replacement for CMDB `registry_services`. Catalog services live in `helpdesk_services`, offerings live in `helpdesk_service_offerings`, and either may link to existing registry data without changing registry snapshots or service picker semantics.

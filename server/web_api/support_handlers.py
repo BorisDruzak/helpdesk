@@ -4026,8 +4026,8 @@ async def handle_web_support_queue_mass_action(request: web.Request):
                         try:
                             await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
                             await start_ola_for_ticket(session, refreshed, trigger="queue_changed")
-                        except Exception as exc:
-                            logger.warning(f"[web_support_queue_mass_action] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+                        except Exception:
+                            raise RuntimeError("Не удалось обновить сроки очереди") from None
                         event_payload = {"queue_id": queue_id, "previous_queue_id": old_queue_id, "actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role, "reason": reason, "bulk_action": True}
                         event_result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="queue_changed", payload=event_payload)
                         await session.commit()
@@ -5657,10 +5657,12 @@ async def handle_web_support_change_status(request: web.Request):
                         close_ola=True,
                     )
                     ticket = await repo.get_ticket(ticket.ticket_id) or ticket
-                except TicketAssignmentError as exc:
-                    logger.info(
-                        f"[web_support_status] take_in_work assignment skipped: "
-                        f"ticket_id={ticket.ticket_id} actor_id={auth_context.actor_id} error={exc}"
+                except TicketAssignmentError:
+                    logger.bind(ticket_id=ticket.ticket_id).info("[web_support_status] take_in_work assignment rejected")
+                    await session.rollback()
+                    return _support_json_error(
+                        "Не удалось назначить исполнителя. Обращение не переведено в работу.",
+                        status=409, error_code="ASSIGNMENT_CONFLICT",
                     )
 
             closure_policy_payload = (result.get("event_payload") or {}).get("closure_policy")
@@ -5883,8 +5885,11 @@ async def handle_web_support_change_queue(request: web.Request):
             try:
                 await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
                 await start_ola_for_ticket(session, ticket, trigger="queue_changed")
-            except Exception as exc:
-                logger.warning(f"[web_support_queue_change] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+            except Exception:
+                logger.bind(ticket_id=ticket.ticket_id).warning("[web_support_queue_change] required OLA update failed")
+                await session.rollback()
+                return _support_json_error("Не удалось обновить сроки очереди. Повторите попытку позже.",
+                                           status=503, error_code="QUEUE_ACTION_FAILED")
             captured = []
             if queue_id != old_queue_id:
                 ticket, captured = await _reconcile_queue_scope_state(session, repo, ticket, actor_id=auth_context.actor_id, actor_role=auth_context.actor_role, reason_prefix="manual_queue_change")
@@ -5959,8 +5964,11 @@ async def handle_web_support_reroute_ticket(request: web.Request):
             try:
                 await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
                 await start_ola_for_ticket(session, ticket, trigger="queue_changed")
-            except Exception as exc:
-                logger.warning(f"[web_support_reroute] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+            except Exception:
+                logger.bind(ticket_id=ticket.ticket_id).warning("[web_support_reroute] required OLA update failed")
+                await session.rollback()
+                return _support_json_error("Не удалось обновить сроки очереди. Повторите попытку позже.",
+                                           status=503, error_code="REROUTE_ACTION_FAILED")
             if getattr(ticket, "queue_id", None) != previous_queue_id:
                 ticket, queue_events = await _reconcile_queue_scope_state(session, repo, ticket, actor_id=auth_context.actor_id, actor_role=auth_context.actor_role, reason_prefix="reroute")
                 captured.extend(queue_events)

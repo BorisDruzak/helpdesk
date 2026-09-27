@@ -24,6 +24,20 @@
   caller's session; `AuthTokensRepo` flushes without committing in that mode.
   Standalone public authorization retains its owned transaction.
 
+## Workflow transaction failures
+
+- Support take-in-work keeps the status transition and self-assignment in one
+  transaction. Assignment rejection rolls back before `ASSIGNMENT_CONFLICT`/409;
+  unexpected failures roll back through the session context and return 503.
+- Legacy and support queue-change/reroute handlers require both OLA close and
+  restart to succeed. Failure rolls back queue, timers and events before a safe
+  503 response and before broadcasting. Mass queue changes retain per-item
+  transactions: a failed item rolls back and reports an error, while previously
+  committed successful items remain applied.
+- `server/tests/test_workflow_atomicity_no_db.py` checks HTTP error/broadcast
+  ordering; `server/tests/test_workflow_atomicity.py` checks persisted state,
+  events and mixed-result mass actions with isolated PostgreSQL.
+
 ## Support reads
 
 - `server/web_api/support_handlers.py` returns `DB_UNAVAILABLE`/503 when

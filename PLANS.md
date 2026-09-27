@@ -30,6 +30,18 @@ TypeScript/build and a controlled real-browser degradation scenario passed.
 SUPPORT-026 malformed `limit` is fixed for support queue/summary; other
 historically listed handlers still need current-condition verification.
 
+WORKFLOW-016/017 were reproduced in the current handlers: take-in-work ignored
+assignment rejection and queue mutations swallowed required OLA failures.
+The bounded correction rolls back these mutations before a safe error response;
+mass queue changes preserve earlier successful items and roll back the failed
+item. Eleven HTTP regressions failed before the fix; the focused no-DB suite
+passed afterward. Fifteen isolated PostgreSQL checks passed: failure leaves
+status, assignment, queue, timers and events unchanged; a mixed mass action
+keeps the earlier successful item. Normal status/queue controls also passed.
+Temporary database/role/tunnel cleanup was verified. Published b9cb055 passed
+all 18 full CI layers, but these newer workflow changes still require their
+own exact-SHA CI and live acceptance.
+
 Windows integration is independently blocked: Endpoint staging release
 `1c96bdc18bc05fc7730435d12da730b8bbb42502` differs from the verified locked
 provider `abdd5c7ef596bc54277e74ca96cc929a43e07049`, and the Windows test VM is

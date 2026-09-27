@@ -1934,8 +1934,11 @@ async def handle_ticket_reroute(request: web.Request) -> web.Response:
         try:
             await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
             await start_ola_for_ticket(session, ticket, trigger="queue_changed")
-        except Exception as exc:
-            logger.warning(f"[reroute] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+        except Exception:
+            logger.bind(ticket_id=ticket.ticket_id).warning("[reroute] required OLA update failed")
+            await session.rollback()
+            return _json_error("Не удалось обновить сроки очереди. Повторите попытку позже.",
+                               status=503, error_code="REROUTE_ACTION_FAILED")
         if getattr(ticket, "queue_id", None) != previous_queue_id:
             ticket, queue_events = await _reconcile_queue_scope_state(
                 session,
@@ -2006,8 +2009,11 @@ async def handle_ticket_queue(request: web.Request) -> web.Response:
         try:
             await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
             await start_ola_for_ticket(session, ticket, trigger="queue_changed")
-        except Exception as exc:
-            logger.warning(f"[queue_change] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+        except Exception:
+            logger.bind(ticket_id=ticket.ticket_id).warning("[queue_change] required OLA update failed")
+            await session.rollback()
+            return _json_error("Не удалось обновить сроки очереди. Повторите попытку позже.",
+                               status=503, error_code="QUEUE_ACTION_FAILED")
         captured: List[tuple[str, Dict[str, Any], Optional[tuple]]] = []
         if queue_id != old_queue_id:
             ticket, captured = await _reconcile_queue_scope_state(
