@@ -31,7 +31,7 @@ from tickets.assignment_service import (
     TicketAssignmentService,
 )
 from tickets.account_access_service import TicketBindingAccessService
-from tickets.create_flow import TicketInitializationError, build_default_priority_payload, create_ticket_with_side_effects
+from tickets.create_flow import RequesterIdentityMismatch, TicketInitializationError, build_default_priority_payload, create_ticket_with_side_effects
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
@@ -1096,6 +1096,12 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
                 extra_custom_fields=extra_custom_fields,
                 requester_account=requester_account if auth_context.actor_role != "agent" else None,
                 state=request.app.get("state"),
+            )
+        except RequesterIdentityMismatch:
+            await session.rollback()
+            return _json_error(
+                "Заявитель не соответствует подтверждённой учётной записи.",
+                status=403, error_code="REQUESTER_IDENTITY_FORBIDDEN",
             )
         except TicketInitializationError:
             await session.rollback()

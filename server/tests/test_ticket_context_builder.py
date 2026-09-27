@@ -7,7 +7,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, RegistryDepartment, RegistryLocation, RegistryPerson, Ticket, TicketEvent
+from app.db.models import Device, RegistryDepartment, RegistryLocation, RegistryPerson, RegistryPersonIdentity, Ticket, TicketEvent
 from registry.registration_service import RegistrationService
 from tickets.create_flow import create_ticket_with_side_effects
 from tickets.diagnostic_target import resolve_ticket_diagnostic_target
@@ -111,6 +111,14 @@ def _requester_account(person: RegistryPerson) -> dict[str, str]:
         "email": person.email or "",
         "validation": "web_requester_identity_resolved",
     }
+
+
+async def _link_browser_identity(session, person: RegistryPerson, login: str) -> None:
+    session.add(RegistryPersonIdentity(
+        person_id=person.person_id, provider="ui_login", identifier=login,
+        normalized_identifier=login, verified=True, source="test",
+    ))
+    await session.flush()
 
 
 class _NoRegistryOrmSession:
@@ -428,6 +436,7 @@ async def test_create_flow_stores_ticket_context_without_trusting_current_device
         )
         await session.commit()
 
+        await _link_browser_identity(session, creator, "creator-login")
         result = await create_ticket_with_side_effects(
             session,
             device_id=current_device_id,
@@ -482,6 +491,7 @@ async def test_create_flow_stores_on_behalf_affected_target_context(test_engine)
         )
         await session.commit()
 
+        await _link_browser_identity(session, creator, "support-login")
         result = await create_ticket_with_side_effects(
             session,
             device_id=current_device_id,
@@ -563,6 +573,7 @@ async def test_create_flow_writes_ticket_context_resolved_event(test_engine):
         )
         await session.commit()
 
+        await _link_browser_identity(session, creator, "creator-login")
         result = await create_ticket_with_side_effects(
             session,
             device_id=_new_id(),

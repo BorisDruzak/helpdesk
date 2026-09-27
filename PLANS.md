@@ -1,5 +1,17 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+ACCOUNT-033 current-boundary repro: legacy create with a forged
+browser_no_device person ID persisted a foreign requester and emitted a Customer
+History event. The two-case isolated run had one pass/one fail in 544.32 seconds;
+temporary role cleanup was verified. The working-copy fix verifies server
+identity before assigning any requester/person/context fields, rejects mismatch
+with rollback/403 and converts identity lookup failure to typed rollback/503.
+Seven new no-DB cases initially failed; the combined 26-case suite now passes.
+Three direct create-flow fixtures now supply real verified UI-login identities.
+Seven expanded PostgreSQL cases, including history, unavailable/retry and normal
+requester/on-behalf controls, passed in 667.59 seconds; temporary role cleanup
+was verified. New exact-SHA CI/live proof remains open.
+
 CREATE-011 was published as f5f85ecc5b8c5dd4adabf20f77ac727c1312b1aa.
 Its first full CI failed at the no-DB harness test's historical 169-table count;
 migration 144 correctly adds table 170. The focused cleanup/idempotency suite
@@ -8,7 +20,10 @@ Local full no-DB coverage had 838 passes and one separate guard failure caused
 by an ignored old pc_agent/dist build; no pc_agent Python source is tracked.
 The clean CI guard passed before the cleanup-count failure. Preserve that
 local build and the guard; do not report the local full run as passing.
-Endpoint contract acceptance passed, but full CI and live acceptance remain open.
+Follow-up c68bbaec0877c4cab7ec4790a05c5ae7a2a52f37 passed full exact-SHA CI:
+18 effective layers and all 25 idempotency cases passed in the downloaded,
+strictly validated artifact. The identity correction above requires its own
+new exact-SHA CI; live acceptance and full risk closure remain open.
 
 CREATE-011 working-copy implementation adds actor/key/payload hashes and a
 ticket link through forward migration 144. The canonical requester POST now

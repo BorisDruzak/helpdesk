@@ -13,6 +13,15 @@
 
 ## Ticket creation
 
+- `server/tickets/create_flow.py` verifies `browser_no_device` requester identity
+  against `RequesterIdentityResolver.resolve_person_for_web_user` before
+  assigning any requester/person/context fields. A client account dictionary
+  is not an authorization claim. Mismatch raises `RequesterIdentityMismatch`;
+  both create handlers roll back and return `REQUESTER_IDENTITY_FORBIDDEN`/403.
+  Resolver failure raises `TicketInitializationError("requester_identity")`
+  and returns the existing safe 503 after rollback. Verified binding and
+  public-create composition retain their existing boundaries.
+
 - `server/requester/create_idempotency.py` owns durable requester-create
   reservations. `POST /api/web/requester/tickets` requires an 8–128-character
   ASCII `Idempotency-Key`; actor/key/payload hashes and the ticket link live in

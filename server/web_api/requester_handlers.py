@@ -48,6 +48,7 @@ from tickets.handlers import (
     _store_resolution_confirmation_state,
 )
 from tickets.create_flow import (
+    RequesterIdentityMismatch,
     TicketInitializationError,
     VerifiedRequesterBinding,
     build_default_priority_payload,
@@ -2052,6 +2053,12 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 ),
                 ticket_context=on_behalf_context,
                 state=request.app.get("state"),
+            )
+        except RequesterIdentityMismatch:
+            await session.rollback()
+            return _error(
+                "Заявитель не соответствует подтверждённой учётной записи.",
+                status=403, error_code="REQUESTER_IDENTITY_FORBIDDEN",
             )
         except TicketInitializationError:
             await session.rollback()

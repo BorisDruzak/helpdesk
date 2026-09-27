@@ -7,6 +7,15 @@ are owned by Endpoint Platform and are not accepted or issued by Helpdesk.
 
 Do not include credentials, session cookies, tokens or raw diagnostic results
 in logs, evidence, fixtures or release reports.
+
+Browser requester identity is resolved from the authenticated actor's verified
+server identity. A client-supplied requester_account dictionary cannot authorize
+a person claim. Shared creation verifies browser_no_device before assigning
+requester fields or constructing Customer History context. Identity mismatch
+returns REQUESTER_IDENTITY_FORBIDDEN/403 with transaction rollback; unavailable
+identity verification returns the existing typed initialization 503 and rolls
+back. Public session and trusted verified-binding boundaries remain unchanged.
+
 # Production transport preflight
 
 `shared/production_security.py` shares a dependency-free production policy between
