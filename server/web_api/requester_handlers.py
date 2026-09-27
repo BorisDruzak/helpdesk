@@ -66,7 +66,7 @@ from tickets.chat_idempotency import (
     normalize_chat_message_id,
 )
 from tickets.ticket_context import TicketContextBuilder, project_requester_ticket_context
-from tickets.workflow_service import TicketWorkflowService
+from tickets.workflow_service import TicketWorkflowService, WorkflowTransitionConflict
 
 _AVAILABILITY_POLICY_FIELDS = (
     "available_without_completed_profile",
@@ -1307,6 +1307,9 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
                 reason=_clean(data.get("reason"), max_length=200) or "requester_confirmed_resolution",
                 source="requester_workspace",
             )
+        except WorkflowTransitionConflict as exc:
+            await session.rollback()
+            return _error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
         except ValueError as exc:
             return _error(str(exc), status=400, error_code="WORKFLOW_POLICY_ERROR")
 

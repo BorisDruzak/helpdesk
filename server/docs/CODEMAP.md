@@ -29,6 +29,17 @@
 
 ## Workflow transaction failures
 
+- `server/tickets/workflow_service.py` locks and refreshes the ticket before
+  policies or lifecycle side effects. A stale `from_status` raises
+  `WorkflowTransitionConflict`; status/confirmation/reopen HTTP handlers return
+  `WORKFLOW_CONFLICT`/409 after rollback. `TicketEventsRepo.get_ticket` keeps
+  ordinary reads unchanged; `for_update=True` flushes pending writes before
+  refreshing because production sessions disable autoflush. The caller owns
+  commit/rollback and therefore the lifetime of the row lock.
+- Automatic reply transitions choose their target under the same row lock.
+  An unavailable or duplicate fallback is a no-op instead of restoring a stale
+  status. Concurrency and pending-assignment checks live in
+  `server/tests/test_workflow_concurrency.py` and its no-DB companion.
 - Support take-in-work keeps the status transition and self-assignment in one
   transaction. Assignment rejection rolls back before `ASSIGNMENT_CONFLICT`/409;
   unexpected failures roll back through the session context and return 503.

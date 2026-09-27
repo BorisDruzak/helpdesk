@@ -299,6 +299,13 @@ async def validate_transition_for_ticket(
     )
 
 
+class WorkflowTransitionConflict(ValueError):
+    """The caller's transition state became stale before acquiring the row lock."""
+
+    def __init__(self):
+        super().__init__("Состояние обращения изменилось. Обновите обращение и повторите действие.")
+
+
 class TicketWorkflowService:
     """Apply status transitions and keep lifecycle side effects in sync."""
 
@@ -324,8 +331,10 @@ class TicketWorkflowService:
         source: str = "api",
         workflow_trigger: dict | None = None,
     ) -> dict:
+        ticket = await self.ticket_repo.get_ticket(ticket_id, for_update=True)
+        if ticket is None or ticket.status != from_status:
+            raise WorkflowTransitionConflict()
         now = datetime.now(timezone.utc)
-        ticket = await self.ticket_repo.get_ticket(ticket_id)
         workflow_profile = await load_ticket_workflow_profile(self.session, ticket)
         updates = {
             "next_action_owner": next_action_owner_for_status(to_status),
@@ -753,7 +762,7 @@ class TicketWorkflowService:
         trigger_actor_role: str | None = None,
         fallback_status: str | None = None,
     ) -> dict:
-        ticket = await self.ticket_repo.get_ticket(ticket_id)
+        ticket = await self.ticket_repo.get_ticket(ticket_id, for_update=True)
         if ticket is None:
             return {"applied": False, "no_op": True, "reason": "ticket_not_found"}
         from_status = str(getattr(ticket, "status", "") or "").strip()
@@ -765,6 +774,11 @@ class TicketWorkflowService:
             auto = gate.auto
         elif fallback_status:
             to_status = fallback_status
+            if from_status == to_status or not validate_transition_for_profile(
+                workflow_profile, from_status, to_status, True
+            ):
+                return {"applied": False, "no_op": True, "reason": "fallback_transition_not_available",
+                        "trigger": trigger}
             auto = False
             fallback = True
         else:

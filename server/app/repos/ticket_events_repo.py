@@ -940,17 +940,24 @@ class TicketEventsRepo:
         )
         return ticket
     
-    async def get_ticket(self, ticket_id: str) -> Optional[Ticket]:
+    async def get_ticket(self, ticket_id: str, *, for_update: bool = False) -> Optional[Ticket]:
         """
         Get a ticket by ID.
         
         Args:
             ticket_id: Ticket identifier
+            for_update: Flush pending writes, lock and refresh the ticket until
+                the caller commits or rolls back its transaction.
         
         Returns:
             Ticket object if found, None otherwise
         """
         stmt = select(Ticket).where(Ticket.ticket_id == ticket_id)
+        if for_update:
+            # Production sessions disable autoflush; preserve same-transaction
+            # assignment/policy changes before refreshing the identity map.
+            await self.session.flush()
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
         result = await self.session.execute(stmt)
         ticket = result.scalar_one_or_none()
         

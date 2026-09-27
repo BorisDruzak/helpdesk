@@ -48,6 +48,20 @@ focused contact regressions passed, preserving profile phone/e-mail and
 explicit contact fields. This is not proof of contact deliverability or live
 acceptance. The combined focused no-DB suite passed all 22 checks.
 
+WORKFLOW-015 was reproduced: a stale `from_status` reached policy execution.
+The working-copy correction locks/refreshes the row before side effects and
+maps stale explicit transitions to a safe 409. Automatic reply transitions
+choose their target under the lock and skip unavailable/duplicate fallbacks.
+Review also identified `autoflush=False`; locked reads now explicitly flush
+pending same-transaction writes before refresh. Twenty-six focused no-DB checks
+passed. The expanded isolated PostgreSQL run passed six checks: competing
+different/same-target transitions have one winner and one status event, a
+pending assignment survives with autoflush disabled, and normal reply, wait
+ledger and quality-reopen controls succeed. Temporary database/role/tunnel
+cleanup was verified. All 36 original conditions are now preserved in the
+historical registry with the audit hash/line provenance and unchanged statuses.
+No current-SHA release acceptance is claimed from these focused results.
+
 Windows integration is independently blocked: Endpoint staging release
 `1c96bdc18bc05fc7730435d12da730b8bbb42502` differs from the verified locked
 provider `abdd5c7ef596bc54277e74ca96cc929a43e07049`, and the Windows test VM is

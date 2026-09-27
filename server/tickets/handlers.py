@@ -61,7 +61,7 @@ from tickets.statuses import (
     normalize_ticket_priority_inputs,
     resolve_status,
 )
-from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
+from tickets.workflow_service import TicketWorkflowService, WorkflowTransitionConflict, validate_transition_for_ticket
 from tickets.visibility_policy import apply_ticket_visibility_payload_async
 from utils import new_ticket_id
 from websocket.ui_handler import push_ticket_event_committed
@@ -1841,6 +1841,9 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
                 root_cause=data.get("root_cause"),
                 source="api",
             )
+        except WorkflowTransitionConflict as exc:
+            await session.rollback()
+            return _json_error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
         except ValueError as exc:
             return _validation_error({"workflow_policy": str(exc)})
         followup_result = None

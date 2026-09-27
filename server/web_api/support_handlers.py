@@ -110,7 +110,7 @@ from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.purge_service import TicketPurgeBlockedError, TicketPurgeService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
-from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
+from tickets.workflow_service import TicketWorkflowService, WorkflowTransitionConflict, validate_transition_for_ticket
 from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
@@ -5605,6 +5605,9 @@ async def handle_web_support_change_status(request: web.Request):
                     internal_comment=data.get("internal_comment"),
                     source="web_support_api",
                 )
+            except WorkflowTransitionConflict as exc:
+                await session.rollback()
+                return _support_json_error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
             except ValueError as exc:
                 message = str(exc)
                 if message.startswith("approval_policy"):

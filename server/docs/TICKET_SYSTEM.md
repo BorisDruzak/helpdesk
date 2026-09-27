@@ -23,6 +23,16 @@ e-mail and explicitly supplied form/request contact fields remain accepted.
 
 ### Required queue and take-in-work transactions
 
+Status transitions acquire a PostgreSQL row lock and refresh the ticket before
+running policies or lifecycle side effects. If the caller's `from_status` is
+stale, the service raises `WorkflowTransitionConflict`; explicit status,
+requester confirmation and reopen APIs return `WORKFLOW_CONFLICT`/409 after
+rollback. The transaction keeps the lock until commit/rollback. Pending writes
+are flushed before refresh so `autoflush=False` does not discard an assignment
+or policy update from the same transaction. Automatic requester-reply targets
+are chosen under that lock; unavailable or duplicate fallback transitions are
+no-ops. This does not replace concurrency controls for unrelated field edits.
+
 Support take-in-work commits the status transition together with self-assignment.
 An assignment rejection returns `ASSIGNMENT_CONFLICT`/409 after rollback;
 unexpected assignment errors return `STATUS_ACTION_FAILED`/503 after rollback.
