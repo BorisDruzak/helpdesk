@@ -18,6 +18,21 @@ REQUIRED_ACCEPTANCE = (
     "windows_endpoint_acceptance", "endpoint_degraded_acceptance",
 )
 
+SINGLE_INSTANCE_TOPOLOGY = dict(
+    server_instances=1, application_workers=1, helpdesk_backends=1,
+    ha_enabled=False, load_balancing_enabled=False,
+)
+
+
+def validate_deployment_topology(topology: object) -> None:
+    """SCALE-036 is accepted only for the reviewed single-instance v1 scope."""
+    if not isinstance(topology, dict) or set(topology) != set(SINGLE_INSTANCE_TOPOLOGY):
+        raise ValueError("SCALE-036: verified single-instance deployment topology is required")
+    for key, expected in SINGLE_INSTANCE_TOPOLOGY.items():
+        value = topology[key]
+        if type(value) is not type(expected) or value != expected:
+            raise ValueError("SCALE-036: deployment topology reopens the release blocker")
+
 
 def validate_acceptance_evidence(payload: dict, commit: str, provider: str, openapi: str,
                                  schema: str, web_digest: str) -> None:
@@ -31,6 +46,8 @@ def validate_acceptance_evidence(payload: dict, commit: str, provider: str, open
     for key in REQUIRED_ACCEPTANCE:
         if payload.get(key) != "success":
             raise ValueError(f"required staging acceptance missing or failed: {key}")
+    for surface in ("staging_deployment_topology", "production_deployment_topology"):
+        validate_deployment_topology(payload.get(surface))
 
 
 def validate_production_release(workspace: Path, commit: str, bundle: Path, *, environment_file: Path,
@@ -62,6 +79,7 @@ def validate_production_release(workspace: Path, commit: str, bundle: Path, *, e
                     configuration_profile="production-v1", ci_status="success",
                     release_timestamp=datetime.now(timezone.utc).isoformat())
     manifest.update({key: "success" for key in REQUIRED_ACCEPTANCE})
+    manifest["production_deployment_topology"] = dict(acceptance["production_deployment_topology"])
     output = workspace / "artifacts/release" / commit / "release-manifest.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():

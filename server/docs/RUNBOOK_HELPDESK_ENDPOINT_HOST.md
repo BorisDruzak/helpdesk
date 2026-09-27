@@ -10,6 +10,24 @@ Helpdesk operations.
 
 ## Release and lifecycle
 
+Production Readiness v1 permits exactly one active Helpdesk server process,
+one application worker and one Helpdesk Nginx backend. SCALE-036 remains an
+open, owner-accepted architectural limitation only for this topology. HA,
+active-active, multiple workers, parallel backends and horizontal scaling are
+prohibited until separate implementation and acceptance of process-local UI
+runtime state. Changing to any of these topologies reopens SCALE-036 as a
+release blocker; it is not a completed HA fix.
+
+Production acceptance evidence must include `staging_deployment_topology` and
+`production_deployment_topology`, each with `server_instances: 1`,
+`application_workers: 1`, `helpdesk_backends: 1`, `ha_enabled: false` and
+`load_balancing_enabled: false`. Verify these against actual process/service
+and proxy configuration evidence. Missing fields, unsupported topology or
+string/boolean substitutes for counts fail the production gate. The immutable
+release manifest records the accepted production topology. Recheck the actual
+topology after deployment and whenever changing the host/proxy/service layout;
+the gate is not a continuous runtime monitor.
+
 Requester-create idempotency requires forward migration 144 before starting
 the candidate. It adds `requester_ticket_create_requests` to the Helpdesk
 database only. Keep its key tombstones when tickets are deleted; do not purge
@@ -123,22 +141,22 @@ scoped Endpoint credential and isolated DB admin access from the approved secret
 channel at runtime. Never substitute the production host or real admin account.
 Restore the original staging dependency configuration after outage testing.
 
-### Unresolved staging provider boundary (2026-09-27)
+### Staging provider alignment and Windows acceptance
 
-Read-only inspection found Endpoint staging release
-`1c96bdc18bc05fc7730435d12da730b8bbb42502`, while the verified provider lock is
-`abdd5c7ef596bc54277e74ca96cc929a43e07049`. The dedicated Windows VM's agent
-currently connects to production Endpoint `192.168.100.19:443`; its bounded
-status identifies `endpoint.sosnadmin.local`, agent `3.2.75`, and device
-`9169e45c-9566-4277-b58e-bf76287c2b59`. This is not staging integration evidence.
+Acceptance requires Endpoint staging to match the supported provider lock,
+the dedicated Windows VM to be enrolled in that isolated namespace, and a
+scoped Helpdesk credential for the same provider. Do not substitute production
+for initial acceptance. Provider/agent alignment was completed under separately
+authorized Endpoint work on 2026-09-27: the locked `abdd5c7ef596` provider and
+existing Windows 3.2.75 agent produced a real safe diagnostic result for Helpdesk
+candidate `fbf415f9`. No reinstall was performed. Protected original enrollment
+was restored after validation and staging services were stopped.
 
-Keep the Windows integration gate closed. Separate Endpoint work must align
-the isolated provider with the supported locked release, connect the dedicated
-VM to that isolated namespace, verify its device identity, and supply a scoped
-Helpdesk credential for the same provider. Do not perform initial acceptance
-against production, repoint Helpdesk to production, or modify Endpoint/agent
-configuration inside this Helpdesk task. Other Helpdesk-only checks can proceed;
-their success does not waive this gate or permit a successful release manifest.
+That result is historical evidence for its exact candidate, not acceptance for
+later release SHAs. Every new frozen candidate still requires the documented
+staging business, Windows and degraded receipts before an accepted manifest.
+Preserve encrypted enrollment recovery and restore the original VM identity
+after isolated testing; do not copy agent credentials into Helpdesk evidence.
 
 ## Operational signals and controlled 72-hour pilot
 
