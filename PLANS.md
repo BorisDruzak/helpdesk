@@ -1,5 +1,12 @@
 # Active: 2026-09-27 Helpdesk Production Readiness v1
 
+Runtime database logging follow-up: a configured-engine regression reproduced
+bound SQL parameter disclosure in formatted errors. The runtime engine now
+enables hide_parameters=True. This changes error/log representation only;
+SQL execution, pool options and transaction behavior remain unchanged.
+The combined 43-case focused suite and workspace verifier pass. New exact-SHA
+full CI remains required before release acceptance.
+
 Security logging follow-up: a synthetic IntegrityError regression confirmed
 that a UI-user creation conflict logged SQL parameters including password_hash.
 The repository now emits a constant conflict message after rollback and raises

@@ -11,6 +11,8 @@ in logs, evidence, fixtures or release reports.
 UI-user creation conflicts emit a constant log message after rollback. SQL
 statements, database parameters and the underlying exception chain are omitted
 from the reported conflict, because they can contain a password hash.
+The runtime SQLAlchemy engine also enables `hide_parameters=True` so statement
+errors and engine logs omit bound parameter values across database operations.
 
 Browser requester identity is resolved from the authenticated actor's verified
 server identity. A client-supplied requester_account dictionary cannot authorize

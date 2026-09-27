@@ -17,6 +17,9 @@
   a constant conflict message. The reported `ValueError` suppresses the SQL
   exception chain so password hashes cannot appear in its formatted traceback.
   Regression coverage lives in `server/tests/test_ui_users_repo_no_db.py`.
+- `server/app/db/engine.py` hides bound SQL parameter values in runtime engine
+  logs and statement errors. `server/tests/test_db_engine_pool_config.py`
+  verifies this against the configured SQLAlchemy engine without a DB connection.
 
 ## Requester consent decisions
 
