@@ -25,11 +25,11 @@ Linux/PostgreSQL 16 gate passed all 648 tests; Windows tests passed 369.
 Canonical MSI build produced EndpointAgent-3.2.76-x64.msi, SHA256
 `1806841273267058082678ac81c0b63442bc4ac794785d65e3ef2b8a6c233672`.
 MSI installation/live acceptance remain unconfirmed. Provider candidate HEAD is
-`fa6f65ce766a6a4a3c9cd5d82c042f1e1989267e`: subsequent changes bound CI to ten
-minutes and fix the test facade's disconnect/ASGI portal shutdown ordering.
+`61acfde9401a51fc7e3006733721ee1c2be12b4b`: subsequent changes bound CI to ten
+minutes and fix shared test-harness disconnect/ASGI portal shutdown ordering.
 OpenAPI/runtime bytes are unchanged. Current contracts: 428 passed; Gateway:
-80 passed. Provider PR CI 36396495509 and exact-HEAD dispatch 36396880086 remain
-open. Helpdesk lock now pins this candidate SHA and the unchanged OpenAPI hash.
+80 passed. Exact-HEAD provider dispatch 36397790108 passed all 648 tests.
+Helpdesk lock now pins this candidate SHA and the unchanged OpenAPI hash.
 
 Helpdesk implementation includes registration capability/disabled UX, memory-only
 fragment capture, the typed redemption adapter, exact provider lock, Registry
@@ -48,7 +48,11 @@ concurrency, resolver and context checks: 23 passed. Ownership/admin approval:
 API checks: 2 passed. True provider/adapter/WSS acceptance passed in GitHub
 contract CI. Full CI correctly rejected missing cleanup profile/table/count
 fixtures; they are corrected, strict model-schema audit and 60 cleanup/harness
-checks passed. Run 36396167011 remains open. Fixture browser acceptance
+checks passed. Run 36396167011 passed migration schema (5) and ticket DB (372)
+checks before being cancelled by the next revision. Final-pin CI 36397130080
+passed contract acceptance but failed an existing Studio async-button timeout;
+the test now awaits the preview request and exact confirmation button. A fresh
+full CI is required on the new candidate. Fixture browser acceptance
 is separate from real Windows acceptance. Reviewer found no remaining confirmed
 blocker after cached-person status and explicit no-device context were corrected.
 

@@ -108,3 +108,22 @@
 - Required independent staging deployment and real tray→requester-confirmed
   closure/conflict/restore remain blocked by pending approved Linux privilege
   input. No production or ALT live operations are authorized.
+
+## Shared-fixture stabilization follow-up
+
+- Provider 61acfde9401a51fc7e3006733721ee1c2be12b4b protects shared WebSocket
+  fixture cleanup from immediate TestClient task-group cancellation. The same
+  shutdown race moved to a second existing Gateway test in PR run 36396495509;
+  the preceding exact-head run had passed with the identical Git tree.
+  Production code remains unchanged. All 80 Gateway checks pass locally;
+  exact-head CI 36397790108 passes all 648 provider tests and remaining gates.
+- Consumer lock now pins 61acfde9401a51fc7e3006733721ee1c2be12b4b with unchanged
+  OpenAPI hash. Final-pin run 36397130080 passed provider acceptance, but failed
+  the existing Studio three-second button wait (485 frontend checks passed).
+  Local repeat passes all 486 checks; the focused Studio suite passes all nine
+  in CI's threads/one-worker mode. The test now explicitly awaits the preview
+  POST and exact confirmation button with the adjacent scenario's bounded wait;
+  disabled/no-publication assertions are retained. New exact-head CI is required.
+- Earlier consumer run 36396167011 additionally passed all five migration schema
+  checks and 372 PostgreSQL ticket checks before revision-change cancellation.
+  This is partial evidence, not a successful full release receipt.
