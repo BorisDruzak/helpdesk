@@ -47,6 +47,9 @@ Free ownership activates through canonical Registry policy, same-owner primary
 binding is idempotent, and existing/shared/ambiguous ownership creates an audited
 claim for administrator review without replacing owners. The source and
 verification marker are `endpoint_possession_proof`.
+Administrator claim listings and Registry snapshots expose this bounded source
+without challenge material. The requests tab labels it “Код привязки Endpoint”
+and retains separate explicit administrator review for ownership conflicts.
 
 ## Tickets
 

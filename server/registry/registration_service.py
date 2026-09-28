@@ -1673,6 +1673,7 @@ class RegistrationService:
             "person_id": claim.person_id,
             "status": claim.status,
             "claim_type": claim.claim_type,
+            "source": claim.source,
             "relationship_type": claim.relationship_type,
             "confidence": float(claim.confidence) if claim.confidence is not None else None,
             "submitted_at": claim.submitted_at.isoformat() if claim.submitted_at else None,

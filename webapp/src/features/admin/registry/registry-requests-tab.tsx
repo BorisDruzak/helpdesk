@@ -27,6 +27,9 @@ export function canApproveClaim(claim: AdminRegistrationClaim): boolean {
 }
 
 export function claimActionHint(claim: AdminRegistrationClaim): string | null {
+  if (claim.status === "conflict" && claim.source === "endpoint_possession_proof") {
+    return "Код подтверждает доступ к компьютеру, но не передаёт владение. Проверьте текущую привязку; замена требует отдельного решения администратора с причиной.";
+  }
   if (claim.status === "pending_user_confirmation" || claim.status === "self_reported") {
     return "Ожидается подтверждение пользователя на агенте. Для ручного обхода используйте админское подтверждение.";
   }
@@ -63,6 +66,7 @@ function labelLocation(registry: RegistryApprovalContext, locationId: string | n
 function conflictReasonLabel(reason?: string | null): string {
   const labels: Record<string, string> = {
     active_primary_user_exists: "уже есть активный основной пользователь",
+    ambiguous_active_relationships: "есть действующая или неоднозначная привязка",
     device_not_found: "устройство не найдено",
     person_not_found: "пользователь не найден",
   };
@@ -85,6 +89,7 @@ function ApprovalDiff({ claim, registry }: { claim: AdminRegistrationClaim; regi
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
       <p className="font-semibold text-amber-950">Дифф подтверждения</p>
+      <p>Источник: {claim.source === "endpoint_possession_proof" ? "Код привязки Endpoint" : claim.source ?? "не указан"}</p>
       <p>Устройство: {deviceLabel}</p>
       <p>Текущая привязка: {currentBindingLabel}</p>
       <p>Заявлено: {claimedName}</p>
@@ -121,7 +126,7 @@ export function RegistryRequestsTab({ claims, registry, onApproveClaim, onReject
                 <ApprovalDiff claim={claim} registry={registry} />
                 <div className="flex flex-wrap gap-2">
                   <Button disabled={!canApprove} leadingIcon={<Check className="h-4 w-4" />} onClick={() => onApproveClaim(claim)} size="sm" title={!canApprove ? "Нужно подтверждение пользователя или админский обход с причиной" : "Подтвердить заявку без замены активной привязки"} variant="outline">Подтвердить</Button>
-                  <Button disabled={!isConflict || (!canApprove && !claim.user_confirmed_at)} onClick={() => onApproveClaim(claim, true)} size="sm" title="Подтвердить заявку и заменить текущую активную привязку" variant="outline">С заменой</Button>
+                  <Button disabled={!isConflict || (!canApprove && !claim.user_confirmed_at)} onClick={() => claim.source === "endpoint_possession_proof" ? onApproveClaim(claim, true, true) : onApproveClaim(claim, true)} size="sm" title="Подтвердить заявку и заменить текущую активную привязку" variant="outline">С заменой</Button>
                   <Button disabled={isTerminal} onClick={() => onApproveClaim(claim, isConflict, true)} size="sm" title="Администратор подтверждает вручную; причина обязательна и попадет в аудит" variant="ghost">{isConflict ? "Админ с заменой" : "Админское подтверждение"}</Button>
                   <Button disabled={isTerminal} leadingIcon={<X className="h-4 w-4" />} onClick={() => onRejectClaim(claim)} size="sm" title="Отклонить заявку с обязательной причиной" variant="ghost">Отклонить</Button>
                 </div>

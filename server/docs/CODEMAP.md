@@ -136,6 +136,13 @@
 
 ## Endpoint operation facade
 
+- `webapp/src/features/queues/api.ts::postSupportTicketToolRun` reuses
+  `diagnostics/endpoint-run-intent.ts` for actor/ticket-scoped safe retries across
+  queue, detail and support workspace launchers.
+- Registry claim projections in `registration_service.py` and `service.py`
+  include provenance for the administrator requests tab; possession conflicts
+  remain subject to separate explicit ownership review.
+
 - `server/web_api/session_handlers.py` projects only the public registration
   capability flag; registration never accepts a retired device-link field.
 - `server/web_api/requester_handlers.py::handle_web_requester_device_link`

@@ -646,6 +646,7 @@ export type AdminRegistrationClaim = {
   person_name: string | null;
   status: string;
   claim_type: string;
+  source?: string | null;
   relationship_type: string;
   confidence: number | null;
   submitted_at: string | null;

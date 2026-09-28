@@ -17,6 +17,24 @@ business relationship. Do not publish readiness from skipped tests.
 
 ## Current state and verification
 
+Current accepted Helpdesk staging/CI baseline is
+`28bb0d72664152812f35ec62d1f6a77343a41960`; provider service/lock remains
+`61acfde9401a51fc7e3006733721ee1c2be12b4b`. Endpoint Windows runtime source is
+`0f5cc69fff8a603eb829189bf0ddfdccc26580aa`, package 3.2.78. The user authorized
+updating the local workstation and a browser test. Local registration, native
+IPC code, anonymous fragment/login return, primary binding and different-owner
+conflict passed in a real staging browser; no ownership was silently replaced.
+Bound ticket T-000036 exposed a missing idempotency key in the support launcher
+(400 ENDPOINT_DIAGNOSTIC_REQUEST_INVALID, no operation created). The bounded
+correction reuses the existing actor/ticket intent helper at all three callers.
+Admin claim source projection and Endpoint replacement reason guidance/action
+were corrected with failing-before-fix regressions. Fresh exact-SHA full CI,
+accepted bundle deployment and repeated browser diagnosis remain required.
+VM120 complete browser/diagnostic/lifecycle acceptance and original-state
+restoration remain open. No production deployment is authorized.
+
+Historical implementation checkpoints follow.
+
 Endpoint runtime source is frozen at `731f271ad0ba1ba7a134ace45b6bc8771542f688`
 and published as draft PR A #37. OpenAPI SHA256:
 `e0161970a2f08dcc80fc333676319c2018065743d74f880da160404115b6cdec`.
@@ -57,6 +75,16 @@ is separate from real Windows acceptance. Reviewer found no remaining confirmed
 blocker after cached-person status and explicit no-device context were corrected.
 
 ## Next steps and handoff
+
+For the current candidate: obtain fresh canonical CI and accepted bundle;
+repeat bound safe diagnostic/lifecycle and Admin source/reason UI checks;
+complete the separate VM120 chain; restore staging databases/config/releases
+and test enrollment, then stop staging services. Retain local package 3.2.78
+as explicitly requested while restoring its original enrollment and stopped
+service baseline. Protected backups and redacted checkpoint/runbook are in
+the existing staging evidence; do not infer production telemetry unchanged.
+
+The following earlier handoff is historical.
 
 Accept provider CI and run fresh full canonical CI on the updated exact SHA lock.
 Then deploy both reviewed independent staging services and run the complete

@@ -65,6 +65,10 @@ async def test_endpoint_possession_mapping_binding_replay_and_conflict(test_engi
         claim = await session.get(DeviceRegistrationClaim, conflict.registration.external_id)
         assert claim.status == "conflict" and claim.person_id == person_ids[1]
         assert claim.source == "endpoint_possession_proof"
+        from registry.service import RegistrySnapshotService
+        snapshot = await RegistrySnapshotService(session).build_snapshot()
+        projected = next(row for row in snapshot["registration_claims"] if row["claim_id"] == claim.claim_id)
+        assert projected["source"] == "endpoint_possession_proof"
 
 
 @pytest.mark.asyncio
