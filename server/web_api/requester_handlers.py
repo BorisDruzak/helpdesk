@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aiohttp import web
 from loguru import logger
@@ -35,6 +36,11 @@ from requester.create_idempotency import (
     CreateRequestConflict, CreateRequestKey, RequesterCreateLedger,
     created_ticket_response, replay_created_ticket,
 )
+from domain_ports.endpoint import EndpointBindingVerified, EndpointNotFound, EndpointDeviceRef, EndpointDeviceProjection
+from domain_ports.registry_contracts import DeviceRef, DeviceContextProjection
+from app.services.endpoint_device_reference_service import EndpointDeviceSnapshotV1
+from domain_ports.registry_contracts import EndpointPossessionBindingRequest
+from registry.endpoint_possession_service import EndpointMappingUnavailable
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
 from tickets.handlers import (
@@ -81,6 +87,7 @@ _AVAILABILITY_POLICY_FIELDS = (
     "allowed_for_anonymous",
 )
 _DEFAULT_AVAILABILITY_POLICY = {field: False for field in _AVAILABILITY_POLICY_FIELDS}
+_DEFAULT_AVAILABILITY_POLICY["available_without_agent_binding"] = True
 _CONTACT_FIELD_KEYS = (
     "contact",
     "contact_phone",
@@ -117,6 +124,7 @@ async def _build_requester_ticket_context_preview(
     on_behalf_context: dict[str, str] | None = None,
     form: dict[str, Any] | None = None,
     policy_refs: dict[str, Any] | None = None,
+    device_selection: str | None = None,
 ) -> dict[str, Any] | None:
     if person is None or not str(getattr(person, "person_id", "") or "").strip():
         return None
@@ -129,6 +137,7 @@ async def _build_requester_ticket_context_preview(
         requester_context=requester_context,
         form=form or {},
         policy_refs=policy_refs or {},
+        device_selection=device_selection,
     )
     return project_requester_ticket_context(context, actor_context={"actor_id": actor_id, "actor_role": "user"})
 
@@ -271,7 +280,16 @@ async def _resolve_requester_self_device_context(
     actor_id: str,
     supplied_device_id: str,
     state: Any | None,
+    without_device: bool = False,
 ) -> tuple[RegistryPerson | None, Any | None, str | None, str, str, dict[str, Any]]:
+    if without_device:
+        if supplied_device_id:
+            raise PermissionError("Выберите компьютер или обращение без компьютера.")
+        person = await resolver.resolve_person_for_web_user(actor_id)
+        return person, None, None, "browser_no_device", "no_device", {
+            "status": "missing", "reason_code": "requester_without_device",
+            "source": "requester_selected_no_device", "candidate_count": 0,
+        }
     if supplied_device_id:
         person, binding = await resolver.require_owned_device(actor_id=actor_id, device_id=supplied_device_id)
         return person, binding, supplied_device_id, "confirmed_binding", "authenticated_requester_workspace", {
@@ -296,6 +314,27 @@ async def _resolve_requester_self_device_context(
             primary_resolution,
         )
     return person, None, None, "browser_no_device", "no_device", primary_resolution
+
+
+async def _attach_registry_endpoint_mapping(ticket, ports):
+    """Only an exact Registry mapping and a fresh provider projection enable diagnostics."""
+    if not ticket.device_id:
+        return
+    fields = ticket.custom_fields if isinstance(getattr(ticket, "custom_fields", None), dict) else {}
+    context = fields.get("ticket_context")
+    if isinstance(context, dict) and context.get("diagnostic_target", {}).get("device_id") != ticket.device_id:
+        return
+    context = await ports.registry.device_context(DeviceRef(external_id=ticket.device_id))
+    if not isinstance(context, DeviceContextProjection) or not context.endpoint_device_ref:
+        return
+    device_ref = EndpointDeviceRef(external_id=context.endpoint_device_ref)
+    outcome = await ports.endpoint.read_device(device_ref)
+    if not isinstance(outcome, EndpointDeviceProjection) or outcome.device != device_ref or outcome.retired:
+        return
+    snapshot = EndpointDeviceSnapshotV1(device_ref=device_ref.external_id, display_name=outcome.display_name,
+        retired=False, last_seen_at=outcome.last_seen_at, captured_at=datetime.now(timezone.utc))
+    ticket.endpoint_device_ref = device_ref.external_id
+    ticket.endpoint_device_snapshot_json = snapshot.model_dump(mode="json")
 
 
 def _has_contact_for_emergency(person: RegistryPerson | None, form_payload: dict[str, Any], data: dict[str, Any]) -> bool:
@@ -817,6 +856,67 @@ async def handle_web_requester_devices(request: web.Request) -> web.Response:
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         devices = await resolver.list_allowed_devices(person.person_id if person else None, state=request.app.get("state"))
     return _success({"devices": devices, "count": len(devices)})
+
+
+class _DeviceLinkInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=6, max_length=7, repr=False)
+
+
+def _device_link_error(*args, **kwargs):
+    response = _error(*args, **kwargs)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@require_auth("user")
+async def handle_web_requester_device_link(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    try:
+        body = _DeviceLinkInput.model_validate(await request.json())
+        code = body.code
+        if len(code) == 7 and code[3] == "-":
+            code = code[:3] + code[4:]
+        if len(code) != 6 or not code.isascii() or not code.isdigit():
+            raise ValueError()
+    except (ValidationError, ValueError):
+        return _device_link_error("Введите шестизначный код привязки.")
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
+        person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        schema = await RequesterProfileSchemaService(session).get_schema()
+        completion = resolver.build_profile_completion(person, profile_schema=schema)
+        if person is None or not completion.get("complete"):
+            response = _profile_incomplete_error(completion)
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        ports = DomainPortContainer.from_config(registry_session=session)
+        proof = await ports.endpoint.redeem_device_binding(code)
+        # Proof code is kept only in this request's memory and never passed to
+        # Registry, audit, observer, ticket metadata or persisted idempotency.
+        code = None
+        if isinstance(proof, EndpointNotFound):
+            return _device_link_error("Код недоступен. Получите новый код в Endpoint Agent.", error_code="DEVICE_BINDING_CODE_UNAVAILABLE")
+        if not isinstance(proof, EndpointBindingVerified):
+            throttled = getattr(proof, "code", None) == "endpoint_binding_throttled"
+            return _device_link_error("Подождите перед следующей попыткой." if throttled else "Проверка устройства временно недоступна. Попробуйте позже.",
+                status=429 if throttled else 503, error_code="DEVICE_BINDING_THROTTLED" if throttled else "DEVICE_BINDING_UNAVAILABLE")
+        try:
+            result = await ports.registry.bind_endpoint_possession(EndpointPossessionBindingRequest(
+                operation_id=str(uuid.uuid4()), endpoint_device_ref=proof.device.external_id,
+                person_id=person.person_id, actor_id=auth_context.actor_id,
+                hostname=proof.hostname, platform=proof.platform))
+        except EndpointMappingUnavailable:
+            return _device_link_error("Устройство требует проверки соответствия в реестре. Обратитесь к администратору.",
+                status=409, error_code="DEVICE_BINDING_MAPPING_REVIEW_REQUIRED")
+        if result.status == "unavailable":
+            return _device_link_error("Привязка временно недоступна. Обратитесь к администратору.", status=503, error_code="DEVICE_BINDING_REGISTRY_UNAVAILABLE")
+        await session.commit()
+        devices = await resolver.list_allowed_devices(person.person_id, state=request.app.get("state"))
+        response = _success({"binding_status": "pending_admin_review" if result.status == "accepted" else "active",
+            "devices": devices, "next_path": "/app/requester/devices"})
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
 
 @require_auth("user")
@@ -1505,6 +1605,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
                 resolver,
                 actor_id=auth_context.actor_id,
                 supplied_device_id=supplied_device_id,
+                without_device=data.get("device_scope") == "none",
                 state=request.app.get("state"),
             )
         except PermissionError as exc:
@@ -1554,7 +1655,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
                 severity="warning",
                 result="blocked",
                 person_id=getattr(person, "person_id", None),
-                error_code="REQUESTER_AGENT_REQUIRED",
+                error_code="REQUESTER_DEVICE_REQUIRED",
                 payload={
                     "action": "ticket_preview",
                     "form_key": form_key,
@@ -1566,9 +1667,9 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
                 },
             )
             return _error(
-                "Для этой формы нужно основное устройство. Выберите форму для экстренного обращения или привяжите устройство.",
+                "Для этой формы нужен компьютер. Выберите привязанный компьютер или другую форму обращения.",
                 status=403,
-                error_code="REQUESTER_AGENT_REQUIRED",
+                error_code="REQUESTER_DEVICE_REQUIRED",
             )
 
         try:
@@ -1639,6 +1740,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             state=request.app.get("state"),
             person=person,
             actor_id=auth_context.actor_id,
+            device_selection="none" if data.get("device_scope") == "none" else supplied_device_id or None,
             requester_context=requester_context,
             on_behalf_context=on_behalf_context,
             form={
@@ -1782,6 +1884,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 resolver,
                 actor_id=auth_context.actor_id,
                 supplied_device_id=supplied_device_id,
+                without_device=data.get("device_scope") == "none",
                 state=request.app.get("state"),
             )
         except PermissionError as exc:
@@ -1831,7 +1934,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 severity="warning",
                 result="blocked",
                 person_id=getattr(person, "person_id", None),
-                error_code="REQUESTER_AGENT_REQUIRED",
+                error_code="REQUESTER_DEVICE_REQUIRED",
                 payload={
                     "action": "ticket_create",
                     "form_key": form_key,
@@ -1843,9 +1946,9 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 },
             )
             return _error(
-                "Для этой формы нужно основное устройство. Выберите форму для экстренного обращения или привяжите устройство.",
+                "Для этой формы нужен компьютер. Выберите привязанный компьютер или другую форму обращения.",
                 status=403,
-                error_code="REQUESTER_AGENT_REQUIRED",
+                error_code="REQUESTER_DEVICE_REQUIRED",
             )
 
         requester_profile = {
@@ -2014,6 +2117,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             created = await create_ticket_with_side_effects(
                 session,
                 device_id=device_id,
+                device_selection="none" if data.get("device_scope") == "none" else supplied_device_id or None,
                 requester_id=auth_context.actor_id,
                 title=title,
                 description=description,
@@ -2067,6 +2171,8 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 status=503, error_code="TICKET_INITIALIZATION_UNAVAILABLE",
             )
         ticket_row = created["ticket"]
+        if ticket_row.device_id:
+            await _attach_registry_endpoint_mapping(ticket_row, DomainPortContainer.from_config(registry_session=session))
         ticket_custom_fields = ticket_row.custom_fields if isinstance(ticket_row.custom_fields, dict) else {}
         await _write_requester_web_observer_event(
             session,

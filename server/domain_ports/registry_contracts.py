@@ -336,6 +336,7 @@ class DeviceContextProjection(_ImmutableRegistryDTO):
     """Inventory-safe device context without asset, serial or owner identifiers."""
 
     device: DeviceRef
+    endpoint_device_ref: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", max_length=36)
     display_name: RegistryDisplayLabel
     asset_type: SafeRegistryCode
     asset_status: SafeRegistryCode
@@ -404,6 +405,16 @@ class RegistrationRequest(_ImmutableRegistryDTO):
         ):
             raise ValueError("requester snapshot person does not match requester ref")
         return self
+
+
+class EndpointPossessionBindingRequest(_ImmutableRegistryDTO):
+    """Trusted composition after Endpoint proof, never browser-submitted identity."""
+    operation_id: OpaqueRegistryRef
+    endpoint_device_ref: str = Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+    person_id: OpaqueRegistryRef
+    actor_id: str = Field(min_length=1, max_length=100)
+    hostname: str | None = Field(default=None, max_length=256)
+    platform: Literal["windows", "linux", "unknown"]
 
 
 class RegistrationApprovalRequest(_ImmutableRegistryDTO):

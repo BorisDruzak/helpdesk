@@ -129,6 +129,8 @@ def requester_legacy_scope_clause(model: Any):
 
 def _target_source(*, resolved: bool, created_on_behalf: bool, reason_code: str | None) -> str:
     if resolved:
+        if reason_code == "selected_device":
+            return "requester_selected_device"
         return "affected_user_primary_agent" if created_on_behalf else "creator_primary_agent"
     if reason_code == "ambiguous_primary_device":
         return "ambiguous_primary_agent"
@@ -456,6 +458,7 @@ class TicketContextBuilder:
         requester_context: dict[str, Any] | None = None,
         form: dict[str, Any] | None = None,
         policy_refs: dict[str, Any] | None = None,
+        device_selection: str | None = None,
     ) -> dict[str, Any]:
         creator_id = _clean(creator_person_id)
         if creator_id is None:
@@ -465,7 +468,13 @@ class TicketContextBuilder:
 
         creator = await self._ticket_participant(creator_id)
         affected = creator if affected_id == creator_id else await self._ticket_participant(affected_id)
-        resolved = await PrimaryAgentResolver(self.session, state=self.state).resolve_for_person(affected_id)
+        resolver = PrimaryAgentResolver(self.session, state=self.state)
+        if device_selection == "none":
+            resolved = {"resolved": False, "reason_code": "primary_device_missing", "candidate_count": 0}
+        elif device_selection:
+            resolved = await resolver.resolve_selected_for_person(affected_id, device_selection)
+        else:
+            resolved = await resolver.resolve_for_person(affected_id)
         reason_code = _clean(resolved.get("reason_code")) if isinstance(resolved, dict) else None
         is_resolved = bool(resolved.get("resolved")) if isinstance(resolved, dict) else False
 

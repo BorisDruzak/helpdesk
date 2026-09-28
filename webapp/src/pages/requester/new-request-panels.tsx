@@ -17,7 +17,6 @@ import type {
 import {
   CategorySelector,
   OnBehalfPanel,
-  primaryDeviceResolutionText,
   type CategoryOption,
 } from "./new-request-workflow";
 
@@ -230,11 +229,17 @@ export function RequestWizardShell({
 export function RequestSummaryAside({
   bootstrap,
   primaryDevice,
+  devices,
+  selectedDeviceId,
+  onDeviceChange,
   selectedCategory,
   selectedService,
 }: {
   bootstrap: { profile?: { display_name?: string | null; full_name?: string | null } | null; primary_device_resolution?: unknown } | null;
   primaryDevice: RequesterDevice | null;
+  devices: RequesterDevice[];
+  selectedDeviceId: string;
+  onDeviceChange: (deviceId: string) => void;
   selectedCategory: CategoryOption | null;
   selectedService: CategoryOption["service"];
 }) {
@@ -248,11 +253,15 @@ export function RequestSummaryAside({
       <div className="rounded-panel border border-slate-200 bg-white p-4 text-sm">
         <p className="font-semibold text-slate-950">Контекст</p>
         <p className="mt-2 text-slate-700">{bootstrap?.profile?.display_name || bootstrap?.profile?.full_name || "Заявитель"}</p>
-        {primaryDevice ? (
-          <p className="mt-1 text-slate-500">{requesterDeviceLabel(primaryDevice, "Основное устройство")}</p>
-        ) : (
-          <p className="mt-1 text-amber-700">{primaryDeviceResolutionText(bootstrap?.primary_device_resolution)}</p>
-        )}
+        <label className="mt-3 block" htmlFor="request-device">Компьютер для обращения</label>
+        <select id="request-device" value={selectedDeviceId} onChange={(event) => onDeviceChange(event.target.value)}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2">
+          <option value="">Без компьютера</option>
+          {devices.map((device) => <option key={device.device_id} value={device.device_id}>
+            {requesterDeviceLabel(device, "Компьютер")}
+          </option>)}
+        </select>
+        <p className="mt-2 text-slate-500">{primaryDevice ? "Диагностика относится к выбранному компьютеру." : "Обращение можно отправить без привязанного компьютера."}</p>
       </div>
     </aside>
   );

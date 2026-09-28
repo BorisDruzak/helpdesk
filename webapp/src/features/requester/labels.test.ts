@@ -19,7 +19,7 @@ describe("requester labels", () => {
   });
 
   it("centralizes requester statuses and fallbacks", () => {
-    expect(requesterRelationshipLabel("primary_user")).toBe("Основное устройство");
+    expect(requesterRelationshipLabel("primary_user")).toBe("Основной компьютер");
     expect(requesterAccessStatusLabel("pending_admin_review")).toBe("Ожидает проверки администратора");
     expect(requesterDeviceConnectionStatusLabel({ online: false })).toBe("Не в сети");
     expect(requesterReadinessText(false, false)).toBe("Профиль нужно заполнить");

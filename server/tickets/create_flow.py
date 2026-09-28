@@ -462,6 +462,7 @@ async def create_ticket_with_side_effects(
     ticket_context: Optional[dict[str, Any]] = None,
     state: Any | None = None,
     registry_port: RegistryPort | None = None,
+    device_selection: str | None = None,
 ) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
     ticket_id = new_ticket_id()
@@ -670,6 +671,7 @@ async def create_ticket_with_side_effects(
                 requester_context=requester_context_snapshot,
                 form=request_form_snapshot,
                 policy_refs=policy_refs_snapshot,
+                device_selection=device_selection,
             )
         except Exception as exc:
             logger.warning(f"[create] ticket context build failed ticket_id={ticket_id} err={exc}")

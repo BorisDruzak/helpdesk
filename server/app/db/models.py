@@ -2287,6 +2287,15 @@ class RegistryPersonDepartmentMembership(Base):
     )
 
 
+class RegistryEndpointDeviceMapping(Base):
+    """Exact verified Endpoint identity for one canonical Registry device."""
+    __tablename__ = "registry_endpoint_device_mappings"
+
+    endpoint_device_ref: Mapped[str] = mapped_column(String(36), primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False, unique=True)
+    verified_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+
 class DeviceRegistrationClaim(Base):
     """Self-reported or admin-created claim that a person is related to a device."""
     __tablename__ = "device_registration_claims"

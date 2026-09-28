@@ -51,7 +51,7 @@ export function DevicesOverviewPanel({ devices, onSelectDevice }: {
               </dl>
             </article>
           );
-        }) : <div className="rounded-panel border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">Подтверждённых устройств пока нет. Создайте обращение для проверки владельца.</div>}
+        }) : <div className="rounded-panel border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">У вас пока нет привязанного компьютера. <Link className="font-semibold text-brand-700" to="/app/requester/devices/link">Привязать компьютер</Link></div>}
       </div>
     </section>
   );

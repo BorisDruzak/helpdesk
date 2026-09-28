@@ -746,9 +746,9 @@ describe("appRoutes", () => {
     renderApp(["/app/requester/devices"], fetchMock as typeof fetch);
 
     expect(await screen.findByRole("heading", { name: "Устройства" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Проверить владельца" })).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "Привязать компьютер" })[0]).toHaveAttribute(
       "href",
-      "/app/requester/new?intent=device_owner_change",
+      "/app/requester/devices/link",
     );
     expect(screen.queryByText("Requester workspace")).not.toBeInTheDocument();
   });

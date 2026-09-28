@@ -48,10 +48,10 @@ export function RequesterDevicesPage() {
           </div>
           <Link
             className="inline-flex items-center justify-center gap-2 rounded-panel bg-brand-700 px-3 py-2 text-sm font-semibold text-white"
-            to="/app/requester/new?intent=device_owner_change"
+            to="/app/requester/devices/link"
           >
             <ShieldCheck className="h-4 w-4" />
-            Проверить владельца
+            Привязать компьютер
           </Link>
         </div>
       </header>

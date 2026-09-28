@@ -280,7 +280,7 @@ describe("RegistryOverviewTab", () => {
     const expectedQueues = [
       "Ожидают привязки устройства",
       "Смена владельца и конфликты",
-      "Пользователи без основного агента",
+      "Пользователи без основного компьютера",
       "Устройства без владельца",
       "Профиль не заполнен",
       "Дубли идентичностей",
@@ -304,7 +304,7 @@ describe("RegistryOverviewTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Открыть заявку claim-pending из очереди Ожидают привязки устройства" }));
     expect(onSelect).toHaveBeenCalledWith({ kind: "claim", id: "claim-pending" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Открыть пользователя person-no-primary из очереди Пользователи без основного агента" }));
+    fireEvent.click(screen.getByRole("button", { name: "Открыть пользователя person-no-primary из очереди Пользователи без основного компьютера" }));
     expect(onSelect).toHaveBeenCalledWith({ kind: "person", id: "person-no-primary" });
 
     fireEvent.click(screen.getByRole("button", { name: "Открыть устройство device-orphan из очереди Устройства без владельца" }));

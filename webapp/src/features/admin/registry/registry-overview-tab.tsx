@@ -182,7 +182,7 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
     },
     {
       key: "users-without-primary",
-      title: "Пользователи без основного агента",
+      title: "Пользователи без основного компьютера",
       description: "Активные люди без primary_user привязки к устройству.",
       count: usersWithoutPrimary.length,
       icon: <UserCheck className="h-4 w-4" />,
@@ -195,7 +195,7 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
         description: [person.login, person.department_name, person.location_name].filter(Boolean).join(" · ") || "Контекст не заполнен",
         badge: `${person.primary_device_count ?? 0} ПК`,
         tone: "warning",
-        openLabel: `Открыть пользователя ${person.person_id} из очереди Пользователи без основного агента`,
+        openLabel: `Открыть пользователя ${person.person_id} из очереди Пользователи без основного компьютера`,
         open: () => onSelect({ kind: "person", id: person.person_id }),
       })),
     },

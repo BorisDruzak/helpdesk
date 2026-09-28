@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { clearPendingDeviceCode } from "../requester/device-link-state";
 
 import {
   fetchCurrentSession,
@@ -56,6 +57,7 @@ export function SessionProvider({ children }: SessionProviderProps) {
   }
 
   async function logout() {
+    clearPendingDeviceCode();
     const requestVersion = sessionRequestVersion.current + 1;
     sessionRequestVersion.current = requestVersion;
     await logoutWebSession();

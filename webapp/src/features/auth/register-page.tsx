@@ -7,10 +7,7 @@ import { Input } from "../../components/ui/input";
 import { registerWebSessionAccount, WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
 import { resolveNextWorkspacePath } from "./workspace-access";
-
-function initialDeviceCode(searchParams: URLSearchParams) {
-  return searchParams.get("device_link_code") ?? searchParams.get("pairing_code") ?? "";
-}
+import { useRegistrationPolicy } from "./use-registration-policy";
 
 function isSafeAppNextPath(value: string | null) {
   return Boolean(value && (value === "/app" || value.startsWith("/app/")) && !value.startsWith("//"));
@@ -32,7 +29,7 @@ export function RegisterPage() {
   const [loginValue, setLoginValue] = useState("");
   const [passwordValue, setPasswordValue] = useState("");
   const [passwordRepeatValue, setPasswordRepeatValue] = useState("");
-  const [deviceLinkCode, setDeviceLinkCode] = useState(() => initialDeviceCode(searchParams));
+  const registrationEnabled = useRegistrationPolicy();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -41,6 +38,18 @@ export function RegisterPage() {
 
   if (status === "authenticated" && !switchAccount) {
     return <Navigate replace to={authenticatedNextPath} />;
+  }
+
+  if (registrationEnabled !== true) {
+    return <section className="min-h-screen bg-app px-4 py-8">
+      <div className="mx-auto max-w-md space-y-5 rounded-3xl border border-border bg-white p-6">
+        <h1 className="font-display text-2xl font-semibold">Создание аккаунта</h1>
+        <p role="status">{registrationEnabled === null
+          ? "Проверяем доступность регистрации…"
+          : "Самостоятельная регистрация недоступна. Обратитесь к администратору."}</p>
+        <Link className="font-semibold text-brand-700" to={withPreservedNext("/app/login", searchParams.get("next"))}>Войти</Link>
+      </div>
+    </section>;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -69,8 +78,7 @@ export function RegisterPage() {
       const result = await registerWebSessionAccount({
         login,
         password: passwordValue,
-        passwordRepeat: passwordRepeatValue,
-        deviceLinkCode
+        passwordRepeat: passwordRepeatValue
       });
 
       navigate(withPreservedNext(result.next_path || "/app/login?registered=1", searchParams.get("next")), { replace: true });
@@ -113,8 +121,8 @@ export function RegisterPage() {
               },
               {
                 icon: LinkIcon,
-                title: "Код устройства опционален",
-                description: "Код проверяется сейчас, но активная привязка оформляется позже."
+                title: "Устройство после входа",
+                description: "Заполните профиль, затем привяжите компьютер отдельным шагом."
               },
               {
                 icon: ShieldCheck,
@@ -193,18 +201,6 @@ export function RegisterPage() {
                   onChange={(event) => setPasswordRepeatValue(event.target.value)}
                   type="password"
                   value={passwordRepeatValue}
-                />
-              </label>
-
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-800">Код привязки устройства</span>
-                <Input
-                  autoComplete="off"
-                  className="mt-2 block w-full"
-                  name="device_link_code"
-                  onChange={(event) => setDeviceLinkCode(event.target.value)}
-                  placeholder="Необязательно"
-                  value={deviceLinkCode}
                 />
               </label>
 

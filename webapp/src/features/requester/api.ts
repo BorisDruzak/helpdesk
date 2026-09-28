@@ -67,6 +67,14 @@ export class RequesterApiError extends Error {
   }
 }
 
+export async function linkRequesterDevice(code: string): Promise<{ binding_status: "active" | "pending_admin_review"; next_path: string }> {
+  const response = await fetch("/api/web/requester/devices/link", {
+    method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code })
+  });
+  return readSuccess(response, "Не удалось привязать устройство");
+}
+
 async function readJson<T>(response: Response): Promise<T | null> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {

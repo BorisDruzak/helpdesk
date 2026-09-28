@@ -7,6 +7,14 @@ authorizes through them.
 
 ## Current boundary
 
+- Login/password registration creates only a Helpdesk account. Endpoint Agent
+  enrollment is independent. See `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`.
+- Endpoint device challenges prove possession; the authenticated
+  `/api/web/requester/devices/link` flow establishes a Person↔Device relationship
+  only through canonical Registry policy. It never writes legacy pairing/session
+  tables. Migration `146` persists the unique device mapping, and conflicting
+  ownership is retained for administrator review.
+
 - Browser requester actions use the authenticated web identity.
 - Agent-originated requester actions use the authenticated device's active
   Registry binding and only access tickets in that binding's requester scope.

@@ -24,6 +24,7 @@ from .registry_contracts import (
     PersonRef,
     RegistrationApprovalRequest,
     RegistrationRequest,
+    EndpointPossessionBindingRequest,
     RegistryCommandResult,
     RegistryObserverReadContext,
     RegistryReadActor,
@@ -49,6 +50,8 @@ class RegistryAvailability(BaseModel):
 
 @runtime_checkable
 class RegistryPort(Protocol):
+    async def bind_endpoint_possession(self, request: EndpointPossessionBindingRequest) -> RegistryCommandResult: ...
+
     async def availability(self) -> RegistryAvailability: ...
 
     async def requester_snapshot(self, person: PersonRef) -> RequesterSnapshotOutcome: ...

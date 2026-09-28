@@ -96,6 +96,7 @@ const ACCOUNT_MODE_LABELS: Record<string, string> = {
 };
 
 const VERIFICATION_METHOD_LABELS: Record<string, string> = {
+  endpoint_possession_proof: "Одноразовый код Endpoint",
   admin: "Администратор",
   admin_review: "Проверка администратором",
   agent_profile: "Профиль агента",
@@ -105,6 +106,7 @@ const VERIFICATION_METHOD_LABELS: Record<string, string> = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
+  endpoint_possession_proof: "Подтверждение владения устройством в Endpoint",
   account: "Аккаунт",
   ad: "Active Directory",
   admin: "Администратор",

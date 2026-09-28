@@ -562,6 +562,11 @@ class ExternalRegistryHttpAdapter:
     async def request_registration(self, request: RegistrationRequest) -> RegistryCommandResult:
         return await self._command("request_registration", request)
 
+    async def bind_endpoint_possession(self, request) -> RegistryCommandResult:
+        # No external Registry possession contract is published in First Wave.
+        return RegistryCommandResult(operation_id=request.operation_id, status="unavailable",
+            code="registry_possession_command_not_composed", idempotency_status="not_evaluated")
+
     async def approve_registration(self, request: RegistrationApprovalRequest) -> RegistryCommandResult:
         return await self._command("approve_registration", request)
 
@@ -785,6 +790,9 @@ class ShadowReadRegistryPort:
 
     async def request_registration(self, request: RegistrationRequest) -> RegistryCommandResult:
         return await self._authoritative.request_registration(request)
+
+    async def bind_endpoint_possession(self, request) -> RegistryCommandResult:
+        return await self._authoritative.bind_endpoint_possession(request)
 
     async def approve_registration(self, request: RegistrationApprovalRequest) -> RegistryCommandResult:
         return await self._authoritative.approve_registration(request)

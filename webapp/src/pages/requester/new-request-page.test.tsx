@@ -91,6 +91,7 @@ describe("RequesterNewRequestPage", () => {
     renderPage();
 
     await fillLaptopForm();
+    fireEvent.change(screen.getByLabelText("Компьютер для обращения"), { target: { value: "device-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
 
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/tickets/T-77"));
@@ -244,6 +245,7 @@ describe("RequesterNewRequestPage", () => {
     const fetchMock = installNewRequestMock({ createError: { status: 503, message: "Unavailable" } });
     const view = renderPage();
     await fillLaptopForm();
+    fireEvent.change(screen.getByLabelText("Компьютер для обращения"), { target: { value: "device-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
     const requests = () => fetchMock.mock.calls.filter(([url, init]) => url === "/api/web/requester/tickets" && init?.method === "POST");
     await waitFor(() => {
@@ -435,6 +437,7 @@ function installNewRequestMock(
                     key: "on_behalf_access",
                     title: "Доступ для сотрудника",
                     request_kind: "service_request",
+                    availability_policy: { available_without_agent_binding: false },
                     on_behalf_policy: {
                       allowed: true,
                       label: "Обращение за другого сотрудника",

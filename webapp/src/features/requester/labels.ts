@@ -74,6 +74,7 @@ const REQUESTER_SAFE_ERROR_MESSAGES: Record<string, string> = {
   QUALITY_FEEDBACK_ERROR: "Оценку не удалось сохранить. Проверьте данные и попробуйте еще раз.",
   QUALITY_REOPEN_ERROR: "Обращение не удалось вернуть в работу. Проверьте данные и попробуйте еще раз.",
   REQUESTER_AGENT_REQUIRED: "Для этой формы нужно привязанное устройство. Привяжите устройство или выберите форму для ручной обработки.",
+  REQUESTER_DEVICE_REQUIRED: "Для этой формы нужен компьютер. Выберите привязанный компьютер или другую форму обращения.",
   REQUESTER_CONTACT_REQUIRED: "Укажите телефон или другой контакт для связи.",
   REQUESTER_DEVICE_FORBIDDEN: "Это устройство недоступно для вашего профиля.",
   REQUESTER_PROFILE_FORBIDDEN: "Профиль недоступен для вашего аккаунта.",
@@ -147,7 +148,7 @@ export function requesterOnlineStatusLabel(value?: boolean | null): string {
 
 export function requesterRelationshipLabel(value?: string | null): string {
   const labels: Record<string, string> = {
-    primary_user: "Основное устройство",
+    primary_user: "Основной компьютер",
     responsible: "Ответственное устройство",
     shared_user: "Совместный доступ",
   };

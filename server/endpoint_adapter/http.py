@@ -19,11 +19,13 @@ from .wire import (
     DeviceSummaryWireV1,
     OperationCreateWireV1,
     OperationResponseWireV1,
+    DeviceBindingVerifiedWireV1,
 )
 
 try:
     from domain_ports.endpoint import (
         EndpointAvailability,
+        EndpointBindingVerified,
         EndpointCapabilitiesOutcome,
         EndpointCapabilitiesProjection,
         EndpointConflict,
@@ -48,6 +50,7 @@ except ModuleNotFoundError as exc:
         raise
     from server.domain_ports.endpoint import (
         EndpointAvailability,
+        EndpointBindingVerified,
         EndpointCapabilitiesOutcome,
         EndpointCapabilitiesProjection,
         EndpointConflict,
@@ -173,6 +176,7 @@ class ExternalEndpointHttpAdapter(EndpointPort):
         expected_statuses: frozenset[int],
         body: Mapping[str, object] | None = None,
         extra_headers: Mapping[str, str] | None = None,
+        binding_contract: bool = False,
     ) -> Mapping[str, object] | BaseModel:
         if not self.configured:
             return EndpointUnavailable(code="endpoint_external_unconfigured")
@@ -201,8 +205,12 @@ class ExternalEndpointHttpAdapter(EndpointPort):
                     allow_redirects=False,
                     ssl=ssl_context,
                 ) as response:
-                    if response.headers.get("X-Correlation-ID") != correlation_id:
+                    if not binding_contract and response.headers.get("X-Correlation-ID") != correlation_id:
                         return EndpointInvalidProjection()
+                    if binding_contract and response.status == 400:
+                        return EndpointNotFound(code="endpoint_binding_unavailable")
+                    if binding_contract and response.status == 429:
+                        return EndpointUnavailable(code="endpoint_binding_throttled")
                     if response.status in _HTTP_FAILURES:
                         return _HTTP_FAILURES[response.status]()
                     if response.status == 422:
@@ -210,14 +218,39 @@ class ExternalEndpointHttpAdapter(EndpointPort):
                     if response.status == 429 or response.status >= 500 or response.status not in expected_statuses:
                         return _TRANSPORT_UNAVAILABLE
                     try:
-                        envelope = await response.json(content_type=None)
+                        if binding_contract:
+                            raw = bytearray()
+                            async for chunk in response.content.iter_chunked(2048):
+                                raw.extend(chunk)
+                                if len(raw) > 2048:
+                                    return EndpointInvalidProjection()
+                            envelope = json.loads(raw)
+                        else:
+                            envelope = await response.json(content_type=None)
                     except (aiohttp.ClientError, json.JSONDecodeError, ValueError):
                         return EndpointInvalidProjection()
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
             return _TRANSPORT_UNAVAILABLE
+        if binding_contract:
+            return dict(envelope) if isinstance(envelope, Mapping) else EndpointInvalidProjection()
         if not isinstance(envelope, Mapping) or set(envelope) != {"data"} or not isinstance(envelope.get("data"), Mapping):
             return EndpointInvalidProjection()
         return dict(envelope["data"])
+
+    async def redeem_device_binding(self, code: str):
+        if not isinstance(code, str) or len(code) != 6 or not code.isascii() or not code.isdigit():
+            return EndpointInvalidProjection()
+        payload = await self._request("POST", "/api/v1/device-binding/challenges/redeem",
+            expected_statuses=frozenset({200}), binding_contract=True,
+            body={"purpose": "helpdesk_device_binding", "code": code})
+        if not isinstance(payload, Mapping):
+            return payload
+        try:
+            verified = DeviceBindingVerifiedWireV1.model_validate(payload)
+        except ValidationError:
+            return EndpointInvalidProjection()
+        return EndpointBindingVerified(device=EndpointDeviceRef(external_id=str(verified.device_id)),
+            hostname=verified.hostname, platform=verified.platform)
 
     @staticmethod
     def _parse_projection(

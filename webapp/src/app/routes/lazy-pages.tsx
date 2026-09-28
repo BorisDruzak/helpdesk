@@ -56,6 +56,10 @@ export const RequesterDevicesPage = lazy(() =>
   import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDevicesPage })),
 );
 
+export const RequesterDeviceLinkPage = lazy(() =>
+  import("../../pages/requester/device-link-page").then((module) => ({ default: module.RequesterDeviceLinkPage })),
+);
+
 export const SettingsPage = lazy(() =>
   import("../../pages/settings").then((module) => ({ default: module.SettingsPage })),
 );

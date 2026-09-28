@@ -13,6 +13,13 @@ class _Wire(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class DeviceBindingVerifiedWireV1(_Wire):
+    status: Literal["verified"]
+    device_id: UUID
+    hostname: str | None = Field(max_length=256)
+    platform: Literal["windows", "linux", "unknown"]
+
+
 class DeviceSummaryWireV1(_Wire):
     schema_version: Literal["endpoint_device_summary_v1"]
     device_id: UUID

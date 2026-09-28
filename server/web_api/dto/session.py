@@ -1,6 +1,12 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class WebSessionCapabilities(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    self_registration_enabled: bool
+
+
 class WebSessionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

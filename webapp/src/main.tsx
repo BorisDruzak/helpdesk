@@ -5,6 +5,7 @@ import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import { appRoutes } from "./app/router";
 import { QueryProvider } from "./app/providers/query-provider";
 import { SessionProvider } from "./features/auth/session-provider";
+import { captureDeviceLinkFragment } from "./features/requester/device-link-state";
 import "./styles.css";
 
 
@@ -14,6 +15,7 @@ if (!container) {
   throw new Error("Root container #root was not found.");
 }
 
+captureDeviceLinkFragment();
 const router = createBrowserRouter(appRoutes);
 const root = createRoot(container);
 

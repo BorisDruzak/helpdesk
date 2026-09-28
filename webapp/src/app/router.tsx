@@ -25,6 +25,7 @@ import {
   HelpPage,
   ReportsPage,
   RequesterDevicesPage,
+  RequesterDeviceLinkPage,
   RequesterHomePage,
   RequesterNewRequestPage,
   RequesterProfilePage,
@@ -289,6 +290,10 @@ export const appRoutes: RouteObject[] = [
                 <RequesterDevicesPage />
               </WorkspaceAccessGate>
             )
+          },
+          {
+            path: "requester/devices/link",
+            element: <WorkspaceAccessGate workspace="requester"><RequesterDeviceLinkPage /></WorkspaceAccessGate>
           },
           {
             path: "requester/create",

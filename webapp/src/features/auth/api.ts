@@ -8,17 +8,10 @@ export type WebSession = {
   permissions_version?: string;
 };
 
-export type WebSessionRegisterDeviceLink = {
-  accepted: boolean;
-  purpose: string;
-  expires_at?: string | null;
-};
-
 export type WebSessionRegisterResult = {
   user_login: string;
   actor_role: string;
   next_path: string;
-  device_link?: WebSessionRegisterDeviceLink | null;
 };
 
 type SuccessResponse<T> = {
@@ -51,6 +44,17 @@ async function readJson<T>(response: Response): Promise<T | null> {
   }
 
   return (await response.json()) as T;
+}
+
+export async function fetchSessionCapabilities(): Promise<{ self_registration_enabled: boolean }> {
+  const response = await fetch("/api/web/session/capabilities", {
+    credentials: "same-origin", cache: "no-store"
+  });
+  const payload = await readJson<SuccessResponse<{ self_registration_enabled: boolean }>>(response);
+  if (!response.ok || payload?.status !== "success" || typeof payload.data?.self_registration_enabled !== "boolean") {
+    throw new WebSessionApiError("Не удалось проверить доступность регистрации", response.status);
+  }
+  return { self_registration_enabled: payload.data.self_registration_enabled };
 }
 
 export async function fetchCurrentSession(): Promise<WebSession | null> {
@@ -105,22 +109,16 @@ export async function registerWebSessionAccount(input: {
   login: string;
   password: string;
   passwordRepeat: string;
-  deviceLinkCode?: string;
 }): Promise<WebSessionRegisterResult> {
   const body: {
     login: string;
     password: string;
     password_repeat: string;
-    device_link_code?: string;
   } = {
     login: input.login,
     password: input.password,
     password_repeat: input.passwordRepeat
   };
-  const deviceLinkCode = input.deviceLinkCode?.trim();
-  if (deviceLinkCode) {
-    body.device_link_code = deviceLinkCode;
-  }
 
   const response = await fetch("/api/web/session/register", {
     method: "POST",

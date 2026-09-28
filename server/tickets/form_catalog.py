@@ -344,8 +344,8 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
         {
             "key": "agent_binding_help",
             "request_kind": "agent_binding_help",
-            "title": "Помощь с привязкой агента",
-            "description": "Обращение в поддержку, если агент не привязывается к аккаунту или не показывает код.",
+            "title": "Помощь с привязкой компьютера",
+            "description": "Обращение в поддержку, если компьютер не удаётся привязать или получить код.",
             "availability_policy": {
                 "available_without_completed_profile": True,
                 "available_without_agent_binding": True,
@@ -651,7 +651,8 @@ def _normalize_availability_policy(raw_form: dict[str, Any]) -> dict[str, bool]:
     raw_policy = raw_form.get("availability_policy")
     policy = raw_policy if isinstance(raw_policy, dict) else {}
     return {
-        field: _normalize_policy_bool(raw_form.get(field, policy.get(field)), default=False)
+        field: _normalize_policy_bool(raw_form.get(field, policy.get(field)),
+            default=field == "available_without_agent_binding")
         for field in _AVAILABILITY_BOOL_FIELDS
     }
 
@@ -909,6 +910,10 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
         if on_behalf_policy is not None:
             template_context["on_behalf_policy"] = on_behalf_policy
         availability_policy = _normalize_availability_policy(raw_form)
+        if availability_policy["available_without_agent_binding"]:
+            for field in normalized_fields:
+                if field.get("type") == "device_picker":
+                    field["required"] = False
         template_context["availability_policy"] = availability_policy
         template_context.update(availability_policy)
 

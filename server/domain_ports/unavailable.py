@@ -183,6 +183,9 @@ class UnavailableRegistryPort:
     async def request_registration(self, request: RegistrationRequest) -> RegistryCommandResult:
         return self._command_result(request.operation_id)
 
+    async def bind_endpoint_possession(self, request) -> RegistryCommandResult:
+        return self._command_result(request.operation_id)
+
     async def approve_registration(
         self,
         request: RegistrationApprovalRequest,
@@ -194,6 +197,9 @@ class UnavailableRegistryPort:
 
 
 class UnavailableEndpointPort:
+    async def redeem_device_binding(self, code: str):
+        return EndpointUnavailable()
+
     def __init__(self, *, code: SafeEndpointCode = "endpoint_unavailable") -> None:
         self._unavailable = EndpointUnavailable(code=code)
 

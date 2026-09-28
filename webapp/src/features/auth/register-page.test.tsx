@@ -62,6 +62,9 @@ describe("RegisterPage", () => {
   it("creates an account-only requester user and redirects to the login success notice", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url === "/api/web/session/capabilities") {
+        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
+      }
       if (url === "/api/web/session/me") {
         return jsonResponse({ status: "error" }, 401);
       }
@@ -70,8 +73,7 @@ describe("RegisterPage", () => {
         expect(JSON.parse(String(init?.body))).toEqual({
           login: "new.user",
           password: "StrongPass123!",
-          password_repeat: "StrongPass123!",
-          device_link_code: "ABCD-1234"
+          password_repeat: "StrongPass123!"
         });
         return jsonResponse(
           {
@@ -98,6 +100,7 @@ describe("RegisterPage", () => {
 
     expect(await screen.findByRole("button", { name: /Создать аккаунт/ })).toBeInTheDocument();
     expect(container.textContent ?? "").not.toMatch(/ФИО|Подразделение|Локация|full_name|department|location/i);
+    expect(screen.queryByLabelText("Код привязки устройства")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Логин"), { target: { value: " new.user " } });
     fireEvent.change(screen.getByLabelText("Пароль"), { target: { value: "StrongPass123!" } });
@@ -110,6 +113,9 @@ describe("RegisterPage", () => {
 
   it("blocks mismatched passwords before calling the registration API", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/web/session/capabilities") {
+        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
+      }
       if (String(input) === "/api/web/session/me") {
         return jsonResponse({ status: "error" }, 401);
       }
@@ -131,6 +137,9 @@ describe("RegisterPage", () => {
   it("shows duplicate-login errors from the server without logging the user in", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url === "/api/web/session/capabilities") {
+        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
+      }
       if (url === "/api/web/session/me") {
         return jsonResponse({ status: "error" }, 401);
       }
@@ -163,6 +172,9 @@ describe("RegisterPage", () => {
   it("preserves the device registration return path after account creation", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url === "/api/web/session/capabilities") {
+        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
+      }
       if (url === "/api/web/session/me") {
         return jsonResponse({ status: "error" }, 401);
       }
@@ -184,7 +196,7 @@ describe("RegisterPage", () => {
     });
     vi.stubGlobal("fetch", fetchMock as typeof fetch);
 
-    renderRegisterPage("/app/register?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-next");
+    renderRegisterPage("/app/register?next=%2Fapp%2Frequester%2Fdevices%2Flink");
 
     fireEvent.change(await screen.findByLabelText("Логин"), { target: { value: "new.device.user" } });
     fireEvent.change(screen.getByLabelText("Пароль"), { target: { value: "StrongPass123!" } });
@@ -193,13 +205,16 @@ describe("RegisterPage", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
-        "/app/login?registered=1&next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-next"
+        "/app/login?registered=1&next=%2Fapp%2Frequester%2Fdevices%2Flink"
       )
     );
   });
 
   it("offers account registration from the login page while preserving the return path", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/web/session/capabilities") {
+        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
+      }
       if (String(input) === "/api/web/session/me") {
         return jsonResponse({ status: "error" }, 401);
       }
@@ -207,18 +222,21 @@ describe("RegisterPage", () => {
     });
     vi.stubGlobal("fetch", fetchMock as typeof fetch);
 
-    renderRegisterPage("/app/login?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-login");
+    renderRegisterPage("/app/login?next=%2Fapp%2Frequester%2Fdevices%2Flink");
 
     const registerLink = await screen.findByRole("link", { name: "Создать аккаунт" });
     expect(registerLink).toHaveAttribute(
       "href",
-      "/app/register?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-login"
+      "/app/register?next=%2Fapp%2Frequester%2Fdevices%2Flink"
     );
   });
 
   it("submits a password reset request from the login page", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url === "/api/web/session/capabilities") {
+        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
+      }
       if (url === "/api/web/session/me") {
         return jsonResponse({ status: "error" }, 401);
       }
@@ -239,5 +257,28 @@ describe("RegisterPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Отправить заявку" }));
 
     expect(await screen.findByText("Заявка отправлена администратору.")).toBeInTheDocument();
+  });
+});
+
+
+describe("server registration policy", () => {
+  it.each([false, "unavailable"])("fails closed when registration policy is %s", async (enabled) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/web/session/me") return jsonResponse({ status: "error" }, 401);
+      if (String(input) === "/api/web/session/capabilities") {
+        if (enabled === "unavailable") throw new Error("Unavailable");
+        return jsonResponse({ status: "success", data: { self_registration_enabled: enabled } });
+      }
+      throw new Error("Unexpected request");
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+    const login = renderRegisterPage("/app/login");
+    expect(await screen.findByText(/Самостоятельная регистрация недоступна/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Создать аккаунт" })).not.toBeInTheDocument();
+    login.unmount();
+    renderRegisterPage();
+    expect(await screen.findByText(/Самостоятельная регистрация недоступна/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Пароль")).not.toBeInTheDocument();
+    expect(getRegisterCalls(fetchMock)).toHaveLength(0);
   });
 });

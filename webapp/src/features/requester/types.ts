@@ -568,6 +568,7 @@ export type RequesterBootstrap = {
 
 export type RequesterTicketCreatePayload = {
   device_id?: string;
+  device_scope?: "none";
   title: string;
   description: string;
   user_display_name?: string;

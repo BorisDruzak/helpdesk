@@ -19,6 +19,7 @@ from observer.web_event_writer import write_web_cabinet_observer_event
 from registry.password_reset_service import PasswordResetRequestService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
+    WebSessionCapabilities,
     WebSessionLoginRequest,
     WebSessionLogoutPayload,
     WebSessionPayload,
@@ -28,6 +29,16 @@ from web_api.dto.session import (
 
 
 _LOGIN_RE = re.compile(r"^[A-Za-z0-9._@-]{3,100}$")
+
+
+async def handle_web_session_capabilities(request):
+    response = json_model_response(SuccessResponse[WebSessionCapabilities](
+        data=WebSessionCapabilities(
+            self_registration_enabled=bool(getattr(config_module, "WEB_SELF_REGISTRATION_ENABLED", False)),
+        ),
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _error(message: str, code: str, *, status: int) -> web.Response:

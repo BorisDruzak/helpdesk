@@ -337,7 +337,7 @@ export function resolveRecommendedCategoryKey(
 function formAvailabilityForRequester(form: RequestFormDefinition, profileComplete: boolean, hasAgentContext: boolean): FormAvailability {
   const policy = form.availability_policy ?? {};
   const availableWithoutProfile = Boolean(policy.available_without_completed_profile || form.available_without_completed_profile);
-  const availableWithoutDevice = Boolean(policy.available_without_agent_binding || form.available_without_agent_binding);
+  const availableWithoutDevice = Boolean(form.available_without_agent_binding ?? policy.available_without_agent_binding ?? true);
   const profileOk = profileComplete || availableWithoutProfile;
   const deviceOk = hasAgentContext || availableWithoutDevice;
   const availableForSelf = profileOk && deviceOk;

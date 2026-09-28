@@ -1,4 +1,58 @@
-# Active: 2026-09-27 Helpdesk Production Readiness v1
+# Active: 2026-09-28 Requester Registration & Device Binding — First Wave
+
+## Goal and scope
+
+Deliver the supplied cross-repository registration/profile → Endpoint possession
+code → RegistryPerson/device binding → requester devices → normal ticket closure
+flow. Execute the detailed plan in
+`docs/superpowers/plans/2026-09-28-requester-device-binding-first-wave.md`.
+
+## Constraints and decisions
+
+Staging only; Windows is the live target; ALT binding acceptance is excluded.
+Keep Helpdesk and Endpoint deployments independent. Preserve the pre-existing
+local `AGENTS.md` edit. No legacy Agent pairing, browser-to-Endpoint credentials
+or anonymous UI-user/device binding. Endpoint owns proof; Registry owns the
+business relationship. Do not publish readiness from skipped tests.
+
+## Current state and verification
+
+Endpoint provider is frozen at `731f271ad0ba1ba7a134ace45b6bc8771542f688`
+and published as draft PR A #37. OpenAPI SHA256:
+`e0161970a2f08dcc80fc333676319c2018065743d74f880da160404115b6cdec`.
+Migration 0036 adds possession challenges and durable throttles. Frozen-provider
+Linux/PostgreSQL 16 gate passed all 648 tests; Windows tests passed 369.
+Canonical MSI build produced EndpointAgent-3.2.76-x64.msi, SHA256
+`1806841273267058082678ac81c0b63442bc4ac794785d65e3ef2b8a6c233672`.
+MSI installation/live acceptance and GitHub provider CI remain unconfirmed.
+
+Helpdesk implementation includes registration capability/disabled UX, memory-only
+fragment capture, the typed redemption adapter, exact provider lock, Registry
+mapping migration 146, ownership/idempotency/conflict handling, requester devices
+and optional device selection through preview/create/diagnostic context. The
+user's AGENTS.md remains unstaged. The release target branch is
+`codex/helpdesk-process-model` (this remote has no main branch).
+
+Verification on current source: clean-source no-DB export 893 passed, 1 skipped;
+frontend 486 passed; requester/binding browser fixture checks 23 passed; build,
+compilation, contract lock and workspace verifier passed. Real PostgreSQL Registry,
+concurrency, resolver and context checks: 23 passed. Further API/ownership and
+true provider-adapter acceptance runs are in progress. Fixture browser acceptance
+is separate from real Windows acceptance. Reviewer found no remaining confirmed
+blocker after cached-person status and explicit no-device context were corrected.
+
+## Next steps and handoff
+
+Freeze Helpdesk source, publish draft PR B, and run exact-SHA full canonical CI.
+Then deploy both reviewed independent staging services and run the complete
+Windows/tray/browser/ticket lifecycle, fixture conflict and restore checks.
+The approved runtime sudo/secret-input channel is pending and blocks staging
+deployment; installed staging services and Windows enrollment remain untouched.
+The disposable PostgreSQL cluster is `/tmp/endpoint-binding-cxpOwN`, loopback
+55436, forwarded locally to 55437; stop it and the tunnel after automated checks.
+No production deployment and no ALT live acceptance are authorized by this task.
+
+# Previous checkpoint: 2026-09-27 Helpdesk Production Readiness v1
 
 Current accepted rollout (2026-09-27): frozen runtime candidate
 `bd3090bd72633a83be5e5f83a894ac959306cf74` passed exact-SHA full CI

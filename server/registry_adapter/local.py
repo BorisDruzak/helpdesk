@@ -921,22 +921,28 @@ class LocalRegistryAdapter:
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:
         async def reader(session: Any) -> object:
             from app.repos.registry_repo import RegistryRepo
+            from app.db.models import RegistryEndpointDeviceMapping
+            from sqlalchemy import select
 
             repo = RegistryRepo(session)
             asset = await repo.get_asset_by_device_id(device.external_id)
             if asset is None:
                 return RegistryNotFound(code="registry_device_not_found")
+            if _safe_code(getattr(asset, "asset_type", None)) is None or _safe_code(getattr(asset, "status", None)) is None:
+                return RegistryInvalidProjection()
             assigned_person = await repo.get_person(getattr(asset, "assigned_person_id", None))
             department = await repo.get_department(getattr(asset, "department_id", None))
             location = await repo.get_location(getattr(asset, "location_id", None))
-            return asset, assigned_person, department, location
+            mapping = await session.scalar(select(RegistryEndpointDeviceMapping).where(
+                RegistryEndpointDeviceMapping.device_id == device.external_id))
+            return asset, assigned_person, department, location, mapping
 
         loaded = await self._read("device_context", reader)
         if loaded is _READ_FAILED:
             return RegistryUnavailable(code="registry_read_unavailable")
-        if isinstance(loaded, RegistryNotFound):
+        if isinstance(loaded, (RegistryNotFound, RegistryInvalidProjection)):
             return loaded
-        asset, assigned_person, department, location = loaded
+        asset, assigned_person, department, location, mapping = loaded
         if str(getattr(asset, "device_id", "") or "") != device.external_id:
             return RegistryInvalidProjection()
         snapshot = self._requester_snapshot_from_person(assigned_person)
@@ -949,6 +955,7 @@ class LocalRegistryAdapter:
         try:
             return DeviceContextProjection(
                 device=device,
+                endpoint_device_ref=mapping.endpoint_device_ref if mapping is not None else None,
                 display_name=self._safe_label(getattr(asset, "name", None)) or "Unnamed device",
                 asset_type=asset_type,
                 asset_status=asset_status,
@@ -1067,6 +1074,14 @@ class LocalRegistryAdapter:
 
     async def request_registration(self, request: RegistrationRequest) -> RegistryCommandResult:
         return self._command_not_composed(request.operation_id)
+
+    async def bind_endpoint_possession(self, request) -> RegistryCommandResult:
+        from registry.endpoint_possession_service import EndpointPossessionService
+        async with self._session_scope() as session:
+            result = await EndpointPossessionService(session).bind(request)
+            if self._session is None:
+                await session.commit()
+            return result
 
     async def approve_registration(
         self,

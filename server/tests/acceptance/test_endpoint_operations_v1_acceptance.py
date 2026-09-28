@@ -109,7 +109,7 @@ async def _issue_acceptance_service_token(
             actor_kind="test",
             actor_identifier="helpdesk-endpoint-acceptance",
             request_id="endpoint-contract-acceptance",
-            scopes=("devices.read", "operations.create", "operations.read"),
+            scopes=("devices.read", "operations.create", "operations.read", "device-binding.redeem"),
             credential_identifier=credential_identifier,
         )
     return issued.token
@@ -390,6 +390,26 @@ async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
                 json=request_body | {"unexpected": True},
             )
             assert drift.status == 422
+
+        # Possession uses the real device-authenticated provider route and the
+        # consumer's typed adapter, never a JSON substitute server.
+        async with aiohttp.ClientSession() as http:
+            challenge_response = await http.post(f"{base_url}/api/v1/device-binding/challenges",
+                headers={"Authorization": f"Bearer {_DEVICE_TOKEN}", "X-Forwarded-Proto": "https", "X-Forwarded-For": "127.0.0.1"},
+                json={"purpose": "helpdesk_device_binding"})
+            assert challenge_response.status == 200
+            assert challenge_response.headers["Cache-Control"] == "no-store"
+            challenge = await challenge_response.json()
+        started_binding = asyncio.get_running_loop().time()
+        verified = await adapter.redeem_device_binding(challenge["code"])
+        assert verified.status == "verified", {"status": verified.status, "code": getattr(verified, "code", None),
+            "elapsed_seconds": round(asyncio.get_running_loop().time() - started_binding, 3)}
+        assert verified.device.external_id == str(device.id)
+        assert verified.hostname is None and verified.platform == "unknown"
+        replayed_binding = await adapter.redeem_device_binding(challenge["code"])
+        assert replayed_binding.status == "not_found"
+        assert replayed_binding.code == "endpoint_binding_unavailable"
+        challenge.clear()
 
         assert (await adapter.read_device(EndpointDeviceRef(external_id=str(device.id)))).device.external_id == str(device.id)
         capabilities = await adapter.list_capabilities(EndpointDeviceRef(external_id=str(device.id)))

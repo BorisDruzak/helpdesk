@@ -312,6 +312,7 @@ async def _publish_availability_forms(
                     "key": normal_key,
                     "request_template_key": normal_key,
                     "title": "Normal request",
+                    "availability_policy": {"available_without_agent_binding": False},
                     "request_kind": "request",
                     "ticket_type": "request",
                     "fields": [
@@ -994,13 +995,13 @@ async def test_no_agent_user_cannot_create_normal_form_without_agent_binding(tes
     )
     normal_payload = await normal.json()
     assert normal.status == 403, normal_payload
-    assert normal_payload["error_code"] == "REQUESTER_AGENT_REQUIRED"
+    assert normal_payload["error_code"] == "REQUESTER_DEVICE_REQUIRED"
     async with session_maker() as session:
         blocked_traces = await _observer_traces(
             session,
             source="requester_ticket_create",
             event_type="ticket_create_blocked",
-            error_code="REQUESTER_AGENT_REQUIRED",
+            error_code="REQUESTER_DEVICE_REQUIRED",
             person_id=person.person_id,
         )
     assert len(blocked_traces) == 1
@@ -1454,7 +1455,7 @@ async def test_requester_normal_form_requires_resolved_primary_device(test_clien
     )
     normal_preview_payload = await normal_preview.json()
     assert normal_preview.status == 403, normal_preview_payload
-    assert normal_preview_payload["error_code"] == "REQUESTER_AGENT_REQUIRED"
+    assert normal_preview_payload["error_code"] == "REQUESTER_DEVICE_REQUIRED"
 
     normal_create = await test_client.post(
         "/api/web/requester/tickets",
@@ -1469,7 +1470,7 @@ async def test_requester_normal_form_requires_resolved_primary_device(test_clien
     )
     normal_create_payload = await normal_create.json()
     assert normal_create.status == 403, normal_create_payload
-    assert normal_create_payload["error_code"] == "REQUESTER_AGENT_REQUIRED"
+    assert normal_create_payload["error_code"] == "REQUESTER_DEVICE_REQUIRED"
 
 
 @pytest.mark.asyncio

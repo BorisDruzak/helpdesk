@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Literal, Protocol, TypeAlias, runtime_checkable
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, StringConstraints, Field, model_validator
 
 
 # Opaque Endpoint references are transport values. Helpdesk must never parse,
@@ -52,6 +52,13 @@ class _ImmutableEndpointDTO(BaseModel):
 
 class EndpointDeviceRef(_ImmutableEndpointDTO):
     external_id: OpaqueEndpointRef
+
+
+class EndpointBindingVerified(_ImmutableEndpointDTO):
+    status: Literal["verified"] = "verified"
+    device: EndpointDeviceRef
+    hostname: str | None = Field(default=None, max_length=256)
+    platform: Literal["windows", "linux", "unknown"]
 
 
 class EndpointOperationRef(_ImmutableEndpointDTO):
@@ -239,6 +246,8 @@ EndpointOperationReadOutcome: TypeAlias = EndpointOperationProjection | Endpoint
 
 @runtime_checkable
 class EndpointPort(Protocol):
+    async def redeem_device_binding(self, code: str) -> EndpointBindingVerified | EndpointFailureOutcome: ...
+
     async def availability(self) -> EndpointAvailabilityOutcome: ...
 
     async def read_device(self, device: EndpointDeviceRef) -> EndpointDeviceOutcome: ...

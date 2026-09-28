@@ -332,11 +332,11 @@ export function RequesterNewRequestPage() {
   const services = catalogQuery.data?.services ?? [];
   const profileComplete = bootstrap?.profile_completion ? bootstrap.profile_completion.complete !== false : Boolean(bootstrap?.profile);
   const devices = bootstrap?.devices ?? [];
-  const primaryResolutionStatus = String(bootstrap?.primary_device_resolution?.status ?? "").trim().toLowerCase();
-  const primaryDevice =
-    bootstrap?.primary_device && isResolvedPrimaryDeviceStatus(primaryResolutionStatus)
-      ? bootstrap.primary_device
-      : null;
+  const [deviceChoice, setSelectedDeviceId] = useState<string | null>(null);
+  const defaultDeviceId = isResolvedPrimaryDeviceStatus(String(bootstrap?.primary_device_resolution?.status ?? ""))
+    ? bootstrap?.primary_device?.device_id ?? "" : "";
+  const selectedDeviceId = deviceChoice ?? defaultDeviceId;
+  const primaryDevice = devices.find((device) => device.device_id === selectedDeviceId) ?? null;
   const hasAgentContext = Boolean(primaryDevice);
   const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, requestIntent) : null;
   const [requestSeed, setRequestSeed] = useState(() => (requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : ""));
@@ -413,11 +413,15 @@ export function RequesterNewRequestPage() {
   }, [bootstrap?.profile, bootstrap?.requester_context, primaryDevice, requestSeed, selectedForm, selectedOffering, selectedService]);
   const onBehalfPolicy = selectedForm?.on_behalf_policy ?? null;
   const onBehalfActive = Boolean(onBehalfPolicy?.allowed && (onBehalfEnabled || requiresOnBehalfForAvailability));
-  const activeDynamicForm = selectedForm && (!requiresOnBehalfForAvailability || selectedOnBehalfPerson) ? selectedForm : null;
+  const activeDynamicForm = useMemo(() => {
+    if (!selectedForm || (requiresOnBehalfForAvailability && !selectedOnBehalfPerson)) return null;
+    return { ...selectedForm, fields: selectedForm.fields.map((field) =>
+      field.type === "device_picker" && selectedFormAvailability?.availableWithoutDevice ? { ...field, required: false } : field) };
+  }, [selectedForm, requiresOnBehalfForAvailability, selectedOnBehalfPerson, selectedFormAvailability?.availableWithoutDevice]);
   const contextualFields = useMemo(
     () =>
       (activeDynamicForm?.fields ?? [])
-        .filter((field) => isDynamicFieldVisible(field, fieldValues))
+        .filter((field) => field.type !== "device_picker" && isDynamicFieldVisible(field, fieldValues))
         .map((field) =>
           fieldWithRequesterContextOptions(field, {
             departments: registryOptionsQuery.data?.departments ?? [],
@@ -740,7 +744,7 @@ export function RequesterNewRequestPage() {
           }
         : undefined;
     return {
-      ...(primaryDevice?.device_id ? { device_id: primaryDevice.device_id } : {}),
+      ...(primaryDevice?.device_id ? { device_id: primaryDevice.device_id } : { device_scope: "none" as const }),
       title: requestTitle,
       description: requestDescription,
       form_key: selectedForm?.key,
@@ -848,6 +852,9 @@ export function RequesterNewRequestPage() {
       <RequestSummaryAside
         bootstrap={bootstrap}
         primaryDevice={primaryDevice}
+        devices={devices}
+        selectedDeviceId={selectedDeviceId}
+        onDeviceChange={setSelectedDeviceId}
         selectedCategory={selectedCategory}
         selectedService={selectedService}
       />

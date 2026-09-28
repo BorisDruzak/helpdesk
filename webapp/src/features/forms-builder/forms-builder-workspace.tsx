@@ -1526,7 +1526,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
               </Select>
             </label>
             <label className="space-y-2 text-sm font-medium text-slate-800">
-              <span>Если нет основного агента</span>
+              <span>Если нет основного компьютера</span>
               <Select
                 onChange={(event) => updateOnBehalfPolicy({ no_primary_agent_behavior: event.currentTarget.value })}
                 value={policy.no_primary_agent_behavior}

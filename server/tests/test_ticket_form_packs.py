@@ -136,7 +136,7 @@ def test_validate_form_pack_schema_normalizes_availability_policy():
     assert emergency["allowed_for_anonymous"] is False
     assert normal["availability_policy"] == {
         "available_without_completed_profile": False,
-        "available_without_agent_binding": False,
+        "available_without_agent_binding": True,
         "requires_manual_triage": False,
         "contact_required": False,
         "allowed_for_anonymous": False,

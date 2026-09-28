@@ -95,6 +95,13 @@ class PrimaryAgentResolver:
             "candidate_count": 0,
         }
 
+    async def resolve_selected_for_person(self, person_id: str, device_id: str) -> dict[str, Any]:
+        bindings = [binding for binding in await self.registration_repo.list_bindings_for_person(
+            person_id, active_only=True) if binding.device_id == device_id and binding.status == "active"]
+        if len(bindings) != 1:
+            return {"resolved": False, "reason_code": "selected_device_unavailable", "candidate_count": len(bindings)}
+        return await self._target_payload(bindings[0], reason_code="selected_device", source="requester_selected_device")
+
     async def _allow_single_active_fallback(self) -> bool:
         policies = await RegistryPolicyService(self.session).get_policies()
         diagnostic_target = (

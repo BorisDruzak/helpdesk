@@ -7,6 +7,7 @@ import { Input } from "../../components/ui/input";
 import { requestPasswordReset, WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
 import { resolveNextWorkspacePath } from "./workspace-access";
+import { useRegistrationPolicy } from "./use-registration-policy";
 
 function resolveNextPath(nextParam: string | null, session: ReturnType<typeof useSession>["session"]) {
   return resolveNextWorkspacePath(nextParam, session) ?? "/app";
@@ -28,6 +29,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { login, session, status } = useSession();
+  const registrationEnabled = useRegistrationPolicy();
   const [loginValue, setLoginValue] = useState("");
   const [passwordValue, setPasswordValue] = useState("");
   const [passwordResetLogin, setPasswordResetLogin] = useState("");
@@ -234,12 +236,14 @@ export function LoginPage() {
                   </Button>
                 </form>
               ) : null}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              {registrationEnabled === true ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
                 <span>Еще нет аккаунта?</span>
                 <Link className="font-semibold text-brand-700 hover:text-brand-900" to={registerPath(searchParams.get("next"))}>
                   Создать аккаунт
                 </Link>
-              </div>
+              </div> : <p role="status" className="border-t border-border pt-3">{registrationEnabled === null
+                ? "Проверяем доступность регистрации…"
+                : "Самостоятельная регистрация недоступна. Обратитесь к администратору."}</p>}
             </div>
           </div>
         </div>

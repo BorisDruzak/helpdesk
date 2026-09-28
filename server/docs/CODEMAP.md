@@ -136,6 +136,24 @@
 
 ## Endpoint operation facade
 
+- `server/web_api/session_handlers.py` projects only the public registration
+  capability flag; registration never accepts a retired device-link field.
+- `server/web_api/requester_handlers.py::handle_web_requester_device_link`
+  resolves a complete authenticated RegistryPerson before typed Endpoint
+  redemption through `server/endpoint_adapter/http.py` and `wire.py`.
+- `server/registry/endpoint_possession_service.py` owns locked policy checks,
+  idempotent primary activation and conflict claims. Migration `146` adds
+  `registry_endpoint_device_mappings`; no mapping is inferred from legacy IDs,
+  hostname or ticket diagnostic targets. `RegistryPort.bind_endpoint_possession`
+  is composed locally; unsupported external commands fail closed.
+- The requester wizard at `webapp/src/pages/requester/device-link-page.tsx`
+  uses `device-link-state.ts` for memory-only fragment capture before auth routing.
+- Requester preview/create carry explicit `device_scope: none` through
+  `TicketContextBuilder`; optional device selection cannot silently fall back to
+  the primary computer. Ticket Endpoint snapshots require an exact Registry
+  mapping and a fresh provider projection. Canonical form availability defaults
+  allow no-device requests while preserving explicit device-required policies.
+
 - `server/diagnostics/` projects the Endpoint diagnostic capability, validates
   ticket access and stores reconciled evidence.
 - `server/endpoint/` contains the HTTP adapter and versioned contract types.

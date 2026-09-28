@@ -112,6 +112,7 @@ from web_api.requester_handlers import (
     handle_web_requester_consents,
     handle_web_requester_device_detail,
     handle_web_requester_devices,
+    handle_web_requester_device_link,
     handle_web_requester_on_behalf_people,
     handle_web_requester_profile,
     handle_web_requester_profile_update,
@@ -252,6 +253,7 @@ from web_api.session_handlers import (
     handle_web_session_me,
     handle_web_session_password_reset_request,
     handle_web_session_register,
+    handle_web_session_capabilities,
 )
 from web_api.access_handlers import (
     handle_web_admin_access_audit,
@@ -573,6 +575,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/ui_session', handle_ui_session),
         web.post('/api/web/session/login', handle_web_session_login),
         web.post('/api/web/session/register', handle_web_session_register),
+        web.get('/api/web/session/capabilities', handle_web_session_capabilities),
         web.post('/api/web/session/password-reset-requests', handle_web_session_password_reset_request),
         web.post('/api/web/session/logout', handle_web_session_logout),
         web.get('/api/web/session/me', handle_web_session_me),
@@ -777,6 +780,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/requester/consents/{consent_id}/approve', handle_web_requester_consent_approve),
         web.post('/api/web/requester/consents/{consent_id}/deny', handle_web_requester_consent_deny),
         web.get('/api/web/requester/devices', handle_web_requester_devices),
+        web.post('/api/web/requester/devices/link', handle_web_requester_device_link),
         web.get('/api/web/requester/devices/{device_id}', handle_web_requester_device_detail),
         web.get('/api/web/requester/on-behalf/people', handle_web_requester_on_behalf_people),
         web.get('/api/web/requester/history', handle_web_requester_history),

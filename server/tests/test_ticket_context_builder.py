@@ -601,3 +601,36 @@ async def test_create_flow_writes_ticket_context_resolved_event(test_engine):
     assert payload["diagnostic_target_source"] == "creator_primary_agent"
     assert payload["target_available"] is True
     assert payload["evidence_codes"] == []
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_explicit_none_never_resolves_a_primary_device(monkeypatch):
+    from unittest.mock import AsyncMock
+    primary = AsyncMock(side_effect=AssertionError("no-device intent must not resolve a device"))
+    selected = AsyncMock(side_effect=AssertionError("no-device intent must not resolve a device"))
+    monkeypatch.setattr("tickets.ticket_context.PrimaryAgentResolver.resolve_for_person", primary)
+    monkeypatch.setattr("tickets.ticket_context.PrimaryAgentResolver.resolve_selected_for_person", selected)
+    context = await TicketContextBuilder(_NoRegistryOrmSession(), registry_port=_TicketParticipantPort()).build(
+        creator_person_id="registry-ref-person", device_selection="none")
+    assert context["diagnostic_target"]["device_id"] is None
+    assert context["creator"]["person_id"] == "registry-ref-person"
+    primary.assert_not_awaited()
+    selected.assert_not_awaited()
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_selected_device_resolves_only_for_affected_person(monkeypatch):
+    from unittest.mock import AsyncMock
+    selected = AsyncMock(return_value={"resolved": True, "device_id": "selected-secondary",
+        "binding_id": "selected-binding", "reason_code": "selected_device", "connection_state": "offline"})
+    primary = AsyncMock(side_effect=AssertionError("explicit selection must not resolve the primary"))
+    monkeypatch.setattr("tickets.ticket_context.PrimaryAgentResolver.resolve_for_person", primary)
+    monkeypatch.setattr("tickets.ticket_context.PrimaryAgentResolver.resolve_selected_for_person", selected)
+    context = await TicketContextBuilder(_NoRegistryOrmSession(), registry_port=_TicketParticipantPort()).build(
+        creator_person_id="creator-person", affected_person_id="affected-person", device_selection="selected-secondary")
+    selected.assert_awaited_once_with("affected-person", "selected-secondary")
+    primary.assert_not_awaited()
+    assert context["diagnostic_target"]["device_id"] == "selected-secondary"
+    assert context["diagnostic_target"]["source"] == "requester_selected_device"
