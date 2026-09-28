@@ -7,6 +7,10 @@ Helpdesk does not connect to Endpoint agents or enqueue agent commands. For a ti
 During this cutover the supported capability is `endpoint.context.diagnostic.collect` and accepts an empty `params` object. The route creates a Helpdesk operation linked to the Endpoint Platform operation; its reconciler owns the remote request, state refresh and terminal result projection.
 
 The browser-facing aliases use the same handler under `/api/web/support/tickets/{ticket_id}/diagnostics/capabilities/*`. Cancellation uses `POST /api/web/support/operations/{operation_id}/cancel`.
+Every support launch entry point supplies the existing actor/ticket-scoped
+Endpoint intent key. Failed or uncertain HTTP responses retain that key for
+safe retry; only an accepted response with an operation ID clears it. Missing
+actor identity or unavailable session storage stops the launch before HTTP.
 
 Compatibility boundaries: Helpdesk must not restore `/ws`, `device_outbox`, `ToolExecutionService`, `/api/tools/run`, or support `/tools/run` routes. Endpoint Platform remains responsible for agent transport, execution, package lifecycle and remote command delivery.
 

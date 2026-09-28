@@ -1332,6 +1332,28 @@ describe("TicketListPage", () => {
     });
   });
 
+  it("passes the authenticated actor to an explicit Endpoint launch", async () => {
+    const payload = workspacePayload();
+    payload.tools.tools = [{
+      tool_name: "endpoint.context.diagnostic.collect", module_name: "endpoint_platform",
+      description: "Endpoint diagnostic", risk_level: "low", requires_consent: false,
+      install_required: false, source: "external_endpoint", params_schema: [], presets: [],
+    }];
+    payload.playbooks.playbooks = [];
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(payload);
+    postSupportTicketToolRunMock.mockResolvedValue({ticket_id: "ticket-1", device_id: "", tool_name: "endpoint.context.diagnostic.collect",
+      dispatch_status: "queued", operation_id: "endpoint-op", poll_url: "/api/operations/endpoint-op", trace_id: null, message: "queued"});
+    renderTicketListPage("/app/tickets/ticket-1");
+    fireEvent.click(await screen.findByRole("button", {name: "Инструменты"}));
+    fireEvent.click(await screen.findByRole("button", {name: /^Запустить$/}));
+    expect(postSupportTicketToolRunMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", {name: "Запустить инструмент"}));
+    await waitFor(() => expect(postSupportTicketToolRunMock).toHaveBeenCalledWith("ticket-1", {
+      toolName: "endpoint.context.diagnostic.collect", presetId: null, params: {}, actorLogin: "support-test",
+    }));
+  });
+
   it("sends a public reply from the composer and refreshes after send", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());

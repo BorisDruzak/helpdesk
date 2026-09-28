@@ -1,3 +1,5 @@
+import { clearEndpointRunKey, pendingEndpointRunKey } from "../diagnostics/endpoint-run-intent";
+
 export type SupportBootstrapPayload = {
   workspace: string;
   features: string[];
@@ -1978,8 +1980,12 @@ export async function postSupportTicketToolRun(
     toolName: string;
     presetId: string | null;
     params: Record<string, unknown>;
+    actorLogin?: string;
   }
 ): Promise<SupportToolActionResult> {
+  const actor = payload.actorLogin ?? "";
+  const idempotencyKey = payload.toolName === "endpoint.context.diagnostic.collect"
+    ? pendingEndpointRunKey(actor, ticketId) : undefined;
   const response = await fetch(
     `/api/web/support/tickets/${encodeURIComponent(ticketId)}/diagnostics/capabilities/${encodeURIComponent(payload.toolName)}/run`,
     {
@@ -1989,7 +1995,8 @@ export async function postSupportTicketToolRun(
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      params: payload.params
+      params: payload.params,
+      ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
     })
     }
   );
@@ -2009,6 +2016,7 @@ export async function postSupportTicketToolRun(
     );
   }
 
+  if (idempotencyKey) clearEndpointRunKey(actor, ticketId, idempotencyKey);
   return {
     ticket_id: ticketId,
     device_id: "",

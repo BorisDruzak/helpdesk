@@ -19,6 +19,7 @@ import { SchemaParamEditor } from "../../components/forms/schema-param-editor";
 import { getTicketStatusPresentation } from "../tickets/status-presentation";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import { supportToolParamFields, validateSupportToolParams } from "./tool-param-fields";
+import { useSession } from "../auth/session-provider";
 
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
@@ -895,6 +896,7 @@ function SupportDetailPanel({
 }
 
 export function SupportWorkspace() {
+  const { session } = useSession();
   const queryClient = useQueryClient();
   const [scope, setScope] = useState<SupportQueueScope>("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1025,7 +1027,9 @@ export function SupportWorkspace() {
       toolName: string;
       presetId: string | null;
       params: Record<string, unknown>;
-    }) => postSupportTicketToolRun(ticketId, { toolName, presetId, params }),
+    }) => postSupportTicketToolRun(ticketId, { toolName, presetId, params,
+      ...(toolName === "endpoint.context.diagnostic.collect" ? { actorLogin: session?.user_login ?? "" } : {}),
+    }),
     onSuccess: async (result, variables) => {
       setToolActionMessage(
         result.dispatch_status === "waiting_consent"

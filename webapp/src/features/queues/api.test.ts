@@ -5,6 +5,7 @@ import {
   fetchSupportTicketWorkspace,
   fetchSupportWorkspaceSummary,
   postSupportTicketRead,
+  postSupportTicketToolRun,
 } from "./api";
 
 afterEach(() => {
@@ -12,6 +13,34 @@ afterEach(() => {
 });
 
 describe("support queue API", () => {
+  it("reuses an actor-scoped Endpoint intent after failure and clears it only after acceptance", async () => {
+    sessionStorage.clear();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({status: "error", error_code: "UNAVAILABLE"}), {status: 503, headers: {"content-type": "application/json"}}))
+      .mockImplementation(() => Promise.resolve(new Response(JSON.stringify({status: "queued", operation_id: "op-endpoint"}), {status: 200, headers: {"content-type": "application/json"}})));
+    vi.stubGlobal("fetch", fetchMock);
+    const payload = {toolName: "endpoint.context.diagnostic.collect", presetId: null, params: {}, actorLogin: "operator-a"};
+    await expect(postSupportTicketToolRun("ticket-1", payload)).rejects.toThrow();
+    const first = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(first.idempotency_key).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/);
+    await postSupportTicketToolRun("ticket-1", payload);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).idempotency_key).toBe(first.idempotency_key);
+    await postSupportTicketToolRun("ticket-1", {...payload, actorLogin: "operator-b"});
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).idempotency_key).not.toBe(first.idempotency_key);
+    await postSupportTicketToolRun("ticket-1", payload);
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body).idempotency_key).not.toBe(first.idempotency_key);
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it("refuses an Endpoint launch without an actor before sending HTTP", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(postSupportTicketToolRun("ticket-1", {
+      toolName: "endpoint.context.diagnostic.collect", presetId: null, params: {},
+    })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("loads workspace summary from the lightweight support endpoint", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

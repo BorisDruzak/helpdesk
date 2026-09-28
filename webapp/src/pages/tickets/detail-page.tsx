@@ -2139,6 +2139,7 @@ export function TicketDetailPage() {
         toolName: selectedTool!.tool_name,
         presetId: parsed.presetId,
         params: parsed.params,
+        ...(selectedTool!.tool_name === "endpoint.context.diagnostic.collect" ? { actorLogin: session?.user_login ?? "" } : {}),
       });
     },
     onSuccess: async () => {

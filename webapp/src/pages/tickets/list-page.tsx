@@ -1927,6 +1927,7 @@ export function TicketListPage() {
         toolName: tool.tool_name,
         presetId: preset?.preset_id ?? null,
         params: preset?.params ?? {},
+        ...(tool.tool_name === "endpoint.context.diagnostic.collect" ? { actorLogin: session?.user_login ?? "" } : {}),
       });
     },
     onSuccess: async () => {

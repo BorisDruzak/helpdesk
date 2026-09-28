@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupportTicketDetailPayload } from "./api";
 import { SupportWorkspace } from "./support-workspace";
 
+vi.mock("../auth/session-provider", () => ({
+  useSession: () => ({ session: { user_login: "support-a" } }),
+}));
+
 const ticketRealtimeListeners = new Map<string, Set<(message: { ticketId: string }) => void>>();
 
 const realtimeClientMock = {
