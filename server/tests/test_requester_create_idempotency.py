@@ -111,7 +111,11 @@ async def test_preflight_rejection_does_not_consume_request_key(test_client, tes
     valid = {"title": "Preflight " + key, "description": "Valid retry after rejection"}
     body = {**valid, "description": ""} if invalid == "description" else {**valid, "form_key": "missing-" + key}
     response = await test_client.post("/api/web/requester/tickets", headers=_request(login, key), json=body)
-    assert response.status == {"description": 400, "form": 403}[invalid]
+    # Unknown forms now reach catalog validation: ordinary no-device forms are
+    # no longer rejected by the retired default Agent requirement.
+    assert response.status == 400
+    if invalid == "form":
+        assert (await response.json())["error_code"] == "VALIDATION_ERROR"
     async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
         assert await RequesterCreateLedger(session).lookup(CreateRequestKey.parse(login, key, body)) is None
     retry = await test_client.post("/api/web/requester/tickets", headers=_request(login, key), json=valid)
