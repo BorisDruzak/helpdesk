@@ -1351,6 +1351,7 @@ FULL_CLEANUP_TABLES = (
     "device_toolset_snapshots",
     "device_registration_claims",
     "device_user_bindings",
+    "registry_endpoint_device_mappings",
     "device_registration_events",
     "device_account_sessions",
     "device_account_login_requests",
