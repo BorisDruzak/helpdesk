@@ -1740,7 +1740,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             state=request.app.get("state"),
             person=person,
             actor_id=auth_context.actor_id,
-            device_selection="none" if data.get("device_scope") == "none" else supplied_device_id or None,
+            device_selection="none" if data.get("device_scope") == "none" else (None if on_behalf_context else supplied_device_id or None),
             requester_context=requester_context,
             on_behalf_context=on_behalf_context,
             form={
@@ -2117,7 +2117,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             created = await create_ticket_with_side_effects(
                 session,
                 device_id=device_id,
-                device_selection="none" if data.get("device_scope") == "none" else supplied_device_id or None,
+                device_selection="none" if data.get("device_scope") == "none" else (None if on_behalf_context else supplied_device_id or None),
                 requester_id=auth_context.actor_id,
                 title=title,
                 description=description,
