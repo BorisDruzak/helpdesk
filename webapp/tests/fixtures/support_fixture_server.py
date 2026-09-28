@@ -1771,6 +1771,11 @@ def build_ticket_workspace(state: dict, ticket_id: str) -> dict:
     }
 
 
+async def handle_session_capabilities(request: web.Request) -> web.Response:
+    return web.json_response({"status": "success", "data": {"self_registration_enabled": False}},
+        headers={"Cache-Control": "no-store"})
+
+
 async def handle_session_me(request: web.Request) -> web.Response:
     if request.cookies.get(WEB_SESSION_COOKIE_NAME) != SESSION_TOKEN:
         return json_success(None)
@@ -3054,6 +3059,7 @@ def build_app() -> web.Application:
     app.add_routes(
         [
             web.get("/api/web/session/me", handle_session_me),
+            web.get("/api/web/session/capabilities", handle_session_capabilities),
             web.post("/api/web/session/login", handle_session_login),
             web.post("/api/web/session/logout", handle_session_logout),
             web.get("/api/web/realtime/bootstrap", handle_realtime_bootstrap),

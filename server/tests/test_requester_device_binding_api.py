@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Ticket
-from domain_ports.endpoint import EndpointBindingVerified, EndpointDeviceRef, EndpointUnavailable
+from domain_ports.endpoint import EndpointBindingVerified, EndpointDeviceRef, EndpointDeviceProjection, EndpointUnavailable
 from registry_adapter.local import LocalRegistryAdapter
 from tests.test_requester_workspace_api import _person_for_login, _headers
 from tests.conftest import TEST_UI_USER_PREFIX
@@ -53,3 +53,19 @@ async def test_requester_bind_devices_conflict_and_no_device_ticket(test_client_
         assert ticket.requester_person_id is not None
         context = ticket.custom_fields["ticket_context"]
         assert context["diagnostic_target"]["device_id"] is None
+
+    # The same canonical Registry mapping must enable the fresh Endpoint
+    # reference when the requester explicitly selects the newly bound device.
+    endpoint.read_device.return_value = EndpointDeviceProjection(
+        device=EndpointDeviceRef(external_id=device_ref), display_name="API fixture PC", retired=False, last_seen_at=None)
+    selected_request = {key: value for key, value in ticket_request.items() if key != "device_scope"}
+    selected_request["device_id"] = device_ref
+    selected = await test_client_light.post("/api/web/requester/tickets",
+        headers=_headers(TEST_UI_USER_PREFIX + logins[0]), json=selected_request)
+    selected_payload = await selected.json()
+    assert selected.status == 200, selected_payload
+    async with maker() as session:
+        ticket = await session.get(Ticket, selected_payload["data"]["ticket_id"])
+        assert ticket.device_id == device_ref and ticket.endpoint_device_ref == device_ref
+        assert ticket.endpoint_device_snapshot_json["device_ref"] == device_ref
+        assert ticket.custom_fields["ticket_context"]["diagnostic_target"]["device_id"] == device_ref
