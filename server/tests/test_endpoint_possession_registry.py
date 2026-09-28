@@ -9,6 +9,8 @@ from app.db.models import RegistryPerson, DeviceUserBinding, DeviceRegistrationC
 from domain_ports.registry_contracts import EndpointPossessionBindingRequest
 from registry.endpoint_possession_service import EndpointPossessionService
 
+pytestmark = pytest.mark.db_cleanup("registration")
+
 
 @pytest.mark.asyncio
 async def test_person_archived_after_profile_read_cannot_activate_binding(test_engine):
