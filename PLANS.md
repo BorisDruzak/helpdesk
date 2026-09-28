@@ -17,6 +17,28 @@ business relationship. Do not publish readiness from skipped tests.
 
 ## Current state and verification
 
+Latest live acceptance (2026-09-29) is bound to committed Helpdesk
+`ecb68704edd750e6deac3a495fb90d5a8f44465a`: exact full CI 36473600061 and
+PR CI 36473604721 passed. The accepted bundle was deployed independently;
+its downloaded webapp content digest matched the CI bundle. Local and VM120
+real browsers passed registration/profile, native Endpoint IPC challenge,
+anonymous fragment/login return, primary binding and different-owner review
+without ownership transfer or foreign-device access. Bound T-000036 and
+T-000038 passed fresh native diagnostics and requester-confirmed closure;
+T-000036 also passed allowed reopen and rating. Explicit no-device T-000037
+retained null device/reference and no diagnostic tools. Admin source/conflict
+guidance and the replacement reason window were verified and cancelled.
+Staging databases, original schemas 0035/145, configurations and release links
+were restored; all three Linux services are inactive. VM120 is back on 3.2.75
+with original enrollment and validation services stopped. Local 3.2.78 remains
+installed as requested, with original enrollment/data and stopped services.
+Manual 3.2.78 tray display/copy/refresh/open confirmation remains pending;
+native IPC/browser success does not replace that visual check. Detailed
+redacted evidence is in `docs/REQUESTER_DEVICE_BINDING_FIRST_WAVE_ACCEPTANCE.md` and
+`temp/device-binding-checkpoint.json`. No production deployment occurred.
+
+The following accepted-baseline checkpoint predates that live acceptance.
+
 Current accepted Helpdesk staging/CI baseline is
 `28bb0d72664152812f35ec62d1f6a77343a41960`; provider service/lock remains
 `61acfde9401a51fc7e3006733721ee1c2be12b4b`. Endpoint Windows runtime source is
@@ -75,6 +97,14 @@ is separate from real Windows acceptance. Reviewer found no remaining confirmed
 blocker after cached-person status and explicit no-device context were corrected.
 
 ## Next steps and handoff
+
+Only the manual packaged 3.2.78 tray visual/interaction gate remains open for
+First Wave acceptance. Do not claim complete acceptance from native IPC alone.
+The plan and canonical acceptance report are documentation; implementation CI/live provenance
+remains the frozen ecb68704 commit. Preserve original backups and the user's
+AGENTS.md edit. Production deployment and ALT live acceptance remain excluded.
+
+The following candidate handoff is historical.
 
 For the current candidate: obtain fresh canonical CI and accepted bundle;
 repeat bound safe diagnostic/lifecycle and Admin source/reason UI checks;
