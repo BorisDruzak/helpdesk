@@ -17,14 +17,19 @@ business relationship. Do not publish readiness from skipped tests.
 
 ## Current state and verification
 
-Endpoint provider is frozen at `731f271ad0ba1ba7a134ace45b6bc8771542f688`
+Endpoint runtime source is frozen at `731f271ad0ba1ba7a134ace45b6bc8771542f688`
 and published as draft PR A #37. OpenAPI SHA256:
 `e0161970a2f08dcc80fc333676319c2018065743d74f880da160404115b6cdec`.
 Migration 0036 adds possession challenges and durable throttles. Frozen-provider
 Linux/PostgreSQL 16 gate passed all 648 tests; Windows tests passed 369.
 Canonical MSI build produced EndpointAgent-3.2.76-x64.msi, SHA256
 `1806841273267058082678ac81c0b63442bc4ac794785d65e3ef2b8a6c233672`.
-MSI installation/live acceptance and GitHub provider CI remain unconfirmed.
+MSI installation/live acceptance remain unconfirmed. Provider candidate HEAD is
+`fa6f65ce766a6a4a3c9cd5d82c042f1e1989267e`: subsequent changes bound CI to ten
+minutes and fix the test facade's disconnect/ASGI portal shutdown ordering.
+OpenAPI/runtime bytes are unchanged. Current contracts: 428 passed; Gateway:
+80 passed. Provider PR CI 36396495509 and exact-HEAD dispatch 36396880086 remain
+open. Helpdesk lock now pins this candidate SHA and the unchanged OpenAPI hash.
 
 Helpdesk implementation includes registration capability/disabled UX, memory-only
 fragment capture, the typed redemption adapter, exact provider lock, Registry
@@ -33,23 +38,30 @@ and optional device selection through preview/create/diagnostic context. The
 user's AGENTS.md remains unstaged. The release target branch is
 `codex/helpdesk-process-model` (this remote has no main branch).
 
-Verification on current source: clean-source no-DB export 893 passed, 1 skipped;
-frontend 486 passed; requester/binding browser fixture checks 23 passed; build,
+Helpdesk draft PR B #38 is published; source candidate before this checkpoint is
+`0de166865f002967aabf82c1acd11be25a3432ef`. Verification: clean-source no-DB
+export at 0de166865f002967aabf82c1acd11be25a3432ef: 895 passed, 1 skipped;
+frontend 486 passed; complete browser fixture checks 31 passed; build,
 compilation, contract lock and workspace verifier passed. Real PostgreSQL Registry,
-concurrency, resolver and context checks: 23 passed. Further API/ownership and
-true provider-adapter acceptance runs are in progress. Fixture browser acceptance
+concurrency, resolver and context checks: 23 passed. Ownership/admin approval:
+4 passed; authorized on-behalf context and complete binding/no-device/bound-ticket
+API checks: 2 passed. True provider/adapter/WSS acceptance passed in GitHub
+contract CI. Full CI correctly rejected missing cleanup profile/table/count
+fixtures; they are corrected, strict model-schema audit and 60 cleanup/harness
+checks passed. Run 36396167011 remains open. Fixture browser acceptance
 is separate from real Windows acceptance. Reviewer found no remaining confirmed
 blocker after cached-person status and explicit no-device context were corrected.
 
 ## Next steps and handoff
 
-Freeze Helpdesk source, publish draft PR B, and run exact-SHA full canonical CI.
+Accept provider CI and run fresh full canonical CI on the updated exact SHA lock.
 Then deploy both reviewed independent staging services and run the complete
 Windows/tray/browser/ticket lifecycle, fixture conflict and restore checks.
 The approved runtime sudo/secret-input channel is pending and blocks staging
 deployment; installed staging services and Windows enrollment remain untouched.
-The disposable PostgreSQL cluster is `/tmp/endpoint-binding-cxpOwN`, loopback
-55436, forwarded locally to 55437; stop it and the tunnel after automated checks.
+The disposable PostgreSQL cluster `/tmp/endpoint-binding-cxpOwN` was stopped
+after automated checks; its SSH tunnel is also stopped. MSI 3.2.76 and its
+canonical canary/preflight scripts are staged on Windows but not installed.
 No production deployment and no ALT live acceptance are authorized by this task.
 
 # Previous checkpoint: 2026-09-27 Helpdesk Production Readiness v1

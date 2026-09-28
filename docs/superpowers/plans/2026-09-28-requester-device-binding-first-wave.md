@@ -75,3 +75,36 @@
   running. Full canonical CI and real Windows acceptance must pass on frozen SHAs.
 - Installed staging services, Windows enrollment and real employee ownership
   were not changed. Approved runtime privilege/secret input is still pending.
+
+## Automated gate follow-up (2026-09-28)
+
+- Draft consumer PR: https://github.com/BorisDruzak/helpdesk/pull/38, target
+  `codex/helpdesk-process-model`; source before this checkpoint
+  `0de166865f002967aabf82c1acd11be25a3432ef`.
+- Clean-source no-DB repeat: 895 passed, 1 skipped (800 deselected). Vitest:
+  486 passed across 89 files. Complete Playwright fixture suite: 31 passed.
+  Fixture results do not establish real Windows acceptance.
+- Real PostgreSQL ownership/admin approval: 4 passed. Extended binding API
+  covers replay/conflict, explicit no-device and selected bound-device tickets;
+  this API plus authorized affected-person context regression: 2 passed.
+- Full CI exposed missing capability fixtures, cleanup marker, mapping table
+  and fixed table-count expectation. Each was corrected without suppressing
+  assertions. Strict model-schema classification and 60 cleanup/harness checks
+  pass. GitHub full CI run 36396167011 is pending; contract acceptance has passed
+  on earlier consumer candidates, each bound to its exact provider lock.
+- Provider candidate `fa6f65ce766a6a4a3c9cd5d82c042f1e1989267e` only adds
+  CI bounds/stack diagnostics and test-facade graceful disconnect ordering after
+  runtime source 731f271. Bounded run 36395058167 identified a TestClient portal
+  shutdown stall in existing WSS identity acceptance. The facade now waits for
+  actual ASGI cleanup and asserts persisted closed sessions; production code is
+  unchanged. Current contracts: 428 passed; Gateway: 80 passed. Fresh provider
+  PR CI 36396495509 and exact-HEAD dispatch 36396880086 remain required. The
+  consumer lock now pins fa6f65ce and the unchanged OpenAPI digest; new consumer
+  full/contract CI must validate the final source candidate.
+- MSI source remains 731f271; package/hash above are unchanged. MSI, sidecar and
+  canonical canary/preflight scripts were staged on Windows, not installed.
+  Baseline preflight reports the existing 3.2.75 installation with strict TLS;
+  it is not 3.2.76 acceptance. Disposable PostgreSQL and the SSH tunnel are stopped.
+- Required independent staging deployment and real tray→requester-confirmed
+  closure/conflict/restore remain blocked by pending approved Linux privilege
+  input. No production or ALT live operations are authorized.
