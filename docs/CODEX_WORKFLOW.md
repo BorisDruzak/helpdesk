@@ -15,6 +15,10 @@ For a non-trivial task, inspect `git status --short`, classify the change as loc
 | Browser-visible | Real browser route and console/network evidence |
 | Release-control | Project release script output and matching remote smoke |
 
+## Mainline
+
+The canonical GitHub default branch is `main`. Production readiness and Endpoint contract acceptance run on pushes to `main`; the historical `codex/helpdesk-process-model` trigger remains for compatibility. A Git publication does not redeploy production or rebuild an installed agent. Bind deployment claims to the accepted runtime SHA and immutable artifact receipts.
+
 ## Working rules
 
 - Work only in the local Windows checkout. Do not patch SMB or Linux mirrors manually.

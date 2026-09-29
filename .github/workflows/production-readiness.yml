@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches:
+      - main
       - codex/helpdesk-process-model
       - codex/helpdesk-production-readiness-v1
   workflow_dispatch:

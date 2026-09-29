@@ -1,8 +1,45 @@
 # Requester Registration & Device Binding — отчёт проверки 29.09.2026
 
+## Актуальный выпуск и публикация main — 29.09.2026
+
+First Wave и оба дефекта проверки заявок вошли в `main` обоих репозиториев. Helpdesk `main` создана на истории прежней `codex/helpdesk-process-model` и установлена GitHub default branch; PR38 merged. Endpoint `main` fast-forward до `b0ccfe3c16f8ce5319b1203c72df4e432fa5e0de`, PR37/38 merged, включая expiry recovery. Переписывания истории нет. Следующие документационные/CI-trigger изменения не меняют принятые runtime bytes.
+
+| Проверка | Актуальный результат |
+|---|---|
+| Helpdesk production | `550f3b120a5365f146a0629b5ff2a2ae37ab0199`, schema146 |
+| Endpoint production и main | `b0ccfe3c16f8ce5319b1203c72df4e432fa5e0de`, schema0036 |
+| Helpdesk exact-SHA full CI | [36536284442](https://github.com/BorisDruzak/helpdesk/actions/runs/36536284442), все18 layers success; PR36536288022 success |
+| Endpoint exact-SHA full CI | [36521813006](https://github.com/BorisDruzak/endpoint_platform/actions/runs/36521813006), 1513 passed/8 skipped |
+| Helpdesk installed web digest | `5964f57419e767a9d685e5e3309e47c4f4097cf5172c9f12b6f6ad1dadcd0ba5`, совпал с CI bundle |
+| Local follow-up | backend91+cutover9, frontend495/90files, affected108, browser2, build/workspace/domain guards/diffcheck passed |
+| Cross-repository | real pinned provider61acfde/Gateway WSS contract2 passed; lock/OpenAPI bytes сохранены |
+
+Requester queries не получали внешнюю invalidation. `de1344d5bd2551a6c2f82cbd889f509fc4954e09` (`fix(requester): refresh externally changed tickets and messages`) добавил polling10s только в видимой вкладке и focus/reconnect для bootstrap/list/detail/pending-consents. Profile/forms/device queries и scoped own-action invalidation сохранены.
+
+Support использовал retired Helpdesk connection map и stale Device cache. `550f3b120a5365f146a0629b5ff2a2ae37ab0199` (`fix(support): read authoritative Endpoint device presence`) читает bounded typed projection опубликованного GET /api/v1/devices/{id}/context, проверяет exact identity. Provider failure/malformed/mismatch даёт unknown без stale fallback/ложного offline. Version в опубликованном Context API отсутствует: «—», OS-as-version fallback удалён. Profiles/snapshots и credentials не попадают в browser. TLS/auth/redirect/size/timeout checks сохранены; legacy без Endpoint reference остаётся прежним. Нет новой миграции, зависимости, provider OpenAPI/code или агентского пакета.
+
+Production credential давал403 из-за отсутствия `context.read`. Audited rotation сохранила прежние scopes/expiry, добавила context.read. После successful browser acceptance старый credential отозван, новый active; повторный adapter probe проходит. Root-protected backups сохранены. Rollback к прежнему коду должен сохранить текущий scoped credential: первоначальный backup credential уже отозван. Секреты/коды/пароли в Git не включены.
+
+### Свежая staging acceptance
+
+На Windows VM120 с canary3.2.78 presence.vm.260929.4395f9 прошёл native possession/регистрацию/привязку устройства50c1641c-d422-45be-93aa-68553f5482e8. В этой новой приёмке T-000035 прошла создание, приём оператором, chat/wait/reply/resume, реальную диагностику13f6ef68-5d52-5628-888a-649a654fffac succeeded, resolution без requester reload и closed; SLA paused/resumed проверены. При реальной остановке Endpoint API+worker support показал unknown/no timestamp/no version, no-device T-000036 создана и принята, chat работает, оба references NULL. Эти номера не смешиваются с историческими T-000035/36 ниже.
+
+Fresh exact550 backup/restore drill passed, backupSHA639c0e2977ecbfb3611491a4bee70f7a33b8a7abe1311367925f44dcf95d859a; production preflight/current-risk reviews passed. Canonical immutable deploy использовал accepted CI bundle без bypass.
+
+Staging DB/config/release links/release-commit metadata restored: Helpdesk bd3090bd/schema145, Endpoint abdd5c7/schema0035, три службы inactive. VM120 restored3.2.75, original protected credential/identity/CA hashes совпадают, staging origin отсутствует, task removed, Agent/Updater Stopped. Финальное состояние проверено повторно.
+
+### Свежая production lifecycle acceptance
+
+Тот же зарегистрированный пользователь `binding.production.260929.99ecb0`, primary локальный ADMIN-2 (не VM), Endpoint c450fc70-63e6-4c2b-baf6-7de79820d63f, создал **T-000005** /21a590e3-3d6c-4288-b9e4-08b1ee265ed4 через UI. Оператор увидел authoritative online/current timestamp и принял заявку. Requester получил внешнее сообщение, waiting status и resolution без reload/своей mutation; неизменный document marker проверен. После ответа requester оператор возобновил работу. Реальная диагностика локального Windows29ec951e-6202-5d02-b00d-06eb7b15736e:202→succeeded. Requester подтвердил closed, rating5/problem_resolved. DB подтверждает closed/timestamps/SLA paused/resumed/latest feedback. Strict TLS, page errors0/HTTP errors0; screenshots визуально просмотрены. Наблюдение12333ms включает время harness и не является точным delivery latency.
+
+Временный binding.operator.260929.f62aea деактивирован, только его queue1 membership удалён с audit; requester/binding/TEST ONLY история сохранены. Production API/control active/running, NRestarts0, один server/worker/Nginx backend, HA/LB выключены. Endpoint runtime b0 сохранён; локальный Agent3.2.78 в support follow-up не переустанавливался. HTTPS login200 с certificate/hostname checks через Python SSL; Chromium также passed. Windows curl отдельно не выполнил internal-CA revocation check, это не засчитано как successful curl check.
+
+Исторические First Wave проверки ниже относятся к прежнему ecb-выпуску. Git source/CI/server runtime/Windows package revisions разделены намеренно. ALT live binding и публичная подпись staging installer исключены; organization dictionaries требуют настройки администратором, TEST ONLY fixtures их не заменяют.
+
+
 Регистрация нового тестового пользователя и привязка локального ADMIN-2 проверены в production. Пользователь подтвердил код и кнопки tray 3.2.78; последний ручной gate First Wave закрыт. Предшествующая Windows VM/staging приёмка и восстановление приведены ниже как исторические результаты соответствующих ревизий.
 
-## Production rollout и проверка 29.09.2026
+## Исторический First Wave production rollout 29.09.2026
 
 | Объект | Подтверждённое значение |
 |---|---|
