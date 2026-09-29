@@ -5,8 +5,8 @@ Keep this root contract short. Put detailed procedures in `.agents/skills/*/SKIL
 ## Workspace and boundaries
 
 - Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
-- The local `endpoint_platform` workspace is `C:\Users\admin-2\Documents\endpoint`; use it only to inspect and analyze endpoint code. Do not modify files there.
-- Helpdesk production target is `osn_admin@192.168.100.19`, colocated with Endpoint Platform but deployed as an independent service. Its canonical runtime paths are `/opt/helpdesk/current`, `/etc/helpdesk`, and `/var/lib/helpdesk`; do not patch a deployed release manually.
+- The local workspace `endpoint_platform` is located at `C:\Users\admin-2\Documents\endpoint`; use it only for checking and analyzing the endpoint code and making changes.
+- Helpdesk production target is `osn_admin@192.168.100.19`, colocated with Endpoint Platform but deployed as an independent service. Its canonical runtime paths are `/opt/helpdesk/current`, `/etc/helpdesk`, and `/var/lib/helpdesk`.
 - Deploy Helpdesk through its reviewed release procedure and separate systemd, PostgreSQL, Unix-user, and Nginx resources. Never merge it into the Endpoint Platform repository, database, service account, or runtime directories.
 - Do not make changes to the code without explicit instructions.
 - Code and documentation share the local working copy as their canon.
