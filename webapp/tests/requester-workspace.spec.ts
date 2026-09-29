@@ -267,6 +267,27 @@ test.beforeEach(async ({ page }) => {
   await installRequesterMocks(page);
 });
 
+test("requester receives external operator message and status without reload", async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+  let waiting = false;
+  const currentTicket = () => ({ ticket_id: ticketId, ticket_code: ticketCode, title: "Проверка обновления заявки",
+    status: waiting ? "waiting_on_user" : "in_progress", requester_status_label: waiting ? "Нужен ваш ответ" : "В работе",
+    actions: { can_send_message: waiting, can_confirm_solution: false, can_reopen: false, can_rate_solution: false } });
+  await page.route("**/api/web/requester/tickets", route => fulfillJson(route, { status: "success", data: { tickets: [currentTicket()] } }));
+  await page.route(`**/api/web/requester/tickets/${ticketCode}`, route => fulfillJson(route, { status: "success", data: {
+    ticket: currentTicket(), events: [], messages: waiting ? [{ message_id: "new-message", from_role: "support", text: "Оператор ждёт подтверждение", created_at: "2026-09-29T06:00:00Z" }] : [],
+  } }));
+  await page.goto(`/app/requester/tickets/${ticketCode}`);
+  await expect(page.getByRole("heading", { name: "Проверка обновления заявки" })).toBeVisible();
+  waiting = true; // Another actor changed server data; no local invalidation.
+  await expect(page.getByText("Оператор ждёт подтверждение", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByLabel("Ответ заявителя")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("requester-external-update.png"), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
 test("requester split routes render without legacy workspace leakage", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
 

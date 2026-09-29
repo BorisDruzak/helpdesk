@@ -27,6 +27,13 @@ import { requesterTicketNextActionLabel } from "./labels";
 import { formatHumanIdentifier, formatRussianDateTime, formatStatusLabel } from "../../components/ui-page";
 
 const REQUESTER_QUERY_STALE_TIME_MS = 30_000;
+// External operator actions do not invalidate this browser's query cache.
+const REQUESTER_LIVE_QUERY_OPTIONS = {
+  refetchInterval: 10_000,
+  refetchIntervalInBackground: false,
+  refetchOnWindowFocus: "always" as const,
+  refetchOnReconnect: "always" as const,
+};
 
 type EnabledQueryOptions = {
   enabled?: boolean;
@@ -248,6 +255,7 @@ export function useRequesterBootstrapQuery() {
     queryKey: requesterQueryKeys.bootstrap(),
     queryFn: fetchRequesterBootstrap,
     staleTime: REQUESTER_QUERY_STALE_TIME_MS,
+    ...REQUESTER_LIVE_QUERY_OPTIONS,
   });
 }
 
@@ -256,6 +264,7 @@ export function useRequesterTicketsQuery() {
     queryKey: requesterQueryKeys.ticketList(),
     queryFn: fetchRequesterTickets,
     staleTime: REQUESTER_QUERY_STALE_TIME_MS,
+    ...REQUESTER_LIVE_QUERY_OPTIONS,
   });
 }
 
@@ -265,6 +274,7 @@ export function useRequesterConsentsQuery(statuses: string[] = ["pending"]) {
     queryKey: requesterQueryKeys.consents(normalizedStatuses),
     queryFn: () => fetchRequesterConsents(normalizedStatuses),
     staleTime: REQUESTER_QUERY_STALE_TIME_MS,
+    ...REQUESTER_LIVE_QUERY_OPTIONS,
   });
 }
 
@@ -318,5 +328,6 @@ export function useRequesterTicketDetailQuery(ticketId: string | null | undefine
     queryFn: () => fetchRequesterTicket(ticketId ?? ""),
     enabled: Boolean(ticketId) && (options.enabled ?? true),
     staleTime: REQUESTER_QUERY_STALE_TIME_MS,
+    ...REQUESTER_LIVE_QUERY_OPTIONS,
   });
 }
