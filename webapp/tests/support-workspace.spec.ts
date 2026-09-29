@@ -11,6 +11,41 @@ async function loginSupport(page: Page) {
   await page.getByRole("button", { name: "Войти" }).click();
 }
 
+test("operator shows Endpoint presence and preserves unknown on provider outage", async ({ page }, testInfo) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
+  await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok", unread_count: 0 }) }));
+  let online = true;
+  await page.route("**/api/web/support/tickets/ticket-1/workspace*", async route => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.detail.snapshot.device.online = online;
+    payload.data.detail.snapshot.device.connection_state = online ? "online" : "unknown";
+    payload.data.detail.snapshot.device.agent_version = null;
+    payload.data.detail.snapshot.device.last_seen_at = null;
+    payload.data.inventory_context = { device_id: payload.data.detail.snapshot.device.device_id,
+      hostname: payload.data.detail.snapshot.device.hostname,
+      agent: { connection_state: online ? "online" : "unknown", last_seen_at: null, version: null },
+      signals: { agent_offline: false } };
+    await route.fulfill({ response, json: payload });
+  });
+  await loginSupport(page);
+  await page.goto("/app/tickets/ticket-1");
+  const panel = page.getByTestId("ticket-device-agent-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("online", { exact: true }).first()).toBeVisible();
+  await expect(panel.getByText("Версия", { exact: true }).locator("+ dd")).toHaveText("—");
+  await panel.screenshot({ path: testInfo.outputPath("operator-endpoint-online-card.png") });
+  await page.screenshot({ path: testInfo.outputPath("operator-endpoint-online.png"), fullPage: true });
+  online = false;
+  await page.reload();
+  await expect(panel.getByText("unknown", { exact: true }).first()).toBeVisible();
+  await expect(panel.getByText("Агент offline", { exact: true })).toHaveCount(0);
+  await panel.screenshot({ path: testInfo.outputPath("operator-endpoint-unknown-card.png") });
+  await page.screenshot({ path: testInfo.outputPath("operator-endpoint-unknown.png"), fullPage: true });
+  expect(pageErrors).toEqual([]);
+});
+
 test("operator sees unavailable reads instead of an empty healthy workspace", async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];

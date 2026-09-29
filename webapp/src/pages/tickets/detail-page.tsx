@@ -3162,7 +3162,7 @@ export function TicketDetailPage() {
                 <p className="mt-1 text-slate-500">{detail?.snapshot.device.os ?? "ОС не определена"}</p>
                 <p className="mt-2 text-slate-500">
                   Агент: {detail?.snapshot.device.agent_version ?? "нет данных"} •{" "}
-                  {detail?.snapshot.device.online ? "онлайн" : "офлайн"}
+                  {detail?.snapshot.device.connection_state === "unknown" ? "состояние неизвестно" : detail?.snapshot.device.online ? "онлайн" : "офлайн"}
                 </p>
               </div>
 
@@ -3182,7 +3182,7 @@ export function TicketDetailPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Агент</span>
                   <span className="font-medium text-slate-900">
-                    {describePresence(detail?.snapshot.presence.agent_online ?? false)}
+                    {detail?.snapshot.device.connection_state === "unknown" ? "Состояние неизвестно" : describePresence(detail?.snapshot.presence.agent_online ?? false)}
                   </span>
                 </div>
               </div>

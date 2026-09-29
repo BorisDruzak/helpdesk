@@ -29,6 +29,23 @@ For an Endpoint-backed diagnostic, Helpdesk must not use the legacy inventory
 boundary remains the authority for readiness, authorization, and execution;
 legacy tools may continue to use the legacy device state.
 
+## Support device presence and requester refresh
+
+For a ticket with `endpoint_device_ref`, support reads current presence through
+`EndpointPort.read_device_presence`, backed by the published
+`GET /api/v1/devices/{device_id}/context` contract (`context.read`). The exact
+device reference must match. Connection state and last-seen time come from
+Endpoint, never from Helpdesk's retired connection map or local agent cache.
+Provider errors produce `unknown`, without an offline signal or a fallback
+version/timestamp. The published presence contract does not supply agent version.
+This read never collects context or dispatches an agent operation. Unlike the
+Operations API, the Context API does not require a correlation response header.
+
+Requester bootstrap, ticket list/detail and pending-consent queries refresh
+every 10 seconds in a visible tab and immediately on focus/reconnect. Hidden
+tabs do not poll. Own actions continue to invalidate the same scoped query keys;
+background reads do not replace form drafts or require page reloads.
+
 ## Required change checks
 
 - A Helpdesk diagnostic change must preserve the Endpoint HTTP contract lock

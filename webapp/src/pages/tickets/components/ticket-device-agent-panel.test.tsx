@@ -70,6 +70,24 @@ function renderPanel(context: SupportTicketInventoryContext | null = inventoryCo
 }
 
 describe("TicketDeviceAgentPanel", () => {
+  it("does not substitute the operating system for a missing agent version", () => {
+    renderPanel({ ...inventoryContext, agent: { ...inventoryContext.agent, version: null } });
+    expect(screen.getByText("Версия").nextElementSibling).toHaveTextContent("—");
+    expect(screen.getByText("Версия").nextElementSibling).not.toHaveTextContent("Windows 11");
+  });
+
+  it("keeps unknown Endpoint presence when inventory context is absent", () => {
+    render(<MemoryRouter><TicketDeviceAgentPanel deviceContext={{ ...deviceContext, online: false, onlineLabel: "Неизвестно", connectionState: "unknown" }} inventoryContext={null} /></MemoryRouter>);
+    expect(screen.getAllByText("unknown").length).toBeGreaterThan(0);
+    expect(screen.queryByText("offline")).not.toBeInTheDocument();
+  });
+
+  it("preserves authoritative unknown state instead of falling back to local online", () => {
+    renderPanel({ ...inventoryContext, agent: { ...inventoryContext.agent, connection_state: "unknown" } });
+    expect(screen.getAllByText("unknown").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Агент offline")).not.toBeInTheDocument();
+  });
+
   it("renders compact device, agent, inventory and binding context", () => {
     renderPanel();
 

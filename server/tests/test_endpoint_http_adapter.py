@@ -109,6 +109,65 @@ async def test_adapter_reads_exact_device_projection_without_putting_ref_in_quer
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('online', [True, False])
+async def test_adapter_reads_presence_from_published_context_contract(online) -> None:
+    async def context(request):
+        assert not request.query
+        # This published context route does not require a correlation echo.
+        return web.json_response({'data': {'device': {'id': DEVICE_ID, 'device_identifier': 'ADMIN-2',
+            'display_name': 'ADMIN-2', 'retired_at': None, 'last_seen_at': datetime.now(timezone.utc).isoformat(),
+            'online': online}, 'profiles': [], 'snapshots': []}})
+    app = web.Application()
+    app.router.add_get('/api/v1/devices/{device_id}/context', context)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_device_presence(EndpointDeviceRef(external_id=DEVICE_ID))
+        assert result.device.external_id == DEVICE_ID
+        assert result.online is online
+        assert result.display_name == 'ADMIN-2'
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('invalid', ['reference', 'online', 'timestamp', 'profiles', 'oversize'])
+async def test_presence_rejects_invalid_or_unbounded_provider_data(invalid):
+    async def context(_request):
+        device = {'id': DEVICE_ID, 'device_identifier': 'ADMIN-2', 'display_name': 'ADMIN-2',
+                  'retired_at': None, 'last_seen_at': datetime.now(timezone.utc).isoformat(), 'online': True}
+        payload = {'device': device, 'profiles': [], 'snapshots': []}
+        if invalid == 'reference': device['id'] = OPERATION_ID
+        if invalid == 'online': device['online'] = 'true'
+        if invalid == 'timestamp': device['last_seen_at'] = '2026-09-29T10:00:00'
+        if invalid == 'profiles': payload['profiles'] = [{}] * 6
+        if invalid == 'oversize': payload['snapshots'] = [{'sections': {'ignored': 'x' * 1_048_576}}]
+        return web.json_response({'data': payload})
+    app = web.Application()
+    app.router.add_get('/api/v1/devices/{device_id}/context', context)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        assert isinstance(await _adapter(server).read_device_presence(EndpointDeviceRef(external_id=DEVICE_ID)), EndpointInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_presence_scope_denial_without_correlation_echo_is_forbidden():
+    async def context(_request):
+        return web.json_response({'detail': 'Service scope is insufficient'}, status=403)
+    app = web.Application()
+    app.router.add_get('/api/v1/devices/{device_id}/context', context)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        assert isinstance(await _adapter(server).read_device_presence(EndpointDeviceRef(external_id=DEVICE_ID)), EndpointForbidden)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("include_other_capability", [False, True])
 @pytest.mark.parametrize("invalid_field", [None, "capability", "risk", "parameter_schema_version", "consent_required", "transport", "unexpected"])
 async def test_adapter_reads_exact_capabilities_projection(include_other_capability: bool, invalid_field: str | None) -> None:

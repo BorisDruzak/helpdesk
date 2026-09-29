@@ -489,6 +489,7 @@ export type SupportTicketDetailPayload = {
       agent_version: string | null;
       last_seen_at: string | null;
       online: boolean;
+      connection_state?: "online" | "offline" | "unknown" | null;
     };
     registry?: {
       person_id: string | null;

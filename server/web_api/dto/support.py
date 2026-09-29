@@ -645,6 +645,7 @@ class SupportTicketDeviceSnapshot(BaseModel):
     agent_version: str | None = None
     last_seen_at: str | None = None
     online: bool = False
+    connection_state: Literal["online", "offline", "unknown"] | None = None
 
 
 class SupportTicketRegistrySnapshot(BaseModel):

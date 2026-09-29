@@ -192,6 +192,7 @@ export type SupportWorkspaceContext = {
     hostname: string;
     os: string;
     online: boolean;
+    connectionState?: "online" | "offline" | "unknown" | null;
     onlineLabel: string;
     lastSeenLabel: string;
   };

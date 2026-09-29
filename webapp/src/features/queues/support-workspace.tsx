@@ -846,7 +846,7 @@ function SupportDetailPanel({
               <div className="support-snapshot-grid support-snapshot-grid--compact">
                 <article className="support-snapshot-card">
                   <span>Presence</span>
-                  <strong>{snapshot?.presence.agent_online ? "Агент онлайн" : "Агент офлайн"}</strong>
+                  <strong>{snapshot?.device.connection_state === "unknown" ? "Состояние агента неизвестно" : snapshot?.presence.agent_online ? "Агент онлайн" : "Агент офлайн"}</strong>
                   <p>
                     Клиент: {describePresence(Boolean(snapshot?.presence.requester_online))}, поддержка:{" "}
                     {describePresence(Boolean(snapshot?.presence.support_online))}

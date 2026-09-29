@@ -24,6 +24,15 @@ def _detail(*, online: bool = True, operation_status: str = "completed"):
 
 
 @pytest.mark.no_db
+def test_unknown_endpoint_presence_is_not_reported_as_offline():
+    detail = _detail(online=False)
+    detail.snapshot.device.connection_state = 'unknown'
+    context = _compose_support_inventory_context(device_id='device-1', detail=detail, latest=None, binding={}, policy=None, last_refresh_run=None)
+    assert context.agent.connection_state == 'unknown'
+    assert not context.signals.agent_offline
+
+
+@pytest.mark.no_db
 def test_support_inventory_context_marks_fresh_inventory_and_binding() -> None:
     collected_at = datetime.now(timezone.utc) - timedelta(minutes=5)
     context = _compose_support_inventory_context(

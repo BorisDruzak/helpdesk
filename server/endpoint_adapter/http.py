@@ -17,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 from .wire import (
     DeviceCapabilitiesWireV1,
     DeviceSummaryWireV1,
+    DevicePresenceContextWireV1,
     OperationCreateWireV1,
     OperationResponseWireV1,
     DeviceBindingVerifiedWireV1,
@@ -31,6 +32,7 @@ try:
         EndpointConflict,
         EndpointDeviceOutcome,
         EndpointDeviceProjection,
+        EndpointDevicePresenceProjection,
         EndpointDeviceRef,
         EndpointForbidden,
         EndpointInvalidProjection,
@@ -56,6 +58,7 @@ except ModuleNotFoundError as exc:
         EndpointConflict,
         EndpointDeviceOutcome,
         EndpointDeviceProjection,
+        EndpointDevicePresenceProjection,
         EndpointDeviceRef,
         EndpointForbidden,
         EndpointInvalidProjection,
@@ -177,6 +180,7 @@ class ExternalEndpointHttpAdapter(EndpointPort):
         body: Mapping[str, object] | None = None,
         extra_headers: Mapping[str, str] | None = None,
         binding_contract: bool = False,
+        context_contract: bool = False,
     ) -> Mapping[str, object] | BaseModel:
         if not self.configured:
             return EndpointUnavailable(code="endpoint_external_unconfigured")
@@ -205,7 +209,7 @@ class ExternalEndpointHttpAdapter(EndpointPort):
                     allow_redirects=False,
                     ssl=ssl_context,
                 ) as response:
-                    if not binding_contract and response.headers.get("X-Correlation-ID") != correlation_id:
+                    if not binding_contract and not context_contract and response.headers.get("X-Correlation-ID") != correlation_id:
                         return EndpointInvalidProjection()
                     if binding_contract and response.status == 400:
                         return EndpointNotFound(code="endpoint_binding_unavailable")
@@ -218,11 +222,11 @@ class ExternalEndpointHttpAdapter(EndpointPort):
                     if response.status == 429 or response.status >= 500 or response.status not in expected_statuses:
                         return _TRANSPORT_UNAVAILABLE
                     try:
-                        if binding_contract:
+                        if binding_contract or context_contract:
                             raw = bytearray()
                             async for chunk in response.content.iter_chunked(2048):
                                 raw.extend(chunk)
-                                if len(raw) > 2048:
+                                if len(raw) > (1_048_576 if context_contract else 2048):
                                     return EndpointInvalidProjection()
                             envelope = json.loads(raw)
                         else:
@@ -293,6 +297,26 @@ class ExternalEndpointHttpAdapter(EndpointPort):
         if result.device != device:
             return EndpointInvalidProjection()
         return result  # type: ignore[return-value]
+
+    async def read_device_presence(self, device: EndpointDeviceRef):
+        payload = await self._request(
+            "GET", f"/api/v1/devices/{_path_ref(device.external_id)}/context",
+            expected_statuses=frozenset({200}), context_contract=True,
+        )
+        if not isinstance(payload, Mapping):
+            return payload
+        try:
+            wire = DevicePresenceContextWireV1.model_validate(payload)
+            result = EndpointDevicePresenceProjection(
+                device=EndpointDeviceRef(external_id=str(wire.device.id)),
+                display_name=wire.device.display_name or wire.device.device_identifier,
+                retired=wire.device.retired_at is not None,
+                online=wire.device.online,
+                last_seen_at=wire.device.last_seen_at,
+            )
+        except ValidationError:
+            return EndpointInvalidProjection()
+        return result if result.device == device else EndpointInvalidProjection()
 
     async def list_capabilities(self, device: EndpointDeviceRef) -> EndpointCapabilitiesOutcome:
         payload = await self._request(

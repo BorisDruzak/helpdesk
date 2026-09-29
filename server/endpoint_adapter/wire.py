@@ -28,6 +28,22 @@ class DeviceSummaryWireV1(_Wire):
     last_seen_at: datetime | None
 
 
+class ContextDeviceWireV1(_Wire):
+    id: UUID
+    device_identifier: str = Field(max_length=256)
+    display_name: str = Field(max_length=256)
+    retired_at: datetime | None
+    last_seen_at: datetime | None
+    online: bool = Field(strict=True)
+
+
+class DevicePresenceContextWireV1(_Wire):
+    device: ContextDeviceWireV1
+    # Context sections are not projected into the Helpdesk presence DTO.
+    profiles: list[dict] = Field(max_length=5)
+    snapshots: list[dict] = Field(max_length=5)
+
+
 class CapabilityWireV1(_Wire):
     capability: Literal["context.diagnostic.collect"]
     available: bool

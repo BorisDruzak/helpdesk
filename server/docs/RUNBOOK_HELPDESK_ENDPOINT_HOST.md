@@ -1,5 +1,17 @@
 # Helpdesk on the Endpoint host
 
+## Device presence read permission
+
+Support ticket snapshots read the published Endpoint Context API for current
+agent presence. The Helpdesk service credential requires `context.read` in
+addition to its existing approved scopes. This read does not create collections
+or operations. Preserve existing scopes and credential isolation; never bypass
+the provider's scope check. A missing scope returns 403 and is displayed as
+unknown presence, not offline. The pre-rollout probe on 2026-09-29 returned 403
+for the existing production credential; resolve this permission before live
+online/offline acceptance. No database migration or Endpoint code change is
+required by the Helpdesk presence projection.
+
 ## Scope
 
 Helpdesk is deployed to `osn_admin@192.168.100.19` beside Endpoint Platform,

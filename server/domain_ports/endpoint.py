@@ -128,6 +128,17 @@ class EndpointDeviceProjection(_ImmutableEndpointDTO):
     source: Literal["external_authoritative"] = "external_authoritative"
 
 
+class EndpointDevicePresenceProjection(_ImmutableEndpointDTO):
+    """Current presence from the provider; no local transport inference."""
+
+    device: EndpointDeviceRef
+    display_name: EndpointDisplayName
+    retired: bool
+    online: bool
+    last_seen_at: AwareDatetime | None
+    source: Literal["external_authoritative"] = "external_authoritative"
+
+
 class EndpointCapabilityProjection(_ImmutableEndpointDTO):
     capability: Literal["context.diagnostic.collect"] = "context.diagnostic.collect"
     available: bool = True
@@ -251,6 +262,10 @@ class EndpointPort(Protocol):
     async def availability(self) -> EndpointAvailabilityOutcome: ...
 
     async def read_device(self, device: EndpointDeviceRef) -> EndpointDeviceOutcome: ...
+
+    async def read_device_presence(
+        self, device: EndpointDeviceRef
+    ) -> EndpointDevicePresenceProjection | EndpointFailureOutcome: ...
 
     async def list_capabilities(
         self,

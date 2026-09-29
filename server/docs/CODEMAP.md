@@ -165,7 +165,10 @@
   ticket access and stores reconciled evidence.
 - `server/endpoint/` contains the HTTP adapter and versioned contract types.
 - `server/endpoint_adapter/wire.py` validates the published multi-capability
-  device response. The HTTP adapter projects only `context.diagnostic.collect`
+  response and the bounded Context API device presence projection. Support
+  snapshots consume `EndpointPort.read_device_presence` for Endpoint-backed
+  tickets; unknown provider state never falls back to Helpdesk transport presence.
+  The HTTP adapter projects only `context.diagnostic.collect`
   into Helpdesk; its read-only risk, consent and parameter schema remain exact.
   Other published descriptors never authorize additional Helpdesk operations.
 - `server/app/repos/` persists ticket, operation and Endpoint facade state.

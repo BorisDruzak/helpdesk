@@ -1,3 +1,21 @@
+# Follow-up: 2026-09-29 requester refresh and support device presence
+
+The production T-000004 lifecycle revealed two read-side defects: requester
+messages/status did not refresh after operator actions, and support used retired
+Helpdesk transport presence for an Endpoint-bound computer.
+
+The working-copy fixes add visible-tab refresh and focus/reconnect refresh to
+the requester queries, and a bounded read-only Endpoint presence port to support
+snapshots. Provider failures remain unknown; legacy timestamps/version do not
+substitute for authoritative presence. Regression tests cover current online and
+offline state, mismatched identity, retired devices, provider timeout/403, invalid
+or oversized responses, and missing inventory context. No schema change.
+
+Local backend/frontend/build and real-browser fixture checks are recorded in
+`temp/ticket-read-defects-fix-report.md`. Production is unchanged. Its current
+Helpdesk credential returns 403 for the required `context.read` contract, so
+permission provisioning and a fresh reviewed staging/release gate remain open.
+
 # Completed: 2026-09-29 Requester Registration & Device Binding — First Wave
 
 ## Goal and scope

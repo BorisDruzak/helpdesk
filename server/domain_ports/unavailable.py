@@ -197,6 +197,10 @@ class UnavailableRegistryPort:
 
 
 class UnavailableEndpointPort:
+    async def read_device_presence(self, device: EndpointDeviceRef) -> EndpointUnavailable:
+        del device
+        return EndpointUnavailable()
+
     async def redeem_device_binding(self, code: str):
         return EndpointUnavailable()
 

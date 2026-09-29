@@ -51,6 +51,9 @@ function agentStateLabel(state: string | null | undefined, fallbackOnline?: bool
   if (state === "offline") {
     return "offline";
   }
+  if (state === "unknown") {
+    return "unknown";
+  }
   if (fallbackOnline === true) {
     return "online";
   }
@@ -92,7 +95,7 @@ function InfoRow({
 export function TicketDeviceAgentPanel({ deviceContext, inventoryContext }: TicketDeviceAgentPanelProps) {
   const deviceId = inventoryContext?.device_id ?? deviceContext?.id ?? null;
   const hostname = inventoryContext?.hostname ?? inventoryContext?.display_name ?? deviceContext?.hostname ?? "—";
-  const agentState = agentStateLabel(inventoryContext?.agent?.connection_state, deviceContext?.online);
+  const agentState = agentStateLabel(inventoryContext?.agent?.connection_state ?? deviceContext?.connectionState, deviceContext?.online);
   const warnings = signalBadges(inventoryContext);
   const inventory = inventoryContext?.inventory ?? null;
   const binding = inventoryContext?.binding ?? null;
@@ -131,7 +134,7 @@ export function TicketDeviceAgentPanel({ deviceContext, inventoryContext }: Tick
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Агент</p>
             <dl className="mt-2 grid gap-2">
               <InfoRow icon={Activity} label="Состояние" value={agentState} />
-              <InfoRow icon={Server} label="Версия" value={inventoryContext.agent?.version ?? deviceContext?.os} />
+              <InfoRow icon={Server} label="Версия" value={inventoryContext.agent?.version} />
               <InfoRow icon={RefreshCw} label="Обновления" value={inventoryContext.agent?.update_status} />
               <InfoRow icon={Monitor} label="Последний вход" value={formatDateTime(inventoryContext.agent?.last_seen_at ?? deviceContext?.lastSeenLabel)} />
             </dl>

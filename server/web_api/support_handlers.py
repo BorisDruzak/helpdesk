@@ -2980,12 +2980,50 @@ async def _build_support_registry_snapshot(
     )
 
 
+async def _build_support_device_snapshot(ticket, device, *, endpoint_port, legacy_online: bool = False) -> SupportTicketDeviceSnapshot:
+    from domain_ports.endpoint import EndpointDevicePresenceProjection, EndpointDeviceRef
+
+    endpoint_ref = getattr(ticket, "endpoint_device_ref", None)
+    if endpoint_ref is not None:
+        # Endpoint owns agent presence. Never substitute the retired Helpdesk
+        # transport's local connection map or cached agent metadata on failure.
+        snapshot = SupportTicketDeviceSnapshot(
+            device_id=getattr(ticket, "device_id", None),
+            hostname=getattr(device, "hostname", None),
+            connection_state="unknown",
+        )
+        try:
+            ref = EndpointDeviceRef(external_id=endpoint_ref)
+            outcome = await endpoint_port.read_device_presence(ref)
+        except Exception:
+            return snapshot
+        if not isinstance(outcome, EndpointDevicePresenceProjection) or outcome.device != ref:
+            return snapshot
+        online = outcome.online and not outcome.retired
+        return snapshot.model_copy(update={
+            "hostname": outcome.display_name,
+            "online": online,
+            "connection_state": "online" if online else "offline",
+            "last_seen_at": outcome.last_seen_at.isoformat() if outcome.last_seen_at else None,
+        })
+    return SupportTicketDeviceSnapshot(
+        device_id=getattr(ticket, "device_id", None),
+        hostname=getattr(device, "hostname", None),
+        os=getattr(device, "os", None),
+        agent_version=getattr(device, "agent_version", None),
+        last_seen_at=(device.last_seen_at.isoformat() if device is not None and device.last_seen_at else None),
+        online=legacy_online,
+        connection_state="online" if legacy_online else "offline",
+    )
+
+
 async def _build_support_snapshot(request: web.Request, session, ticket, auth_context) -> SupportTicketSnapshot:
     presence = SupportTicketPresence.model_validate(_ticket_presence_payload(request, ticket))
     notification_unread = await NotificationRepo(session).unread_count(auth_context.actor_id)
 
     device = None
-    registry_port = DomainPortContainer.from_config(registry_session=session).registry
+    ports = DomainPortContainer.from_config(registry_session=session)
+    registry_port = ports.registry
     registry_snapshot = await _build_support_registry_snapshot(
         ticket,
         registry_port=registry_port,
@@ -2993,14 +3031,11 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
     if getattr(ticket, "device_id", None):
         device = await DevicesRepo(session).get_by_device_id(ticket.device_id)
 
-    device_snapshot = SupportTicketDeviceSnapshot(
-        device_id=getattr(ticket, "device_id", None),
-        hostname=getattr(device, "hostname", None) if device is not None else None,
-        os=getattr(device, "os", None) if device is not None else None,
-        agent_version=getattr(device, "agent_version", None) if device is not None else None,
-        last_seen_at=(device.last_seen_at.isoformat() if device is not None and device.last_seen_at else None),
-        online=bool(presence.agent_online),
+    device_snapshot = await _build_support_device_snapshot(
+        ticket, device, endpoint_port=ports.endpoint,
+        legacy_online=bool(presence.agent_online),
     )
+    presence.agent_online = device_snapshot.online
 
     latest_operation_rows = await _recent_ticket_operations(session, ticket, limit=5)
     retry_source_ids = [
@@ -4669,7 +4704,10 @@ def _compose_support_inventory_context(
         or (operation.display_status or "").lower() in {"failed", "error"}
         for operation in detail.snapshot.latest_operations
     )
-    agent_offline = not bool(detail.snapshot.device.online)
+    connection_state = getattr(detail.snapshot.device, "connection_state", None)
+    if connection_state is None:
+        connection_state = "online" if detail.snapshot.device.online else "offline"
+    agent_offline = connection_state == "offline"
     failed_recent_refresh = str(getattr(last_refresh_run, "status", "") or "").lower() == "failed"
 
     return SupportTicketInventoryContext(
@@ -4677,7 +4715,7 @@ def _compose_support_inventory_context(
         hostname=detail.snapshot.device.hostname,
         display_name=detail.snapshot.device.hostname or device_id,
         agent=SupportTicketInventoryAgentContext(
-            connection_state="offline" if agent_offline else "online",
+            connection_state=connection_state,
             last_seen_at=detail.snapshot.device.last_seen_at,
             version=detail.snapshot.device.agent_version,
             update_status=None,

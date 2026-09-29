@@ -786,7 +786,8 @@ export function mapWorkspaceContext(
       hostname: device.hostname ?? registry?.asset_name ?? "Устройство не указано",
       os: device.os ?? "ОС не определена",
       online: device.online,
-      onlineLabel: device.online ? "Онлайн" : "Офлайн",
+      connectionState: device.connection_state,
+      onlineLabel: device.connection_state === "unknown" ? "Неизвестно" : device.online ? "Онлайн" : "Офлайн",
       lastSeenLabel: formatDateTime(device.last_seen_at),
     },
     classification: {
