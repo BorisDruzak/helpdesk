@@ -1,4 +1,4 @@
-# Active: 2026-09-28 Requester Registration & Device Binding — First Wave
+# Completed: 2026-09-29 Requester Registration & Device Binding — First Wave
 
 ## Goal and scope
 
@@ -9,7 +9,8 @@ flow. Execute the detailed plan in
 
 ## Constraints and decisions
 
-Staging only; Windows is the live target; ALT binding acceptance is excluded.
+Staging acceptance preceded the user-authorized production rollout on 2026-09-29.
+Windows is the live target; ALT binding acceptance is excluded.
 Keep Helpdesk and Endpoint deployments independent. Preserve the pre-existing
 local `AGENTS.md` edit. No legacy Agent pairing, browser-to-Endpoint credentials
 or anonymous UI-user/device binding. Endpoint owns proof; Registry owns the
@@ -17,25 +18,41 @@ business relationship. Do not publish readiness from skipped tests.
 
 ## Current state and verification
 
-Latest live acceptance (2026-09-29) is bound to committed Helpdesk
-`ecb68704edd750e6deac3a495fb90d5a8f44465a`: exact full CI 36473600061 and
-PR CI 36473604721 passed. The accepted bundle was deployed independently;
-its downloaded webapp content digest matched the CI bundle. Local and VM120
-real browsers passed registration/profile, native Endpoint IPC challenge,
-anonymous fragment/login return, primary binding and different-owner review
-without ownership transfer or foreign-device access. Bound T-000036 and
-T-000038 passed fresh native diagnostics and requester-confirmed closure;
-T-000036 also passed allowed reopen and rating. Explicit no-device T-000037
-retained null device/reference and no diagnostic tools. Admin source/conflict
-guidance and the replacement reason window were verified and cancelled.
-Staging databases, original schemas 0035/145, configurations and release links
-were restored; all three Linux services are inactive. VM120 is back on 3.2.75
-with original enrollment and validation services stopped. Local 3.2.78 remains
-installed as requested, with original enrollment/data and stopped services.
-Manual 3.2.78 tray display/copy/refresh/open confirmation remains pending;
-native IPC/browser success does not replace that visual check. Detailed
-redacted evidence is in `docs/REQUESTER_DEVICE_BINDING_FIRST_WAVE_ACCEPTANCE.md` and
-`temp/device-binding-checkpoint.json`. No production deployment occurred.
+The user confirmed local 3.2.78 tray code/display/copy/refresh/open on
+2026-09-29. The remaining manual First Wave gate is closed. User-authorized
+production rollout deployed independent Endpoint
+`b0ccfe3c16f8ce5319b1203c72df4e432fa5e0de` (full PostgreSQL CI
+36521813006: 1513 passed, 8 skipped) and Helpdesk
+`ecb68704edd750e6deac3a495fb90d5a8f44465a` (accepted exact full CI
+36473600061, schema 146, accepted webapp digest). Endpoint schema is
+0036_device_binding; the canonical Helpdesk provider/OpenAPI pin is unchanged.
+The local Windows package remains 3.2.78, with its original production enrollment.
+
+Production browser acceptance passed registration, login, profile, native IPC
+challenge, anonymous fragment/login return, authenticated redeem and immediate
+primary-device display for `binding.production.260929.99ecb0` / ADMIN-2.
+Registry read verification confirms role user, resolved RegistryPerson, one
+active primary_user relationship sourced from endpoint_possession_proof and
+exact Endpoint device `c450fc70-63e6-4c2b-baf6-7de79820d63f`.
+Page exceptions: zero; raw code/password were never persisted. Four unused
+attempt accounts were deactivated with the canonical audited user repository.
+Production organization dictionaries were empty: isolated TEST ONLY department
+and location were created through audited Registry operations for this fixture.
+Real departments/locations remain an administrator setup requirement.
+
+Fresh staging protected restore revalidated the accepted ecb/61acfde runtime,
+closed bound ticket/diagnostic records and a new no-device outage ticket.
+Staging was restored from its fresh 2026-09-29 baseline: schemas 0035/145,
+original environment bytes/release links, all three services inactive. VM120
+retains the previously restored 3.2.75/stopped baseline. Production services
+and the local agent remain running for their authorized normal operation.
+The agent retained one open authenticated session for over eleven minutes
+following the combined Endpoint rollout; no new internal_error disconnect.
+
+Canonical details: `docs/REQUESTER_DEVICE_BINDING_FIRST_WAVE_ACCEPTANCE.md`.
+The following staging checkpoint is historical: exact ecb local/VM registration,
+fixture conflict/admin review, no-device tickets, bound diagnostics, support
+lifecycle and requester-confirmed closure passed before production promotion.
 
 The following accepted-baseline checkpoint predates that live acceptance.
 
@@ -98,11 +115,13 @@ blocker after cached-person status and explicit no-device context were corrected
 
 ## Next steps and handoff
 
-Only the manual packaged 3.2.78 tray visual/interaction gate remains open for
-First Wave acceptance. Do not claim complete acceptance from native IPC alone.
-The plan and canonical acceptance report are documentation; implementation CI/live provenance
-remains the frozen ecb68704 commit. Preserve original backups and the user's
-AGENTS.md edit. Production deployment and ALT live acceptance remain excluded.
+First Wave implementation, Windows acceptance and authorized production rollout
+are complete. Preserve protected backups, the user's AGENTS.md edit and frozen
+runtime provenance. Populate real organization dictionaries before normal
+requester profile onboarding. TEST ONLY entries and the successful test account
+are explicitly synthetic; its local-device primary binding remains active for
+inspection. Draft PRs are published; deployment does not imply branch merge.
+ALT live acceptance remains intentionally excluded.
 
 The following candidate handoff is historical.
 

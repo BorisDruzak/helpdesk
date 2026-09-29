@@ -1,6 +1,45 @@
 # Requester Registration & Device Binding — отчёт проверки 29.09.2026
 
-Запрошенные регистрация тестового пользователя, обновление локального агента и тест в браузере выполнены. Полная приёмка First Wave пока открыта: пользователь ещё не подтвердил вручную отображение и кнопки tray установленной версии 3.2.78. Успешный native IPC не заменяет эту визуальную проверку.
+Регистрация нового тестового пользователя и привязка локального ADMIN-2 проверены в production. Пользователь подтвердил код и кнопки tray 3.2.78; последний ручной gate First Wave закрыт. Предшествующая Windows VM/staging приёмка и восстановление приведены ниже как исторические результаты соответствующих ревизий.
+
+## Production rollout и проверка 29.09.2026
+
+| Объект | Подтверждённое значение |
+|---|---|
+| Endpoint production SHA | `b0ccfe3c16f8ce5319b1203c72df4e432fa5e0de` |
+| Endpoint production migration | `0036_device_binding` |
+| Endpoint full exact-SHA CI | [36521813006](https://github.com/BorisDruzak/endpoint_platform/actions/runs/36521813006): 1513 passed, 8 skipped |
+| Helpdesk production SHA | `ecb68704edd750e6deac3a495fb90d5a8f44465a` |
+| Helpdesk migration / accepted CI | `146` / [36473600061](https://github.com/BorisDruzak/helpdesk/actions/runs/36473600061), 18 слоёв |
+| Helpdesk provider pin | `61acfde9401a51fc7e3006733721ee1c2be12b4b` |
+| OpenAPI SHA256 | `e0161970a2f08dcc80fc333676319c2018065743d74f880da160404115b6cdec` |
+| Windows runtime / MSI | `0f5cc69fff8a603eb829189bf0ddfdccc26580aa` / `EndpointAgent-3.2.78-x64.msi` |
+| MSI SHA256 | `9d47348bfb3a61b92aa3f2e6188e36cc6da1636477525c25d0a5ae0761f755f2` |
+| Deployed webapp content digest | `0cf7a1d3d9042e662d98de8b61ed50add8249d51bfdf18a02a14ed74abfda4a7`, совпал с принятым CI bundle |
+| Self-registration | `WEB_SELF_REGISTRATION_ENABLED=true` |
+| Тестовый пользователь / role | `binding.production.260929.99ecb0` / `user` |
+| RegistryPerson | `470e1ab2-158b-4f5c-91b2-55c22b85e2f8` |
+| Endpoint / Registry device | `c450fc70-63e6-4c2b-baf6-7de79820d63f`, ADMIN-2 |
+| Связь | `primary_user`, `active`, `endpoint_possession_proof` |
+
+Оба независимых production сервиса обновлены immutable release-процедурами после protected backup и production preflight. Helpdesk использовал принятые exact-SHA CI bytes; offline wheelhouse сохранил установленные версии зависимостей. Scoped bridge credential выпущен для того же ServiceClient с добавлением только `device-binding.redeem`; предыдущий credential сохранён для rollback. Секреты не выгружались в workspace или браузер.
+
+Реальный Chrome прошёл login/password/repeat регистрацию 201, вход, профиль 200, получение challenge через штатный service-owned IPC установленного локального агента, anonymous fragment → login → возврат, redeem 200 и немедленное «Мои устройства». Fragment удалён, sessionStorage пуст, page errors 0, TLS проверялся. Терминальный Playwright helper применён для атомарной передачи native-кода только в памяти процесса без вывода секретного fragment в MCP trace; публичная страница регистрации отдельно проверена Playwright MCP. БД подтверждает точный Endpoint mapping и активную связь с RegistryPerson; новый код не генерировался Helpdesk. Снимок проверен визуально: компьютер виден как основной; карточка ещё показывает `Агент unknown` / «Активность не определена», версия и connected проверены отдельно в native status и Endpoint session.
+
+Production справочники подразделений и мест работы оказались пустыми. Для разрешённого теста созданы явно обозначенные `TEST ONLY` записи через `RegistryAdminOperationsService` с причиной и аудитом. Реальные подразделения/локации нужно заполнить администратору; тестовые записи не представляют организационную структуру. Успешный аккаунт и его primary binding оставлены для просмотра. Четыре вспомогательные учётные записи неудачных запусков деактивированы через `UiUsersRepo` с аудитом. Ошибки первых обёрток (неверное UTF-8 чтение, ранний выбор пустого справочника и отсутствующий необязательный origin-файл) не были отказами принятого приложения и исправлены только во временных тестовых helpers.
+
+Причина разрывов Endpoint: просроченные обычные context collections возвращались в delivery с deadline раньше нового created_at, вызывали validation error и `internal_error` закрытие WSS. Исправление завершает просроченную обычную работу до delivery/refresh и сохраняет lifecycle операций. После combined rollout одна открытая native session наблюдалась с 04:41:16 до 04:52:49 UTC (свежий heartbeat, новые context collections completed); повторных internal_error за этот период нет. Этот интервал не является обещанием бессрочной стабильности.
+
+Protected production backups:
+
+- Endpoint: `/var/backups/endpoint-platform/requester-binding-20260929-b0ccfe3c16f8`, DB SHA256 `0a736b297aa0636d758a82dcdbf5680a13e772ac75343c1a1029d85d2c225eb7`.
+- Helpdesk: `/var/backups/helpdesk/requester-binding-20260929`, DB SHA256 `80634b4f75725a17573ae4a6cdb6a67c8e10110b620a700c82d644fa220d1997`.
+
+Fresh staging restore revalidated 196 pinned provider runtime files, schema 146/0036, accepted bundle, closed T-000036/T-000038 and succeeded native diagnostic. New outage fixture T-000039 passed registration/profile/create/routing/SLA/requester reply with both device fields NULL while Endpoint was stopped. This fresh outage check did not repeat every closed-ticket step; prior exact-ecb full lifecycle records were checked separately. Protected accepted dumps were retained, then original 2026-09-29 baseline restored: source dump hashes Endpoint `38b3ef43d47bdb76821b8e5bc6f0c4ecb60ea01c702d17dd690139da28251195`, Helpdesk `c6916ff5ff5d7be76735f28ffb81ae0338af9bdd97d2f9903b0dca38288b2e34`; original config bytes/release links and schemas 0035/145 verified, all three staging services inactive, restore exit 0. Production API/control/worker and local agent remain active; no VM enrollment change in this rollout.
+
+Redacted local evidence: `temp/device-binding-production-native-browser-result.json`, `temp/device-binding-production-native-browser.png`, `temp/requester-binding-production-runtime.json`, `temp/requester-binding-stage-restore-final.log`. Runtime SHA remains frozen; documentation commits do not change deployed application bytes. Draft PRs are published, not merged. Unsigned staging Setup is not a publicly signed release. ALT binding acceptance remains intentionally excluded.
+
+## Historical staging acceptance (before production authorization)
 
 ## Проверенный код и артефакты
 
