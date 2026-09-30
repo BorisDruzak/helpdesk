@@ -148,6 +148,10 @@
 - `server/web_api/requester_handlers.py::handle_web_requester_device_link`
   resolves a complete authenticated RegistryPerson before typed Endpoint
   redemption through `server/endpoint_adapter/http.py` and `wire.py`.
+  Before the adapter call, `auth.rate_limit` limits the verified actor + trusted
+  client IP pair to 5 attempts / 600 seconds (`DEVICE_BINDING_THROTTLED`, 429,
+  no-store). A different IP has a separate bucket; untrusted forwarded headers
+  cannot change the client IP. This uses the existing single-process limiter.
 - `server/registry/endpoint_possession_service.py` owns locked policy checks,
   idempotent primary activation and conflict claims. Migration `146` adds
   `registry_endpoint_device_mappings`; no mapping is inferred from legacy IDs,

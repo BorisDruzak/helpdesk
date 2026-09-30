@@ -16,6 +16,7 @@ from app.repos import ArtifactsRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import ensure_server_request_id, require_auth
+from auth.rate_limit import check_rate_limit, client_ip
 from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
 from domain_ports import (
     ActorRef,
@@ -890,6 +891,10 @@ async def handle_web_requester_device_link(request: web.Request) -> web.Response
             response = _profile_incomplete_error(completion)
             response.headers["Cache-Control"] = "no-store"
             return response
+        if not check_rate_limit("requester_device_binding", f"{auth_context.actor_id}:{client_ip(request)}",
+                limit=5, window_seconds=600):
+            return _device_link_error("Подождите перед следующей попыткой.",
+                status=429, error_code="DEVICE_BINDING_THROTTLED")
         ports = DomainPortContainer.from_config(registry_session=session)
         proof = await ports.endpoint.redeem_device_binding(code)
         # Proof code is kept only in this request's memory and never passed to
