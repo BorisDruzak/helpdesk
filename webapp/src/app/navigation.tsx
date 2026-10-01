@@ -98,7 +98,7 @@ export const appNavigationDomains: AppNavigationDomain[] = [
   {
     id: "devices-agents",
     workspace: "admin",
-    label: "Устройства и агенты",
+    label: "Устройства",
     description: "Инвентарь, карточки устройств, обновления и трассы",
     icon: MonitorCog,
     order: 10,

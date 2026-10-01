@@ -78,3 +78,33 @@ mapping by local UUID equality or hostname. Asset and person departments are
 kept distinct. The first six deterministic active bindings are returned with
 an explicit truncation flag; no historical presence or inventory table is read.
 Canonical business edits remain in Registry preview/apply/audit flows.
+
+## Browser devices workspace
+
+`/app/admin/inventory` is the Devices fleet view. It uses one paginated BFF
+read; page-level metrics/search/status/department filters are explicitly scoped
+to that page. Unmapped Endpoint devices remain visible. Links contain the exact
+Endpoint UUID. Loading and provider failure do not produce false offline counts.
+
+`/app/admin/device?device=UUID` reads that exact device only; invalid/missing or
+unknown UUID never selects the first fleet item or rewrites the URL. Tabs appear
+only for actual safe observations: overview, system, network, baseline software,
+health, session, supported history and Registry. Observed Endpoint login and
+Registry person relationships are kept distinct. No Agent version, printers,
+daily presence or module data is invented.
+
+`endpoint-context-api.ts` is the same-origin client; `endpoint-context-types.ts`
+mirrors bounded safe BFF DTOs. Read requests consume React Query AbortSignal.
+Collection refresh is visible above profile content, allows at most five safe
+profiles, sends no service token or provider idempotency key from the browser,
+and preserves partial/failed requests. Polling is bounded to two minutes per
+collection, stops at completed/failed/expired or read failure, and can be retried
+explicitly. Completed rereads exact context, fleet and history. Historical diffs
+are reset whenever the selected snapshot pair changes.
+
+Legacy device workspace/panel and browser API methods for connections, tokens,
+local inventory collection/bindings/policy/export, local archive and cleanup
+have been removed. Registry edits use the existing canonical Registry page.
+Unit/contract tests and production build do not replace final real staging
+browser acceptance; the coordinated task remains active until that evidence and
+runtime retirement are complete.

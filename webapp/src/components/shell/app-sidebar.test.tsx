@@ -59,7 +59,7 @@ describe("AppSidebar", () => {
 
     expect(screen.getByRole("link", { name: /Центр действий/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
-    expect(screen.queryByText("Устройства и агенты")).not.toBeInTheDocument();
+    expect(screen.queryByText("Устройства")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
   });
 
@@ -72,7 +72,7 @@ describe("AppSidebar", () => {
 
     expect(screen.queryByRole("link", { name: /Тикеты/ })).not.toBeInTheDocument();
 
-    const devicesGroup = screen.getByRole("button", { name: /Устройства и агенты/ });
+    const devicesGroup = screen.getByRole("button", { name: /Устройства/ });
     expect(devicesGroup).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("link", { name: /Инвентарь устройств/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: /Каталог и обращения/ })).toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("AppSidebar", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole("button", { name: /Устройства и агенты/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Устройства/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Система/ })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("link", { name: /Доступ/ })).toHaveAttribute("aria-current", "page");
   });

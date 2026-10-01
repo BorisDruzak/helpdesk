@@ -505,7 +505,7 @@ describe("appRoutes", () => {
     renderApp(["/app/admin"], fetchMock as typeof fetch);
 
     expect(await screen.findByRole("heading", { name: "Центр администрирования" })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Устройства и агенты/ })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /Устройства/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Тикеты/ })).not.toBeInTheDocument();
   });
 

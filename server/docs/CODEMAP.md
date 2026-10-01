@@ -315,3 +315,13 @@ This also includes the retired UIA create-ticket harness for the local agent.
   asset business fields and active bounded person relationships in two reads.
   `test_registry_endpoint_device_overlay.py` executes the populated projection
   against isolated PostgreSQL; route/handler checks use actual registration.
+
+- `webapp/src/pages/admin/inventory-page.tsx` is the paginated Endpoint fleet
+  with business overlay; `device-page.tsx` loads exact Endpoint UUID only.
+  `features/admin/endpoint-context-api.ts` and `endpoint-context-types.ts` are
+  their typed BFF client/projections; `endpoint-profile-content.tsx` renders
+  safe observations; `endpoint-context-actions.tsx` owns bounded collection
+  polling and baseline/inventory history/diff interaction.
+- The old `features/admin/admin-workspace.tsx` and
+  `device-inventory-panel.tsx` and their local telemetry client methods are
+  retired. Admin Center remains in `pages/admin/index.tsx`.
