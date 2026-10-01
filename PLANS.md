@@ -27,11 +27,25 @@ Helpdesk pins exact published 38ddabe and OpenAPI SHA256
 
 ## Next Steps / Verification / Handoff
 
-Task B typed immutable safe Context projections and shared HTTPS transport
-implemented; adapter/port selection 84 passed. Real provider PostgreSQL
-acceptance added; execution pending. Complete B review, BFF/Registry overlay,
-UI replacement, runtime retirement, full exact-SHA CI and real staging
-acceptance. No production deployment; staging untouched.
+A–F are implemented, reviewed and published on the cutover branch. Production
+metadata was inspected read-only; historical tables remain inert and retained.
+Helpdesk a61f0011 passed all 18 exact-SHA full CI layers (36843043522) and real
+contract acceptance (269 guards plus three provider/Gateway/Helpdesk cases).
+Trusted staging browser checks proved actual Windows inventory/profile refresh,
+real history comparison, canonical Registry preview/apply/audit, OFFLINE after
+Agent stop and UNKNOWN after provider outage. Original staging databases,
+release links, scopes and Windows enrollment were restored; all staging units
+and the Windows service are stopped. Production deployment remains excluded.
+
+Acceptance found and fixed the omitted Registry verified mapping link. The
+full-spec UI audit added all required fleet filters/metrics and inventory age,
+exact UUID search, compact overview context and history semantic hashes. A
+truncated Registry binding list is disclosed as uncertain rather than treated
+as proof that a relationship is absent. Focused frontend, browser, boundary,
+TypeScript/build and workspace checks pass. Freeze the updated candidate,
+complete its full exact-SHA CI, revalidate live staging including mapped Registry
+navigation and expanded fleet controls, restore the stand again, and publish the
+final report and scoped draft PR. G remains pending until those checks finish.
 
 # Completed locally: 2026-10-01 SonarQube evidence remediation
 

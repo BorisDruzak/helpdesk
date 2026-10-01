@@ -320,7 +320,10 @@ This also includes the retired UIA create-ticket harness for the local agent.
   with business overlay; `device-page.tsx` loads exact Endpoint UUID only.
   `features/admin/endpoint-context-api.ts` and `endpoint-context-types.ts` are
   their typed BFF client/projections; `endpoint-profile-content.tsx` renders
-  safe observations; `endpoint-context-actions.tsx` owns bounded collection
+  safe observations. Fleet controls use the bounded page and distinguish inventory
+  age from provider presence; truncated Registry relationships remain disclosed
+  candidates. History exposes actual timestamps, semantic hashes and warnings.
+  `endpoint-context-actions.tsx` owns bounded collection
   polling and baseline/inventory history/diff interaction.
 - The old `features/admin/admin-workspace.tsx` and
   `device-inventory-panel.tsx` and their local telemetry client methods are

@@ -95,6 +95,19 @@ the full cutover accepted.
 
 ## Browser navigation verification
 
+Fleet controls cover status, platform, Registry asset department/location,
+mapping status, active user relationship, inventory observation age and retired
+state. Search includes the exact Endpoint UUID. Counts and filters cover the
+current bounded provider page; they do not imply global fleet totals. Inventory
+age uses the visible operator-selected 24-hour, 7-day or 30-day window (7 days
+initially). It never changes Endpoint ONLINE/OFFLINE. Missing inventory context
+and unavailable Registry are distinguished from stale context and unmapped
+records. Relationship-type filters retain truncated projections as explicitly
+unconfirmed candidates when a requested type cannot be proved from the six
+returned bindings; unconfirmed mapping never proves that an asset is absent.
+History exposes each actual timestamp, semantic hash, warnings and
+snapshot selection, with comparisons executed by the provider.
+
 The admin domain, inventory navigation entry and page heading use «Устройства».
 Fixture browser checks cover the exact Endpoint UUID card link, missing-UUID
 validation, absence of retired device API requests and ticket context UNKNOWN

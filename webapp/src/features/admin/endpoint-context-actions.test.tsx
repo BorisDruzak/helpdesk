@@ -51,5 +51,13 @@ describe("Context collection lifecycle", () => {
     expect(screen.queryByText("Previous pair difference")).not.toBeInTheDocument();
     expect(compareEndpointHistory).toHaveBeenCalledTimes(1);
   });
+  it("shows the actual historical semantic hash and observation warnings", async () => {
+    const hash = "a".repeat(64);
+    vi.mocked(fetchEndpointHistory).mockResolvedValue({snapshots: [{id: "snapshot", profile: "inventory_v1", collected_at: "2026-10-01T00:00:00Z", semantic_hash: hash, warnings: ["probe_unavailable"], sections: {system: {}, hardware: {}, memory: {module_count: 0, modules: []}, storage: {physical_devices: []}, interfaces: []}}]});
+    render(<QueryClientProvider client={new QueryClient()}><EndpointContextHistory deviceId={id}/></QueryClientProvider>);
+    expect(await screen.findByText(hash)).toBeInTheDocument();
+    expect(screen.getByText(/probe_unavailable/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: "Сравнить"})).not.toBeInTheDocument();
+  });
 
 });

@@ -57,6 +57,11 @@ test("admin opens the exact Endpoint device without retired API traffic and keep
   });
   await loginAsAdmin(page);
   await page.goto("/app/admin/inventory");
+  for (const label of ["Платформа", "Расположение", "Связь с Registry", "Связь пользователя", "Актуальность inventory", "Lifecycle устройства", "Порог актуальности inventory"]) {
+    await expect(page.getByLabel(label, {exact: true})).toBeVisible();
+  }
+  await page.getByLabel("Поиск на странице", {exact: true}).fill(endpointDeviceId);
+  await page.getByLabel("Актуальность inventory", {exact: true}).selectOption("missing");
   await page.getByRole("link", { name: "Windows fixture", exact: true }).click();
   await expect(page).toHaveURL(`/app/admin/device?device=${endpointDeviceId}`);
   await expect(page.getByRole("heading", { name: "Windows fixture" })).toBeVisible();
