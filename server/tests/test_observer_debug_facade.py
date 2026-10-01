@@ -164,13 +164,15 @@ async def test_runtime_and_presence_unavailable_do_not_crash(test_engine) -> Non
 
     assert runtime["status"] == "partial"
     assert runtime["runtime_snapshot_available"] is False
-    assert presence["status"] == "ok"
-    assert presence["presence_snapshot_available"] is True
+    assert presence == {
+        "status": "unknown", "source": "endpoint",
+        "error_code": "ENDPOINT_DEVICE_MAPPING_MISSING",
+    }
     assert "must-redact" not in str(presence)
 
 
 @pytest.mark.asyncio
-async def test_presence_snapshot_includes_db_device_evidence_without_snapshot(test_engine) -> None:
+async def test_presence_ignores_local_device_telemetry_without_endpoint_mapping(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine)
     now = datetime.now(timezone.utc).replace(microsecond=0)
     device_id = str(uuid.uuid4())
@@ -193,11 +195,13 @@ async def test_presence_snapshot_includes_db_device_evidence_without_snapshot(te
     async with session_maker() as session:
         presence = await agent_presence_snapshot(session, device_id=device_id, limit=5)
 
-    assert presence["status"] == "partial"
-    assert presence["presence_snapshot_available"] is False
-    assert presence["device_db_evidence"]["device_id"] == device_id
-    assert presence["device_db_evidence"]["hostname"] == "mcp-no-presence-host"
-    assert presence["live_ws_state"] == "unavailable_in_debug_readonly_mcp"
+    assert presence == {
+        "status": "unknown", "source": "endpoint",
+        "error_code": "ENDPOINT_DEVICE_MAPPING_MISSING",
+    }
+    assert "mcp-no-presence-host" not in str(presence)
+    assert "3.1.61" not in str(presence)
+    assert "ALT Linux" not in str(presence)
 
 
 def test_observer_debug_redaction_hides_public_access_codes_in_nested_text() -> None:

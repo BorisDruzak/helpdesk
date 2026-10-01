@@ -106,6 +106,7 @@ jobs:
             server/tests/test_endpoint_context_adapter.py server/tests/test_device_cutover_boundary.py server/tests/test_legacy_inventory_retirement_audit.py \
             server/tests/test_admin_endpoint_handlers.py \
             server/tests/test_registry_endpoint_device_overlay.py \
+            server/tests/test_observer_debug_facade.py server/tests/test_observer_v2_api.py \
             server/tests/test_registry_admin_actions.py server/tests/test_registry_admin_previews.py \
             server/tests/test_registry_bulk_actions.py server/tests/test_registry_departments_admin.py \
             server/tests/test_registry_import_export.py server/tests/test_registry_locations_admin.py \
