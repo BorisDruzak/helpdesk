@@ -118,3 +118,8 @@ Observer/Tech legacy timestamp, policy, scheduler and baseline signals are retir
 Historical tables remain inert. See
 `docs/segmentation/ADMIN_DEVICE_INVENTORY_RETIREMENT_V1.md` for counts, ownership,
 removed reader/writer matrix, retention blockers and acceptance status.
+
+Support device snapshots on absent Endpoint references or failed presence reads
+keep hostname, OS, version and observation time empty with UNKNOWN connection
+state. A local Registry-compatible Device row cannot supply a technical fallback.
+Historical Observer operations and canonical Registry business details remain visible.

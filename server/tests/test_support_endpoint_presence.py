@@ -34,6 +34,8 @@ async def test_unavailable_endpoint_is_unknown_without_stale_legacy_fallback():
     snapshot = await support_handlers._build_support_device_snapshot(ticket, legacy, endpoint_port=port)
     assert snapshot.connection_state == 'unknown'
     assert snapshot.last_seen_at is None
+    assert snapshot.hostname is None
+    assert snapshot.os is None
     assert snapshot.agent_version is None
 
 @pytest.mark.asyncio

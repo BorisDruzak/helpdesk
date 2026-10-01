@@ -2259,8 +2259,9 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["timeline"][0]["text"] == "Проверяю логи и канал связи."
     assert payload["data"]["timeline"][1]["message_id"] == "msg-user-2"
     assert payload["data"]["timeline"][1]["text"] == "Спасибо, жду результат."
-    assert payload["data"]["snapshot"]["device"]["hostname"] == "ws-detail-host"
-    assert payload["data"]["snapshot"]["device"]["agent_version"] == "1.2.3"
+    device_snapshot = payload["data"]["snapshot"]["device"]
+    assert device_snapshot["connection_state"] == "unknown"
+    assert all(device_snapshot[field] is None for field in ("hostname", "os", "agent_version", "last_seen_at"))
     registry_snapshot = payload["data"]["snapshot"]["registry"]
     assert registry_snapshot["status"] == "available"
     assert registry_snapshot["source"] == "registry_port"

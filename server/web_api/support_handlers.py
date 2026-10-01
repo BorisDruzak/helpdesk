@@ -2983,7 +2983,6 @@ async def _build_support_device_snapshot(ticket, device, *, endpoint_port, legac
         # transport's local connection map or cached agent metadata on failure.
         snapshot = SupportTicketDeviceSnapshot(
             device_id=getattr(ticket, "device_id", None),
-            hostname=getattr(device, "hostname", None),
             connection_state="unknown",
         )
         try:
