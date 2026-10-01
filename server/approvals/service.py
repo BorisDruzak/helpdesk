@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Change, ChangeApproval, Operation, Ticket, TicketApproval
+from app.db.models import Change, ChangeApproval, Operation, RegistryEndpointDeviceMapping, Ticket, TicketApproval
 from web_api.dto.approvals import (
     ApprovalConsentAction,
     ApprovalConsentBlocking,
@@ -294,15 +294,16 @@ class ApprovalConsentCenterService:
     async def _risky_tool_consents(self) -> list[ApprovalConsentItem]:
         rows = (
             await self._session.execute(
-                select(Operation, Ticket)
+                select(Operation, Ticket, RegistryEndpointDeviceMapping.endpoint_device_ref)
                 .outerjoin(Ticket, Ticket.ticket_id == Operation.ticket_id)
+                .outerjoin(RegistryEndpointDeviceMapping, RegistryEndpointDeviceMapping.device_id == Operation.device_id)
                 .where(Operation.status == "waiting_consent")
                 .order_by(Operation.queued_at.desc())
                 .limit(500)
             )
         ).all()
         items: list[ApprovalConsentItem] = []
-        for operation, ticket in rows:
+        for operation, ticket, endpoint_ref in rows:
             tool_name = operation.tool_name or operation.command_name or operation.kind
             actions = []
             if ticket is not None:
@@ -318,8 +319,9 @@ class ApprovalConsentCenterService:
                 ApprovalConsentAction(
                     key="open_device_operations",
                     label="Открыть устройство",
-                    href=f"/app/admin/device?device={operation.device_id}",
-                    enabled=True,
+                    href=f"/app/admin/device?device={endpoint_ref}" if endpoint_ref else None,
+                    enabled=endpoint_ref is not None,
+                    disabled_reason=None if endpoint_ref else "Нет проверенной связи с Endpoint",
                 )
             )
             items.append(

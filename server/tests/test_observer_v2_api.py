@@ -327,6 +327,9 @@ async def test_trace_detail_explains_historical_failure_without_claiming_current
 
     assert explanation["agent_online"] is None
     assert explanation["agent_status_label"] is None
+    assert explanation["agent_last_handshake_at"] is None
+    assert explanation["agent_last_seen_at"] is None
+    assert not any("handshake" in action.lower() for action in explanation["next_actions"])
 
     queued_stage = next(span for span in data["spans"] if span["name"] == "operation.stage.queued")
     failed_stage = next(span for span in data["spans"] if span["name"] == "operation.stage.failed")

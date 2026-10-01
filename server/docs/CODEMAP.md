@@ -335,3 +335,8 @@ Observer/Tech legacy timestamp, policy, scheduler and baseline signals are retir
 Historical tables remain inert. See
 `docs/segmentation/ADMIN_DEVICE_INVENTORY_RETIREMENT_V1.md` for counts, ownership,
 removed reader/writer matrix, retention blockers and acceptance status.
+
+Approval Center device actions join exact RegistryEndpointDeviceMapping in the
+existing bounded operation query; unmapped actions are disabled. Observer historical
+error diagnosis never presents mutable local Device handshake/last-seen as current
+connection guidance. PostgreSQL regressions and source boundary guards cover both.

@@ -49,3 +49,19 @@ def test_retired_inventory_routes_are_absent_from_the_real_app():
     assert not any(path.startswith("/api/web/admin/inventory") or path.startswith("/api/web/admin/devices") for path in paths)
     assert "/api/web/admin/endpoint/devices/{device_id}" in paths
     assert "/api/web/admin/endpoint/devices" in paths
+
+
+def test_observer_connection_guidance_does_not_read_local_technical_state():
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from web_api.admin_handlers import _observer_next_actions
+
+    device = SimpleNamespace(last_handshake_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    actions = _observer_next_actions(error_code="AGENT_NOT_CONNECTED", device=device)
+    assert "Проверить подключение агента" in actions
+    assert not any("handshake" in action.lower() or "2026-01-01" in action for action in actions)
+
+
+def test_approval_device_links_do_not_treat_local_operation_ids_as_endpoint_ids():
+    source = (ROOT / "server/approvals/service.py").read_text(encoding="utf-8")
+    assert "device={operation.device_id}" not in source

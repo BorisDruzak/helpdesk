@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Change, ChangeApproval, Operation, Ticket, TicketApproval
+from app.db.models import Change, ChangeApproval, Device, Operation, RegistryEndpointDeviceMapping, Ticket, TicketApproval
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -223,3 +223,35 @@ async def test_approval_consent_center_support_scope_all_falls_back_to_team(test
     assert response.status == 200
     data = (await response.json())["data"]
     assert data["scope"] == "team"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mapped", [False, True])
+async def test_risky_consent_device_action_requires_exact_endpoint_mapping(test_client, test_engine, mapped):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    endpoint_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        ids = await _seed_approval_center(session, now=now)
+        operation = await session.get(Operation, ids["operation_id"])
+        local_id = operation.device_id
+        if mapped:
+            if await session.get(Device, local_id) is None:
+                session.add(Device(device_id=local_id, protocol_version="registry"))
+                await session.flush()
+            session.add(RegistryEndpointDeviceMapping(
+                endpoint_device_ref=endpoint_id, device_id=local_id, verified_at=now,
+            ))
+            await session.commit()
+
+    response = await test_client.get("/api/web/support/approvals?status=pending&scope=all", headers=_admin_headers())
+    assert response.status == 200
+    data = (await response.json())["data"]
+    item = next(item for item in data["items"] if item.get("operation_id") == ids["operation_id"])
+    action = next(action for action in item["actions"] if action["key"] == "open_device_operations")
+    assert action["enabled"] is mapped
+    assert action["href"] == (f"/app/admin/device?device={endpoint_id}" if mapped else None)
+    assert action["disabled_reason"] == (None if mapped else "Нет проверенной связи с Endpoint")
+    assert local_id != endpoint_id
+    assert not any(action.get("href") == f"/app/admin/device?device={local_id}" for action in item["actions"])
+    assert any(action["href"] == f"/app/tickets/{ids['ticket_id']}" for action in item["actions"])

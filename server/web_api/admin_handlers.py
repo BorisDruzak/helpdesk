@@ -1115,9 +1115,6 @@ def _observer_next_actions(*, error_code: str | None, device: Device | None) -> 
     normalized = str(error_code or "").strip().upper()
     if normalized == "AGENT_NOT_CONNECTED":
         actions = ["Проверить подключение агента"]
-        last_handshake = _iso(getattr(device, "last_handshake_at", None)) if device else None
-        if last_handshake:
-            actions.append(f"Последний handshake: {last_handshake}")
         actions.append("Открыть устройство в inventory")
         return actions
     if normalized == "TIMEOUT":
@@ -1251,7 +1248,7 @@ async def _build_admin_observer_trace_explanation(
         agent_online=agent_online,
         agent_status_label=agent_status_label,
         agent_last_seen_at=None,
-        agent_last_handshake_at=_iso(getattr(device, "last_handshake_at", None)) if device else None,
+        agent_last_handshake_at=None,
         launch_path=launch_path,
         next_actions=_observer_next_actions(error_code=error_code, device=device),
         human_timeline=human_timeline,
