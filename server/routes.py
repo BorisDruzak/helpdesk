@@ -3,6 +3,10 @@
 """
 
 from aiohttp import web
+from web_api.admin_endpoint_handlers import (
+    handle_admin_endpoint_devices, handle_admin_endpoint_device, handle_admin_endpoint_context_refresh,
+    handle_admin_endpoint_collection, handle_admin_endpoint_history, handle_admin_endpoint_compare,
+)
 
 # Import handlers from modules
 from auth.handlers import handle_ui_login, handle_ui_session
@@ -686,6 +690,12 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/tech/operations/stuck', handle_tech_operations_stuck),
         web.get('/api/web/admin/ai-integration/mcp', handle_ai_integration_mcp_status),
         web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_endpoint_operation_get),
+        web.get('/api/web/admin/endpoint/devices', handle_admin_endpoint_devices),
+        web.get('/api/web/admin/endpoint/devices/{device_id}', handle_admin_endpoint_device),
+        web.post('/api/web/admin/endpoint/devices/{device_id}/context/refresh', handle_admin_endpoint_context_refresh),
+        web.get('/api/web/admin/endpoint/context/collections/{collection_id}', handle_admin_endpoint_collection),
+        web.get('/api/web/admin/endpoint/devices/{device_id}/context/history', handle_admin_endpoint_history),
+        web.get('/api/web/admin/endpoint/devices/{device_id}/context/compare', handle_admin_endpoint_compare),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
         web.post('/api/web/admin/devices/cleanup_env_duplicates', handle_web_admin_devices_cleanup_env_duplicates),
         web.post('/api/web/admin/devices/{device_id}/restore', handle_web_admin_device_restore),

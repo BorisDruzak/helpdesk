@@ -48,3 +48,33 @@ The implementation plan is
 retirement, UI cutover, production read-only metadata audit and staging evidence
 must finish before the coordinated task can be called complete. Production
 deployment and automatic table deletion are excluded.
+
+## Authenticated browser BFF
+
+Read roles: admin/support/auditor. Refresh roles: admin/support. Existing web
+session authentication and same-origin CSRF middleware apply; service tokens
+never cross this boundary. All responses are no-store.
+
+- `GET /api/web/admin/endpoint/devices`: one provider fleet request and two
+  Registry column-only queries for up to 250 exact mapped UUIDs. Unmapped
+  devices remain visible; Registry failure is explicit and never alters
+  Endpoint presence. Pagination uses the provider UUID cursor.
+- `GET /api/web/admin/endpoint/devices/{device_id}`: exact provider UUID read;
+  malformed UUID is 400, missing device is 404, no first-device substitution.
+- `POST .../{device_id}/context/refresh`: one to five unique safe profiles;
+  server-generated bounded idempotency key per profile. Returns individual
+  collection/error outcomes and requested/partial/failed aggregate state.
+  Request acceptance is not collection completion.
+- `GET /api/web/admin/endpoint/context/collections/{collection_id}`: actual
+  provider lifecycle projection. Browser polling must reread context after
+  completed and preserve failed/expired outcomes.
+- `GET .../{device_id}/context/history`: baseline/inventory, limit 1..100.
+- `GET .../{device_id}/context/compare?before=UUID&after=UUID`: typed safe diff.
+
+`registry/endpoint_device_overlay.py` joins only confirmed
+RegistryEndpointDeviceMapping -> RegistryAsset and temporally active
+DeviceUserBinding -> RegistryPerson -> department/location. It never guesses a
+mapping by local UUID equality or hostname. Asset and person departments are
+kept distinct. The first six deterministic active bindings are returned with
+an explicit truncation flag; no historical presence or inventory table is read.
+Canonical business edits remain in Registry preview/apply/audit flows.

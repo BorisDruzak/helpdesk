@@ -307,3 +307,11 @@ This also includes the retired UIA create-ticket harness for the local agent.
   and transport. The Context case in the true cross-repository acceptance
   starts the actual pinned provider with isolated PostgreSQL.
 - Boundary contract: `docs/segmentation/HELPDESK_ENDPOINT_CONTEXT_BOUNDARY.md`.
+
+- `web_api/admin_endpoint_handlers.py` exposes authenticated safe Context fleet,
+  exact detail, bounded refresh, collection, history and comparison BFF routes
+  registered in `routes.py`. Existing auth/CSRF middleware remains authoritative.
+- `registry/endpoint_device_overlay.py` projects only exact verified mappings,
+  asset business fields and active bounded person relationships in two reads.
+  `test_registry_endpoint_device_overlay.py` executes the populated projection
+  against isolated PostgreSQL; route/handler checks use actual registration.

@@ -104,6 +104,8 @@ jobs:
             server/tests/test_endpoint_contract_lock.py \
             server/tests/test_endpoint_http_adapter.py \
             server/tests/test_endpoint_context_adapter.py \
+            server/tests/test_admin_endpoint_handlers.py \
+            server/tests/test_registry_endpoint_device_overlay.py \
             server/tests/test_endpoint_binding_adapter.py \
             server/tests/test_endpoint_port_contracts.py \
             server/tests/test_endpoint_device_reference_service.py \
