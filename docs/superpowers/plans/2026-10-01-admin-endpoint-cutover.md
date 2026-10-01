@@ -51,3 +51,29 @@
 Discovery: GitNexus group status reports all members indexStale=false, contractsStale=false, commitsBehind=0, missingRepos=[]; source verifies existing support presence and absence of inventory fleet projection. Legacy Registry coupling exists in registration_service/admin_operations_service/service and must be removed explicitly. No implementation gate passed yet.
 
 2026-10-01: A-F implementation and production read-only metadata audit complete; retirement review/tests ongoing. G full frozen-SHA CI and staging acceptance pending. No production deployment.
+
+
+### Staging checkpoint after a61f0011
+
+Exact-SHA full CI 36843043522 passed all 18 canonical layers, with isolated
+PostgreSQL and no shared database fallback. Contract acceptance passed 269
+integration guards and 3 real provider/Gateway/Helpdesk scenarios.
+Trusted HTTPS browser acceptance rendered the actual Windows device ONLINE,
+completed all five safe collections, compared two real baseline snapshots,
+composed the exact Registry mapping and temporal primary-user overlay, and
+applied a Registry department edit through preview/apply with audit evidence.
+Stopping the Windows service produced OFFLINE; restarting and rereading produced
+ONLINE. Stopping Endpoint produced HTTP 503 and UNKNOWN with no stale technical
+panel. Normal scenarios recorded zero console/page errors, retired requests,
+and direct browser-to-Endpoint requests. Controlled unknown-device 404 and
+provider-outage 503 resource messages are recorded separately.
+
+Acceptance found a Registry navigation defect: the snapshot queried verified
+mappings but omitted them from asset rows. The bounded mapping projection now
+exposes `endpoint_device_ref`; unmapped assets remain disabled without identity
+inference. A PostgreSQL regression covers different local/Endpoint UUIDs and
+an unmapped asset with the same business name. Final-SHA CI and browser
+revalidation remain required before G is complete. The installed Windows agent
+also emits replacement characters for the session login; the provider response
+already contains them. This upstream observation quality issue must be reported
+without substituting a Registry identity.

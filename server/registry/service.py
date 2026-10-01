@@ -754,6 +754,7 @@ class RegistrySnapshotService:
                     "name": asset.name,
                     "hostname": asset.hostname,
                     "device_id": asset.device_id,
+                    "endpoint_device_ref": endpoint_refs.get(asset.device_id),
                     "inventory_number": asset.inventory_number,
                     "serial_number": asset.serial_number,
                     "status": asset.status,
