@@ -52,13 +52,29 @@ class ProblemCandidateScheduler:
     async def stop(self) -> None:
         if self._task is None:
             return
-        self._task.cancel()
+        task = self._task
+        parent = asyncio.current_task()
+        cancellation: asyncio.CancelledError | None = None
+        task.cancel()
         try:
-            await self._task
-        except asyncio.CancelledError:
-            pass
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError as exc:
+                    if parent is not None and parent.cancelling():
+                        cancellation = exc
+                except Exception as exc:
+                    if cancellation is not None:
+                        raise cancellation from exc
+                    raise
+            if cancellation is not None:
+                failure = None if task.cancelled() else task.exception()
+                raise cancellation from failure
+            if not task.cancelled():
+                task.result()
         finally:
-            self._task = None
+            if task.done() and self._task is task:
+                self._task = None
 
     async def run_once(
         self,
