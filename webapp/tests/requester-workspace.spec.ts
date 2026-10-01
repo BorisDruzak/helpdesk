@@ -592,6 +592,50 @@ test("requester waiting ticket does not offer solution confirmation", async ({ p
   await expect(page.getByRole("button", { name: "Подтвердить решение" })).toBeHidden();
 });
 
+test("requester saved checkbox conditions submit zero and reopen the created ticket", async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  const failures: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", error=>errors.push(error.message));
+  page.on("console", message=> { if (message.type() === "error") consoleErrors.push(message.text()); });
+  page.on("response", response=> { if(response.status() >= 400) failures.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+  await page.unroute("**/public_api/ticket_forms/current?pack_key=request_forms");
+  await page.route("**/public_api/ticket_forms/current?pack_key=request_forms", route=>fulfillJson(route, {
+    status:"ok", pack:{pack_key:"request_forms",version:"checkbox-regression",forms:[{
+      key:"checkbox_zero",title:"Checkbox regression",availability_policy:{available_without_agent_binding:true},fields:[
+        {key:"flag",label:"Показать количество",type:"checkbox"},
+        {key:"amount",label:"Количество",type:"number",required:true,validation:{min:0},visible_when:{field:"flag",equals:"True"}},
+        {key:"reason",label:"Причина без количества",type:"text",required:true,visible_when:{field:"flag",equals:false}},
+      ],
+    }]},
+  }));
+  let stored: Record<string, unknown> = {};
+  await page.unroute("**/api/web/requester/tickets");
+  await page.route("**/api/web/requester/tickets", async route=> {
+    if (route.request().method() !== "POST") return fulfillJson(route,{status:"success",data:{tickets:[]}});
+    stored = route.request().postDataJSON().form_payload;
+    return fulfillJson(route,{status:"success",data:{ticket_id:"550e8400-e29b-41d4-a716-446655440002",ticket_code:"REQ-1002"}});
+  });
+  await page.goto("/app/requester/new");
+  await page.getByLabel("Категория обращения").selectOption("form:checkbox_zero");
+  await expect(page.getByLabel("Причина без количества")).toBeVisible();
+  await expect(page.getByLabel("Количество",{exact:true})).toBeHidden();
+  await page.getByLabel("Показать количество").check();
+  await expect(page.getByLabel("Причина без количества")).toBeHidden();
+  await page.getByRole("button",{name:"Создать обращение",exact:true}).click();
+  await expect(page).toHaveURL(/\/app\/requester\/new$/);
+  await page.getByLabel("Количество",{exact:true}).fill("0");
+  await page.screenshot({path:testInfo.outputPath("requester-checkbox-zero.png"),fullPage:true});
+  await page.getByRole("button",{name:"Создать обращение",exact:true}).click();
+  await expect(page).toHaveURL(/\/app\/requester\/tickets\/REQ-1002$/);
+  expect(stored).toEqual({flag:true,amount:0});
+  await page.reload();
+  await expect(page.getByText("VPN access problem",{exact:true}).first()).toBeVisible();
+  expect(errors).toEqual([]);
+  expect(failures).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 test("requester create retains its key across a lost response and browser reload", async ({ page }) => {
   const keys: string[] = [];
   const pageErrors: string[] = [];

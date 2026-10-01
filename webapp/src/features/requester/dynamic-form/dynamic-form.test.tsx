@@ -15,6 +15,7 @@ import {
   isDynamicFieldVisible,
   mergeContextPrefillValues,
   missingRequiredFields,
+  normalizeDynamicFieldValue,
   validateDynamicFormSchema,
   validateDynamicFormValues,
   type DynamicFieldValue,
@@ -24,6 +25,63 @@ const baseOptions = [
   { value: "vpn", label: "VPN" },
   { value: "crm", label: "CRM" },
 ];
+
+describe("checkbox compatibility", () => {
+  it("keeps invalid prefill editable while submission validation blocks it", () => {
+    const field: RequestFormField = { key: "flag", label: "Flag", type: "checkbox", required: true };
+    const form = { fields: [field] };
+    const values = mergeContextPrefillValues(form, { flag: "unexpected" }, {}, {});
+    expect(values.flag).toBe("unexpected");
+    expect(collectVisiblePayload(form, values)).toEqual({ flag: "unexpected" });
+    expect(missingRequiredFields(form, values)).toEqual(["Flag"]);
+    expect(validateDynamicFormValues(form, values).canPublish).toBe(false);
+    render(<RequestFormFieldControl field={field} value={values.flag} onChange={() => {}} />);
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+  });
+  it.each([[String.raw`^\++$`, "+++"], [String.raw`^\?+$`, "???"], ["[++]", "+"]])(
+    "accepts shared literal/class pattern %s", (pattern, value) => {
+      const field: RequestFormField = { key: "code", label: "Code", type: "text", validation: { pattern } };
+      const form: RequestFormDefinition = { key: "probe", title: "Probe", fields: [field] };
+      expect(validateDynamicFormSchema(form).canPublish).toBe(true);
+      expect(validateDynamicFormValues(form, { code: value }).canPublish).toBe(true);
+    });
+  it("reports invalid checkbox and saved pattern as validation errors", () => {
+    const checkbox: RequestFormField = {key:"flag",label:"Flag",type:"checkbox"};
+    expect(validateDynamicFormValues({fields:[checkbox]}, {flag:"unexpected"}).canPublish).toBe(false);
+    const text: RequestFormField = {key:"code",label:"Code",type:"text",validation:{pattern:"["}};
+    expect(validateDynamicFormValues({fields:[text]}, {code:"anything"}).canPublish).toBe(false);
+  });
+  it.each([[true, true], [false, false], ["true", true], ["false", false], ["True", true],
+    ["False", false], ["1", true], ["0", false], ["yes", true], ["no", false], [null, false]])(
+    "normalizes %s as %s", (raw, expected) => {
+      expect(normalizeDynamicFieldValue({key: "flag", label: "Flag", type: "checkbox"}, raw as DynamicFieldValue)).toBe(expected);
+    });
+  it.each([[], {}, "unexpected", 1, 0])("rejects invalid checkbox %s", (raw) => {
+    expect(() => normalizeDynamicFieldValue({key: "flag", label: "Flag", type: "checkbox"}, raw as DynamicFieldValue)).toThrow();
+  });
+  it.each([true, false, "True", "False", "true", "false"])("compares saved boolean %s", (condition) => {
+    const value = condition === true || String(condition).toLowerCase() === "true";
+    for (const rule of [{field: "flag", equals: condition}, {field: "flag", in: [condition]}]) {
+      const field: RequestFormField = {key: "answer", label: "Answer", type: "text", visible_when: rule};
+      expect(isDynamicFieldVisible(field, {flag: value})).toBe(true);
+      expect(isDynamicFieldVisible(field, {flag: !value})).toBe(false);
+    }
+  });
+  it("preserves case for text and membership for multi-select", () => {
+    const field: RequestFormField = {key: "answer", label: "Answer", type: "text", visible_when: {field: "kind", equals: "TRUE"}};
+    expect(isDynamicFieldVisible(field, {kind: "true"})).toBe(false);
+    expect(isDynamicFieldVisible(field, {kind: ["TRUE", "other"]})).toBe(true);
+  });
+  it.each([
+    [0, 0, true], [null, null, true], [1, 0, false],
+    ["TRUE", "TRUE", true], ["true", "TRUE", false], [["TRUE", "other"], "TRUE", true],
+  ] as const)("preserves zero/null/case for %s and %s", (current, expected, visible) => {
+    for (const rule of [{field: "kind", equals: expected}, {field: "kind", in: [expected]}]) {
+      const field: RequestFormField = {key: "answer", label: "Answer", type: "text", visible_when: rule};
+      expect(isDynamicFieldVisible(field, {kind: current as DynamicFieldValue})).toBe(visible);
+    }
+  });
+});
 
 describe("requester dynamic form runtime", () => {
   it("renders every requester field type through one registry", () => {
