@@ -31,12 +31,9 @@ async def test_registry_profile_upsert_creates_person_location_and_registration_
                 device_metadata={},
             )
         )
-        await RegistryRepo(session).upsert_agent_asset(
+        await RegistryRepo(session).ensure_device_asset(
             device_id=device_id,
             hostname="DOC-214-01",
-            os_name="Windows 11",
-            agent_version="1.0.0",
-            metadata={},
         )
         service = RegistryIngestionService(session)
         result = await service.ingest_requester_profile(
@@ -77,3 +74,25 @@ async def test_registry_profile_upsert_creates_person_location_and_registration_
     assert location.room == "214"
     assert location.status == "pending"
     assert department.name == "Accounting"
+
+
+@pytest.mark.asyncio
+async def test_business_asset_creation_never_overwrites_richer_registry_data(test_engine):
+    from uuid import uuid4
+    from app.db.models import RegistryAsset
+    async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
+        repository = RegistryRepo(session)
+        created = await repository.ensure_device_asset(device_id=str(uuid4()), hostname="registered-name")
+        assert created.source == "manual" and created.discovery_payload == {} and created.last_seen_at is None
+        created.inventory_number = "BUSINESS-001"
+        created.serial_number = "registry-serial"
+        created.status = "verified"
+        await session.flush()
+        before = created.updated_at
+        again = await repository.ensure_device_asset(device_id=created.device_id, hostname="different-untrusted-name")
+        assert again.asset_id == created.asset_id
+        assert again.hostname == "registered-name"
+        assert again.inventory_number == "BUSINESS-001" and again.serial_number == "registry-serial"
+        assert again.status == "verified" and again.updated_at == before
+        assert again.discovery_payload == {} and again.last_seen_at is None
+        await session.rollback()

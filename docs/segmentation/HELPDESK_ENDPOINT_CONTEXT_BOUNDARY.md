@@ -108,3 +108,13 @@ have been removed. Registry edits use the existing canonical Registry page.
 Unit/contract tests and production build do not replace final real staging
 browser acceptance; the coordinated task remains active until that evidence and
 runtime retirement are complete.
+
+
+Admin Device cutover retirement: local inventory/presence services and admin routes
+are removed. Ticket safe context uses EndpointDeviceContext + RegistryDeviceOverlay.
+Registry business asset creation uses RegistryRepo.ensure_device_asset with no
+telemetry ingestion. Registry links require exact RegistryEndpointDeviceMapping.
+Observer/Tech legacy timestamp, policy, scheduler and baseline signals are retired.
+Historical tables remain inert. See
+`docs/segmentation/ADMIN_DEVICE_INVENTORY_RETIREMENT_V1.md` for counts, ownership,
+removed reader/writer matrix, retention blockers and acceptance status.

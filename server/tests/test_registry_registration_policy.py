@@ -236,6 +236,4 @@ async def test_approval_applies_strict_department_location_to_verified_person_an
     assert asset.assigned_person_id == person_id
     assert asset.department_id == department.department_id
     assert asset.location_id == location.location_id
-    assert inventory.person_id == person_id
-    assert inventory.source_binding_id == binding.binding_id
-    assert inventory.registration_status == "admin_confirmed"
+    assert inventory is None  # Retired table receives no registration side-write.

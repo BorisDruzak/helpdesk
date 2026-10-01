@@ -134,7 +134,6 @@ def test_active_capability_and_playbook_sources_have_no_agent_runtime_fields() -
         "server/diagnostics/providers/static_providers.py",
         "server/diagnostics/providers/zabbix_provider.py",
         "server/app/services/playbook_engine.py",
-        "server/inventory/service.py",
         "server/playbooks/catalog.py",
         "server/playbooks/tool_catalog.py",
         "server/web_api/admin_handlers.py",

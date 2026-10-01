@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import type { AdminRegistryPayload } from "../api";
-import { formatDateTime, registryStatusLabel, relationshipTypeLabel, statusTone, type RegistrySelection } from "./registry-utils";
+import { registryStatusLabel, relationshipTypeLabel, statusTone, type RegistrySelection } from "./registry-utils";
 
 type Props = {
   devices: AdminRegistryPayload["assets"];
@@ -24,13 +24,10 @@ export function RegistryDevicesTab({ devices, onBind, onResponsible, onSelect, o
   const allVisibleSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.includes(id));
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
-      <div className="grid min-w-[1440px] grid-cols-[48px_220px_220px_120px_120px_160px_180px_150px_150px_150px_100px_360px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+      <div className="grid min-w-[1440px] grid-cols-[48px_220px_220px_180px_150px_150px_150px_100px_360px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
         <input aria-label="Выбрать все видимые устройства" checked={allVisibleSelected} disabled={!selectableIds.length} onChange={() => onToggleVisibleSelection(selectableIds)} title="Выбрать или снять выбор со всех устройств в текущем фильтре" type="checkbox" />
         <span>Устройство / имя ПК</span>
         <span>ID устройства</span>
-        <span>OS</span>
-        <span>Агент</span>
-        <span>Последняя активность</span>
         <span>Зарегистрированный пользователь</span>
         <span>Привязка</span>
         <span>Регистрация</span>
@@ -39,7 +36,7 @@ export function RegistryDevicesTab({ devices, onBind, onResponsible, onSelect, o
         <span>Действия</span>
       </div>
       {devices.length ? devices.map((device) => (
-        <div className="grid min-w-[1440px] grid-cols-[48px_220px_220px_120px_120px_160px_180px_150px_150px_150px_100px_360px] gap-3 border-t border-border px-4 py-3 text-sm" key={device.id}>
+        <div className="grid min-w-[1440px] grid-cols-[48px_220px_220px_180px_150px_150px_150px_100px_360px] gap-3 border-t border-border px-4 py-3 text-sm" key={device.id}>
           <input
             aria-label={`Выбрать устройство ${device.hostname ?? device.device_id ?? device.id}`}
             checked={Boolean(device.device_id && selectedIds.includes(device.device_id))}
@@ -52,16 +49,13 @@ export function RegistryDevicesTab({ devices, onBind, onResponsible, onSelect, o
             <p className="mt-1 text-xs text-slate-500">{device.asset_type}</p>
           </button>
           <span className="break-all text-slate-700">{device.device_id ?? "Нет ID устройства"}</span>
-          <span className="text-slate-700">{device.os ?? "Нет данных"}</span>
-          <span className="text-slate-700">{device.agent_version ?? "Нет данных"}</span>
-          <span className="text-slate-700">{formatDateTime(device.last_seen_at)}</span>
           <span className="text-slate-700">{device.active_person_name ?? device.owner_name ?? "Не зарегистрирован"}</span>
           <span className="text-slate-700">{relationshipTypeLabel(device.binding_type)}</span>
           <Badge tone={statusTone(device.registration_status)}>{registryStatusLabel(device.registration_status ?? "unregistered")}</Badge>
           <span className="text-slate-700">{device.location_name ?? "Не указана"}</span>
           <span className="text-slate-700">{device.active_tickets_count ?? device.ticket_count}</span>
           <div className="flex flex-wrap gap-2">
-            <Button disabled={!device.device_id} leadingIcon={<ArrowUpRight className="h-4 w-4" />} onClick={() => device.device_id && navigate(`/app/admin/device?device=${encodeURIComponent(device.device_id)}`)} size="sm" title="Открыть карточку устройства с инвентарем и операциями" variant="outline">ПК</Button>
+            <Button disabled={!device.endpoint_device_ref} leadingIcon={<ArrowUpRight className="h-4 w-4" />} onClick={() => device.endpoint_device_ref && navigate(`/app/admin/device?device=${encodeURIComponent(device.endpoint_device_ref)}`)} size="sm" title="Открыть карточку устройства с инвентарем и операциями" variant="outline">ПК</Button>
             <Button disabled={!device.device_id} leadingIcon={<Link2 className="h-4 w-4" />} onClick={() => device.device_id && onBind(device.device_id)} size="sm" title="Назначить основного пользователя устройства" variant="outline">Привязать</Button>
             <Button disabled={!device.active_binding_id} leadingIcon={<UserCheck className="h-4 w-4" />} onClick={() => onTransfer(device)} size="sm" title="Передать устройство другому основному пользователю через предпросмотр" variant="outline">Передать</Button>
             <Button disabled={!device.device_id} leadingIcon={<Users className="h-4 w-4" />} onClick={() => device.device_id && onShared(device.device_id)} size="sm" title="Добавить совместного пользователя без смены основного владельца" variant="ghost">Совместный</Button>

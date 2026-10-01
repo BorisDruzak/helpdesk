@@ -355,7 +355,4 @@ async def test_registry_snapshot_presence_mismatch_uses_identities_not_display_n
         snapshot = await RegistrySnapshotService(session).build_snapshot()
         await session.commit()
 
-    mismatches = [issue for issue in snapshot["data_quality"] if issue["kind"] == "presence_user_mismatch"]
-    assert [issue["object_id"] for issue in mismatches] == [
-        next(asset["asset_id"] for asset in snapshot["assets"] if asset["device_id"] == mismatched_device_id)
-    ]
+    assert not any(issue["kind"] == "presence_user_mismatch" for issue in snapshot["data_quality"])

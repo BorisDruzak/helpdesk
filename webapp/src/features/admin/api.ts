@@ -44,6 +44,7 @@ export type AdminRegistryPayload = {
     inventory_number: string | null;
     status: string;
     source: string;
+    endpoint_device_ref?: string | null;
     device_id: string | null;
     assigned_person_id: string | null;
     location_id: string | null;
@@ -394,7 +395,6 @@ export type AdminRegistryImportType =
   | "people"
   | "locations"
   | "departments"
-  | "device_inventory_mapping"
   | "audience_groups"
   | "audience_group_members";
 

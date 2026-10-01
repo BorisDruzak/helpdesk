@@ -28,12 +28,10 @@ import {
   locateTechQuery,
   type TechAlert,
   type TechGateStatus,
-  type TechInventorySchedulerDetails,
   type TechLocatorMatch,
   type TechLocatorPayload,
   type TechLogEntry,
   type TechPanelV2Snapshot,
-  type TechProblemDevice,
   type TechReadinessGate,
   type TechReadinessStatus,
   type TechSmokeResult,
@@ -49,7 +47,7 @@ const tabs: Array<{ value: TabKey; label: string }> = [
   { value: "security", label: "Безопасность" },
   { value: "runtime", label: "Runtime" },
   { value: "database", label: "База данных" },
-  { value: "agents", label: "Агенты" },
+  { value: "agents", label: "Устройства" },
   { value: "operations", label: "Операции" },
   { value: "logs", label: "Логи и сигналы" },
   { value: "release", label: "Релиз и smoke" },
@@ -155,9 +153,8 @@ function KpiStrip({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
       <StatTile accent={<Database className="h-5 w-5 text-emerald-600" />} helper="PostgreSQL" label="База" value={snapshot.database.reachable ? "OK" : "DOWN"} />
       <StatTile accent={<ShieldCheck className="h-5 w-5 text-blue-600" />} helper="Auth/Security" label="Security" value={snapshot.security.auth_mode.status.toUpperCase()} />
       <StatTile accent={<LockKeyhole className="h-5 w-5 text-indigo-600" />} helper="HTTPS/WSS" label="Transport" value={snapshot.readiness.gates.find((gate) => gate.key === "https_wss_required")?.status.toUpperCase() ?? "UNKNOWN"} />
-      <StatTile accent={<Users className="h-5 w-5 text-cyan-600" />} helper={`из ${snapshot.agents.total}`} label="Agents online" value={String(snapshot.agents.online)} />
+      <StatTile accent={<Users className="h-5 w-5 text-cyan-600" />} helper={`на странице ${valueText(snapshot.agents.total, "UNKNOWN")}`} label="Endpoint online" value={valueText(snapshot.agents.online, "UNKNOWN")} />
       <StatTile accent={<Timer className="h-5 w-5 text-amber-600" />} helper="queued/sent/running" label="Stuck operations" value={String(snapshot.operations.queued_stuck + snapshot.operations.sent_stuck + snapshot.operations.running_stuck)} />
-      <StatTile accent={<Activity className="h-5 w-5 text-lime-600" />} helper="Inventory scheduler" label="Inventory" value={valueText(snapshot.runtime.schedulers.inventory_scheduler).toUpperCase()} />
       <StatTile accent={<Server className="h-5 w-5 text-slate-600" />} helper="Last smoke" label="Smoke" value={valueText(lastSmoke).toUpperCase()} />
       <StatTile accent={<FileWarning className="h-5 w-5 text-rose-600" />} helper="Restore drill" label="Restore" value={valueText(restore).toUpperCase()} />
       <StatTile accent={<AlertTriangle className="h-5 w-5 text-rose-600" />} helper={`${criticalIntegrity} critical`} label="OBS1 events" value={String(activeIntegrity)} />
@@ -429,7 +426,7 @@ function SecurityTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
       <Card>
         <CardHeader>
           <CardTitle>Session cookie и token channels</CardTitle>
-          <CardDescription>Cookie flags, query token и agent connection policy.</CardDescription>
+          <CardDescription>Cookie flags и query token.</CardDescription>
         </CardHeader>
         <CardContent>
           <MetricRow label="cookie Secure" value={security.session_cookie.secure} status={security.session_cookie.status} />
@@ -437,10 +434,8 @@ function SecurityTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
           <MetricRow label="cookie SameSite" value={security.session_cookie.samesite} />
           <MetricRow label="query token allowed" value={security.token_channels.query_token_allowed} status={security.token_channels.status} />
           <MetricRow label="query token attempts recent" value={`${security.token_channels.query_token_attempts_recent ?? 0} attempts`} />
-          <MetricRow label="connection policy" value={security.agent_connection_policy.mode ?? "unknown"} status={security.agent_connection_policy.status} />
           <MetricRow label="failed logins recent" value={security.audit.failed_logins_recent} />
           <MetricRow label="locked users" value={security.audit.locked_users_count} />
-          <MetricRow label="invalid agent tokens" value={security.audit.invalid_agent_tokens_recent} />
         </CardContent>
       </Card>
     </div>
@@ -448,7 +443,6 @@ function SecurityTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
 }
 
 function RuntimeTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
-  const inventory: TechInventorySchedulerDetails | null | undefined = snapshot.runtime.scheduler_details?.inventory_scheduler;
   return (
     <div className="space-y-6">
       <div className="grid gap-4 xl:grid-cols-3">
@@ -466,26 +460,7 @@ function RuntimeTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
           </Card>
         ))}
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Inventory scheduler details</CardTitle>
-          <CardDescription>Runtime signal for duplicate task detection and last scheduler activity.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {inventory ? (
-            <>
-              <MetricRow label="enabled" value={inventory.enabled} />
-              <MetricRow label="running" value={inventory.running} />
-              <MetricRow label="active task count" value={inventory.active_task_count ?? 0} status={inventory.duplicate_task_detected ? "warning" : "ok"} />
-              <MetricRow label="duplicate detected" value={inventory.duplicate_task_detected} status={inventory.duplicate_task_detected ? "warning" : "ok"} />
-              <MetricRow label="last tick" value={formatDateTime(inventory.last_tick_at)} />
-              <MetricRow label="last error" value={inventory.last_error} />
-            </>
-          ) : (
-            <EmptyState>Нет runtime details для inventory scheduler.</EmptyState>
-          )}
-        </CardContent>
-      </Card>
+
     </div>
   );
 }
@@ -524,71 +499,19 @@ function DatabaseTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
   );
 }
 
-function BaselineDeviceList({ devices }: { devices: TechProblemDevice[] }) {
-  if (!devices.length) return <EmptyState>Агентов ниже baseline в snapshot нет.</EmptyState>;
-  return (
-    <div className="space-y-3">
-      {devices.map((device) => (
-        <div className="grid gap-3 rounded-lg border border-border px-4 py-3 text-sm md:grid-cols-[minmax(150px,1fr)_minmax(140px,0.8fr)_120px_minmax(150px,0.8fr)]" key={device.device_id}>
-          <SafeLink href={device.href ?? `/app/admin/device?device=${device.device_id}`}>{device.device_id}</SafeLink>
-          <span className="text-slate-700">{device.hostname ?? "hostname unknown"}</span>
-          <span className="font-semibold text-slate-950">{device.agent_version ?? "unknown"}</span>
-          <span className="text-xs text-slate-500">{formatDateTime(device.last_seen_at)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function AgentsTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
-  const agents = snapshot.agents;
-  const baselineDevices = agents.baseline?.devices ?? agents.below_baseline_devices ?? [];
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-4 xl:grid-cols-4">
-        <StatTile label="online" value={String(agents.online)} helper={`total ${agents.total}`} />
-        <StatTile label="offline" value={String(agents.offline)} helper="agent ws disconnected" />
-        <StatTile label="stale" value={String(agents.stale)} helper="last_seen threshold" />
-        <StatTile label="below baseline" value={valueText(agents.below_baseline)} helper="PILOT_MIN_AGENT_VERSION" />
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Problem devices</CardTitle>
-          <CardDescription>Devices requiring baseline, token or stale-state attention.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <MetricRow label="pending connection requests" value={agents.pending_connection_requests} />
-          <MetricRow label="reprovision required" value={agents.reprovision_required} />
-          <MetricRow label="update in progress" value={agents.update_in_progress} />
-          <MetricRow label="update failed recent" value={agents.update_failed_recent} />
-          {agents.problem_devices.length ? (
-            agents.problem_devices.map((device) => (
-              <div className="rounded-lg border border-border px-4 py-3" key={device.device_id}>
-                <SafeLink href={device.href ?? `/app/admin/device?device=${device.device_id}`}>{device.device_id}</SafeLink>
-                <p className="mt-2 text-sm text-slate-600">
-                  {device.hostname ?? "hostname unknown"} · {device.status ?? "warning"} · {(device.reasons ?? []).join(", ") || "requires attention"}
-                </p>
-              </div>
-            ))
-          ) : (
-            <EmptyState>Проблемных устройств в snapshot нет.</EmptyState>
-          )}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Agents below baseline</CardTitle>
-          <CardDescription>
-            PILOT_MIN_AGENT_VERSION={valueText(agents.baseline?.min_version, "not configured")} · below baseline:{" "}
-            {valueText(agents.baseline?.below_baseline_count ?? agents.below_baseline)}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <BaselineDeviceList devices={baselineDevices} />
-        </CardContent>
-      </Card>
+  const devices = snapshot.agents;
+  return <div className="space-y-4">
+    <p>Источник: Endpoint · {devices.status === "available" ? "доступен" : "UNKNOWN"}</p>
+    <p>Показатели ограничены первой страницей (до 250 устройств).</p>
+    <div className="grid gap-4 xl:grid-cols-3">
+      <StatTile label="online" value={valueText(devices.online)} helper="Endpoint presence" />
+      <StatTile label="offline" value={valueText(devices.offline)} helper="Endpoint presence" />
+      <StatTile label="retired" value={valueText(devices.retired)} helper="Выведены из эксплуатации" />
+      <StatTile label="на странице" value={valueText(devices.total)} helper={devices.has_more ? "Есть следующая страница" : ""} />
     </div>
-  );
+    <SafeLink href="/app/admin/inventory">Открыть устройства</SafeLink>
+  </div>;
 }
 
 function OperationsTable({ items }: { items: TechStuckOperation[] }) {
@@ -605,7 +528,7 @@ function OperationsTable({ items }: { items: TechStuckOperation[] }) {
       {items.map((operation) => (
         <div className="grid min-w-[820px] grid-cols-[minmax(180px,1fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)_100px_130px] gap-3 border-t border-border px-4 py-3 text-sm" key={operation.operation_id}>
           <SafeLink href={`/app/admin/operations/${operation.operation_id}`}>{operation.operation_id}</SafeLink>
-          <SafeLink href={operation.device_id ? `/app/admin/device?device=${operation.device_id}` : null}>{operation.device_id ?? "нет device"}</SafeLink>
+          <SafeLink href={operation.device_id ? "/app/admin/registry" : null}>{operation.device_id ?? "нет device"}</SafeLink>
           <SafeLink href={operation.ticket_id ? `/app/tickets/${operation.ticket_id}` : null}>{operation.ticket_id ? String(operation.ticket_id) : "нет ticket"}</SafeLink>
           <Badge tone={toneForStatus(operation.status)}>{operation.status ?? "unknown"}</Badge>
           <span className="text-xs text-slate-500">{formatDateTime(operation.queued_at)}</span>

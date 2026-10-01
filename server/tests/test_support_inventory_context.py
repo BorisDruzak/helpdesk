@@ -1,125 +1,38 @@
-from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-
+from unittest.mock import AsyncMock
+from uuid import UUID
 import pytest
+from domain_ports.endpoint import EndpointUnavailable, EndpointNotFound
+from domain_ports.endpoint_context import EndpointDeviceContext
+from registry.endpoint_device_overlay import RegistryDeviceOverlay
+from web_api import support_handlers
 
-from web_api.support_handlers import _compose_support_inventory_context
+pytestmark = pytest.mark.no_db
+DEVICE = "00000000-0000-0000-0000-000000000001"
 
+@pytest.mark.asyncio
+async def test_unmapped_ticket_never_reads_endpoint_or_legacy_telemetry():
+    port = SimpleNamespace(read_device_context=AsyncMock())
+    result = await support_handlers._build_support_inventory_context(None, SimpleNamespace(endpoint_device_ref=None, device_id=DEVICE), None, endpoint_port=port)
+    assert result.status == "unmapped"
+    assert result.context is None
+    port.read_device_context.assert_not_awaited()
 
-def _detail(*, online: bool = True, operation_status: str = "completed"):
-    return SimpleNamespace(
-        snapshot=SimpleNamespace(
-            device=SimpleNamespace(
-                device_id="device-1",
-                hostname="pc-01",
-                agent_version="4.0.1",
-                last_seen_at="2026-05-19T05:00:00+00:00",
-                online=online,
-            ),
-            latest_operations=[
-                SimpleNamespace(status=operation_status, display_status=operation_status),
-            ],
-        )
-    )
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", [EndpointUnavailable(), EndpointNotFound(), RuntimeError("provider failed")])
+async def test_provider_failure_is_unknown_without_local_fallback(outcome):
+    method = AsyncMock(side_effect=outcome) if isinstance(outcome, Exception) else AsyncMock(return_value=outcome)
+    result = await support_handlers._build_support_inventory_context(None, SimpleNamespace(endpoint_device_ref=DEVICE, device_id="local-other"), None, endpoint_port=SimpleNamespace(read_device_context=method))
+    assert result.status == "unavailable"
+    assert result.context is None and result.registry is None
+    assert method.await_args.args[0].external_id == DEVICE
 
-
-@pytest.mark.no_db
-def test_unknown_endpoint_presence_is_not_reported_as_offline():
-    detail = _detail(online=False)
-    detail.snapshot.device.connection_state = 'unknown'
-    context = _compose_support_inventory_context(device_id='device-1', detail=detail, latest=None, binding={}, policy=None, last_refresh_run=None)
-    assert context.agent.connection_state == 'unknown'
-    assert not context.signals.agent_offline
-
-
-@pytest.mark.no_db
-def test_support_inventory_context_marks_fresh_inventory_and_binding() -> None:
-    collected_at = datetime.now(timezone.utc) - timedelta(minutes=5)
-    context = _compose_support_inventory_context(
-        device_id="device-1",
-        detail=_detail(online=True),
-        latest=SimpleNamespace(
-            id="snapshot-1",
-            collected_at=collected_at,
-            source_tool="inventory.collect",
-            normalized=None,
-            snapshot={
-                "identity": {"hostname": "pc-01", "current_user": "ivanov"},
-                "platform": {"os_name": "Windows", "os_version": "11"},
-                "network": {"primary_ip": "192.168.100.54"},
-                "resources": {"cpu_percent": 11, "memory_percent": 42},
-            },
-        ),
-        binding={
-            "department": "Бухгалтерия",
-            "building": "Администрация",
-            "room": "214",
-            "responsible_user": "Иванова И.И.",
-            "status": "active",
-            "tags": ["office"],
-        },
-        policy=SimpleNamespace(enabled=True, next_due_at=collected_at + timedelta(days=1)),
-        last_refresh_run=SimpleNamespace(id="run-1", status="dispatched", requested_at=collected_at),
-    )
-
-    assert context is not None
-    assert context.inventory is not None
-    assert context.inventory.freshness == "fresh"
-    assert context.inventory.source == "inventory.collect"
-    assert context.inventory.summary["primary_ip"] == "192.168.100.54"
-    assert context.binding is not None
-    assert context.binding.department == "Бухгалтерия"
-    assert context.binding.room == "214"
-    assert context.agent is not None
-    assert context.agent.connection_state == "online"
-    assert context.signals is not None
-    assert context.signals.agent_offline is False
-    assert context.signals.stale_inventory is False
-    assert context.signals.missing_inventory is False
-
-
-@pytest.mark.no_db
-def test_support_inventory_context_marks_missing_and_offline_signals() -> None:
-    context = _compose_support_inventory_context(
-        device_id="device-1",
-        detail=_detail(online=False, operation_status="failed"),
-        latest=None,
-        binding={},
-        policy=None,
-        last_refresh_run=SimpleNamespace(id="run-1", status="failed", requested_at=datetime.now(timezone.utc)),
-    )
-
-    assert context is not None
-    assert context.inventory is not None
-    assert context.inventory.freshness == "missing"
-    assert context.agent is not None
-    assert context.agent.connection_state == "offline"
-    assert context.signals is not None
-    assert context.signals.missing_inventory is True
-    assert context.signals.agent_offline is True
-    assert context.signals.failed_recent_refresh is True
-    assert context.signals.failed_recent_operation is True
-
-
-@pytest.mark.no_db
-def test_support_inventory_context_marks_stale_inventory() -> None:
-    context = _compose_support_inventory_context(
-        device_id="device-1",
-        detail=_detail(online=True),
-        latest=SimpleNamespace(
-            id="snapshot-old",
-            collected_at=datetime.now(timezone.utc) - timedelta(days=10),
-            source_tool="inventory.collect",
-            normalized={"hostname": "pc-01"},
-            snapshot={},
-        ),
-        binding={},
-        policy=None,
-        last_refresh_run=None,
-    )
-
-    assert context is not None
-    assert context.inventory is not None
-    assert context.inventory.freshness == "stale"
-    assert context.signals is not None
-    assert context.signals.stale_inventory is True
+@pytest.mark.asyncio
+async def test_safe_context_uses_exact_endpoint_id_and_canonical_registry(monkeypatch):
+    context = EndpointDeviceContext.model_validate({"device": {"id": DEVICE, "device_identifier": "pc", "display_name": "PC", "retired_at": None, "last_seen_at": None, "online": True}, "profiles": [], "snapshots": []})
+    overlay = AsyncMock(return_value={UUID(DEVICE): RegistryDeviceOverlay(status="unmapped")})
+    monkeypatch.setattr("registry.endpoint_device_overlay.read_registry_device_overlays", overlay)
+    result = await support_handlers._build_support_inventory_context(None, SimpleNamespace(endpoint_device_ref=DEVICE, device_id="local-other"), None, endpoint_port=SimpleNamespace(read_device_context=AsyncMock(return_value=context)))
+    assert result.status == "available"
+    assert result.context == context and result.registry.status == "unmapped"
+    overlay.assert_awaited_once_with(None, (UUID(DEVICE),))

@@ -170,11 +170,7 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="ID устройства" value={device.device_id} />
               <Field label="Имя ПК" value={device.hostname} />
-              <Field label="OS" value={device.os} />
-              <Field label="Агент" value={device.agent_version} />
               <Field label="Зарегистрирован" value={device.active_person_name ?? device.owner_name} />
-              <Field label="Текущий пользователь ОС" value={device.latest_presence_user ?? device.current_os_user} />
-              <Field label="Последняя связь с агентом" value={formatDateTime(device.last_seen_at)} />
             </div>
             <section>
               <p className="mb-2 text-sm font-semibold text-slate-950">Активные привязки</p>

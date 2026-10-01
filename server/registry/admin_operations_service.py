@@ -17,7 +17,6 @@ from app.db.models import (
     DeviceAccountEvent,
     DeviceAccountLoginRequest,
     DeviceAccountSession,
-    DeviceInventoryBinding,
     DeviceRegistrationClaim,
     DeviceRegistrationEvent,
     DeviceUserBinding,
@@ -39,7 +38,7 @@ from registry.policy_service import RegistryPolicyService, build_registry_policy
 BULK_LIMIT = 200
 IMPORT_LIMIT = 1000
 IMPORT_TEXT_LIMIT = 2 * 1024 * 1024
-REGISTRY_IMPORT_TYPES = {"people", "locations", "departments", "device_inventory_mapping", "audience_groups", "audience_group_members"}
+REGISTRY_IMPORT_TYPES = {"people", "locations", "departments", "audience_groups", "audience_group_members"}
 AUDIENCE_MEMBER_TYPES = {"person", "department", "department_tree", "location", "access_group", "role", "service"}
 AUDIENCE_SOURCES = {"manual", "department_rule", "import", "system", "future_sync"}
 AUDIENCE_STATUSES = {"active", "archived"}
@@ -518,22 +517,12 @@ class RegistryAdminOperationsService:
             raise LookupError("location not found")
         people = (await self.session.execute(select(RegistryPerson).where(RegistryPerson.location_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.location_id == duplicate_id))).scalars().all()
-        updated_inventory_ids: list[str] = []
         for person in people:
             person.location_id = master_id
             person.updated_at = _now()
         for asset in assets:
             asset.location_id = master_id
             asset.updated_at = _now()
-            if asset.device_id:
-                binding = await self.session.get(DeviceInventoryBinding, asset.device_id)
-                if binding:
-                    binding.building = master.building
-                    binding.floor = master.floor
-                    binding.room = master.room
-                    binding.updated_by = actor_id
-                    binding.updated_at = _now()
-                    updated_inventory_ids.append(binding.device_id)
         duplicate.status = "merged"
         duplicate.metadata_json = {**(duplicate.metadata_json or {}), "merged_into": master_id, "merged_at": _now().isoformat(), "merge_reason": reason}
         event = await self.append_event(
@@ -553,10 +542,6 @@ class RegistryAdminOperationsService:
             *[
                 {"id": asset.asset_id, "entity_type": "registry_asset", "status": "success"}
                 for asset in assets
-            ],
-            *[
-                {"id": device_id, "entity_type": "inventory_binding", "status": "success"}
-                for device_id in updated_inventory_ids
             ],
             {"id": duplicate_id, "entity_type": "location", "status": "success"},
         ]
@@ -583,16 +568,6 @@ class RegistryAdminOperationsService:
             raise LookupError("location not found")
         people = (await self.session.execute(select(RegistryPerson).where(RegistryPerson.location_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.location_id == duplicate_id))).scalars().all()
-        inventory_updates = [
-            row
-            for row in (
-                await self.session.execute(
-                    select(DeviceInventoryBinding).where(
-                        DeviceInventoryBinding.device_id.in_([asset.device_id for asset in assets if asset.device_id])
-                    )
-                )
-            ).scalars().all()
-        ] if assets else []
         changes = [
             {
                 "kind": "person",
@@ -615,17 +590,6 @@ class RegistryAdminOperationsService:
             }
             for row in assets
         )
-        changes.extend(
-            {
-                "kind": "inventory_binding",
-                "action": "update",
-                "object_id": row.device_id,
-                "before": {"building": row.building, "floor": row.floor, "room": row.room},
-                "after": {"building": master.building, "floor": master.floor, "room": master.room},
-                "severity": "warning",
-            }
-            for row in inventory_updates
-        )
         changes.append(
             {
                 "kind": "location",
@@ -645,7 +609,6 @@ class RegistryAdminOperationsService:
             "counts": {
                 "people_to_move": len(people),
                 "assets_to_move": len(assets),
-                "inventory_bindings_to_update": len(inventory_updates),
             },
             "changes": changes,
             "warnings": [],
@@ -747,20 +710,12 @@ class RegistryAdminOperationsService:
             raise LookupError("department not found")
         people = (await self.session.execute(select(RegistryPerson).where(RegistryPerson.department_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.department_id == duplicate_id))).scalars().all()
-        updated_inventory_ids: list[str] = []
         for person in people:
             person.department_id = master_id
             person.updated_at = _now()
         for asset in assets:
             asset.department_id = master_id
             asset.updated_at = _now()
-            if asset.device_id:
-                binding = await self.session.get(DeviceInventoryBinding, asset.device_id)
-                if binding:
-                    binding.department = master.name
-                    binding.updated_by = actor_id
-                    binding.updated_at = _now()
-                    updated_inventory_ids.append(binding.device_id)
         duplicate.status = "merged"
         duplicate.metadata_json = {**(duplicate.metadata_json or {}), "merged_into": master_id, "merged_at": _now().isoformat(), "merge_reason": reason}
         event = await self.append_event(
@@ -780,10 +735,6 @@ class RegistryAdminOperationsService:
             *[
                 {"id": asset.asset_id, "entity_type": "registry_asset", "status": "success"}
                 for asset in assets
-            ],
-            *[
-                {"id": device_id, "entity_type": "inventory_binding", "status": "success"}
-                for device_id in updated_inventory_ids
             ],
             {"id": duplicate_id, "entity_type": "department", "status": "success"},
         ]
@@ -810,16 +761,6 @@ class RegistryAdminOperationsService:
             raise LookupError("department not found")
         people = (await self.session.execute(select(RegistryPerson).where(RegistryPerson.department_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.department_id == duplicate_id))).scalars().all()
-        inventory_updates = [
-            row
-            for row in (
-                await self.session.execute(
-                    select(DeviceInventoryBinding).where(
-                        DeviceInventoryBinding.device_id.in_([asset.device_id for asset in assets if asset.device_id])
-                    )
-                )
-            ).scalars().all()
-        ] if assets else []
         changes = [
             {
                 "kind": "person",
@@ -842,17 +783,6 @@ class RegistryAdminOperationsService:
             }
             for row in assets
         )
-        changes.extend(
-            {
-                "kind": "inventory_binding",
-                "action": "update",
-                "object_id": row.device_id,
-                "before": {"department": row.department},
-                "after": {"department": master.name},
-                "severity": "warning",
-            }
-            for row in inventory_updates
-        )
         changes.append(
             {
                 "kind": "department",
@@ -872,7 +802,6 @@ class RegistryAdminOperationsService:
             "counts": {
                 "people_to_move": len(people),
                 "assets_to_move": len(assets),
-                "inventory_bindings_to_update": len(inventory_updates),
             },
             "changes": changes,
             "warnings": [],
@@ -1066,20 +995,6 @@ class RegistryAdminOperationsService:
         for row in assets:
             row.assigned_person_id = master_id
             row.updated_at = _now()
-        moved_binding_ids = [row.binding_id for row in bindings]
-        moved_asset_device_ids = [row.device_id for row in assets if row.device_id]
-        inventory_filters = [DeviceInventoryBinding.person_id == duplicate_id]
-        if moved_binding_ids:
-            inventory_filters.append(DeviceInventoryBinding.source_binding_id.in_(moved_binding_ids))
-        if moved_asset_device_ids:
-            inventory_filters.append(DeviceInventoryBinding.device_id.in_(moved_asset_device_ids))
-        inventory_bindings = (
-            await self.session.execute(select(DeviceInventoryBinding).where(or_(*inventory_filters)))
-        ).scalars().all()
-        for row in inventory_bindings:
-            row.person_id = master_id
-            row.updated_by = actor_id
-            row.updated_at = _now()
 
         duplicate.status = "merged"
         duplicate.metadata_json = {
@@ -1104,7 +1019,6 @@ class RegistryAdminOperationsService:
                 "claims_moved": len(claims),
                 "tickets_moved": len(tickets),
                 "assets_moved": len(assets),
-                "inventory_bindings_moved": len(inventory_bindings),
             },
         )
         await self.session.flush()
@@ -1135,10 +1049,6 @@ class RegistryAdminOperationsService:
                 {"id": row.asset_id, "entity_type": "registry_asset", "status": "success"}
                 for row in assets
             ],
-            *[
-                {"id": row.device_id, "entity_type": "inventory_binding", "status": "success"}
-                for row in inventory_bindings
-            ],
             {"id": duplicate_id, "entity_type": "person", "status": "success"},
         ]
         return {
@@ -1153,7 +1063,6 @@ class RegistryAdminOperationsService:
                     "claims": len(claims),
                     "tickets": len(tickets),
                     "assets": len(assets),
-                    "inventory_bindings": len(inventory_bindings),
                 },
             ),
             "master_person_id": master_id,
@@ -1165,7 +1074,6 @@ class RegistryAdminOperationsService:
                 "claims": len(claims),
                 "tickets": len(tickets),
                 "assets": len(assets),
-                "inventory_bindings": len(inventory_bindings),
             },
         }
 
@@ -1195,16 +1103,6 @@ class RegistryAdminOperationsService:
         claims = (await self.session.execute(select(DeviceRegistrationClaim).where(DeviceRegistrationClaim.person_id == duplicate_id))).scalars().all()
         tickets = (await self.session.execute(select(Ticket).where(Ticket.requester_person_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.assigned_person_id == duplicate_id))).scalars().all()
-        moved_binding_ids = [row.binding_id for row in bindings]
-        moved_asset_device_ids = [row.device_id for row in assets if row.device_id]
-        inventory_filters = [DeviceInventoryBinding.person_id == duplicate_id]
-        if moved_binding_ids:
-            inventory_filters.append(DeviceInventoryBinding.source_binding_id.in_(moved_binding_ids))
-        if moved_asset_device_ids:
-            inventory_filters.append(DeviceInventoryBinding.device_id.in_(moved_asset_device_ids))
-        inventory_bindings = (
-            await self.session.execute(select(DeviceInventoryBinding).where(or_(*inventory_filters)))
-        ).scalars().all()
 
         field_changes = {
             field: {"before": getattr(master, field), "after": getattr(duplicate, field)}
@@ -1248,7 +1146,6 @@ class RegistryAdminOperationsService:
             ("registration_claim", claims, "claim_id"),
             ("ticket", tickets, "ticket_id"),
             ("registry_asset", assets, "asset_id"),
-            ("inventory_binding", inventory_bindings, "device_id"),
         ):
             changes.extend(
                 {
@@ -1285,7 +1182,6 @@ class RegistryAdminOperationsService:
                 "claims_to_move": len(claims),
                 "tickets_to_move": len(tickets),
                 "assets_to_move": len(assets),
-                "inventory_bindings_to_move": len(inventory_bindings),
             },
             "changes": changes,
             "warnings": ["verified_identity_conflict"] if identity_conflicts else [],
@@ -1345,13 +1241,6 @@ class RegistryAdminOperationsService:
                 continue
             asset.location_id = location.location_id
             asset.updated_at = _now()
-            binding = await self.session.get(DeviceInventoryBinding, device_id)
-            if binding:
-                binding.building = location.building
-                binding.floor = location.floor
-                binding.room = location.room
-                binding.updated_by = actor_id
-                binding.updated_at = _now()
             await self.append_event(
                 object_type="asset",
                 object_id=asset.asset_id,
@@ -1391,11 +1280,6 @@ class RegistryAdminOperationsService:
                     continue
                 row.department_id = department.department_id
                 row.updated_at = _now()
-                binding = await self.session.get(DeviceInventoryBinding, item_id)
-                if binding:
-                    binding.department = department.name
-                    binding.updated_by = actor_id
-                    binding.updated_at = _now()
                 object_type = "asset"
                 object_id = row.asset_id
                 device_id = item_id
@@ -1442,17 +1326,6 @@ class RegistryAdminOperationsService:
                         "severity": "warning",
                     }
                 )
-                if await self.session.get(DeviceInventoryBinding, device_id):
-                    changes.append(
-                        {
-                            "kind": "inventory_binding",
-                            "action": "update",
-                            "object_id": device_id,
-                            "before": "current_location_fields",
-                            "after": {"building": location.building, "floor": location.floor, "room": location.room},
-                            "severity": "warning",
-                        }
-                    )
         elif operation == "devices.assign_department":
             await self._preview_bulk_assign_department(ids, payload, results, changes, target="devices")
         elif operation == "people.assign_department":
@@ -1522,17 +1395,6 @@ class RegistryAdminOperationsService:
                         "severity": "warning",
                     }
                 )
-                if await self.session.get(DeviceInventoryBinding, item_id):
-                    changes.append(
-                        {
-                            "kind": "inventory_binding",
-                            "action": "update",
-                            "object_id": item_id,
-                            "before": "current_department",
-                            "after": {"department": department.name},
-                            "severity": "warning",
-                        }
-                    )
 
     async def export_csv(self, export_type: str) -> str:
         registry = await self._build_export_rows(export_type)
@@ -1552,8 +1414,6 @@ class RegistryAdminOperationsService:
             payload = await self._preview_import_locations(rows)
         elif import_type == "departments":
             payload = await self._preview_import_departments(rows)
-        elif import_type == "device_inventory_mapping":
-            payload = await self._preview_import_device_inventory_mapping(rows)
         elif import_type == "audience_groups":
             payload = await self._preview_import_audience_groups(rows)
         elif import_type == "audience_group_members":
@@ -1594,8 +1454,6 @@ class RegistryAdminOperationsService:
             await self._apply_import_locations(preview["changes"])
         elif import_type == "departments":
             await self._apply_import_departments(preview["changes"])
-        elif import_type == "device_inventory_mapping":
-            await self._apply_import_device_inventory_mapping(preview["changes"], actor_id=actor_id)
         elif import_type == "audience_groups":
             await self._apply_import_audience_groups(preview["changes"], actor_id=actor_id)
         elif import_type == "audience_group_members":
@@ -1642,9 +1500,6 @@ class RegistryAdminOperationsService:
     def _normalize_import_type(self, import_type: str) -> str:
         value = str(import_type or "").strip().lower().replace("-", "_")
         aliases = {
-            "device_inventory": "device_inventory_mapping",
-            "inventory_mapping": "device_inventory_mapping",
-            "devices_inventory_mapping": "device_inventory_mapping",
             "audience_members": "audience_group_members",
             "audience_group_member": "audience_group_members",
         }
@@ -2158,120 +2013,10 @@ class RegistryAdminOperationsService:
                 member.updated_by = actor_id
                 member.updated_at = _now()
 
-    async def _preview_import_device_inventory_mapping(self, rows: list[tuple[int, dict[str, str]]]) -> dict[str, Any]:
-        import_type = "device_inventory_mapping"
-        device_keys = [self._device_import_key(row) for _, row in rows]
-        device_key_counts = Counter(key for key in device_keys if key)
-        changes: list[dict[str, Any]] = []
-        row_errors: list[dict[str, Any]] = []
-        duplicate_keys: list[dict[str, Any]] = []
-        for row_number, row in rows:
-            device, error = await self._resolve_import_device(row)
-            if error:
-                row_errors.append(self._row_error(row_number, "device_id", error))
-                continue
-            assert device is not None
-            device_key = self._device_import_key(row)
-            if device_key and device_key_counts[device_key] > 1:
-                duplicate_keys.append(self._duplicate_key(row_number, "device", device_key, "device appears more than once in this file"))
-                continue
-            location_id = _text(row.get("location_id"), max_length=36)
-            department_id = _text(row.get("department_id"), max_length=36)
-            if location_id and await self.session.get(RegistryLocation, location_id) is None:
-                row_errors.append(self._row_error(row_number, "location_id", "location_id not found"))
-                continue
-            if department_id and await self.session.get(RegistryDepartment, department_id) is None:
-                row_errors.append(self._row_error(row_number, "department_id", "department_id not found"))
-                continue
-            asset = (
-                await self.session.execute(select(RegistryAsset).where(RegistryAsset.device_id == device.device_id).limit(1))
-            ).scalar_one_or_none()
-            binding = await self.session.get(DeviceInventoryBinding, device.device_id)
-            after = {
-                "device_id": device.device_id,
-                "asset_id": asset.asset_id if asset else None,
-                "asset_location_id": location_id,
-                "asset_department_id": department_id,
-                "binding": {
-                    "building": _text(row.get("building"), max_length=120),
-                    "floor": _text(row.get("floor"), max_length=64),
-                    "room": _text(row.get("room"), max_length=120),
-                    "department": _text(row.get("department"), max_length=160),
-                    "responsible_user": _text(row.get("responsible_user"), max_length=160),
-                    "responsible_user_login": _text(row.get("responsible_user_login"), max_length=160),
-                    "inventory_number": _text(row.get("inventory_number"), max_length=120),
-                    "status": _text(row.get("status"), max_length=32),
-                    "tags": self._split_tags(row.get("tags")),
-                    "notes": _text(row.get("notes"), max_length=2000),
-                },
-            }
-            before = {
-                "asset": {"location_id": asset.location_id, "department_id": asset.department_id} if asset else None,
-                "binding": self._inventory_binding_snapshot(binding),
-            }
-            changes.append({"row": row_number, "kind": "device_inventory_mapping", "action": "update", "object_id": device.device_id, "before": before, "after": after})
-        return self._import_preview_payload(import_type, rows, changes, row_errors, duplicate_keys)
 
-    @staticmethod
-    def _device_import_key(row: dict[str, str]) -> str | None:
-        device_id = _text(row.get("device_id"), max_length=36)
-        if device_id:
-            return f"id:{device_id}"
-        hostname = _text(row.get("hostname"), max_length=255)
-        return f"host:{hostname.casefold()}" if hostname else None
 
-    async def _resolve_import_device(self, row: dict[str, str]) -> tuple[Device | None, str | None]:
-        device_id = _text(row.get("device_id"), max_length=36)
-        hostname = _text(row.get("hostname"), max_length=255)
-        if device_id:
-            device = await self.session.get(Device, device_id)
-            return (device, None) if device else (None, "device_id not found")
-        if not hostname:
-            return None, "device_id or hostname is required"
-        devices = (await self.session.execute(select(Device).where(func.lower(Device.hostname) == hostname.lower()))).scalars().all()
-        if not devices:
-            return None, "hostname not found"
-        if len(devices) > 1:
-            return None, "hostname is not unique"
-        return devices[0], None
 
-    @staticmethod
-    def _inventory_binding_snapshot(binding: DeviceInventoryBinding | None) -> dict[str, Any] | None:
-        if binding is None:
-            return None
-        return {
-            "asset_id": binding.asset_id,
-            "building": binding.building,
-            "floor": binding.floor,
-            "room": binding.room,
-            "department": binding.department,
-            "responsible_user": binding.responsible_user,
-            "responsible_user_login": binding.responsible_user_login,
-            "inventory_number": binding.inventory_number,
-            "status": binding.status,
-            "tags": binding.tags or [],
-            "notes": binding.notes,
-        }
 
-    async def _apply_import_device_inventory_mapping(self, changes: list[dict[str, Any]], *, actor_id: str | None = None) -> None:
-        for change in changes:
-            after = change["after"]
-            device_id = after["device_id"]
-            if after.get("asset_id"):
-                asset = await self.session.get(RegistryAsset, after["asset_id"])
-                if asset is not None:
-                    asset.location_id = after.get("asset_location_id")
-                    asset.department_id = after.get("asset_department_id")
-                    asset.updated_at = _now()
-            binding = await self.session.get(DeviceInventoryBinding, device_id)
-            if binding is None:
-                binding = DeviceInventoryBinding(device_id=device_id, asset_id=after.get("asset_id"), tags=[])
-                self.session.add(binding)
-            binding.asset_id = after.get("asset_id") or binding.asset_id
-            for field, value in after["binding"].items():
-                setattr(binding, field, value)
-            binding.updated_by = actor_id
-            binding.updated_at = _now()
 
     async def _build_export_rows(self, export_type: str) -> dict[str, Any]:
         export_type = str(export_type or "").strip().lower()

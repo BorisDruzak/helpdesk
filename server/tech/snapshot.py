@@ -57,11 +57,9 @@ def collect_config_values() -> dict[str, Any]:
         "AUTH_ALLOW_QUERY_TOKEN": _bool_config("AUTH_ALLOW_QUERY_TOKEN", False),
         "AUTH_UI_DB_USERS_ENABLED": _bool_config("AUTH_UI_DB_USERS_ENABLED", True),
         "AUTH_UI_CONFIG_FALLBACK_ENABLED": _bool_config("AUTH_UI_CONFIG_FALLBACK_ENABLED", False),
-        "PILOT_MIN_AGENT_VERSION": _str_config("PILOT_MIN_AGENT_VERSION"),
         "WEB_SESSION_COOKIE_SECURE": _bool_config("WEB_SESSION_COOKIE_SECURE", True),
         "WEB_SESSION_COOKIE_HTTPONLY": _bool_config("WEB_SESSION_COOKIE_HTTPONLY", True),
         "WEB_SESSION_COOKIE_SAMESITE": _str_config("WEB_SESSION_COOKIE_SAMESITE", "Lax"),
-        "INVENTORY_REFRESH_SCHEDULER_ENABLED": _bool_config("INVENTORY_REFRESH_SCHEDULER_ENABLED", True),
         "TECH_BACKUP_STATUS_PATH": _str_config("TECH_BACKUP_STATUS_PATH"),
         "TECH_RESTORE_DRILL_STATUS_PATH": _str_config("TECH_RESTORE_DRILL_STATUS_PATH"),
         "TECH_RELEASE_STATUS_PATH": _str_config("TECH_RELEASE_STATUS_PATH"),
@@ -222,23 +220,6 @@ def build_readiness_gates(
         )
     )
 
-    policy = security.get("agent_connection_policy", {}) if isinstance(security.get("agent_connection_policy"), dict) else {}
-    mode = str(policy.get("mode") or "").strip().lower()
-    policy_ok = mode in {"endpoint_platform", "controlled"}
-    policy_status = "ok" if policy_ok else ("unknown" if not mode else pilot_status)
-    gates.append(
-        _gate(
-            "agent_connection_policy_controlled",
-            "Agent connection policy контролируемая",
-            policy_status,
-            "critical" if policy_status == "blocked" else ("warning" if policy_status != "ok" else "info"),
-            "accept_all/implicit provisioning не подходит для пилота без отдельного hardening.",
-            evidence=f"mode={mode or 'unknown'}",
-            action_label="Открыть approvals",
-            action_href="/app/support/approvals",
-        )
-    )
-
     migrations_status = str(database.get("migrations_status") or "unknown").lower()
     gates.append(
         _gate(
@@ -263,54 +244,6 @@ def build_readiness_gates(
             "critical" if restore_status == "blocked" else ("warning" if restore_required and not restore_ok else "info"),
             "Панель читает marker restore drill; restore из браузера не запускается.",
             evidence=f"required={str(restore_required).lower()}, status={str((restore or {}).get('status') or 'missing')}",
-        )
-    )
-
-    inventory_scheduler = str((runtime.get("schedulers") or {}).get("inventory_scheduler") or "unknown").lower()
-    scheduler_details = runtime.get("scheduler_details") if isinstance(runtime.get("scheduler_details"), dict) else {}
-    inventory_details = (
-        scheduler_details.get("inventory_scheduler")
-        if isinstance(scheduler_details.get("inventory_scheduler"), dict)
-        else {}
-    )
-    duplicate_detected = bool(inventory_details.get("duplicate_task_detected"))
-    active_task_count = _safe_int(inventory_details.get("active_task_count"))
-    if duplicate_detected:
-        inventory_gate_status = pilot_status
-    else:
-        inventory_gate_status = "ok" if inventory_scheduler in {"running", "disabled"} else ("warning" if inventory_scheduler else "unknown")
-    gates.append(
-        _gate(
-            "inventory_scheduler_health",
-            "Inventory scheduler healthy",
-            inventory_gate_status,
-            "critical" if inventory_gate_status == "blocked" else ("warning" if inventory_gate_status != "ok" else "info"),
-            "Gate показывает, включён ли scheduler и есть ли runtime signal; duplicate-task detection остаётся отдельным hardening.",
-            evidence=f"inventory_scheduler={inventory_scheduler or 'unknown'}, active_task_count={active_task_count}, duplicate={str(duplicate_detected).lower()}",
-            action_label="Открыть inventory",
-            action_href="/app/admin/inventory",
-        )
-    )
-
-    min_agent = str(config_values.get("PILOT_MIN_AGENT_VERSION") or "").strip()
-    below_baseline = agents.get("below_baseline")
-    if not min_agent:
-        baseline_status = "warning"
-        evidence = "PILOT_MIN_AGENT_VERSION not configured"
-    elif below_baseline is None:
-        baseline_status = "unknown"
-        evidence = f"PILOT_MIN_AGENT_VERSION={min_agent}, below_baseline=unknown"
-    else:
-        baseline_status = "ok" if _safe_int(below_baseline) == 0 else pilot_status
-        evidence = f"PILOT_MIN_AGENT_VERSION={min_agent}, below_baseline={below_baseline}"
-    gates.append(
-        _gate(
-            "agent_baseline",
-            "Agent baseline соблюдён",
-            baseline_status,
-            "critical" if baseline_status == "blocked" else ("warning" if baseline_status != "ok" else "info"),
-            "Пилот должен понимать, сколько агентов ниже минимальной версии.",
-            evidence=evidence,
         )
     )
 
@@ -514,19 +447,8 @@ async def build_endpoint_dependency_snapshot(*, database_reachable: bool, endpoi
     return signal
 
 
-async def _connection_policy_snapshot(database_reachable: bool) -> dict[str, Any]:
-    del database_reachable
-    return {
-        "mode": "endpoint_platform",
-        "status": "unavailable",
-        "pending_requests": 0,
-        "stale_pending_requests": 0,
-    }
-
-
 async def build_security_snapshot(overview: dict[str, Any], config_values: dict[str, Any], database_reachable: bool) -> dict[str, Any]:
     audit = overview.get("audit_counters") if isinstance(overview.get("audit_counters"), dict) else {}
-    agent_health = overview.get("agent_health") if isinstance(overview.get("agent_health"), dict) else {}
     fallback_enabled = bool(config_values.get("AUTH_UI_CONFIG_FALLBACK_ENABLED"))
     query_allowed = bool(config_values.get("AUTH_ALLOW_QUERY_TOKEN"))
     cookie_secure = bool(config_values.get("WEB_SESSION_COOKIE_SECURE"))
@@ -553,131 +475,29 @@ async def build_security_snapshot(overview: dict[str, Any], config_values: dict[
             "query_token_attempts_recent": auth_middleware.get_query_token_auth_attempts(window_seconds=3600),
             "status": "warning" if query_allowed else "ok",
         },
-        "agent_connection_policy": await _connection_policy_snapshot(database_reachable),
         "audit": {
             "failed_logins_recent": _safe_int(audit.get("failed_logins_recent")),
             "locked_users_count": _safe_int(audit.get("locked_users_count")),
-            "invalid_agent_tokens_recent": _safe_int(agent_health.get("invalid_token_recent")),
         },
     }
-
-
-def _version_tuple(value: str) -> tuple[int, ...]:
-    parts = re.findall(r"\d+", value or "")
-    return tuple(int(part) for part in parts[:4]) if parts else (0,)
-
-
-def _is_agent_baseline_candidate(*, protocol_version: str | None, agent_version: str | None) -> bool:
-    if str(protocol_version or "").strip().lower() == "pending":
-        return False
-    return bool(re.search(r"\d+", str(agent_version or "")))
-
-
-def _version_lt(left: str, right: str) -> bool:
-    left_tuple = _version_tuple(left)
-    right_tuple = _version_tuple(right)
-    length = max(len(left_tuple), len(right_tuple))
-    return left_tuple + (0,) * (length - len(left_tuple)) < right_tuple + (0,) * (length - len(right_tuple))
-
-
-async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict[str, Any], database_reachable: bool) -> tuple[int | None, list[dict[str, Any]], list[dict[str, Any]]]:
-    min_version = str(config_values.get("PILOT_MIN_AGENT_VERSION") or "").strip()
-    below_baseline: int | None = None if not min_version else 0
-    problem_devices: list[dict[str, Any]] = []
-    below_baseline_devices: list[dict[str, Any]] = []
-    if not database_reachable:
-        return below_baseline, problem_devices, below_baseline_devices
-    try:
-        now = datetime.now(timezone.utc)
-        stale_cutoff = now - timedelta(seconds=300)
-        async with get_session() as session:
-            query = (
-                select(Device.device_id, Device.hostname, Device.agent_version, Device.protocol_version, Device.last_seen_at)
-                .where(
-                    and_(
-                        Device.deleted_at.is_(None),
-                        or_(
-                            Device.last_seen_at < stale_cutoff,
-                            Device.last_seen_at.is_(None),
-                        ),
-                    )
-                )
-                .order_by(Device.last_seen_at.asc())
-                .limit(20)
-            )
-            rows = (await session.execute(query)).all()
-            for device_id, hostname, agent_version, protocol_version, last_seen_at in rows:
-                reasons: list[str] = []
-                if last_seen_at and last_seen_at < stale_cutoff:
-                    reasons.append("stale")
-                if min_version and _is_agent_baseline_candidate(protocol_version=protocol_version, agent_version=agent_version) and _version_lt(str(agent_version or ""), min_version):
-                    reasons.append("below baseline")
-                problem_devices.append(
-                    {
-                        "device_id": device_id,
-                        "hostname": hostname,
-                        "status": "stale" if "stale" in reasons else "warning",
-                        "last_seen_at": _iso(last_seen_at),
-                        "agent_version": agent_version,
-                        "reasons": reasons or ["requires attention"],
-                        "href": f"/app/admin/device?device={device_id}",
-                    }
-                )
-            if min_version:
-                all_versions = (
-                    await session.execute(
-                        select(Device.device_id, Device.hostname, Device.agent_version, Device.protocol_version, Device.last_seen_at).where(Device.deleted_at.is_(None)).order_by(Device.last_seen_at.desc())
-                    )
-                ).all()
-                below_baseline = 0
-                for device_id, hostname, agent_version, protocol_version, last_seen_at in all_versions:
-                    if _is_agent_baseline_candidate(protocol_version=protocol_version, agent_version=agent_version) and _version_lt(str(agent_version or ""), min_version):
-                        below_baseline += 1
-                        if len(below_baseline_devices) < 50:
-                            below_baseline_devices.append(
-                                {
-                                    "device_id": device_id,
-                                    "hostname": hostname,
-                                    "status": "below_baseline",
-                                    "last_seen_at": _iso(last_seen_at),
-                                    "agent_version": agent_version,
-                                    "reasons": ["below baseline"],
-                                    "href": f"/app/admin/device?device={device_id}",
-                                }
-                            )
-    except SQLAlchemyError:
-        return below_baseline, problem_devices, below_baseline_devices
-    return below_baseline, problem_devices, below_baseline_devices
 
 
 async def build_agents_snapshot(overview: dict[str, Any], config_values: dict[str, Any], database_reachable: bool) -> dict[str, Any]:
-    agent = overview.get("agent_health") if isinstance(overview.get("agent_health"), dict) else {}
-    update = overview.get("update_health") if isinstance(overview.get("update_health"), dict) else {}
-    below_baseline, problem_devices, below_baseline_devices = await _agent_db_enrichment(agent, config_values, database_reachable)
-    online = _safe_int(agent.get("online_count") or agent.get("online"))
-    offline = _safe_int(agent.get("offline_count") or agent.get("offline"))
-    stale = _safe_int(agent.get("stale_count") or agent.get("stale"))
-    return {
-        "total": online + offline,
-        "online": online,
-        "offline": offline,
-        "stale": stale,
-        "pending_connection_requests": _safe_int(agent.get("pending_connection_requests")),
-        "reprovision_required": _safe_int(agent.get("reprovision_required_count") or agent.get("reprovision_required")),
-        "invalid_token_recent": _safe_int(agent.get("invalid_token_recent")),
-        "below_baseline": below_baseline,
-        "below_baseline_devices": below_baseline_devices,
-        "baseline": {
-            "min_version": str(config_values.get("PILOT_MIN_AGENT_VERSION") or "").strip() or None,
-            "below_baseline_count": below_baseline,
-            "devices": below_baseline_devices,
-        },
-        "update_in_progress": _safe_int(update.get("in_progress")),
-        "update_failed_recent": _safe_int(update.get("failed_recent")),
-        "update_timed_out_recent": _safe_int(update.get("timed_out_recent")),
-        "awaiting_handshake_confirm": _safe_int(update.get("awaiting_handshake_confirm")),
-        "problem_devices": problem_devices,
-    }
+    """One bounded provider read. No local telemetry or invented zero counts."""
+    from domain_ports.endpoint_context import EndpointDeviceFleet
+    try:
+        outcome = await DomainPortContainer.from_config().endpoint.list_device_fleet(limit=250)
+    except Exception:
+        outcome = None
+    if not isinstance(outcome, EndpointDeviceFleet):
+        return {"source": "endpoint", "status": "unknown", "error_code": getattr(outcome, "code", "unavailable"),
+                "total": None, "online": None, "offline": None, "retired": None, "has_more": None}
+    active = [item for item in outcome.items if item.device.retired_at is None]
+    online = sum(item.device.online for item in active)
+    return {"source": "endpoint", "status": "available", "error_code": None,
+            "total": len(outcome.items), "online": online, "offline": len(active)-online,
+            "retired": len(outcome.items)-len(active),
+            "has_more": outcome.next_cursor is not None}
 
 
 async def build_operations_snapshot(overview: dict[str, Any], database_reachable: bool) -> dict[str, Any]:

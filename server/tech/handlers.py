@@ -359,7 +359,7 @@ def _lifecycle_links(
             {
                 "rel": "device",
                 "label": "Устройство",
-                "href": f"/app/admin/device?device={device_id}",
+                "href": "/app/admin/registry",
             }
         )
     if operation_id:
@@ -1305,21 +1305,8 @@ def _observer_trace_filter_has_values(filters: TraceOverlayFilters) -> bool:
 def _serialize_device_context(device: Optional[Device]) -> Optional[dict[str, Any]]:
     if device is None:
         return None
-    metadata = redact_sensitive_payload(device.device_metadata or {})
-    return {
-        "device_id": device.device_id,
-        "hostname": device.hostname,
-        "os": device.os,
-        "agent_version": device.agent_version,
-        "protocol_version": device.protocol_version,
-        "tools_version": device.tools_version,
-        "current_toolset_hash": device.current_toolset_hash,
-        "first_seen_at": _iso(device.first_seen_at),
-        "last_seen_at": _iso(device.last_seen_at),
-        "last_handshake_at": _iso(device.last_handshake_at),
-        "deleted_at": _iso(device.deleted_at),
-        "metadata": metadata,
-    }
+    return {"device_id": device.device_id, "registry_hostname": device.hostname,
+            "technical_source": "endpoint", "technical_state": "unknown"}
 
 
 def _serialize_ticket_context(ticket: Optional[Ticket]) -> Optional[dict[str, Any]]:

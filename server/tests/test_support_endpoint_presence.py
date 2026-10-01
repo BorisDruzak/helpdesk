@@ -61,10 +61,11 @@ async def test_retired_endpoint_is_not_online():
     assert not snapshot.online
 
 @pytest.mark.asyncio
-async def test_ticket_without_endpoint_reference_keeps_legacy_context_without_http():
+async def test_ticket_without_endpoint_reference_is_unknown_without_legacy_fallback():
     port = SimpleNamespace(read_device_presence=AsyncMock())
     legacy = SimpleNamespace(hostname='legacy-host', os='Windows', agent_version='3.0', last_seen_at=None)
     snapshot = await support_handlers._build_support_device_snapshot(SimpleNamespace(device_id='legacy-1', endpoint_device_ref=None), legacy, endpoint_port=port, legacy_online=True)
-    assert snapshot.online
-    assert snapshot.agent_version == '3.0'
+    assert not snapshot.online
+    assert snapshot.connection_state == "unknown"
+    assert snapshot.agent_version is None
     port.read_device_presence.assert_not_awaited()

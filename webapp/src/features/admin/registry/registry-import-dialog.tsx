@@ -21,7 +21,6 @@ const importTypes: Array<{ value: AdminRegistryImportType; label: string }> = [
   { value: "departments", label: "Подразделения" },
   { value: "audience_groups", label: "Аудитории" },
   { value: "audience_group_members", label: "Участники аудиторий" },
-  { value: "device_inventory_mapping", label: "Инвентарная привязка устройств" },
 ];
 
 function csvSafe(value: unknown): string {

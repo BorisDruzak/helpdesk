@@ -1,3 +1,5 @@
+from domain_ports.endpoint_context import EndpointDeviceContext
+from registry.endpoint_device_overlay import RegistryDeviceOverlay
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -1460,70 +1462,12 @@ class SupportTicketTimelinePayload(BaseModel):
     limit: int = 80
 
 
-class SupportTicketInventoryAgentContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    connection_state: str = "unknown"
-    last_seen_at: str | None = None
-    version: str | None = None
-    update_status: str | None = None
-    update_available: bool | None = None
-
-
-class SupportTicketInventorySnapshotContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    latest_snapshot_id: str | None = None
-    collected_at: str | None = None
-    age_seconds: int | None = None
-    freshness: str = "unknown"
-    source: str | None = None
-    summary: dict[str, Any] | None = None
-
-
-class SupportTicketInventoryBindingContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    responsible_person: str | None = None
-    department: str | None = None
-    building: str | None = None
-    room: str | None = None
-    status: str | None = None
-    tags: list[str] = Field(default_factory=list)
-
-
-class SupportTicketInventoryRefreshContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    policy_enabled: bool | None = None
-    last_run_id: str | None = None
-    last_run_status: str | None = None
-    last_run_at: str | None = None
-    next_due_at: str | None = None
-    can_request_refresh: bool = False
-
-
-class SupportTicketInventorySignals(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    stale_inventory: bool = False
-    missing_inventory: bool = False
-    agent_offline: bool = False
-    failed_recent_refresh: bool = False
-    failed_recent_operation: bool = False
-
-
 class SupportTicketInventoryContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-    device_id: str | None = None
-    hostname: str | None = None
-    display_name: str | None = None
-    agent: SupportTicketInventoryAgentContext | None = None
-    inventory: SupportTicketInventorySnapshotContext | None = None
-    binding: SupportTicketInventoryBindingContext | None = None
-    refresh: SupportTicketInventoryRefreshContext | None = None
-    signals: SupportTicketInventorySignals | None = None
+    status: Literal["available", "unmapped", "unavailable"]
+    error_code: str | None = None
+    context: EndpointDeviceContext | None = None
+    registry: RegistryDeviceOverlay | None = None
 
 
 class SupportTicketWorkspacePayload(BaseModel):

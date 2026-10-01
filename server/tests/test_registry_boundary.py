@@ -24,7 +24,6 @@ from domain_ports import (
 )
 from customer_history.sources import RegistryHistorySource
 from customer_history.projection_service import CustomerHistoryProjectionService
-from inventory.service import DeviceInventoryService
 from tickets.create_flow import _read_registry_account_status
 from tickets.ticket_context import TicketContextBuilder
 from web_api.support_handlers import _build_support_registry_snapshot
@@ -553,63 +552,6 @@ async def test_create_flow_rejects_mismatched_binding_requester_projection() -> 
 
     with pytest.raises(ValueError, match="registry_projection_invalid"):
         await _read_registry_account_status(port, binding.device.external_id)  # type: ignore[arg-type]
-
-
-class _InventoryServiceWithoutSuggestions(DeviceInventoryService):
-    async def list_binding_suggestions(
-        self,
-        _device_id: str,
-        *,
-        include_reviewed: bool = False,
-    ) -> list[object]:
-        del include_reviewed
-        return []
-
-
-@pytest.mark.asyncio
-async def test_inventory_profile_enrichment_uses_redacted_active_binding() -> None:
-    binding = _binding()
-    port = _RegistryPortDouble(binding_result=binding)
-    service = _InventoryServiceWithoutSuggestions(
-        _NoRegistrySession(),  # type: ignore[arg-type]
-        registry_port=port,  # type: ignore[arg-type]
-    )
-
-    profiles = await service.list_device_profiles(binding.device.external_id)
-
-    assert profiles == [
-        {
-            "requester_id": "registry-ref-person-1",
-            "display_name": "Historical Requester",
-            "full_name": None,
-            "department": None,
-            "building": None,
-            "floor": None,
-            "room": None,
-            "phone": None,
-            "email": None,
-            "active": False,
-            "last_seen_at": None,
-            "source": "registry_port",
-            "status": "active",
-        }
-    ]
-    assert port.device_refs == ["registry-ref-device-1"]
-
-
-@pytest.mark.asyncio
-async def test_inventory_ignores_mismatched_active_binding_projection() -> None:
-    binding = _binding("different-registry-device")
-    port = _RegistryPortDouble(binding_result=binding)
-    service = _InventoryServiceWithoutSuggestions(
-        _NoRegistrySession(),  # type: ignore[arg-type]
-        registry_port=port,  # type: ignore[arg-type]
-    )
-
-    profiles = await service.list_device_profiles("registry-ref-device-1")
-
-    assert profiles == []
-    assert port.device_refs == ["registry-ref-device-1"]
 
 
 @pytest.mark.asyncio

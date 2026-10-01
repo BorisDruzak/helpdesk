@@ -2059,12 +2059,9 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
         session.add(ticket)
         await session.flush()
 
-        await RegistryRepo(session).upsert_agent_asset(
+        await RegistryRepo(session).ensure_device_asset(
             device_id=detail_device_id,
             hostname="ws-detail-host",
-            os_name="Windows 11",
-            agent_version="1.2.3",
-            metadata={},
         )
         registry_service = RegistryIngestionService(session)
         profile_result = await registry_service.ingest_requester_profile(

@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     Device,
-    DevicePresenceSnapshot,
     ObserverTrace,
     Operation,
     ServerRuntimeSnapshot,
@@ -173,8 +172,8 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
     )
     severity = "warning" if ticket_open or sla_risk or pending_approvals or waiting_consent else "ok"
     links = [_safe_link("Open ticket", f"/app/tickets/{ticket.ticket_id}", "ticket")]
-    if ticket.device_id:
-        links.append(_safe_link("Device card", f"/app/admin/device?device={ticket.device_id}", "device_card"))
+    if ticket.endpoint_device_ref:
+        links.append(_safe_link("Device card", f"/app/admin/device?device={quote(ticket.endpoint_device_ref)}", "device_card"))
     return {
         "kind": "ticket",
         "id": ticket.ticket_id,
@@ -201,30 +200,26 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
 
 
 def _device_match(device: Device, *, failed_count: int, stuck_count: int, kind: str = "device") -> dict[str, Any]:
-    now = datetime.now(timezone.utc)
-    stale = bool(device.last_seen_at and device.last_seen_at < now - timedelta(minutes=15))
-    severity = "warning" if stale or failed_count or stuck_count else "ok"
+    severity = "warning" if failed_count or stuck_count else "ok"
     return {
         "kind": kind,
         "id": device.device_id,
         "title": device.hostname or device.device_id,
-        "status": "db_last_seen_stale" if stale else "db_last_seen_recent",
+        "status": "unknown",
         "severity": severity,
-        "reason": "Device found using DB evidence. Live websocket state is unavailable in debug_readonly MCP.",
+        "reason": "Registry device found; use authoritative Endpoint context for technical state.",
         "context": {
             "device_id": device.device_id,
             "hostname": device.hostname,
             "agent_online": None,
-            "last_seen_at": _iso(device.last_seen_at),
             "live_state_source": "unavailable_in_debug_readonly_mcp",
         },
         "signals": {
-            "stale_agent": stale,
             "failed_operation": failed_count > 0,
             "stuck_operation": stuck_count > 0,
         },
         "links": [
-            _safe_link("Device card", f"/app/admin/device?device={device.device_id}", "device_card"),
+            _safe_link("Registry", "/app/admin/registry", "registry"),
             _safe_link("Observer", f"/app/admin/observer?device_id={quote(device.device_id)}", "observer"),
         ],
     }
@@ -352,7 +347,7 @@ async def locate_debug_context(
             await session.execute(
                 select(Device)
                 .where(and_(Device.deleted_at.is_(None), or_(*device_conditions)))
-                .order_by(Device.last_seen_at.desc())
+                .order_by(Device.device_id.asc())
                 .limit(capped_limit - len(matches))
             )
         ).scalars().all()
@@ -516,72 +511,27 @@ async def runtime_snapshot(session: AsyncSession, *, process_kind: str | None = 
 
 
 async def agent_presence_snapshot(
-    session: AsyncSession,
-    *,
-    device_id: str | None = None,
-    limit: int = 50,
+    session: AsyncSession, *, device_id: str | None = None, limit: int = 50,
 ) -> dict[str, Any]:
-    capped_limit = _limit(limit, default=50, cap=200)
-    stmt = select(DevicePresenceSnapshot).order_by(DevicePresenceSnapshot.collected_at.desc()).limit(capped_limit)
+    from app.db.models import RegistryEndpointDeviceMapping
+    from domain_ports import DomainPortContainer
+    from domain_ports.endpoint import EndpointDeviceRef
+    from domain_ports.endpoint_context import EndpointDeviceContext, EndpointDeviceFleet
+
+    port = DomainPortContainer.from_config().endpoint
     if device_id:
-        stmt = (
-            select(DevicePresenceSnapshot)
-            .where(DevicePresenceSnapshot.device_id == device_id)
-            .order_by(DevicePresenceSnapshot.collected_at.desc())
-            .limit(capped_limit)
-        )
-    rows = (await session.execute(stmt)).scalars().all()
-    devices: dict[str, dict[str, Any]] = {}
-    if device_id:
-        device = await session.get(Device, device_id)
-        if device is not None:
-            devices[device.device_id] = {
-                "device_id": device.device_id,
-                "hostname": device.hostname,
-                "db_last_seen_at": _iso(device.last_seen_at),
-                "db_last_handshake_at": _iso(device.last_handshake_at),
-            }
-    elif rows:
-        device_ids = sorted({row.device_id for row in rows if row.device_id})
-        if device_ids:
-            device_rows = (await session.execute(select(Device).where(Device.device_id.in_(device_ids)))).scalars().all()
-            devices = {
-                item.device_id: {
-                    "device_id": item.device_id,
-                    "hostname": item.hostname,
-                    "db_last_seen_at": _iso(item.last_seen_at),
-                    "db_last_handshake_at": _iso(item.last_handshake_at),
-                }
-                for item in device_rows
-            }
-    snapshots = [
-        {
-            "id": row.id,
-            "device_id": row.device_id,
-            "collected_at": _iso(row.collected_at),
-            "received_at": _iso(row.received_at),
-            "session_state": row.session_state,
-            "current_user": row.current_user,
-            "idle_seconds": row.idle_seconds,
-            "locked": row.locked,
-            "snapshot": row.snapshot,
-            "device_db_evidence": devices.get(row.device_id),
-        }
-        for row in rows
-    ]
-    return _redact_debug_payload(
-        {
-            "status": "ok" if snapshots else "partial",
-            "presence_snapshot_available": bool(snapshots),
-            "confidence": "db_snapshot" if snapshots else "unknown",
-            "message": None if snapshots else "No persisted agent presence snapshots found",
-            "live_ws_state": "unavailable_in_debug_readonly_mcp",
-            "device_id": device_id,
-            "device_db_evidence": devices.get(device_id) if device_id else None,
-            "snapshots": snapshots,
-            "limits": {"limit": capped_limit, "returned": len(snapshots)},
-        }
-    )
+        mapping = (await session.execute(select(RegistryEndpointDeviceMapping)
+            .where(RegistryEndpointDeviceMapping.device_id == device_id))).scalar_one_or_none()
+        if mapping is None:
+            return {"status": "unknown", "source": "endpoint", "error_code": "ENDPOINT_DEVICE_MAPPING_MISSING"}
+        outcome = await port.read_device_context(EndpointDeviceRef(external_id=mapping.endpoint_device_ref))
+        if isinstance(outcome, EndpointDeviceContext):
+            return {"status": "ok", "source": "endpoint", "context": outcome.model_dump(mode="json")}
+    else:
+        outcome = await port.list_device_fleet(limit=_limit(limit, default=50, cap=200))
+        if isinstance(outcome, EndpointDeviceFleet):
+            return {"status": "ok", "source": "endpoint", **outcome.model_dump(mode="json")}
+    return {"status": "unknown", "source": "endpoint", "error_code": getattr(outcome, "code", "invalid_projection")}
 
 
 async def observer_debug_bundle_v2(session: AsyncSession, filters: ObserverDebugFilters) -> dict[str, Any]:
@@ -711,27 +661,12 @@ async def _load_ticket_context(session: AsyncSession, ticket_id: str) -> dict[st
 
 
 async def _load_device_context(session: AsyncSession, device_id: str) -> dict[str, Any] | None:
-    row = (
-        await session.execute(
-            select(
-                Device.device_id,
-                Device.hostname,
-                Device.agent_version,
-                Device.protocol_version,
-                Device.last_seen_at,
-            ).where(Device.device_id == device_id)
-        )
-    ).mappings().first()
-    if not row:
+    device = await session.get(Device, device_id)
+    if device is None:
         return None
-    return {
-        "device_id": row["device_id"],
-        "hostname": row["hostname"],
-        "agent_version": row["agent_version"],
-        "protocol_version": row["protocol_version"],
-        "db_last_seen_at": _iso(row["last_seen_at"]),
-        "live_ws_state": "unavailable_in_debug_readonly_mcp",
-    }
+    return {"device_id": device.device_id, "registry_hostname": device.hostname,
+            "technical_source": "endpoint", "technical_state": "unknown"}
+
 
 
 def _recommended_next_checks(

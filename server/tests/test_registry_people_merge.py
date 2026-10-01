@@ -161,6 +161,6 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
     assert claim_row.person_id == master.person_id
     assert ticket_row.requester_person_id == master.person_id
     assert asset_row.assigned_person_id == master.person_id
-    assert inventory_row.person_id == master.person_id
+    assert inventory_row.person_id == duplicate.person_id  # Historical row remains inert.
     assert inventory_row.source_binding_id == binding.binding_id
     assert event.reason == "same employee"

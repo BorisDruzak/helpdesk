@@ -1774,3 +1774,5 @@ regressions failed before the change; all 93 requester tests pass afterward,
 and the frontend build/workspace checks pass. Fresh candidate CI and actual
 browser acceptance remain required. The synthetic orphan was denied through
 the browser and all three temporary accounts were disabled; staging was stopped.
+
+Admin cutover 2026-10-01: Provider published/pinned; typed port, BFF, exact UI and legacy runtime retirement implemented. Read-only production audit: one canonicalized legacy binding; all other ten-table rows zero. Full frozen-SHA Helpdesk CI/live staging acceptance pending; no production deploy or data deletion.

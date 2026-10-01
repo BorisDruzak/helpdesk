@@ -1107,17 +1107,8 @@ def _observer_error_diagnosis(operation: Operation, error_code: str | None) -> s
 
 
 def _observer_agent_online(device: Device | None, operation: Operation, error_code: str | None) -> bool | None:
-    if str(error_code or "").strip().upper() == "AGENT_NOT_CONNECTED":
-        return False
-    if device is None:
-        return None
-    last_seen = getattr(device, "last_handshake_at", None) or getattr(device, "last_seen_at", None)
-    if not last_seen:
-        return None
-    now = datetime.now(timezone.utc)
-    if last_seen.tzinfo is None:
-        last_seen = last_seen.replace(tzinfo=timezone.utc)
-    return (now - last_seen).total_seconds() <= 180
+    # A historical operation or local timestamp cannot prove current presence.
+    return None
 
 
 def _observer_next_actions(*, error_code: str | None, device: Device | None) -> list[str]:
@@ -1259,7 +1250,7 @@ async def _build_admin_observer_trace_explanation(
         failure_stage_label=_observer_status_label(failure_stage),
         agent_online=agent_online,
         agent_status_label=agent_status_label,
-        agent_last_seen_at=_iso(getattr(device, "last_seen_at", None)) if device else None,
+        agent_last_seen_at=None,
         agent_last_handshake_at=_iso(getattr(device, "last_handshake_at", None)) if device else None,
         launch_path=launch_path,
         next_actions=_observer_next_actions(error_code=error_code, device=device),
@@ -1576,41 +1567,10 @@ def _map_admin_observer_dangerous_flow(item: dict) -> AdminObserverDangerousFlow
     )
 
 
-def _resolve_target(device) -> str | None:
-    metadata = getattr(device, "device_metadata", None)
-    if not isinstance(metadata, dict):
-        metadata = {}
-    raw = str(metadata.get("os_type") or getattr(device, "os", "") or "").strip().lower()
-    if not raw:
-        return None
-    return _OS_TYPE_TO_TARGET.get(raw) or _OS_TYPE_TO_TARGET.get(raw.replace("_", " "))
 
 
-def _matches_status_filter(*, online: bool, status_filter: str) -> bool:
-    if status_filter == "online":
-        return online
-    if status_filter == "offline":
-        return not online
-    return True
 
 
-def _matches_query(item: AdminDeviceItem, query: str) -> bool:
-    if not query:
-        return True
-    haystack = " ".join(
-        [
-            item.device_id,
-            item.hostname or "",
-            item.os or "",
-            item.agent_version or "",
-            item.target or "",
-            item.connection_status_label,
-            item.identity_summary.machine_id_source or "",
-            item.identity_summary.source_label,
-            item.duplicate_warning.title if item.duplicate_warning else "",
-        ]
-    ).lower()
-    return query.lower() in haystack
 
 
 def _identity_source_label(source: str | None) -> str:
@@ -1700,35 +1660,6 @@ def _build_duplicate_warning(device, *, duplicate_index: dict[str, dict[str, int
     return None
 
 
-def _build_device_item(device, *, online: bool, duplicate_index: dict[str, dict[str, int]] | None = None) -> AdminDeviceItem:
-    metadata = getattr(device, "device_metadata", None)
-    if not isinstance(metadata, dict):
-        metadata = {}
-    hostname = _device_hostname(device)
-    os_name = getattr(device, "os", None) or metadata.get("os_type")
-    agent_version = getattr(device, "agent_version", None) or metadata.get("agent_version") or metadata.get("version")
-    last_seen_at = getattr(device, "last_seen_at", None)
-    deleted_at = getattr(device, "deleted_at", None)
-    is_deleted = deleted_at is not None
-    duplicate_index = duplicate_index or {}
-    return AdminDeviceItem(
-        device_id=str(getattr(device, "device_id", "") or ""),
-        hostname=str(hostname) if hostname else None,
-        os=str(os_name) if os_name else None,
-        agent_version=str(agent_version) if agent_version else None,
-        target=_resolve_target(device),
-        online=False if is_deleted else online,
-        last_seen_at=last_seen_at.isoformat() if last_seen_at else None,
-        is_deleted=is_deleted,
-        deleted_at=deleted_at.isoformat() if deleted_at else None,
-        deleted_by=getattr(device, "deleted_by", None),
-        delete_reason=getattr(device, "delete_reason", None),
-        connection_status_label="Архив" if is_deleted else ("Онлайн" if online else "Оффлайн"),
-        identity_summary=_device_identity_summary(device),
-        duplicate_warning=None
-        if is_deleted
-        else _build_duplicate_warning(device, duplicate_index=duplicate_index, online=online),
-    )
 
 
 async def _build_admin_observer_quick_payload(
@@ -3312,112 +3243,8 @@ async def handle_web_admin_observer_trace_detail(request: web.Request):
     return json_model_response(SuccessResponse[AdminObserverTraceDetailPayload](data=payload))
 
 
-@require_auth("admin")
-async def handle_web_admin_devices(request: web.Request):
-    query = str(request.query.get("query", "") or "").strip()
-    status_filter = _normalize_status_filter(request.query.get("status"))
-    include_archived = _truthy_query_flag(request.query.get("include_archived"))
-    state = request.app.get("state")
-
-    try:
-        async with get_session() as session:
-            devices = await DevicesRepo(session).list_all(include_deleted=include_archived)
-
-        typed_devices: list[AdminDeviceItem] = []
-        online_count = 0
-        active_devices = [device for device in devices if getattr(device, "deleted_at", None) is None]
-        archived_count = len(devices) - len(active_devices)
-        duplicate_index = _build_duplicate_index(active_devices)
-        for device in devices:
-            device_id = str(getattr(device, "device_id", "") or "")
-            is_deleted = getattr(device, "deleted_at", None) is not None
-            is_online = False
-            if is_online:
-                online_count += 1
-            if not _matches_status_filter(online=is_online, status_filter=status_filter):
-                continue
-            item = _build_device_item(device, online=is_online, duplicate_index=duplicate_index)
-            if _matches_query(item, query):
-                typed_devices.append(item)
-
-        payload = AdminDevicesPayload(
-            query=query,
-            status_filter=status_filter,
-            summary=AdminDevicesSummary(
-                visible_count=len(typed_devices),
-                online_count=online_count,
-                duplicate_hosts=sum(1 for item in duplicate_index.values() if item.get("total", 0) > 1),
-                cleanup_candidates=sum(item.get("cleanup", 0) for item in duplicate_index.values()),
-                archived_count=archived_count,
-            ),
-            filters=AdminDevicesFilters(status_options=STATUS_OPTIONS, include_archived=include_archived),
-            devices=typed_devices,
-        )
-    except Exception as exc:
-        logger.warning(
-            f"[web_admin_devices] DB unavailable, returning empty devices payload: "
-            f"status_filter={status_filter}, error={exc}"
-        )
-        payload = _empty_devices_payload(
-            query=query,
-            status_filter=status_filter,
-            include_archived=include_archived,
-        )
-
-    return json_model_response(SuccessResponse[AdminDevicesPayload](data=payload))
 
 
-@require_auth("admin")
-async def handle_web_admin_device_restore(request: web.Request):
-    device_id = request.match_info["device_id"]
-    auth_context = request.get("auth_context")
-    actor_id = getattr(auth_context, "actor_id", None) or "admin"
-    try:
-        payload = await request.json() if request.can_read_body else {}
-    except Exception:
-        payload = {}
-    restore_reason = str(payload.get("reason") or "").strip() or None
-
-    try:
-        async with get_session() as session:
-            repo = DevicesRepo(session)
-            device = await repo.get_by_device_id(device_id, include_deleted=True)
-            if device is None:
-                return web.json_response(
-                    {
-                        "status": "error",
-                        "error": "Устройство не найдено",
-                        "error_code": "DEVICE_NOT_FOUND",
-                    },
-                    status=404,
-                )
-            restored = await repo.restore_device(
-                device_id,
-                restored_by=actor_id,
-                restore_reason=restore_reason,
-            )
-            if restored:
-                await session.commit()
-    except Exception as exc:
-        logger.warning(f"[web_admin_device_restore] failed: device_id={device_id} error={exc}")
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Не удалось восстановить устройство из архива",
-                "error_code": "ADMIN_DEVICE_RESTORE_FAILED",
-            },
-            status=500,
-        )
-
-    payload = AdminDeviceRestorePayload(
-        device_id=device_id,
-        is_deleted=False,
-        restored_by=actor_id,
-        restore_reason=restore_reason,
-        tokens_restored=False,
-        sessions_restored=False,
-    )
-    return json_model_response(SuccessResponse[AdminDeviceRestorePayload](data=payload))
 
 
 def _cleanup_candidate_from_device(device, *, online: bool) -> AdminDeviceCleanupCandidate:
@@ -3435,90 +3262,6 @@ def _cleanup_candidate_from_device(device, *, online: bool) -> AdminDeviceCleanu
     )
 
 
-@require_auth("admin")
-async def handle_web_admin_devices_cleanup_env_duplicates(request: web.Request):
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    hostname = str(data.get("hostname") or "").strip()
-    apply_cleanup = bool(data.get("apply"))
-    keep_device_id = str(data.get("keep_device_id") or "").strip()
-    if not hostname:
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "hostname is required",
-                "error_code": "VALIDATION_ERROR",
-            },
-            status=400,
-        )
-
-    if apply_cleanup:
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Проверка live-состояния устройства доступна только через Endpoint Platform",
-                "error_code": "ENDPOINT_CONTROL_PLANE_REQUIRED",
-            },
-            status=409,
-        )
-    auth_context = request.get("auth_context")
-    actor_id = getattr(auth_context, "actor_id", None) or "admin"
-    archived_count = 0
-    candidates: list[AdminDeviceCleanupCandidate] = []
-    kept_device_ids: list[str] = []
-
-    try:
-        async with get_session() as session:
-            repo = DevicesRepo(session)
-            devices = await repo.list_all()
-            for device in devices:
-                device_hostname = _device_hostname(device)
-                if not device_hostname or device_hostname.lower() != hostname.lower():
-                    continue
-                device_id = str(getattr(device, "device_id", "") or "")
-                metadata = getattr(device, "device_metadata", None)
-                if not isinstance(metadata, dict):
-                    metadata = {}
-                source = str(metadata.get("machine_id_source") or "").strip().lower()
-                online = False
-                if device_id == keep_device_id or source in _STABLE_IDENTITY_SOURCES:
-                    kept_device_ids.append(device_id)
-                    continue
-                if source != "env_uuid":
-                    kept_device_ids.append(device_id)
-                    continue
-                candidates.append(_cleanup_candidate_from_device(device, online=online))
-                if apply_cleanup:
-                    deleted = await repo.archive_device(
-                        device_id,
-                        deleted_by=actor_id,
-                        delete_reason=f"safe env_uuid duplicate cleanup for hostname {hostname}",
-                    )
-                    if deleted:
-                        archived_count += 1
-            if apply_cleanup:
-                await session.commit()
-    except Exception as exc:
-        logger.warning(f"[web_admin_devices_cleanup_env_duplicates] failed: hostname={hostname} error={exc}")
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Не удалось выполнить безопасную чистку дублей",
-                "error_code": "ADMIN_DEVICE_CLEANUP_FAILED",
-            },
-            status=500,
-        )
-
-    payload = AdminDeviceCleanupPayload(
-        hostname=hostname,
-        applied=apply_cleanup,
-        archived_count=archived_count,
-        candidates=candidates,
-        kept_device_ids=kept_device_ids,
-    )
-    return json_model_response(SuccessResponse[AdminDeviceCleanupPayload](data=payload))
 
 
 @require_auth("admin")

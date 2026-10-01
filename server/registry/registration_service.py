@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     Device,
-    DeviceInventoryBinding,
-    DeviceInventoryBindingHistory,
     DeviceRegistrationClaim,
     DeviceRegistrationEvent,
     RegistryAsset,
@@ -228,13 +226,10 @@ class RegistrationService:
         asset = await self.registry_repo.get_asset_by_device_id(device.device_id)
         if asset is not None:
             return asset
-        return await self.registry_repo.upsert_agent_asset(
-            device_id=device.device_id,
-            hostname=device.hostname,
-            os_name=device.os,
-            agent_version=device.agent_version,
-            metadata={"source": "admin_registry_action"},
+        return await self.registry_repo.ensure_device_asset(
+            device_id=device.device_id, hostname=device.hostname,
         )
+
 
     async def _resolve_registration_department(self, profile: dict[str, Any], policy: dict[str, Any]) -> str | None:
         mode = str(policy.get("department_mode") or "allow_pending_request").strip().lower()
@@ -386,8 +381,6 @@ class RegistrationService:
                 },
                 device_snapshot={
                     "hostname": device.hostname or asset.hostname,
-                    "os": device.os,
-                    "agent_version": device.agent_version,
                 },
                 confidence=Decimal("1.00"),
                 source=source,
@@ -506,9 +499,6 @@ class RegistrationService:
                 return {
                     "binding": self._binding_payload(existing),
                     "asset": _asset_payload(asset),
-                    "inventory_binding": self._inventory_registration_dict(
-                        await self.session.get(DeviceInventoryBinding, device.device_id)
-                    ),
                     "events": {"reused_existing_binding": True},
                 }
 
@@ -553,11 +543,6 @@ class RegistrationService:
         )
         if relationship_type == "primary_user":
             await self.sync_asset_from_active_binding(binding)
-            await self.sync_inventory_from_active_binding(
-                binding,
-                profile={"login": None, "department": None, "building": None, "floor": None, "room": None},
-                reason="admin_binding_created",
-            )
         await self._reconcile_open_agent_claims_for_binding(
             device_id=device.device_id,
             binding=binding,
@@ -568,9 +553,6 @@ class RegistrationService:
         return {
             "binding": self._binding_payload(binding),
             "asset": _asset_payload(await self.registry_repo.get_asset(asset.asset_id)),
-            "inventory_binding": self._inventory_registration_dict(
-                await self.session.get(DeviceInventoryBinding, device.device_id)
-            ),
             "events": {
                 "reused_existing_binding": False,
                 **({"satisfied_pending_claim": source_claim.claim_id} if source_claim is not None else {}),
@@ -638,11 +620,6 @@ class RegistrationService:
             reason=reason,
         )
         await self.sync_asset_from_active_binding(binding)
-        await self.sync_inventory_from_active_binding(
-            binding,
-            profile={},
-            reason="registration_transferred",
-        )
         await self.repo.append_event(
             event_type="binding_transferred",
             binding_id=binding.binding_id,
@@ -683,7 +660,6 @@ class RegistrationService:
             [
                 {"id": binding.binding_id, "entity_type": "binding", "status": "success", "message": "new_primary"},
                 {"id": asset.asset_id, "entity_type": "registry_asset", "status": "success"},
-                {"id": device.device_id, "entity_type": "inventory_binding", "status": "success"},
             ]
         )
         return {
@@ -695,9 +671,6 @@ class RegistrationService:
             ),
             "binding": self._binding_payload(binding),
             "asset": _asset_payload(await self.registry_repo.get_asset(asset.asset_id)),
-            "inventory_binding": self._inventory_registration_dict(
-                await self.session.get(DeviceInventoryBinding, device.device_id)
-            ),
             "legacy_events": {},
         }
 
@@ -716,7 +689,6 @@ class RegistrationService:
             raise RegistrationValidationError("person not found")
         asset = await self.registry_repo.get_asset_by_device_id(device.device_id)
         active_primary = await self.repo.get_active_primary_binding(device.device_id)
-        inventory = await self.session.get(DeviceInventoryBinding, device.device_id)
 
         changes: list[dict[str, Any]] = []
         warnings: list[str] = []
@@ -779,24 +751,6 @@ class RegistrationService:
                     "object_id": asset.asset_id if asset else None,
                     "before": {"assigned_person_id": asset.assigned_person_id if asset else None},
                     "after": {"assigned_person_id": person.person_id},
-                    "severity": "warning",
-                }
-            )
-            changes.append(
-                {
-                    "kind": "inventory_binding",
-                    "action": "update" if inventory else "create",
-                    "object_id": device.device_id,
-                    "before": {
-                        "person_id": inventory.person_id if inventory else None,
-                        "source_binding_id": inventory.source_binding_id if inventory else None,
-                        "registration_status": inventory.registration_status if inventory else None,
-                    },
-                    "after": {
-                        "person_id": person.person_id,
-                        "source_binding_id": "new_binding",
-                        "registration_status": "admin_confirmed",
-                    },
                     "severity": "warning",
                 }
             )
@@ -983,12 +937,9 @@ class RegistrationService:
 
         asset = await self.registry_repo.get_asset_by_device_id(device_id)
         if asset is None:
-            asset = await self.registry_repo.upsert_agent_asset(
+            asset = await self.registry_repo.ensure_device_asset(
                 device_id=device_id,
                 hostname=profile_snapshot.get("hostname"),
-                os_name=profile_snapshot.get("os"),
-                agent_version=profile_snapshot.get("agent_version"),
-                metadata={"source": "registration_claim"},
             )
         active_bindings = await self.repo.list_active_bindings_for_device(device_id)
         existing_binding = next(
@@ -1018,8 +969,6 @@ class RegistrationService:
                     profile_snapshot=profile_snapshot,
                     device_snapshot={
                         "hostname": getattr(device, "hostname", None) if device else asset.hostname,
-                        "os": getattr(device, "os", None) if device else profile_snapshot.get("os"),
-                        "agent_version": getattr(device, "agent_version", None) if device else profile_snapshot.get("agent_version"),
                     },
                     confidence=Decimal("1.00"),
                     source="agent_profile",
@@ -1061,8 +1010,6 @@ class RegistrationService:
                 profile_snapshot=profile_snapshot,
                 device_snapshot={
                     "hostname": getattr(device, "hostname", None) if device else asset.hostname,
-                    "os": getattr(device, "os", None) if device else profile_snapshot.get("os"),
-                    "agent_version": getattr(device, "agent_version", None) if device else profile_snapshot.get("agent_version"),
                 },
                 confidence=confidence,
                 source="agent_profile",
@@ -1102,17 +1049,6 @@ class RegistrationService:
                 payload={"status": claim.status},
             )
 
-        try:
-            from inventory.service import DeviceInventoryService
-
-            await DeviceInventoryService(self.session).create_or_update_binding_suggestion_from_profile(
-                device_id=device_id,
-                requester_id=requester_id,
-                display_name=display_name or person.display_name,
-                profile={**profile_snapshot, "full_name": person.full_name or person.display_name},
-            )
-        except Exception:
-            pass
 
         if (
             not conflict_reason
@@ -1276,7 +1212,6 @@ class RegistrationService:
             if existing_for_claim:
                 await self._apply_claim_profile_to_person(claim)
                 await self.sync_asset_from_active_binding(existing_for_claim)
-                await self.sync_inventory_from_active_binding(existing_for_claim, profile=claim.profile_snapshot or {})
                 return await self._build_approved_payload(claim, existing_for_claim)
         if claim.status in {"rejected", "superseded", "expired"}:
             raise ValueError("claim cannot be approved")
@@ -1300,7 +1235,6 @@ class RegistrationService:
             claim.updated_at = now
             await self._apply_claim_profile_to_person(claim)
             await self.sync_asset_from_active_binding(active_primary)
-            await self.sync_inventory_from_active_binding(active_primary, profile=claim.profile_snapshot or {})
             await self.repo.append_event(
                 event_type="claim_approved_existing_binding",
                 claim_id=claim.claim_id,
@@ -1350,11 +1284,6 @@ class RegistrationService:
                 actor_role=actor_role,
                 payload={"replacement_claim_id": claim.claim_id},
             )
-            await self._record_inventory_registration_history(
-                device_id=active_primary.device_id,
-                changed_by=reviewed_by,
-                reason="registration_transferred",
-            )
             await self.session.flush()
 
         now = datetime.now(timezone.utc)
@@ -1379,7 +1308,6 @@ class RegistrationService:
         claim.reviewed_at = now
         claim.updated_at = now
         await self.sync_asset_from_active_binding(binding)
-        await self.sync_inventory_from_active_binding(binding, profile=claim.profile_snapshot or {})
         await self.repo.append_event(
             event_type="admin_approved",
             claim_id=claim.claim_id,
@@ -1450,11 +1378,6 @@ class RegistrationService:
         replacement = await self.repo.get_active_primary_binding(binding.device_id)
         if replacement:
             await self.sync_asset_from_active_binding(replacement)
-            await self.sync_inventory_from_active_binding(
-                replacement,
-                profile=(replacement.metadata_json or {}).get("profile_snapshot") or {},
-                reason="registration_revoked",
-            )
         else:
             await self.clear_registration_assignment_for_binding(binding, changed_by=revoked_by)
         await self.repo.append_event(
@@ -1487,115 +1410,14 @@ class RegistrationService:
         asset.updated_at = datetime.now(timezone.utc)
         await self.session.flush()
 
-    def _inventory_registration_dict(self, row: DeviceInventoryBinding | None) -> dict[str, Any] | None:
-        if row is None:
-            return None
-        return {
-            "person_id": row.person_id,
-            "asset_id": row.asset_id,
-            "source_binding_id": row.source_binding_id,
-            "registration_status": row.registration_status,
-            "responsible_user": row.responsible_user,
-            "responsible_user_login": row.responsible_user_login,
-            "building": row.building,
-            "floor": row.floor,
-            "room": row.room,
-            "department": row.department,
-            "inventory_number": row.inventory_number,
-            "tags": list(row.tags or []),
-            "notes": row.notes,
-        }
 
-    async def _record_inventory_registration_history(
-        self,
-        *,
-        device_id: str,
-        changed_by: str | None,
-        reason: str,
-        old_binding: dict[str, Any] | None = None,
-        new_binding: dict[str, Any] | None = None,
-    ) -> None:
-        row = await self.session.get(DeviceInventoryBinding, device_id)
-        old_payload = old_binding if old_binding is not None else self._inventory_registration_dict(row)
-        new_payload = new_binding if new_binding is not None else self._inventory_registration_dict(row)
-        if old_payload == new_payload:
-            return
-        changed_fields = sorted(
-            key
-            for key in set((old_payload or {}).keys()) | set((new_payload or {}).keys())
-            if (old_payload or {}).get(key) != (new_payload or {}).get(key)
-        )
-        self.session.add(
-            DeviceInventoryBindingHistory(
-                id=_new_id(),
-                device_id=device_id,
-                changed_by=changed_by,
-                changed_at=datetime.now(timezone.utc),
-                old_binding=old_payload,
-                new_binding=new_payload or {},
-                changed_fields=changed_fields,
-                reason=reason,
-            )
-        )
 
-    async def sync_inventory_from_active_binding(
-        self,
-        binding: Any,
-        *,
-        profile: dict[str, Any],
-        reason: str = "registration_approved",
-    ) -> None:
-        row = await self.session.get(DeviceInventoryBinding, binding.device_id)
-        now = datetime.now(timezone.utc)
-        old_payload = self._inventory_registration_dict(row)
-        if row is None:
-            row = DeviceInventoryBinding(device_id=binding.device_id, updated_at=now)
-            self.session.add(row)
-        person = await self.registry_repo.get_person(binding.person_id)
-        row.person_id = binding.person_id
-        row.asset_id = binding.asset_id
-        row.source_binding_id = binding.binding_id
-        row.registration_status = "admin_confirmed"
-        row.responsible_user = row.responsible_user or (person.display_name if person else None)
-        row.responsible_user_login = row.responsible_user_login or profile.get("login") or profile.get("email")
-        for field_name in ("building", "floor", "room", "department"):
-            value = profile.get(field_name)
-            if value and not getattr(row, field_name):
-                setattr(row, field_name, value)
-        row.updated_by = binding.confirmed_by_admin
-        row.updated_at = now
-        await self.session.flush()
-        await self._record_inventory_registration_history(
-            device_id=binding.device_id,
-            changed_by=binding.confirmed_by_admin,
-            reason=reason,
-            old_binding=old_payload,
-            new_binding=self._inventory_registration_dict(row),
-        )
-        await self.session.flush()
 
     async def clear_registration_assignment_for_binding(self, binding: Any, *, changed_by: str | None = None) -> None:
         asset = await self.registry_repo.get_asset(binding.asset_id)
         if asset and asset.assigned_person_id == binding.person_id:
             asset.assigned_person_id = None
             asset.updated_at = datetime.now(timezone.utc)
-        row = await self.session.get(DeviceInventoryBinding, binding.device_id)
-        if row is not None:
-            old_payload = self._inventory_registration_dict(row)
-            if row.source_binding_id == binding.binding_id or row.person_id == binding.person_id:
-                row.person_id = None
-                row.source_binding_id = None
-                row.registration_status = "revoked"
-                row.updated_by = changed_by
-                row.updated_at = datetime.now(timezone.utc)
-                await self.session.flush()
-                await self._record_inventory_registration_history(
-                    device_id=binding.device_id,
-                    changed_by=changed_by,
-                    reason="registration_revoked",
-                    old_binding=old_payload,
-                    new_binding=self._inventory_registration_dict(row),
-                )
         await self.session.flush()
 
     async def detect_conflicts(self, device_id: str, person_id: str | None, relationship_type: str) -> str | None:

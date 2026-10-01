@@ -78,25 +78,18 @@ function snapshot(overrides: Partial<TechPanelV2Snapshot> = {}): TechPanelV2Snap
         notes: ["Secure не включён"],
       },
       token_channels: { query_token_allowed: true, query_token_attempts_recent: 2, status: "warning" },
-      agent_connection_policy: {
-        mode: "accept_all",
-        status: "warning",
-        pending_requests: 2,
-        stale_pending_requests: 1,
-      },
-      audit: { failed_logins_recent: 3, locked_users_count: 1, invalid_agent_tokens_recent: 4 },
+      audit: { failed_logins_recent: 3, locked_users_count: 1 },
     },
     runtime: {
       services: [
         { key: "api", title: "API", status: "ok" },
         { key: "inventory_scheduler", title: "Inventory scheduler", status: "degraded", details: "enabled but not running" },
       ],
-      web_sockets: { ui_connections: 1, agent_connections: 2 },
+      web_sockets: { ui_connections: 1 },
       schedulers: {
         operation_watchdog: "running",
         ticket_sla_watchdog: "running",
         ticket_auto_close_watchdog: "running",
-        inventory_scheduler: "enabled_not_running",
         observer_refresh_runtime: "unknown",
       },
       scheduler_details: {
@@ -122,43 +115,7 @@ function snapshot(overrides: Partial<TechPanelV2Snapshot> = {}): TechPanelV2Snap
       last_backup: null,
       last_restore_drill: null,
     },
-    agents: {
-      total: 3,
-      online: 1,
-      offline: 1,
-      stale: 1,
-      pending_connection_requests: 2,
-      reprovision_required: 1,
-      invalid_token_recent: 4,
-      below_baseline: 1,
-      update_in_progress: 1,
-      update_failed_recent: 1,
-      update_timed_out_recent: 0,
-      awaiting_handshake_confirm: 1,
-      baseline: {
-        min_version: "3.1.50",
-        below_baseline_count: 1,
-        devices: [
-          {
-            device_id: "device-1",
-            hostname: "pc-support-01",
-            agent_version: "3.1.40",
-            last_seen_at: "2026-05-21T07:00:00Z",
-            reasons: ["below baseline"],
-            href: "/app/admin/device-operations/device-1",
-          },
-        ],
-      },
-      problem_devices: [
-        {
-          device_id: "device-1",
-          hostname: "pc-support-01",
-          status: "stale",
-          reasons: ["offline", "below baseline"],
-          href: "/app/admin/device-operations/device-1",
-        },
-      ],
-    },
+    agents: { source: "endpoint", status: "available", error_code: null, total: 3, online: 1, offline: 1, retired: 1, has_more: false },
     operations: {
       queued_stuck: 1,
       sent_stuck: 1,
@@ -255,7 +212,7 @@ describe("AdminTechPage v2", () => {
 
     expect(await screen.findByRole("heading", { name: "Техпанель стенда" })).toBeInTheDocument();
     expect(await screen.findByText("BLOCKED")).toBeInTheDocument();
-    for (const tab of ["Обзор", "Безопасность", "Runtime", "База данных", "Агенты", "Операции", "Логи и сигналы", "Релиз и smoke"]) {
+    for (const tab of ["Обзор", "Безопасность", "Runtime", "База данных", "Устройства", "Операции", "Логи и сигналы", "Релиз и smoke"]) {
       expect(screen.getByRole("button", { name: new RegExp(tab) })).toBeInTheDocument();
     }
   });
@@ -271,7 +228,7 @@ describe("AdminTechPage v2", () => {
     expect(screen.getAllByText(/query token/i).length).toBeGreaterThan(0);
     expect(screen.getByText("2 attempts")).toBeInTheDocument();
     expect(screen.getAllByText(/cookie/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/connection policy/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/connection policy/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /База данных/ }));
     expect(screen.getAllByText(/PostgreSQL/).length).toBeGreaterThan(0);
@@ -280,14 +237,11 @@ describe("AdminTechPage v2", () => {
     expect(screen.getAllByText(/restore drill/i).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /Runtime/ }));
-    expect(screen.getByText(/duplicate runtime task detected/)).toBeInTheDocument();
+    expect(screen.queryByText(/Inventory scheduler details/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Агенты/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Устройства/ }));
     expect(screen.getAllByText(/online/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/offline/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/stale/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: /device-1/i })[0]).toHaveAttribute("href", "/app/admin/device-operations/device-1");
-    expect(screen.getByText("3.1.40")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Операции/ }));
     expect(screen.getByText("op-1")).toBeInTheDocument();

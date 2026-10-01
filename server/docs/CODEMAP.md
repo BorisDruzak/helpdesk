@@ -325,3 +325,13 @@ This also includes the retired UIA create-ticket harness for the local agent.
 - The old `features/admin/admin-workspace.tsx` and
   `device-inventory-panel.tsx` and their local telemetry client methods are
   retired. Admin Center remains in `pages/admin/index.tsx`.
+
+
+Admin Device cutover retirement: local inventory/presence services and admin routes
+are removed. Ticket safe context uses EndpointDeviceContext + RegistryDeviceOverlay.
+Registry business asset creation uses RegistryRepo.ensure_device_asset with no
+telemetry ingestion. Registry links require exact RegistryEndpointDeviceMapping.
+Observer/Tech legacy timestamp, policy, scheduler and baseline signals are retired.
+Historical tables remain inert. See
+`docs/segmentation/ADMIN_DEVICE_INVENTORY_RETIREMENT_V1.md` for counts, ownership,
+removed reader/writer matrix, retention blockers and acceptance status.
