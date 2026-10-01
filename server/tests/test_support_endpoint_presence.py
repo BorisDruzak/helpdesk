@@ -65,5 +65,6 @@ async def test_ticket_without_endpoint_reference_keeps_legacy_context_without_ht
     port = SimpleNamespace(read_device_presence=AsyncMock())
     legacy = SimpleNamespace(hostname='legacy-host', os='Windows', agent_version='3.0', last_seen_at=None)
     snapshot = await support_handlers._build_support_device_snapshot(SimpleNamespace(device_id='legacy-1', endpoint_device_ref=None), legacy, endpoint_port=port, legacy_online=True)
-    assert snapshot.online and snapshot.agent_version == '3.0'
+    assert snapshot.online
+    assert snapshot.agent_version == '3.0'
     port.read_device_presence.assert_not_awaited()

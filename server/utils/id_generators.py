@@ -2,12 +2,12 @@
 Утилиты для генерации ID и временных меток.
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def now_iso() -> str:
     """Возвращает текущее время в формате ISO timestamp."""
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 def new_ticket_id() -> str:
