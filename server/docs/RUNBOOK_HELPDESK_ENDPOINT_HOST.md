@@ -99,6 +99,81 @@ The browser control-plane lifecycle endpoints are deliberately fail-closed on
 this host: the `helpdesk` process has no privilege to manage system services.
 Use the reviewed remote management script above instead.
 
+## Optional backend Sentry observability
+
+Sentry is optional observability, never a Helpdesk availability dependency.
+The server process initializes the pinned Python SDK with only the explicit
+aiohttp integration before serving requests. No SDK initialization occurs on
+imports, `create_app()` factory calls, production-security preflight, migrations
+or the control service. There are no new routes or database migrations.
+
+Set runtime values only in root-owned mode 0600 `/etc/helpdesk/helpdesk.env`:
+
+- `SENTRY_DSN`: real project DSN supplied manually through the approved secret
+  channel. Empty/unset disables initialization and event transmission entirely.
+- `SENTRY_ENVIRONMENT=production`: defaults to `APP_ENV`; `prod` maps to
+  `production`. Names accept letters/digits/underscore/dot/hyphen, up to 64
+  characters; invalid names fall back to the application environment.
+- `SENTRY_TRACES_SAMPLE_RATE=0.10`: finite values clamp to 0.0..1.0; empty,
+  malformed or nonfinite values use 0.10. Zero disables sampled tracing while
+  retaining error capture. No profiling, replay, Logs or metrics are enabled.
+- `SENTRY_RELEASE`: optional exact 40-character deployed Git SHA override.
+  Normally leave empty: `helpdesk_git_sha` is read from the immutable release's
+  `release-identity.json` beside `server/`, following `/opt/helpdesk/current`
+  to its release target, independent of the working directory. Invalid override
+  falls through to identity; missing/malformed identity omits release. The SDK's
+  environment/Git release auto-detection is disabled; no production Git call.
+
+The production security validator remains unchanged. A DSN is not required and
+invalid optional observability values do not weaken HTTPS/auth/cookie/proxy/DB
+checks. A malformed DSN/SDK initialization error disables observability until
+restart and logs a constant status without configuration or exception values.
+
+Application-side policy precedes Sentry server-side scrubbing. User information
+and request-body collection are disabled (`send_default_pii=False` plus the
+current SDK's `data_collection` policy). Both error and transaction hooks retain
+only approved fields. All headers, cookies, query strings, body/form/upload
+contents, auth/CSRF/session/access/refresh/consent tokens, users, arbitrary
+contexts/tags/extras/log breadcrumbs and attachments are discarded. Frame locals,
+absolute home paths and source excerpts are excluded. SQL/HTTP span descriptions
+and payloads are discarded. Normal Helpdesk logging is not forwarded. Spotlight
+is explicitly disabled even if an inherited `SENTRY_SPOTLIGHT` variable exists;
+outgoing trace propagation to other services is disabled.
+
+Exception type, relative source file/function/line, registered route template,
+release and environment remain. Raw route parameters/URLs never become route
+names. Known structural error messages remain; other exception messages are
+omitted because arbitrary ticket/chat/upload text cannot be reliably recognized
+by a secrets blacklist. This intentionally limits message-level triage; use
+type/location plus existing protected local diagnostics. No Sentry user identity
+is derived from Helpdesk authentication.
+
+The standard SDK transport submits to a background worker with a bounded
+32-event queue. Outages can lose telemetry but do not block requests; there are
+no per-request health probes or synchronous sidecar requests. After the aiohttp
+loop stops, flush/close has a one-second limit. SDK networking retains TLS
+verification: ensure the Python runtime trusts the internal CA through the
+approved host trust configuration; never use a TLS bypass. No retry loop is
+added to the serving loop.
+
+After a **separately authorized deployment**, verify the exact SHA in the
+deployed identity/service receipt and environment label in Sentry project
+`helpdesk`, then use normal existing HTTPS business routes and confirm sampled
+transactions. Review event payloads for the privacy policy before wider rollout.
+For deterministic error ingestion, an operator may run a one-off process from
+that immutable release with the approved environment, registered synthetic
+route and a constant synthetic exception through this bootstrap; do not include
+business data/real credentials or print DSN/transport options. Bind the event
+to the release/environment, document the synthetic marker, and remove it under
+the normal Sentry retention policy. Do not add a permanent crashing/debug HTTP
+endpoint or deliberately crash the running server. Offline mocked transport
+tests establish SDK behavior, not actual ingestion/TLS reachability.
+
+To disable safely, empty/unset `SENTRY_DSN` in the protected environment and
+restart only Helpdesk through its reviewed lifecycle workflow. Environment
+changes take effect on process restart. This patch does not edit the remote
+environment, contact/change Sentry or deploy production.
+
 ## Accepted host adaptations (2026-09-27)
 
 The accepted frozen runtime is `bd3090bd72633a83be5e5f83a894ac959306cf74`,

@@ -33,6 +33,7 @@ ARTIFACTS_CLEANUP_INTERVAL_SEC = 3600  # 1 час
 from state_manager import StateManager
 from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, bind_app_value
 from routes import setup_routes
+from observability.sentry import configure_sentry
 
 # Import database initialization
 from app.db import get_session, init_db, shutdown_db
@@ -481,7 +482,11 @@ def main():
     
     # Создаём и запускаем приложение
     app = create_app()
-    web.run_app(app, host=SERVER_HOST, port=SERVER_PORT)
+    observability = configure_sentry(app)
+    try:
+        web.run_app(app, host=SERVER_HOST, port=SERVER_PORT)
+    finally:
+        observability.close()
 
 
 if __name__ == '__main__':
