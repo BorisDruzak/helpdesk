@@ -11,6 +11,48 @@
 - `server/runtime_control.py` manages only the Helpdesk server and control
   plane units.
 
+## Dynamic request forms
+
+- `server/tickets/form_catalog.py` is the compatibility facade and catalog
+  persistence/augmentation boundary. Existing import names and callable
+  signatures are retained.
+- `form_defaults.py` owns default packs, constant vocabularies and priority
+  compatibility defaults. `form_field_values.py` owns codecs, visibility and
+  submission validation; it depends on defaults. `form_schema_validation.py`
+  owns field/schema/role/template normalization and imports the shared pattern
+  validator from values. Neither module imports the facade.
+- Checkbox values use explicit aliases; ordinary text conditions remain case
+  sensitive. Hidden values/errors are excluded without masking invalid visible
+  dependencies. Required numeric zero is valid subject to min/max. Invalid regex
+  is rejected at publication and fails closed on submission of legacy packs.
+- `webapp/src/features/requester/dynamic-form/index.tsx` mirrors these boundary
+  cases. Invalid checkbox state remains editable but blocks submission; render
+  helpers do not turn a bad string into true or crash the requester form.
+
+## Compatibility ticket detail UI
+
+- `webapp/src/pages/tickets/detail-page.tsx` composes
+  `hooks/use-ticket-detail-controller.ts` and `detail-workspace.tsx`, retaining
+  its exported component/label facade. `detail-formatting.tsx` contains shared
+  display helpers; `sections/` owns the existing dialog, status, passport,
+  automation, diagnostics, context and sidebar presentation.
+- Controller state holds the message draft independently of fetched detail,
+  preserving it across refetch. Query keys, invalidation and permission checks
+  remain those of the original page.
+- The active router's `lazy-pages.tsx` ticket-detail export renders
+  `TicketListPage` from `list-page.tsx`. The split page is a compatibility surface,
+  exercised directly by component tests and `tests/detail-compatibility.spec.ts`.
+  Its Vite fixture is built automatically by Playwright before the Python fixture
+  server starts; it is not a production route or asset bundle.
+
+## Problem scheduler shutdown
+
+- `server/app/services/problem_candidate_scheduler.py::stop` shields the
+  cancelled child task while its cleanup runs and preserves cancellation of
+  the calling task, including repeated cancellation. The child reference is
+  cleared only after termination. Event-barrier regressions live in
+  `test_scheduler_stop_cancellation_no_db.py`.
+
 ## UI-user creation conflicts
 
 - `server/app/repos/ui_users_repo.py` rolls back failed user creation and emits
@@ -39,6 +81,14 @@
   durable retry after a transport failure and orphan approval rollback.
 
 ## Ticket creation
+
+- `server/tickets/create_flow.py` preserves the keyword-only public create
+  adapter and groups internal inputs in `TicketCreateInput`. Trusted
+  `VerifiedRequesterBinding` remains a separate argument. The identity helper
+  retains the original claimed-binding flag even when verification rejects it,
+  preventing fallback to an unrelated active binding. `TicketCreateContext`
+  carries registry/requester snapshots into `_prepare_ticket_custom_fields`
+  and `_persist_and_initialize_ticket`; the caller still owns the transaction.
 
 - `server/tickets/create_flow.py` verifies `browser_no_device` requester identity
   against `RequesterIdentityResolver.resolve_person_for_web_user` before
@@ -92,6 +142,12 @@
   `server/tests/test_requester_ticket_lookup.py` and its no-DB companion.
 
 ## Workflow transaction failures
+
+- `server/tickets/workflow_service.py` separates pure status/timestamp builders
+  from waiting effects, gate actions and persistence/finalization. Timestamp
+  resets retain their original precedence over explicit resolution metadata.
+  All stages run under the same row lock and caller transaction; required
+  effects still fail closed before commit.
 
 - `server/tickets/workflow_service.py` locks and refreshes the ticket before
   policies or lifecycle side effects. A stale `from_status` raises

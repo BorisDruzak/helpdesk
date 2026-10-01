@@ -1,3 +1,35 @@
+# Completed locally: 2026-10-01 SonarQube evidence remediation
+
+## Goal / Scope / Constraints
+
+Execute the source-verified [remediation plan](docs/superpowers/plans/2026-10-01-sonarqube-evidence-remediation.md)
+under the explicit user `/goal` request. B1–B6 and D1–D5 are implemented locally
+on `codex/sonarqube-evidence-remediation`, from baseline
+`e9c9bf37dc26af98e9da91b7d424bc4efcee7990`. Preserve existing scanner artifacts;
+no Git publication, deployment or Sonar mutation is part of this work.
+
+## Decisions / Current State
+
+Form edge cases, parent cancellation and related debt are corrected with
+regressions. Form modules retain the facade; create retains trusted identity and
+transaction ownership; workflow retains effect order. The extracted detail page
+is a compatibility surface; the active router remains TicketListPage.
+CODEMAP and testing docs describe the new boundaries and browser fixture.
+The user selected local integration with `main` after acceptance. Scoped
+implementation commits and a documentation commit capture the verified result;
+remote publication and deployment remain outside this choice.
+
+## Next Steps / Verification / Handoff
+
+Final acceptance passed after independent review corrections: 140 backend
+unit/contract checks, 529 frontend tests, 109 tests across final DB/API selections,
+and 3 Chromium scenarios at both required resolutions. Temporary staging databases,
+templates and roles were removed. Build, strict inventory/schema audits, metadata
+parity, workspace and diff checks passed. Fresh results, commands, limitations
+and cleanup are tracked in [evidence](docs/SONARQUBE_REMEDIATION_2026-10-01.md).
+Contextual Sonar findings keep their source-verified rationale; unseen issues
+are not declared fixed. No claim about deployed runtime or refreshed Sonar.
+
 # Follow-up: 2026-09-29 requester refresh and support device presence
 
 The production T-000004 lifecycle revealed two read-side defects: requester
