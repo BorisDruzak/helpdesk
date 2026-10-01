@@ -115,7 +115,7 @@ async def test_confirm_claim_moves_to_pending_admin_review(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_admin_approve_claim_creates_active_binding_and_updates_asset_inventory(test_engine):
+async def test_admin_approve_claim_creates_canonical_binding_without_inventory_write(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
 
@@ -155,10 +155,7 @@ async def test_admin_approve_claim_creates_active_binding_and_updates_asset_inve
     assert binding.status == "active"
     assert binding.relationship_type == "primary_user"
     assert asset.assigned_person_id == binding.person_id
-    assert inventory.person_id == binding.person_id
-    assert inventory.asset_id == asset.asset_id
-    assert inventory.source_binding_id == binding.binding_id
-    assert inventory.registration_status == "admin_confirmed"
+    assert inventory is None  # Canonical approval creates no retired inventory row.
     assert "admin_approved" in event_types
     assert "binding_activated" in event_types
 
@@ -455,7 +452,7 @@ async def test_admin_bind_satisfies_matching_pending_agent_claim(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_revoke_active_primary_clears_asset_and_inventory_registration(test_engine):
+async def test_revoke_active_primary_clears_asset_without_retired_inventory_write(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
 
@@ -481,11 +478,18 @@ async def test_revoke_active_primary_clears_asset_and_inventory_registration(tes
             )
         ).scalars().all()
 
+        binding = await session.get(DeviceUserBinding, approved["binding"]["binding_id"])
+        revocation = (await session.execute(select(DeviceRegistrationEvent).where(
+            DeviceRegistrationEvent.binding_id == binding.binding_id,
+            DeviceRegistrationEvent.event_type == "binding_revoked",
+        ))).scalar_one()
+
     assert asset.assigned_person_id is None
-    assert inventory.person_id is None
-    assert inventory.source_binding_id is None
-    assert inventory.registration_status == "revoked"
-    assert any(row.reason == "registration_revoked" for row in history)
+    assert binding.status == "revoked"
+    assert revocation.actor_id == "admin"
+    assert revocation.payload["reason"] == "test revoke"
+    assert inventory is None
+    assert history == []  # Revocation audits the canonical binding, not retired history.
 
 
 @pytest.mark.asyncio
