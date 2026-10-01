@@ -46,3 +46,15 @@ def test_host_bootstrap_preserves_isolation_and_requires_root_owned_env() -> Non
     assert "helpdesk-migrate.service" in bootstrap
     assert "/etc/nginx/sites-available/helpdesk" in bootstrap
     assert "endpoint-platform" not in bootstrap
+
+
+def test_sentry_runtime_contract_is_optional_and_server_only() -> None:
+    from scripts.validate_production_config import read_environment
+    environment = read_environment(ROOT / "helpdesk.env.example")
+    assert environment["SENTRY_DSN"] == ""
+    assert environment["SENTRY_ENVIRONMENT"] == "production"
+    assert environment["SENTRY_TRACES_SAMPLE_RATE"] == "0.10"
+    assert "sentry-sdk==2.71.0" in (ROOT.parents[1] / "server" / "requirements.txt").read_text(encoding="utf-8")
+    migrate = (ROOT / "helpdesk-migrate.service").read_text(encoding="utf-8")
+    assert "EnvironmentFile=/etc/helpdesk/helpdesk.env" in migrate
+    assert "run_server.py" not in migrate and "configure_sentry" not in migrate

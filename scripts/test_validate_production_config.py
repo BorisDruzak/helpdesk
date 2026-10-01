@@ -40,3 +40,26 @@ def test_development_remains_supported():
 
 def test_missing_flags_are_fatal_in_production():
     assert production_config_errors({"APP_ENV": "prod"})
+
+
+@pytest.mark.parametrize("dsn", ["", "synthetic-invalid-optional-config"])
+def test_sentry_is_optional_and_cannot_weaken_security(dsn):
+    values = secure()
+    values.update(SENTRY_DSN=dsn, SENTRY_ENVIRONMENT="production", SENTRY_TRACES_SAMPLE_RATE="0.10")
+    assert production_config_errors(values) == []
+    values["WEB_SESSION_COOKIE_SECURE"] = "false"
+    assert production_config_errors(values)
+
+
+def test_cli_accepts_optional_sentry_in_safe_fixture(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+    path = tmp_path / "safe-fixture.env"
+    values = secure()
+    values.update(SENTRY_DSN="", SENTRY_ENVIRONMENT="production", SENTRY_TRACES_SAMPLE_RATE="0.10")
+    path.write_text("\n".join(f"{k}={v}" for k, v in values.items()), encoding="utf-8")
+    result = subprocess.run([sys.executable, str(Path(__file__).with_name("validate_production_config.py")),
+                             "--environment-file", str(path), "--require-production"], capture_output=True, text=True)
+    assert result.returncode == 0
+    assert result.stdout.strip() == "Production configuration validation passed"

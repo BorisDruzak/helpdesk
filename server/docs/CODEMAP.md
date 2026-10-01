@@ -3,6 +3,15 @@
 ## Entry points
 
 - `server/server.py` builds the Helpdesk aiohttp application.
+- `server/observability/sentry.py` owns optional process Sentry initialization
+  after `create_app()` and before `web.run_app()`, plus bounded shutdown after
+  the serving loop stops. `config.py` supplies the existing environment contract;
+  migrations/control/factory imports never initialize the SDK.
+- `server/observability/privacy.py` projects error and transaction events onto
+  safe fields: registered route templates, type/source locations, structural
+  messages and timing/trace identifiers. Headers/bodies/queries/users/extra data,
+  attachments, frame locals/source excerpts and free text never leave through
+  these hooks. See the host runbook for runtime configuration and verification.
 - `server/web_api/` provides authenticated Helpdesk browser and support APIs.
 - `server/tech/snapshot.py` builds the read-only Tech Panel readiness model;
   the `endpoint_platform` connection-policy state is valid after the legacy

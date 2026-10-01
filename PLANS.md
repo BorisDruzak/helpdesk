@@ -1,3 +1,28 @@
+# Active: 2026-10-01 Helpdesk Sentry Backend Observability v1
+
+## Goal / Scope / Constraints
+Optional backend Error Monitoring/aiohttp tracing only, following the supplied spec.
+Start HEAD8167da2f915bfb2abff3c7f17489060d10a00192;
+branch `codex/helpdesk-sentry-backend-v1`. No production deployment, Sentry server
+changes, Endpoint edits, frontend SDK, database schema or secret publication.
+Preserve the unrelated untracked scanner/config/scratch paths.
+
+## Decisions / Current State / Next Steps
+Plan: `docs/superpowers/plans/2026-10-01-helpdesk-sentry-backend.md`.
+Central bootstrap and defensive error/transaction projection; existing environment
+contract and immutable release identity. Official SDK2.71.0/API checked before
+implementation. Test RED, implement, focused gates, independent security review.
+
+## Verification / Handoff
+83 focused tests passed, including28 Sentry regressions, auth/config and deployment
+fixtures. Scoped workspace/compile/diff, safe-fixture security CLI and test inventory
+(311files/0issues) passed. Independent read-only review: Spotlight issue fixed,
+full-envelope privacy/outage/shutdown/import isolation verified; no remaining findings.
+No actual ingestion/TLS, full release gate, push or rollout performed; intentionally
+deferred to separately authorized publication/deployment. SENTRY_DSN runtime-only.
+
+---
+
 # Active: 2026-10-01 Admin Device & Inventory Endpoint Cutover v1
 
 ## Goal / Scope / Constraints

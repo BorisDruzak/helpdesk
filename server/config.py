@@ -25,6 +25,13 @@ except ImportError:
 SERVER_HOST = (os.getenv("SERVER_HOST", "0.0.0.0") or "0.0.0.0").strip()
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8666") or "8666")
 
+# Optional backend observability; only the server process bootstrap initializes
+# the SDK. These values are never required by production security or migrations.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "") or ""
+SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "") or ""
+SENTRY_TRACES_SAMPLE_RATE = os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.10") or "0.10"
+SENTRY_RELEASE = os.getenv("SENTRY_RELEASE", "") or ""
+
 # External-domain composition is fail-closed. Knowledge has no runtime adapter;
 # Registry remains on its local compatibility adapter until external acceptance.
 KNOWLEDGE_PORT_MODE = (os.getenv("KNOWLEDGE_PORT_MODE", "unavailable") or "unavailable").strip().lower()
