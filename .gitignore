@@ -48,6 +48,7 @@ node_modules/
 .pnpm-store/
 .pnpm-debug.log*
 webapp/test-results/
+/webapp/.e2e-compat/
 playwright-report/
 
 # Local validation and UI audit artifacts

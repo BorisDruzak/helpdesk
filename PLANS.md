@@ -1,3 +1,78 @@
+# Active: 2026-10-01 Admin Device & Inventory Endpoint Cutover v1
+
+## Goal / Scope / Constraints
+
+Execute the supplied coordinated cutover spec through Endpoint provider,
+typed Helpdesk port/BFF, Registry overlay, UI replacement, runtime retirement
+and exact-SHA/staging acceptance. Production deploy and table deletion are
+excluded. Preserve unrelated scanner files and the integrated Sonar fixes.
+
+## Decisions / Current State
+
+Plan and source ownership matrix:
+`docs/superpowers/plans/2026-10-01-admin-endpoint-cutover.md`.
+Helpdesk starts at c935a532657786ae00ab9c9de1dbd34624b1b143 on
+`codex/admin-endpoint-cutover-v1`; Endpoint starts at
+4a8258deace4fa09becdc8e27e4d344d1d1767a7 on
+`codex/admin-device-context-summary`. Provider commit
+464405a659e615f8fed40fe9daac61a7297e30e8 merged by PR 39 into
+73f1b9c83a7cc41063994314df36f4cdeca03cc9. Full Linux/PostgreSQL CI
+36823442540: 1524 passed, 8 skipped; merge CI 36823884973 succeeded.
+Fleet uses UUID pagination and three bulk reads without raw payload loading.
+Provider display-name contract fix 38ddabe3c0badf09a033bb7523a89a7d2c5059a0
+merged via PR 40 as 12c63655b491cd1fc328b05128414eefba4ee49c;
+exact source full Linux/PostgreSQL CI 36825653896 succeeded.
+Helpdesk pins exact published 38ddabe and OpenAPI SHA256
+27425c76c95874606330ad282c66689b25e3bb95666d657cfe712e8e0d1ac137.
+
+## Next Steps / Verification / Handoff
+
+A–G implementation, final runtime review and live acceptance are complete on
+35c67c4080979a2d583ba2b01e79db80b985304e. Exact full CI 36848506139 passed
+all 18 layers with isolated PostgreSQL; real cross-repository contract 3 cases passed.
+Trusted actual staging Windows verified expanded fleet filters, five completed
+safe profile collections, actual history/hash/diff, exact Registry PC link across
+different UUIDs, canonical preview/apply/admin audit with inventory number
+preserved, OFFLINE on Agent stop and UNKNOWN on provider outage. Normal browser
+console/page errors, retired and direct provider requests were zero. Both DBs,
+releases/config hashes/scopes/Windows enrollment restored; all stage units stopped.
+Draft PR39 targets frozen c935a532 starting base and excludes pre-existing Sonar
+work. Production remains untouched except the approved read-only metadata audit.
+Final delivery: verify the documentation and navigation labels freeze with its full exact-SHA CI,
+canonical staging revalidation/restore and final 63-item report; no production deploy.
+
+# Completed locally: 2026-10-01 SonarQube evidence remediation
+
+## Goal / Scope / Constraints
+
+Execute the source-verified [remediation plan](docs/superpowers/plans/2026-10-01-sonarqube-evidence-remediation.md)
+under the explicit user `/goal` request. B1–B6 and D1–D5 are implemented locally
+on `codex/sonarqube-evidence-remediation`, from baseline
+`e9c9bf37dc26af98e9da91b7d424bc4efcee7990`. Preserve existing scanner artifacts;
+no Git publication, deployment or Sonar mutation is part of this work.
+
+## Decisions / Current State
+
+Form edge cases, parent cancellation and related debt are corrected with
+regressions. Form modules retain the facade; create retains trusted identity and
+transaction ownership; workflow retains effect order. The extracted detail page
+is a compatibility surface; the active router remains TicketListPage.
+CODEMAP and testing docs describe the new boundaries and browser fixture.
+The user selected local integration with `main` after acceptance. Scoped
+implementation commits and a documentation commit capture the verified result;
+remote publication and deployment remain outside this choice.
+
+## Next Steps / Verification / Handoff
+
+Final acceptance passed after independent review corrections: 140 backend
+unit/contract checks, 529 frontend tests, 109 tests across final DB/API selections,
+and 3 Chromium scenarios at both required resolutions. Temporary staging databases,
+templates and roles were removed. Build, strict inventory/schema audits, metadata
+parity, workspace and diff checks passed. Fresh results, commands, limitations
+and cleanup are tracked in [evidence](docs/SONARQUBE_REMEDIATION_2026-10-01.md).
+Contextual Sonar findings keep their source-verified rationale; unseen issues
+are not declared fixed. No claim about deployed runtime or refreshed Sonar.
+
 # Follow-up: 2026-09-29 requester refresh and support device presence
 
 The production T-000004 lifecycle revealed two read-side defects: requester
@@ -1707,3 +1782,5 @@ regressions failed before the change; all 93 requester tests pass afterward,
 and the frontend build/workspace checks pass. Fresh candidate CI and actual
 browser acceptance remain required. The synthetic orphan was denied through
 the browser and all three temporary accounts were disabled; staging was stopped.
+
+Admin cutover 2026-10-01: final 2cf828af full CI and actual Windows/browser staging accepted and restored. The user subsequently authorized merging all cutover and seven Sonar commits into main; PR 39 now targets main. Pre-merge review reproduced accepted Python-only conditional/comment regex groups and a bounded mirrored validation fix adds publication, saved-form and browser regressions. Fresh candidate full CI and main integration are the remaining gates. Production deployment/data deletion remain excluded.

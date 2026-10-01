@@ -2,7 +2,6 @@ import { Link } from "react-router-dom";
 
 import { appNavigationDomains, findFirstVisibleDomainItem } from "../../app/navigation";
 import { useSession } from "../../features/auth/session-provider";
-import { AdminWorkspace } from "../../features/admin/admin-workspace";
 import { cn } from "../../shared/ui/cn";
 
 const ADMIN_DOMAIN_ORDER = appNavigationDomains
@@ -68,9 +67,4 @@ export function AdminCenterPage() {
       )}
     </section>
   );
-}
-
-
-export function AdminWorkspacePage() {
-  return <AdminWorkspace />;
 }

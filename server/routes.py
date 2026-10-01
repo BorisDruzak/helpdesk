@@ -3,6 +3,10 @@
 """
 
 from aiohttp import web
+from web_api.admin_endpoint_handlers import (
+    handle_admin_endpoint_devices, handle_admin_endpoint_device, handle_admin_endpoint_context_refresh,
+    handle_admin_endpoint_collection, handle_admin_endpoint_history, handle_admin_endpoint_compare,
+)
 
 # Import handlers from modules
 from auth.handlers import handle_ui_login, handle_ui_session
@@ -308,9 +312,6 @@ from web_api.support_handlers import (
 )
 from web_api.admin_handlers import (
     handle_web_admin_bootstrap,
-    handle_web_admin_device_restore,
-    handle_web_admin_devices,
-    handle_web_admin_devices_cleanup_env_duplicates,
     handle_web_admin_forms_current,
     handle_web_admin_forms_preferred,
     handle_web_admin_forms_process_preview,
@@ -336,29 +337,6 @@ from web_api.admin_handlers import (
     handle_web_admin_observer_quick,
     handle_web_admin_observer_trace_detail,
     handle_web_admin_observer_traces,
-)
-from web_api.admin_inventory_handlers import (
-    handle_web_admin_device_inventory,
-    handle_web_admin_device_inventory_binding,
-    handle_web_admin_device_inventory_binding_history,
-    handle_web_admin_device_inventory_binding_update,
-    handle_web_admin_device_inventory_refresh_policy,
-    handle_web_admin_device_inventory_refresh_policy_update,
-    handle_web_admin_device_binding_suggestion_apply,
-    handle_web_admin_device_binding_suggestion_ignore,
-    handle_web_admin_device_binding_suggestions,
-    handle_web_admin_device_presence,
-    handle_web_admin_device_profiles,
-    handle_web_admin_inventory_bindings_export_csv,
-    handle_web_admin_inventory_bindings_import,
-    handle_web_admin_inventory_bulk_operations,
-    handle_web_admin_inventory_dashboard,
-    handle_web_admin_inventory_export_csv,
-    handle_web_admin_inventory_export_xlsx,
-    handle_web_admin_inventory_report,
-    handle_web_admin_inventory_refresh_policy,
-    handle_web_admin_inventory_refresh_policy_update,
-    handle_web_admin_inventory_refresh_runs,
 )
 from web_api.observer_integrity_handlers import (
     handle_web_admin_observer_integrity,
@@ -686,31 +664,12 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/tech/operations/stuck', handle_tech_operations_stuck),
         web.get('/api/web/admin/ai-integration/mcp', handle_ai_integration_mcp_status),
         web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_endpoint_operation_get),
-        web.get('/api/web/admin/devices', handle_web_admin_devices),
-        web.post('/api/web/admin/devices/cleanup_env_duplicates', handle_web_admin_devices_cleanup_env_duplicates),
-        web.post('/api/web/admin/devices/{device_id}/restore', handle_web_admin_device_restore),
-        web.get('/api/web/admin/inventory/dashboard', handle_web_admin_inventory_dashboard),
-        web.post('/api/web/admin/inventory/bindings/import', handle_web_admin_inventory_bindings_import),
-        web.get('/api/web/admin/inventory/bindings/export.csv', handle_web_admin_inventory_bindings_export_csv),
-        web.get('/api/web/admin/inventory/export.csv', handle_web_admin_inventory_export_csv),
-        web.get('/api/web/admin/inventory/export.xlsx', handle_web_admin_inventory_export_xlsx),
-        web.get('/api/web/admin/inventory/reports', handle_web_admin_inventory_report),
-        web.get('/api/web/admin/inventory/reports/{report_type}', handle_web_admin_inventory_report),
-        web.get('/api/web/admin/inventory/bulk-operations', handle_web_admin_inventory_bulk_operations),
-        web.get('/api/web/admin/inventory/refresh-runs', handle_web_admin_inventory_refresh_runs),
-        web.get('/api/web/admin/inventory/refresh-policy', handle_web_admin_inventory_refresh_policy),
-        web.put('/api/web/admin/inventory/refresh-policy', handle_web_admin_inventory_refresh_policy_update),
-        web.get('/api/web/admin/devices/{device_id}/inventory', handle_web_admin_device_inventory),
-        web.get('/api/web/admin/devices/{device_id}/profiles', handle_web_admin_device_profiles),
-        web.get('/api/web/admin/devices/{device_id}/binding-suggestions', handle_web_admin_device_binding_suggestions),
-        web.post('/api/web/admin/devices/{device_id}/binding-suggestions/{suggestion_id}/apply', handle_web_admin_device_binding_suggestion_apply),
-        web.post('/api/web/admin/devices/{device_id}/binding-suggestions/{suggestion_id}/ignore', handle_web_admin_device_binding_suggestion_ignore),
-        web.get('/api/web/admin/devices/{device_id}/presence', handle_web_admin_device_presence),
-        web.get('/api/web/admin/devices/{device_id}/binding', handle_web_admin_device_inventory_binding),
-        web.put('/api/web/admin/devices/{device_id}/binding', handle_web_admin_device_inventory_binding_update),
-        web.get('/api/web/admin/devices/{device_id}/binding/history', handle_web_admin_device_inventory_binding_history),
-        web.get('/api/web/admin/devices/{device_id}/inventory/refresh-policy', handle_web_admin_device_inventory_refresh_policy),
-        web.put('/api/web/admin/devices/{device_id}/inventory/refresh-policy', handle_web_admin_device_inventory_refresh_policy_update),
+        web.get('/api/web/admin/endpoint/devices', handle_admin_endpoint_devices),
+        web.get('/api/web/admin/endpoint/devices/{device_id}', handle_admin_endpoint_device),
+        web.post('/api/web/admin/endpoint/devices/{device_id}/context/refresh', handle_admin_endpoint_context_refresh),
+        web.get('/api/web/admin/endpoint/context/collections/{collection_id}', handle_admin_endpoint_collection),
+        web.get('/api/web/admin/endpoint/devices/{device_id}/context/history', handle_admin_endpoint_history),
+        web.get('/api/web/admin/endpoint/devices/{device_id}/context/compare', handle_admin_endpoint_compare),
         web.get('/api/web/admin/registry', handle_web_admin_registry),
         web.get('/api/web/admin/registry/profile-schema', handle_web_admin_registry_profile_schema),
         web.put('/api/web/admin/registry/profile-schema', handle_web_admin_registry_profile_schema),

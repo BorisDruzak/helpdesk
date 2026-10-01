@@ -65,7 +65,7 @@ async def _person_from_claim(
 
 
 @pytest.mark.asyncio
-async def test_admin_binds_person_to_unregistered_device_and_syncs_derived_state(test_engine):
+async def test_admin_binds_person_without_creating_retired_inventory(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
 
@@ -106,9 +106,7 @@ async def test_admin_binds_person_to_unregistered_device_and_syncs_derived_state
     assert binding.relationship_type == "primary_user"
     assert binding.source == "admin_manual"
     assert asset.assigned_person_id == person_id
-    assert inventory.person_id == person_id
-    assert inventory.source_binding_id == binding.binding_id
-    assert inventory.registration_status == "admin_confirmed"
+    assert inventory is None  # Only the canonical binding and asset are written.
     assert "admin_binding_created" in event_types
     assert "binding_activated" in event_types
 

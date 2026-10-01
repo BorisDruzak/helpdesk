@@ -98,8 +98,8 @@ export const appNavigationDomains: AppNavigationDomain[] = [
   {
     id: "devices-agents",
     workspace: "admin",
-    label: "Устройства и агенты",
-    description: "Инвентарь, карточки устройств, обновления и трассы",
+    label: "Устройства",
+    description: "Устройства Endpoint, бизнес-контекст Registry и трассы",
     icon: MonitorCog,
     order: 10,
   },
@@ -279,8 +279,8 @@ export const appNavigation: AppNavItem[] = [
     isWorkspaceHome: true,
   },
   {
-    label: "Инвентарь устройств",
-    shortLabel: "Инвентарь",
+    label: "Устройства",
+    shortLabel: "Устройства",
     description: "Список устройств и статус",
     icon: MonitorCog,
     section: "admin",
@@ -314,7 +314,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Техпанель",
-    description: "Готовность стенда, безопасность, runtime, PostgreSQL, агенты, операции и smoke",
+    description: "Готовность стенда, безопасность, runtime, PostgreSQL, Endpoint, операции и smoke",
     icon: Server,
     section: "admin",
     workspace: "admin",
@@ -645,7 +645,7 @@ export function getSearchPlaceholder(pathname: string) {
   const activeItem = getActiveNavItem(pathname);
 
   if (activeItem?.domainId === "devices-agents") {
-    return "Поиск по устройствам, агентам и трассам";
+    return "Поиск по устройствам и трассам";
   }
 
   if (activeItem?.domainId === "catalog-intake") {

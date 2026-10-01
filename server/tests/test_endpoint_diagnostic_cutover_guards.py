@@ -101,7 +101,9 @@ def test_remote_assist_runtime_and_configuration_are_removed():
 
 def test_helpdesk_does_not_ship_agent_runtime_sources():
     assert list((ROOT / "server" / "agents").glob("*.py")) == []
-    assert list((ROOT / "pc_agent").rglob("*.py")) == []
+    import subprocess
+    shipped = subprocess.check_output(["git", "ls-files", "pc_agent/**/*.py"], cwd=ROOT, text=True)
+    assert shipped.strip() == ""  # Ignored historical installer artifacts are not shipped source.
 
 
 def test_server_tests_do_not_depend_on_retired_agent_handshake_fixture():

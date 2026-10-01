@@ -72,4 +72,4 @@ async def test_bulk_assign_location_to_devices_and_partial_failure(test_engine):
         {"id": result["results"][1]["id"], "status": "error", "error_code": "NOT_FOUND"},
     ]
     assert asset_row.location_id == location["location_id"]
-    assert inventory.room == "701"
+    assert inventory.room is None  # Historical row remains inert.

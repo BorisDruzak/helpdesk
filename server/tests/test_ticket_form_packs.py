@@ -42,6 +42,86 @@ from tickets.form_catalog import validate_form_pack_schema, validate_form_submis
 
 pytestmark = pytest.mark.db_cleanup("tickets")
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("checked", [True, False])
+async def test_saved_checkbox_condition_and_zero_survive_ticket_creation(test_client, test_engine, checked):
+    await _clear_request_form_packs(test_engine)
+    form_key = "checkbox_zero"
+    pack = {"pack_key": "request_forms", "title": "Regression", "forms": [{
+        "key": form_key, "title": "Regression", "ticket_type": "incident", "fields": [
+            {"key": "flag", "label": "Flag", "type": "checkbox"},
+            {"key": "amount", "label": "Amount", "type": "number", "required": True,
+             "visible_when": {"field": "flag", "equals": checked}, "validation": {"min": 0}},
+        ]}]}
+    saved = await test_client.post("/api/ticket_forms/packs/save", json={"pack": pack},
+        headers={"Authorization": "Bearer test-ui-admin-token", "Content-Type": "application/json"})
+    assert saved.status == 200, await saved.text()
+    current = await test_client.get("/api/ticket_forms/current?pack_key=request_forms", headers=_admin_headers())
+    assert current.status == 200
+    stored = (await current.json())["pack"]["forms"][0]["fields"][1]["visible_when"]
+    assert stored["equals"] is checked
+    response = await test_client.post("/api/tickets/create", json={
+        "title": "Zero amount", "description": "Checkbox condition regression", "device_id": str(uuid.uuid4()),
+        "user_display_name": "Alice", "form_key": form_key, "form_pack_key": "request_forms",
+        "form_payload": {"flag": checked, "amount": 0},
+    }, headers={"Authorization": "Bearer test-ui-user:alice"})
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+    async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket.custom_fields["request_form_data"]["flag"] is checked
+        assert ticket.custom_fields["request_form_data"]["amount"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pattern", ["[", "(a)?(?(1)b|c)", "(?#comment)a"])
+async def test_invalid_regex_pack_cannot_be_published(test_client, test_engine, pattern):
+    await _clear_request_form_packs(test_engine)
+    payload = _typed_forms_payload("printer", title="Invalid regex")
+    payload["forms"][0]["fields"][0]["validation"] = {"pattern": pattern}
+    response = await test_client.post("/api/web/admin/forms/publish", json=payload,
+        headers={**_admin_headers(), "Content-Type": "application/json"})
+    assert response.status == 400, await response.text()
+    async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
+        assert (await session.execute(select(TicketFormPack))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("checked", [True, False])
+async def test_requester_api_persists_checkbox_and_zero(test_client, test_engine, checked):
+    from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
+    from tests.test_requester_create_idempotency import _actor, _request
+
+    await _clear_request_form_packs(test_engine)
+    login, person_id = await _actor(test_engine)
+    pack = validate_form_pack_schema({"pack_key": "request_forms", "version": "zero-regression", "forms": [{
+        "key": "checkbox_zero", "title": "Zero regression", "ticket_type": "incident",
+        "availability_policy": {"available_without_completed_profile": True, "available_without_agent_binding": True},
+        "fields": [
+            {"key": "flag", "label": "Flag", "type": "checkbox"},
+            {"key": "amount", "label": "Amount", "type": "number", "required": True,
+             "visible_when": {"field": "flag", "equals": checked}, "validation": {"min": 0}},
+        ],
+    }]})
+    async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
+        repo = TicketFormPacksRepo(session)
+        await repo.upsert_pack(pack_key="request_forms", version="zero-regression", schema_json=pack, created_by="test")
+        await repo.set_preferred(pack_key="request_forms", version="zero-regression", updated_by="test")
+        await session.commit()
+    response = await test_client.post("/api/web/requester/tickets", headers=_request(login, uuid.uuid4().hex), json={
+        "title": "Zero amount", "description": "Requester checkbox regression", "device_scope": "none",
+        "form_key": "checkbox_zero", "form_pack_key": "request_forms", "form_payload": {"flag": checked, "amount": 0},
+    })
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["data"]["ticket_id"]
+    async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket.requester_person_id == person_id
+        assert ticket.device_id is None
+        assert ticket.custom_fields["request_form_data"]["flag"] is checked
+        assert ticket.custom_fields["request_form_data"]["amount"] == 0
+
 @pytest.mark.no_db
 def test_validate_form_pack_schema_normalizes_on_behalf_policy():
     pack = validate_form_pack_schema(

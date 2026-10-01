@@ -209,51 +209,17 @@ class RegistryRepo:
         await self.session.flush()
         return row
 
-    async def upsert_agent_asset(
-        self,
-        *,
-        device_id: str,
-        hostname: str | None,
-        os_name: str | None,
-        agent_version: str | None,
-        metadata: dict[str, Any],
-    ) -> RegistryAsset:
-        now = datetime.now(timezone.utc)
-        payload = dict(metadata or {})
-        if os_name is not None:
-            payload["os"] = os_name
-        if agent_version is not None:
-            payload["agent_version"] = agent_version
-        name = hostname or device_id
+    async def ensure_device_asset(self, *, device_id: str, hostname: str | None) -> RegistryAsset:
+        """Create business identity only; never ingest local Agent telemetry."""
         statement = pg_insert(RegistryAsset).values(
-            asset_id=_new_id(),
-            asset_type="pc",
-            name=name,
-            hostname=hostname,
-            device_id=device_id,
-            source="agent",
-            status="unverified",
-            discovery_payload=payload,
-            last_seen_at=now,
-            created_at=now,
-            updated_at=now,
+            asset_id=_new_id(), asset_type="pc", name=hostname or device_id,
+            hostname=hostname, device_id=device_id, source="manual", status="unverified",
+            discovery_payload={}, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
         )
-        statement = statement.on_conflict_do_update(
-            index_elements=[RegistryAsset.device_id],
-            set_={
-                "name": func.coalesce(RegistryAsset.name, statement.excluded.name),
-                "hostname": func.coalesce(statement.excluded.hostname, RegistryAsset.hostname),
-                "discovery_payload": RegistryAsset.discovery_payload.op("||")(statement.excluded.discovery_payload),
-                "last_seen_at": statement.excluded.last_seen_at,
-                "updated_at": statement.excluded.updated_at,
-            },
-        ).returning(RegistryAsset)
-        return (
-            await self.session.scalars(
-                statement,
-                execution_options={"populate_existing": True},
-            )
-        ).one()
+        statement = statement.on_conflict_do_update(index_elements=[RegistryAsset.device_id],
+            set_={"device_id": statement.excluded.device_id}).returning(RegistryAsset)
+        return (await self.session.scalars(statement,
+            execution_options={"populate_existing": True})).one()
 
     async def link_asset_to_person_location(
         self,

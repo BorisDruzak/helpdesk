@@ -106,7 +106,7 @@ export function buildDefaultFieldValues(
   const nextValues: DynamicFormValues = {};
   for (const field of form?.fields ?? []) {
     const prefilled = prefillValueForField(field, prefill);
-    nextValues[field.key] = normalizeDynamicFieldValue(field, prefilled ?? defaultValueForField(field));
+    nextValues[field.key] = normalizeEditableFieldValue(field, prefilled ?? defaultValueForField(field));
   }
   return nextValues;
 }
@@ -120,13 +120,19 @@ export function mergeContextPrefillValues(
   const defaults = buildDefaultFieldValues(form, nextPrefill);
   const next: DynamicFormValues = {};
   for (const field of form?.fields ?? []) {
-    const currentValue = normalizeDynamicFieldValue(field, current[field.key]);
-    const previousValue = normalizeDynamicFieldValue(field, previousPrefill[field.key]);
-    const defaultValue = normalizeDynamicFieldValue(field, defaults[field.key] ?? defaultValueForField(field));
+    const currentValue = normalizeEditableFieldValue(field, current[field.key]);
+    const previousValue = normalizeEditableFieldValue(field, previousPrefill[field.key]);
+    const defaultValue = normalizeEditableFieldValue(field, defaults[field.key] ?? defaultValueForField(field));
     const isEmpty = isEmptyDynamicValue(field, currentValue);
     const stillPrevious =
       current[field.key] !== undefined && dynamicValuesEqual(field, currentValue, previousValue);
-    next[field.key] = isEmpty || stillPrevious ? defaultValue : currentValue;
+    let invalidCurrent = false;
+    try {
+      normalizeDynamicFieldValue(field, current[field.key]);
+    } catch {
+      invalidCurrent = true;
+    }
+    next[field.key] = !invalidCurrent && (isEmpty || stillPrevious) ? defaultValue : currentValue;
   }
   return next;
 }
@@ -180,7 +186,7 @@ export function collectVisiblePayload(
   const payload: Record<string, unknown> = {};
   for (const field of form?.fields ?? []) {
     if (isDynamicFieldVisible(field, values)) {
-      payload[field.key] = normalizeDynamicFieldValue(field, values[field.key]);
+      payload[field.key] = normalizeEditableFieldValue(field, values[field.key]);
     }
   }
   return payload;
@@ -199,7 +205,7 @@ export function missingRequiredFieldDetails(
 ): Array<{ key: string; label: string }> {
   return (form?.fields ?? [])
     .filter((field) => field.required && isDynamicFieldVisible(field, values))
-    .filter((field) => isEmptyDynamicValue(field, normalizeDynamicFieldValue(field, values[field.key])))
+    .filter((field) => isEmptyDynamicValue(field, normalizeEditableFieldValue(field, values[field.key])))
     .map((field) => ({ key: field.key, label: requesterSafeFieldLabel(field.label, "Поле обращения") }));
 }
 
@@ -213,8 +219,19 @@ export function validateDynamicFormValues(
       continue;
     }
     const rawValue = values[field.key];
-    const normalized = normalizeDynamicFieldValue(field, values[field.key]);
     const path = `fields.${field.key}`;
+    let normalized: DynamicFieldValue;
+    try {
+      normalized = normalizeDynamicFieldValue(field, values[field.key]);
+    } catch {
+      issues.push(issue("invalid_checkbox", "Недопустимое значение поля.", path));
+      continue;
+    }
+    const savedPattern = validationString(field, ["pattern", "regex"]);
+    if (savedPattern && !isValidPattern(savedPattern)) {
+      issues.push(issue("invalid_pattern", "Ошибка настройки формата поля. Обратитесь в поддержку.", path));
+      continue;
+    }
     if (field.type === "number" && !isEmptyDynamicValue(field, rawValue) && normalized === null) {
       issues.push(issue("invalid_number", "Укажите число.", path));
       continue;
@@ -271,7 +288,7 @@ export function validateDynamicFormValues(
 }
 
 export function formatDynamicFieldReviewValue(field: RequestFormField, value: DynamicFieldValue): string {
-  const normalized = normalizeDynamicFieldValue(field, value);
+  const normalized = normalizeEditableFieldValue(field, value);
   if (field.type === "checkbox") {
     return normalized === true ? "Да" : "Нет";
   }
@@ -383,10 +400,7 @@ export function normalizeDynamicFieldValue(field: RequestFormField, value: Dynam
     return null;
   }
   if (field.type === "checkbox") {
-    if (typeof value === "string") {
-      return value === "true" || value === "1" || value.toLowerCase() === "yes";
-    }
-    return value === true;
+    return normalizeCheckbox(value);
   }
   if (field.type === "multi_select") {
     if (Array.isArray(value)) {
@@ -407,6 +421,14 @@ export function normalizeDynamicFieldValue(field: RequestFormField, value: Dynam
   }
   const text = String(value ?? "").trim();
   return text;
+}
+
+function normalizeEditableFieldValue(field: RequestFormField, value: DynamicFieldValue): DynamicFieldValue {
+  try {
+    return normalizeDynamicFieldValue(field, value);
+  } catch {
+    return value;
+  }
 }
 
 export function RequestFormFieldControl({
@@ -434,7 +456,7 @@ export function RequestFormFieldControl({
 
   const safeLabel = requesterSafeFieldLabel(field.label, "Поле обращения");
   const label = `${safeLabel}${field.required ? " *" : ""}`;
-  const normalizedValue = normalizeDynamicFieldValue(field, value);
+  const normalizedValue = normalizeEditableFieldValue(field, value);
   const helpText = field.help_text ? <p className="mt-1 text-xs font-normal text-slate-500">{field.help_text}</p> : null;
   const errorText = error ? <p className="mt-1 text-xs font-semibold text-rose-700">{error}</p> : null;
   const invalidProps = {
@@ -677,8 +699,8 @@ function isEmptyDynamicValue(field: RequestFormField, value: DynamicFieldValue):
 }
 
 function dynamicValuesEqual(field: RequestFormField, left: DynamicFieldValue, right: DynamicFieldValue): boolean {
-  const normalizedLeft = normalizeDynamicFieldValue(field, left);
-  const normalizedRight = normalizeDynamicFieldValue(field, right);
+  const normalizedLeft = normalizeEditableFieldValue(field, left);
+  const normalizedRight = normalizeEditableFieldValue(field, right);
   if (Array.isArray(normalizedLeft) || Array.isArray(normalizedRight)) {
     return JSON.stringify(normalizedLeft ?? []) === JSON.stringify(normalizedRight ?? []);
   }
@@ -686,10 +708,28 @@ function dynamicValuesEqual(field: RequestFormField, left: DynamicFieldValue, ri
 }
 
 function valuesMatch(currentValue: DynamicFieldValue, expected: string | boolean | number | null): boolean {
+  if (typeof currentValue === "boolean") {
+    try {
+      return currentValue === normalizeCheckbox(expected);
+    } catch {
+      return false;
+    }
+  }
   if (Array.isArray(currentValue)) {
     return currentValue.some((item) => String(item ?? "").trim() === String(expected ?? "").trim());
   }
   return String(currentValue ?? "").trim() === String(expected ?? "").trim();
+}
+
+function normalizeCheckbox(value: DynamicFieldValue): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes"].includes(normalized)) return true;
+    if (["false", "0", "no"].includes(normalized)) return false;
+  }
+  throw new Error("Недопустимое значение checkbox");
 }
 
 function isValidUrl(value: string): boolean {
@@ -739,6 +779,7 @@ function isTextValidationField(field: RequestFormField): boolean {
 }
 
 function isValidPattern(pattern: string): boolean {
+  if (hasPythonOnlyPatternSyntax(pattern)) return false;
   try {
     new RegExp(pattern);
     return true;
@@ -747,11 +788,31 @@ function isValidPattern(pattern: string): boolean {
   }
 }
 
+function hasPythonOnlyPatternSyntax(pattern: string): boolean {
+  let inClass = false;
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "\\") {
+      if (pattern[index + 1] && "AZzNUG".includes(pattern[index + 1])) return true;
+      index += 1;
+      continue;
+    }
+    if (char === "[" && !inClass) inClass = true;
+    else if (char === "]" && inClass) inClass = false;
+    else if (!inClass) {
+      if (pattern.startsWith("(?", index) && pattern[index + 2] && "PaiLmsux->(#".includes(pattern[index + 2])) return true;
+      if ("+*?".includes(char) && pattern[index + 1] === "+") return true;
+      if (char === "{" && /^\{\d+(?:,\d*)?\}\+/.test(pattern.slice(index))) return true;
+    }
+  }
+  return false;
+}
+
 function matchesPattern(value: string, pattern: string): boolean {
   try {
     return new RegExp(pattern).test(value);
   } catch {
-    return true;
+    return false;
   }
 }
 

@@ -153,9 +153,12 @@ async def test_device_id_and_hostname_locate_device(test_client, test_engine):
     for payload in (id_payload, host_payload):
         device_match = next(item for item in payload["matches"] if item["kind"] in {"device", "hostname"})
         assert device_match["context"]["device_id"] == seeded["device_id"]
-        assert device_match["signals"]["stale_agent"] is True
+        assert "stale_agent" not in device_match["signals"]
+        assert device_match["status"] == "unknown"
+        assert device_match["context"]["agent_online"] is None
         assert device_match["signals"]["failed_operation"] is True
-        assert any(link["href"] == f"/app/admin/device?device={seeded['device_id']}" for link in device_match["links"])
+        assert not any(link["href"].startswith("/app/admin/device?") for link in device_match["links"])
+        assert any(link["href"] == "/app/admin/registry" for link in device_match["links"])
 
 
 @pytest.mark.asyncio

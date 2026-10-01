@@ -69,8 +69,8 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
         _safe_link("Открыть тикет", f"/app/tickets/{ticket.ticket_id}", "ticket"),
         _safe_link("Approval Center", f"/app/support/approvals?ticket_id={quote(ticket.ticket_id)}", "approval_center"),
     ]
-    if ticket.device_id:
-        links.append(_safe_link("Device card", f"/app/admin/device?device={ticket.device_id}", "device_card"))
+    if ticket.endpoint_device_ref:
+        links.append(_safe_link("Device card", f"/app/admin/device?device={quote(ticket.endpoint_device_ref)}", "device_card"))
     return {
         "kind": "ticket",
         "id": ticket.ticket_id,
@@ -97,10 +97,8 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
 
 
 def _device_match(request: web.Request, device: Device, *, failed_count: int, stuck_count: int, kind: str = "device") -> dict[str, Any]:
-    now = datetime.now(timezone.utc)
-    stale = bool(device.last_seen_at and device.last_seen_at < now - timedelta(minutes=15))
     online = None
-    severity = "warning" if stale or failed_count or stuck_count else "ok"
+    severity = "warning" if failed_count or stuck_count else "ok"
     return {
         "kind": kind,
         "id": device.device_id,
@@ -112,17 +110,14 @@ def _device_match(request: web.Request, device: Device, *, failed_count: int, st
             "device_id": device.device_id,
             "hostname": device.hostname,
             "agent_online": online,
-            "last_seen_at": _iso(device.last_seen_at),
         },
         "signals": {
             "agent_offline": online is False,
-            "stale_agent": stale,
             "failed_operation": failed_count > 0,
             "stuck_operation": stuck_count > 0,
         },
         "links": [
-            _safe_link("Device card", f"/app/admin/device?device={device.device_id}", "device_card"),
-            _safe_link("Inventory", f"/app/admin/inventory?device_id={quote(device.device_id)}", "inventory"),
+            _safe_link("Registry", "/app/admin/registry", "registry"),
             _safe_link("Observer", f"/app/admin/observer?device_id={quote(device.device_id)}", "observer"),
         ],
     }
@@ -144,7 +139,7 @@ def _operation_match(operation: Operation) -> dict[str, Any]:
     if operation.ticket_id:
         links.insert(0, _safe_link("Открыть тикет", f"/app/tickets/{operation.ticket_id}", "ticket"))
     if operation.device_id:
-        links.append(_safe_link("Device card", f"/app/admin/device?device={operation.device_id}", "device_card"))
+        links.append(_safe_link("Registry", "/app/admin/registry", "registry"))
     return {
         "kind": "operation",
         "id": operation.operation_id,
@@ -329,7 +324,7 @@ async def locate_tech_query(
                     await session.execute(
                         select(Device)
                         .where(and_(Device.deleted_at.is_(None), or_(*device_conditions)))
-                        .order_by(Device.last_seen_at.desc())
+                        .order_by(Device.device_id.asc())
                         .limit(capped_limit - len(matches))
                     )
                 ).scalars().all()

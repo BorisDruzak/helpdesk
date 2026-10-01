@@ -407,7 +407,7 @@ async def test_security_snapshot_includes_query_token_attempt_count(monkeypatch)
 
 
 @pytest.mark.no_db
-def test_inventory_scheduler_duplicate_status_affects_gate():
+def test_retired_inventory_scheduler_cannot_affect_readiness():
     from tech.snapshot import build_readiness_gates
 
     gates = build_readiness_gates(
@@ -440,18 +440,8 @@ def test_inventory_scheduler_duplicate_status_affects_gate():
         smoke={"status": "ok", "last_business_smoke": {"status": "success"}},
     )
 
-    gate = next(item for item in gates if item["key"] == "inventory_scheduler_health")
-    assert gate["status"] == "blocked"
-    assert "duplicate" in (gate["evidence"] or "")
-
-
-@pytest.mark.no_db
-def test_agent_baseline_excludes_pending_stubs_and_non_numeric_canaries():
-    from tech.snapshot import _is_agent_baseline_candidate
-
-    assert _is_agent_baseline_candidate(protocol_version="pending", agent_version="") is False
-    assert _is_agent_baseline_candidate(protocol_version="ws_ticket_v3", agent_version="observer-canary") is False
-    assert _is_agent_baseline_candidate(protocol_version="ws_ticket_v3", agent_version="3.1.19") is True
+    assert not any(item["key"] in {"inventory_scheduler_health", "agent_baseline", "agent_connection_policy_controlled"} for item in gates)
+    assert any(item["key"] == "migrations_current" for item in gates)
 
 
 @pytest.mark.no_db
@@ -527,3 +517,27 @@ def test_endpoint_dependency_failure_is_a_warning_not_core_blocker():
     dependency = next(item for item in gates if item["key"] == "endpoint_dependency")
     assert dependency["status"] == "warning"
     assert dependency["severity"] == "warning"
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize("failed", [False, True])
+async def test_tech_device_counts_use_one_bounded_provider_read(monkeypatch, failed):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from domain_ports.endpoint_context import EndpointDeviceFleet
+    from domain_ports.endpoint import EndpointUnavailable
+    from tech import snapshot as module
+    def item(number, online, retired):
+        return {"device": {"id": f"00000000-0000-0000-0000-{number:012d}", "device_identifier": str(number), "display_name": str(number), "online": online, "retired_at": "2026-01-01T00:00:00Z" if retired else None, "last_seen_at": None}, "profiles": [], "inventory_summary": None}
+    fleet = EndpointDeviceFleet.model_validate({"items": [item(1, True, False), item(2, False, False), item(3, True, True)], "next_cursor": None})
+    method = AsyncMock(return_value=EndpointUnavailable() if failed else fleet)
+    monkeypatch.setattr(module.DomainPortContainer, "from_config", lambda: SimpleNamespace(endpoint=SimpleNamespace(list_device_fleet=method)))
+    result = await module.build_agents_snapshot({"agent_health": {"online": 999}}, {}, True)
+    method.assert_awaited_once_with(limit=250)
+    if failed:
+        assert result["status"] == "unknown"
+        assert result["online"] is None and result["offline"] is None
+    else:
+        assert result["status"] == "available"
+        assert result["online"] == 1 and result["offline"] == 1 and result["retired"] == 1
+        assert result["total"] == 3

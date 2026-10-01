@@ -97,7 +97,6 @@ class EndpointPossessionService:
             metadata_json={"endpoint_device_ref": request.endpoint_device_ref, "verification": "endpoint_possession_proof"})
         claim.status = "approved"
         await self.registration.sync_asset_from_active_binding(binding)
-        await self.registration.sync_inventory_from_active_binding(binding, profile={})
         await self.repo.append_event(event_type="binding_activated", claim_id=claim.claim_id,
             binding_id=binding.binding_id, device_id=device.device_id, person_id=person.person_id,
             actor_id=request.actor_id, actor_role="user", payload={"source": "endpoint_possession_proof"})

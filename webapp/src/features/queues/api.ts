@@ -1,3 +1,4 @@
+import type { EndpointDeviceContext, RegistryDeviceOverlay } from "../admin/endpoint-context-types";
 import { clearEndpointRunKey, pendingEndpointRunKey } from "../diagnostics/endpoint-run-intent";
 
 export type SupportBootstrapPayload = {
@@ -1081,47 +1082,10 @@ export type SupportTicketClosurePlanPayload = {
 };
 
 export type SupportTicketInventoryContext = {
-  device_id: string | null;
-  hostname?: string | null;
-  display_name?: string | null;
-  agent?: {
-    connection_state?: "online" | "offline" | "unknown" | string;
-    last_seen_at?: string | null;
-    version?: string | null;
-    update_status?: string | null;
-    update_available?: boolean | null;
-  } | null;
-  inventory?: {
-    latest_snapshot_id?: string | null;
-    collected_at?: string | null;
-    age_seconds?: number | null;
-    freshness?: "fresh" | "stale" | "missing" | "unknown" | string;
-    source?: string | null;
-    summary?: Record<string, unknown> | null;
-  } | null;
-  binding?: {
-    responsible_person?: string | null;
-    department?: string | null;
-    building?: string | null;
-    room?: string | null;
-    status?: string | null;
-    tags?: string[];
-  } | null;
-  refresh?: {
-    policy_enabled?: boolean | null;
-    last_run_id?: string | null;
-    last_run_status?: string | null;
-    last_run_at?: string | null;
-    next_due_at?: string | null;
-    can_request_refresh?: boolean;
-  } | null;
-  signals?: {
-    stale_inventory?: boolean;
-    missing_inventory?: boolean;
-    agent_offline?: boolean;
-    failed_recent_refresh?: boolean;
-    failed_recent_operation?: boolean;
-  } | null;
+  status: "available" | "unmapped" | "unavailable";
+  error_code: string | null;
+  context: EndpointDeviceContext | null;
+  registry: RegistryDeviceOverlay | null;
 };
 
 export type SupportTicketWorkspacePayload = {

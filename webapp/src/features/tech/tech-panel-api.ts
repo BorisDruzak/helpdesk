@@ -154,30 +154,21 @@ export type TechPanelV2Snapshot = {
       query_token_attempts_recent?: number | null;
       status: TechGateStatus;
     };
-    agent_connection_policy: {
-      mode?: string | null;
-      status: TechGateStatus;
-      pending_requests: number;
-      stale_pending_requests: number;
-    };
     audit: {
       failed_logins_recent: number;
       locked_users_count: number;
-      invalid_agent_tokens_recent: number;
     };
   };
   runtime: {
     services: Array<{ key: string; title: string; status: "ok" | "degraded" | "down" | "unknown"; details?: string | null; last_seen_at?: string | null }>;
-    web_sockets: { ui_connections: number; agent_connections: number };
+    web_sockets: { ui_connections: number };
     schedulers: {
       operation_watchdog: string;
       ticket_sla_watchdog: string;
       ticket_auto_close_watchdog: string;
-      inventory_scheduler?: string | null;
       observer_refresh_runtime?: string | null;
     };
     scheduler_details?: {
-      inventory_scheduler?: TechInventorySchedulerDetails | null;
       [key: string]: TechInventorySchedulerDetails | null | undefined;
     };
   };
@@ -194,25 +185,14 @@ export type TechPanelV2Snapshot = {
     last_restore_drill?: TechMarkerStatus | null;
   };
   agents: {
-    total: number;
-    online: number;
-    offline: number;
-    stale: number;
-    pending_connection_requests: number;
-    reprovision_required: number;
-    invalid_token_recent: number;
-    below_baseline?: number | null;
-    update_in_progress: number;
-    update_failed_recent: number;
-    update_timed_out_recent: number;
-    awaiting_handshake_confirm: number;
-    problem_devices: TechProblemDevice[];
-    below_baseline_devices?: TechProblemDevice[];
-    baseline?: {
-      min_version?: string | null;
-      below_baseline_count?: number | null;
-      devices?: TechProblemDevice[];
-    };
+    source: "endpoint";
+    status: "available" | "unknown";
+    error_code: string | null;
+    total: number | null;
+    online: number | null;
+    offline: number | null;
+    retired: number | null;
+    has_more: boolean | null;
   };
   operations: {
     queued_stuck: number;

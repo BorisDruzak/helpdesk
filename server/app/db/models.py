@@ -22,6 +22,13 @@ import sqlalchemy as sa
 from app.db.base import Base
 
 
+# Shared relationships and deletion policies; SQLAlchemy values remain unchanged.
+FK_TICKET_ID = 'tickets.ticket_id'
+FK_DEVICE_ID = 'devices.device_id'
+DELETE_CASCADE = 'CASCADE'
+DELETE_SET_NULL = 'SET NULL'
+
+
 class Ticket(Base):
     """
     Ticket model for the Helpdesk workflow.
@@ -82,12 +89,12 @@ class Ticket(Base):
     subcategory_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     catalog_service_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("helpdesk_services.service_id", ondelete="SET NULL"),
+        sa.ForeignKey("helpdesk_services.service_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     catalog_offering_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("helpdesk_service_offerings.offering_id", ondelete="SET NULL"),
+        sa.ForeignKey("helpdesk_service_offerings.offering_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
@@ -195,7 +202,7 @@ class TicketFeedback(Base):
     __tablename__ = "ticket_feedback"
 
     feedback_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
     requester_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
@@ -239,14 +246,14 @@ class TicketReopenEvent(Base):
     __tablename__ = "ticket_reopen_events"
 
     reopen_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
     reopened_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reopened_by_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     previous_status: Mapped[str] = mapped_column(String(40), nullable=False)
     new_status: Mapped[str] = mapped_column(String(40), nullable=False)
     reason_code: Mapped[str] = mapped_column(String(60), nullable=False)
     reason_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    linked_feedback_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_feedback.feedback_id", ondelete="SET NULL"), nullable=True)
+    linked_feedback_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_feedback.feedback_id", ondelete=DELETE_SET_NULL), nullable=True)
     linked_knowledge_item_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
@@ -267,7 +274,7 @@ class TicketQualityReview(Base):
     __tablename__ = "ticket_quality_reviews"
 
     review_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
     review_type: Mapped[str] = mapped_column(String(60), nullable=False)
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="open")
@@ -304,7 +311,7 @@ class TicketQualityReviewComment(Base):
     __tablename__ = "ticket_quality_review_comments"
 
     comment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    review_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("ticket_quality_reviews.review_id", ondelete="CASCADE"), nullable=False, index=True)
+    review_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("ticket_quality_reviews.review_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, server_default="internal")
@@ -324,12 +331,12 @@ class ContinuousImprovementAction(Base):
     action_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     source_kind: Mapped[str] = mapped_column(String(40), nullable=False)
     source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True)
-    review_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_quality_reviews.review_id", ondelete="SET NULL"), nullable=True)
-    feedback_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_feedback.feedback_id", ondelete="SET NULL"), nullable=True)
-    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True)
-    problem_candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete="SET NULL"), nullable=True)
-    change_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="SET NULL"), nullable=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_SET_NULL), nullable=True, index=True)
+    review_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_quality_reviews.review_id", ondelete=DELETE_SET_NULL), nullable=True)
+    feedback_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_feedback.feedback_id", ondelete=DELETE_SET_NULL), nullable=True)
+    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete=DELETE_SET_NULL), nullable=True)
+    problem_candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete=DELETE_SET_NULL), nullable=True)
+    change_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete=DELETE_SET_NULL), nullable=True)
     service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
     action_type: Mapped[str] = mapped_column(String(60), nullable=False)
@@ -457,7 +464,7 @@ class RequesterTicketCreateRequest(Base):
     key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     ticket_id: Mapped[Optional[str]] = mapped_column(
-        String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True,
+        String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_SET_NULL), nullable=True, index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(),
@@ -520,7 +527,7 @@ class TicketWait(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     wait_type: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -555,7 +562,7 @@ class TicketResolutionPassport(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -603,12 +610,12 @@ class TicketEvidenceItem(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     passport_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_resolution_passports.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_resolution_passports.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     evidence_type: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -619,7 +626,7 @@ class TicketEvidenceItem(Base):
     section_key: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     artifact_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("artifacts.artifact_id", ondelete="SET NULL"),
+        sa.ForeignKey("artifacts.artifact_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -667,12 +674,12 @@ class TicketActionLog(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     passport_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_resolution_passports.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_resolution_passports.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     action_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -703,12 +710,12 @@ class TicketApproval(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     passport_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_resolution_passports.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_resolution_passports.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     approval_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -737,12 +744,12 @@ class TicketRelatedObject(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     passport_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_resolution_passports.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_resolution_passports.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     object_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -822,7 +829,7 @@ class TicketSlaPolicy(Base):
     business_hours_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     calendar_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_business_calendars.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_business_calendars.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -832,7 +839,7 @@ class TicketSlaPolicy(Base):
 class TicketSlaTarget(Base):
     """Цели SLA по приоритету (FRT и Resolution в минутах)."""
     __tablename__ = "ticket_sla_targets"
-    policy_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_sla_policies.id", ondelete="CASCADE"), primary_key=True)
+    policy_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_sla_policies.id", ondelete=DELETE_CASCADE), primary_key=True)
     priority: Mapped[str] = mapped_column(String(5), primary_key=True)
     first_response_min: Mapped[int] = mapped_column(Integer, nullable=False)
     resolution_min: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -841,7 +848,7 @@ class TicketSlaTarget(Base):
 class TicketPriorityMatrix(Base):
     """Матрица impact × urgency -> priority для политики."""
     __tablename__ = "ticket_priority_matrix"
-    policy_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_sla_policies.id", ondelete="CASCADE"), primary_key=True)
+    policy_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_sla_policies.id", ondelete=DELETE_CASCADE), primary_key=True)
     impact: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     urgency: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     priority: Mapped[str] = mapped_column(String(5), nullable=False)
@@ -854,13 +861,13 @@ class TicketRoutingRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     priority_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     condition_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    target_queue_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_queues.id", ondelete="CASCADE"), nullable=False)
+    target_queue_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_queues.id", ondelete=DELETE_CASCADE), nullable=False)
 
 
 class TicketQueueMember(Base):
     """Участник очереди (actor_id + роль в очереди)."""
     __tablename__ = "ticket_queue_members"
-    queue_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_queues.id", ondelete="CASCADE"), primary_key=True)
+    queue_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_queues.id", ondelete=DELETE_CASCADE), primary_key=True)
     actor_id: Mapped[str] = mapped_column(Text, primary_key=True)
     role_in_queue: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
@@ -868,7 +875,7 @@ class TicketQueueMember(Base):
 class TicketQueueOlaTarget(Base):
     """Stage 11: OLA-цели по очереди и приоритету (ack_min, processing_min)."""
     __tablename__ = "ticket_queue_ola_targets"
-    queue_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_queues.id", ondelete="CASCADE"), primary_key=True)
+    queue_id: Mapped[int] = mapped_column(BigInteger, sa.ForeignKey("ticket_queues.id", ondelete=DELETE_CASCADE), primary_key=True)
     priority: Mapped[str] = mapped_column(String(5), primary_key=True)
     ack_min: Mapped[int] = mapped_column(Integer, nullable=False)
     processing_min: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -877,7 +884,7 @@ class TicketQueueOlaTarget(Base):
 class TicketWatcher(Base):
     """Наблюдатель тикета."""
     __tablename__ = "ticket_watchers"
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), primary_key=True)
     actor_id: Mapped[str] = mapped_column(Text, primary_key=True)
 
 
@@ -885,8 +892,8 @@ class TicketLink(Base):
     """Связь тикетов (duplicate, related, parent-child)."""
     __tablename__ = "ticket_links"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    src_ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False)
-    dst_ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False)
+    src_ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False)
+    dst_ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False)
     link_type: Mapped[str] = mapped_column(String(30), nullable=False)
     created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -909,7 +916,7 @@ class TicketKbLink(Base):
     """Ссылка на статью базы знаний по тикету (Stage 5)."""
     __tablename__ = "ticket_kb_links"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False)
     article_ref: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -925,7 +932,7 @@ class TicketWorklog(Base):
     """Трудозатраты по тикету (минуты + заметка)."""
     __tablename__ = "ticket_worklogs"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False)
     actor_id: Mapped[str] = mapped_column(Text, nullable=False)
     spent_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -941,7 +948,7 @@ class TicketNotification(Base):
     __tablename__ = "ticket_notifications"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     actor_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
@@ -1049,10 +1056,10 @@ class ProblemTicketLink(Base):
     __tablename__ = "problem_ticket_links"
     link_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     problem_id: Mapped[str] = mapped_column(
-        String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=False
+        String(36), sa.ForeignKey("problems.problem_id", ondelete=DELETE_CASCADE), nullable=False
     )
     ticket_id: Mapped[str] = mapped_column(
-        String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False
+        String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False
     )
     link_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="suspected")
     confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
@@ -1079,7 +1086,7 @@ class ProblemRCARecord(Base):
     __tablename__ = "problem_rca_records"
 
     rca_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    problem_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=False, index=True)
+    problem_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
     methodology: Mapped[str] = mapped_column(String(40), nullable=False, server_default="narrative")
@@ -1112,7 +1119,7 @@ class ProblemAffectedObject(Base):
     __tablename__ = "problem_affected_objects"
 
     affected_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    problem_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=False, index=True)
+    problem_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     object_type: Mapped[str] = mapped_column(String(40), nullable=False)
     object_ref: Mapped[str] = mapped_column(Text, nullable=False)
     service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -1162,7 +1169,7 @@ class ProblemCandidate(Base):
     __tablename__ = "problem_candidates"
 
     candidate_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    rule_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_detection_rules.rule_id", ondelete="SET NULL"), nullable=True)
+    rule_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_detection_rules.rule_id", ondelete=DELETE_SET_NULL), nullable=True)
     fingerprint: Mapped[str] = mapped_column(String(220), nullable=False, unique=True)
     fingerprint_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     evidence_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
@@ -1180,14 +1187,14 @@ class ProblemCandidate(Base):
     sla_breach_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     failed_kb_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
-    suggested_problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True)
-    converted_problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True)
+    suggested_problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete=DELETE_SET_NULL), nullable=True)
+    converted_problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete=DELETE_SET_NULL), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     first_seen_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     dismissed_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    merged_into_candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete="SET NULL"), nullable=True)
+    merged_into_candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete=DELETE_SET_NULL), nullable=True)
     duplicate_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     reviewed_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
@@ -1262,8 +1269,8 @@ class ProblemActivityEvent(Base):
     __tablename__ = "problem_activity_events"
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=True, index=True)
-    candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete="CASCADE"), nullable=True, index=True)
+    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete=DELETE_CASCADE), nullable=True, index=True)
+    candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete=DELETE_CASCADE), nullable=True, index=True)
     event_type: Mapped[str] = mapped_column(String(60), nullable=False)
     actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
@@ -1289,8 +1296,8 @@ class Change(Base):
     urgency: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
     source_kind: Mapped[str] = mapped_column(String(40), nullable=False, server_default="manual")
     source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True, index=True)
-    improvement_action_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("continuous_improvement_actions.action_id", ondelete="SET NULL"), nullable=True, index=True)
+    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
+    improvement_action_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("continuous_improvement_actions.action_id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
     service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
     request_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
@@ -1347,7 +1354,7 @@ class ChangeRiskAssessment(Base):
     __tablename__ = "change_risk_assessments"
 
     assessment_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
     risk_level: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
@@ -1376,7 +1383,7 @@ class ChangePlan(Base):
     __tablename__ = "change_plans"
 
     plan_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
     implementation_steps_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
@@ -1405,7 +1412,7 @@ class ChangeApproval(Base):
     __tablename__ = "change_approvals"
 
     approval_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     approval_stage: Mapped[str] = mapped_column(String(40), nullable=False, server_default="cab")
     approver_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     approver_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
@@ -1455,7 +1462,7 @@ class ChangeAffectedObject(Base):
     __tablename__ = "change_affected_objects"
 
     affected_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     object_type: Mapped[str] = mapped_column(String(40), nullable=False)
     object_ref: Mapped[str] = mapped_column(Text, nullable=False)
     service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -1477,7 +1484,7 @@ class ChangeTask(Base):
     __tablename__ = "change_tasks"
 
     task_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     task_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default="implementation")
@@ -1504,7 +1511,7 @@ class ChangePIRRecord(Base):
     __tablename__ = "change_pir_records"
 
     pir_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
     implementation_successful: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     rollback_used: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
@@ -1528,7 +1535,7 @@ class ChangeActivityEvent(Base):
     __tablename__ = "change_activity_events"
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete=DELETE_CASCADE), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(60), nullable=False)
     actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
@@ -1603,7 +1610,7 @@ class TicketChangeLink(Base):
     __tablename__ = "ticket_change_links"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(
-        String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False
+        String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False
     )
     change_ref: Mapped[str] = mapped_column(Text, nullable=False)
     change_system: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1808,7 +1815,7 @@ class RegistryDepartment(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     parent_department_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_departments.department_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_departments.department_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
@@ -1971,12 +1978,12 @@ class RegistryService(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     owner_queue_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_queues.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_queues.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     vendor_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_vendors.vendor_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_vendors.vendor_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
@@ -2012,12 +2019,12 @@ class RegistryPerson(Base):
     external_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     department_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_departments.department_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_departments.department_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     location_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_locations.location_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_locations.location_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
@@ -2059,27 +2066,27 @@ class RegistryAsset(Base):
     model: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     location_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_locations.location_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_locations.location_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     assigned_person_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     department_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_departments.department_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_departments.department_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     service_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_services.service_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_services.service_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     vendor_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_vendors.vendor_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_vendors.vendor_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     source: Mapped[str] = mapped_column(String(30), nullable=False, server_default="manual")
@@ -2114,7 +2121,7 @@ class RegistryPersonIdentity(Base):
     identity_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     person_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"),
+        sa.ForeignKey("registry_people.person_id", ondelete=DELETE_CASCADE),
         nullable=False,
     )
     provider: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -2187,7 +2194,7 @@ class RegistryAudienceGroupMember(Base):
     membership_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     audience_group_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_audience_groups.audience_group_id", ondelete="CASCADE"),
+        sa.ForeignKey("registry_audience_groups.audience_group_id", ondelete=DELETE_CASCADE),
         nullable=False,
     )
     member_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -2239,12 +2246,12 @@ class RegistryPersonDepartmentMembership(Base):
     membership_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     person_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"),
+        sa.ForeignKey("registry_people.person_id", ondelete=DELETE_CASCADE),
         nullable=False,
     )
     department_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_departments.department_id", ondelete="CASCADE"),
+        sa.ForeignKey("registry_departments.department_id", ondelete=DELETE_CASCADE),
         nullable=False,
     )
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
@@ -2292,7 +2299,7 @@ class RegistryEndpointDeviceMapping(Base):
     __tablename__ = "registry_endpoint_device_mappings"
 
     endpoint_device_ref: Mapped[str] = mapped_column(String(36), primary_key=True)
-    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False, unique=True)
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_CASCADE), nullable=False, unique=True)
     verified_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
@@ -2303,17 +2310,17 @@ class DeviceRegistrationClaim(Base):
     claim_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     device_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("devices.device_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     asset_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_assets.asset_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_assets.asset_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     person_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     claim_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -2377,24 +2384,24 @@ class DeviceUserBinding(Base):
     binding_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     device_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("devices.device_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     asset_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_assets.asset_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_assets.asset_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     person_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"),
+        sa.ForeignKey("registry_people.person_id", ondelete=DELETE_CASCADE),
         nullable=False,
     )
     relationship_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="primary_user")
     status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="active")
     source_claim_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("device_registration_claims.claim_id", ondelete="SET NULL"),
+        sa.ForeignKey("device_registration_claims.claim_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="registration_claim")
@@ -2455,22 +2462,22 @@ class DeviceRegistrationEvent(Base):
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     claim_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("device_registration_claims.claim_id", ondelete="SET NULL"),
+        sa.ForeignKey("device_registration_claims.claim_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     binding_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"),
+        sa.ForeignKey("device_user_bindings.binding_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     device_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("devices.device_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_CASCADE),
         nullable=False,
     )
     person_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     event_type: Mapped[str] = mapped_column(String(60), nullable=False)
@@ -2498,15 +2505,15 @@ class DeviceAccountSession(Base):
 
     session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     session_token_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_CASCADE), nullable=False)
     account_mode: Mapped[str] = mapped_column(String(40), nullable=False)
     verification_status: Mapped[str] = mapped_column(String(40), nullable=False)
     verification_method: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
-    person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
-    binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
-    claim_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_registration_claims.claim_id", ondelete="SET NULL"), nullable=True)
-    base_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
-    base_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
+    person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL), nullable=True)
+    binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete=DELETE_SET_NULL), nullable=True)
+    claim_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_registration_claims.claim_id", ondelete=DELETE_SET_NULL), nullable=True)
+    base_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete=DELETE_SET_NULL), nullable=True)
+    base_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL), nullable=True)
     declared_account: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     warning_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
@@ -2545,11 +2552,11 @@ class DeviceAccountLoginRequest(Base):
     __tablename__ = "device_account_login_requests"
 
     request_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_CASCADE), nullable=False)
     requested_account: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    matched_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
-    base_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
-    base_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
+    matched_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL), nullable=True)
+    base_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete=DELETE_SET_NULL), nullable=True)
+    base_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL), nullable=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     verification_method: Mapped[str] = mapped_column(String(40), nullable=False, server_default="admin_approval")
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -2557,7 +2564,7 @@ class DeviceAccountLoginRequest(Base):
     reviewed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    resulting_session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_sessions.session_id", ondelete="SET NULL"), nullable=True)
+    resulting_session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_sessions.session_id", ondelete=DELETE_SET_NULL), nullable=True)
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
@@ -2577,29 +2584,29 @@ class DeviceBrowserPairing(Base):
     __tablename__ = "device_browser_pairings"
 
     pairing_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_CASCADE), nullable=False)
     purpose: Mapped[str] = mapped_column(String(40), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     pairing_token_hash: Mapped[str] = mapped_column(Text, nullable=False)
     pairing_code_hash: Mapped[str] = mapped_column(Text, nullable=False)
     resulting_account_session_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("device_account_sessions.session_id", ondelete="SET NULL"),
+        sa.ForeignKey("device_account_sessions.session_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     confirmed_person_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     binding_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"),
+        sa.ForeignKey("device_user_bindings.binding_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     claim_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("device_registration_claims.claim_id", ondelete="SET NULL"),
+        sa.ForeignKey("device_registration_claims.claim_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
@@ -2632,10 +2639,10 @@ class DeviceAccountEvent(Base):
     __tablename__ = "device_account_events"
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
-    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_sessions.session_id", ondelete="SET NULL"), nullable=True)
-    request_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_login_requests.request_id", ondelete="SET NULL"), nullable=True)
-    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True)
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_CASCADE), nullable=False)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_sessions.session_id", ondelete=DELETE_SET_NULL), nullable=True)
+    request_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_login_requests.request_id", ondelete=DELETE_SET_NULL), nullable=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_SET_NULL), nullable=True)
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
     actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
@@ -3197,7 +3204,7 @@ class Operation(Base):
     timeout_override_sec: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Связь с playbook_run для наблюдаемости (Этап 5)
     playbook_run_id: Mapped[Optional[int]] = mapped_column(
-        sa.BigInteger, sa.ForeignKey("playbook_run.id", ondelete="SET NULL"), nullable=True
+        sa.BigInteger, sa.ForeignKey("playbook_run.id", ondelete=DELETE_SET_NULL), nullable=True
     )
     
     # Lifecycle timestamps
@@ -3269,7 +3276,7 @@ class EndpointOperationLink(Base):
     link_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     operation_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("operations.operation_id", ondelete="CASCADE"),
+        sa.ForeignKey("operations.operation_id", ondelete=DELETE_CASCADE),
         nullable=False,
         unique=True,
     )
@@ -3285,12 +3292,12 @@ class EndpointOperationLink(Base):
     remote_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="create_pending")
     diagnostic_session_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"),
+        sa.ForeignKey("diagnostic_sessions.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     diagnostic_step_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("diagnostic_steps.id", ondelete="SET NULL"),
+        sa.ForeignKey("diagnostic_steps.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     safe_result_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
@@ -3347,12 +3354,12 @@ class OperationDependency(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     operation_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("operations.operation_id", ondelete="CASCADE"),
+        sa.ForeignKey("operations.operation_id", ondelete=DELETE_CASCADE),
         nullable=False,
     )
     dependency_operation_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("operations.operation_id", ondelete="SET NULL"),
+        sa.ForeignKey("operations.operation_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     dependency_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -3660,24 +3667,24 @@ class HelpdeskService(Base):
     owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     owner_person_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     owner_queue_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_queues.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_queues.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     support_group_code: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     registry_service_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("registry_services.service_id", ondelete="SET NULL"),
+        sa.ForeignKey("registry_services.service_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     default_ticket_type_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     default_queue_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_queues.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_queues.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     default_priority_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -3746,7 +3753,7 @@ class HelpdeskServiceOffering(Base):
     form_schema_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     default_queue_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_queues.id", ondelete="SET NULL"),
+        sa.ForeignKey("ticket_queues.id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     priority_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -4039,7 +4046,7 @@ class SupportQueueSavedView(Base):
     owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     queue_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        sa.ForeignKey("ticket_queues.id", ondelete="CASCADE"),
+        sa.ForeignKey("ticket_queues.id", ondelete=DELETE_CASCADE),
         nullable=True,
     )
     filters_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
@@ -4259,7 +4266,7 @@ class AccessGroupMember(Base):
     __tablename__ = "access_group_members"
 
     group_id: Mapped[int] = mapped_column(
-        BigInteger, sa.ForeignKey("access_groups.id", ondelete="CASCADE"), primary_key=True
+        BigInteger, sa.ForeignKey("access_groups.id", ondelete=DELETE_CASCADE), primary_key=True
     )
     actor_id: Mapped[str] = mapped_column(Text, primary_key=True)
 
@@ -4271,7 +4278,7 @@ class AccessGroupPermission(Base):
     __tablename__ = "access_group_permissions"
 
     group_id: Mapped[int] = mapped_column(
-        BigInteger, sa.ForeignKey("access_groups.id", ondelete="CASCADE"), primary_key=True
+        BigInteger, sa.ForeignKey("access_groups.id", ondelete=DELETE_CASCADE), primary_key=True
     )
     permission_code: Mapped[str] = mapped_column(String(120), primary_key=True)
 
@@ -4283,10 +4290,10 @@ class AccessGroupQueueMember(Base):
     __tablename__ = "access_group_queue_members"
 
     group_id: Mapped[int] = mapped_column(
-        BigInteger, sa.ForeignKey("access_groups.id", ondelete="CASCADE"), primary_key=True
+        BigInteger, sa.ForeignKey("access_groups.id", ondelete=DELETE_CASCADE), primary_key=True
     )
     queue_id: Mapped[int] = mapped_column(
-        BigInteger, sa.ForeignKey("ticket_queues.id", ondelete="CASCADE"), primary_key=True
+        BigInteger, sa.ForeignKey("ticket_queues.id", ondelete=DELETE_CASCADE), primary_key=True
     )
     role_in_queue: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
@@ -4584,7 +4591,7 @@ class ObserverSpan(Base):
     span_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     trace_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("observer_traces.trace_id", ondelete="CASCADE"),
+        sa.ForeignKey("observer_traces.trace_id", ondelete=DELETE_CASCADE),
         nullable=False,
         index=True,
     )
@@ -4626,7 +4633,7 @@ class ObserverSpanLink(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     span_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("observer_spans.span_id", ondelete="CASCADE"),
+        sa.ForeignKey("observer_spans.span_id", ondelete=DELETE_CASCADE),
         nullable=False,
         index=True,
     )
@@ -4683,19 +4690,19 @@ class ObserverErrorOccurrence(Base):
     occurrence_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trace_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("observer_traces.trace_id", ondelete="CASCADE"),
+        sa.ForeignKey("observer_traces.trace_id", ondelete=DELETE_CASCADE),
         nullable=False,
         index=True,
     )
     span_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("observer_spans.span_id", ondelete="SET NULL"),
+        sa.ForeignKey("observer_spans.span_id", ondelete=DELETE_SET_NULL),
         nullable=True,
         index=True,
     )
     error_signature: Mapped[str] = mapped_column(
         String(160),
-        sa.ForeignKey("observer_error_signatures.error_signature", ondelete="CASCADE"),
+        sa.ForeignKey("observer_error_signatures.error_signature", ondelete=DELETE_CASCADE),
         nullable=False,
         index=True,
     )
@@ -4766,7 +4773,7 @@ class TicketPublicSession(Base):
     token_prefix: Mapped[str] = mapped_column(String(8), nullable=False)
     ticket_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE),
         nullable=False,
         index=True,
     )
@@ -4808,7 +4815,7 @@ class ConsentDecision(Base):
     
     operation_id: Mapped[str] = mapped_column(
         String(36),
-        sa.ForeignKey("operations.operation_id", ondelete="CASCADE"),
+        sa.ForeignKey("operations.operation_id", ondelete=DELETE_CASCADE),
         primary_key=True
     )
     decision: Mapped[str] = mapped_column(String(10), nullable=False)  # 'approved' or 'denied'
@@ -4843,17 +4850,17 @@ class UserConsentRequest(Base):
     consent_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     subject_type: Mapped[str] = mapped_column(String(40), nullable=False)
     subject_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True)
-    device_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="SET NULL"), nullable=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_SET_NULL), nullable=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey(FK_DEVICE_ID, ondelete=DELETE_SET_NULL), nullable=True)
     # Neutral PR-2 compatibility fields.  They intentionally carry no local
     # Registry foreign key; old requester_* Registry IDs remain read-only data.
     requester_external_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     requester_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    requester_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
-    requester_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
+    requester_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete=DELETE_SET_NULL), nullable=True)
+    requester_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete=DELETE_SET_NULL), nullable=True)
     requester_account_session_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        sa.ForeignKey("device_account_sessions.session_id", ondelete="SET NULL"),
+        sa.ForeignKey("device_account_sessions.session_id", ondelete=DELETE_SET_NULL),
         nullable=True,
     )
     requested_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -4995,7 +5002,7 @@ class DiagnosticSession(Base):
     __tablename__ = "diagnostic_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
     profile_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
     profile_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", server_default="draft", index=True)
@@ -5020,15 +5027,15 @@ class DiagnosticStep(Base):
     __tablename__ = "diagnostic_steps"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    session_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete=DELETE_CASCADE), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
     step_type: Mapped[str] = mapped_column(String(64), nullable=False)
     provider_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     capability_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    operation_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("operations.operation_id", ondelete="SET NULL"), nullable=True, index=True)
-    playbook_run_id: Mapped[Optional[int]] = mapped_column(BigInteger, sa.ForeignKey("playbook_run.id", ondelete="SET NULL"), nullable=True, index=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("operations.operation_id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
+    playbook_run_id: Mapped[Optional[int]] = mapped_column(BigInteger, sa.ForeignKey("playbook_run.id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
     playbook_step_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    remote_assist_session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("remote_access_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    remote_assist_session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("remote_access_sessions.id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
     observer_trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     external_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
@@ -5051,8 +5058,8 @@ class DiagnosticSessionCapability(Base):
     __tablename__ = "diagnostic_session_capabilities"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    session_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete=DELETE_CASCADE), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
     provider_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     provider_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     capability_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
@@ -5064,8 +5071,8 @@ class DiagnosticSessionCapability(Base):
     readiness_actions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
     params_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
     result_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
-    evidence_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_evidence.id", ondelete="SET NULL"), nullable=True, index=True)
-    operation_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("operations.operation_id", ondelete="SET NULL"), nullable=True, index=True)
+    evidence_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_evidence.id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("operations.operation_id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
     session_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     query_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="planned", server_default="planned")
@@ -5083,9 +5090,9 @@ class DiagnosticEvidence(Base):
     __tablename__ = "diagnostic_evidence"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
-    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
-    step_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_steps.id", ondelete="SET NULL"), nullable=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
+    step_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_steps.id", ondelete=DELETE_SET_NULL), nullable=True)
     source_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     provider_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -5123,11 +5130,11 @@ class DiagnosticArtifactLink(Base):
     __tablename__ = "diagnostic_artifact_links"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
-    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
-    step_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_steps.id", ondelete="SET NULL"), nullable=True, index=True)
-    evidence_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_evidence.id", ondelete="CASCADE"), nullable=True, index=True)
-    artifact_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("artifacts.artifact_id", ondelete="SET NULL"), nullable=True, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
+    step_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_steps.id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
+    evidence_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_evidence.id", ondelete=DELETE_CASCADE), nullable=True, index=True)
+    artifact_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("artifacts.artifact_id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
     artifact_kind: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     source_type: Mapped[str] = mapped_column(String(64), nullable=False)
     source_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -5149,8 +5156,8 @@ class DiagnosticFinding(Base):
     __tablename__ = "diagnostic_findings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
-    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
     root_cause_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -5174,8 +5181,8 @@ class DiagnosticBundle(Base):
     __tablename__ = "diagnostic_bundles"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
-    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey(FK_TICKET_ID, ondelete=DELETE_CASCADE), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete=DELETE_SET_NULL), nullable=True, index=True)
     created_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="building", server_default="building", index=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -5219,7 +5226,7 @@ class DiagnosticCapability(Base):
     __tablename__ = "diagnostic_capabilities"
 
     capability_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    provider_id: Mapped[str] = mapped_column(Text, sa.ForeignKey("diagnostic_providers.provider_id", ondelete="CASCADE"), nullable=False)
+    provider_id: Mapped[str] = mapped_column(Text, sa.ForeignKey("diagnostic_providers.provider_id", ondelete=DELETE_CASCADE), nullable=False)
     execution_target: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -5265,7 +5272,7 @@ class DiagnosticCapabilityVersion(Base):
     __tablename__ = "diagnostic_capability_versions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    capability_id: Mapped[str] = mapped_column(Text, sa.ForeignKey("diagnostic_capabilities.capability_id", ondelete="CASCADE"), nullable=False)
+    capability_id: Mapped[str] = mapped_column(Text, sa.ForeignKey("diagnostic_capabilities.capability_id", ondelete=DELETE_CASCADE), nullable=False)
     version: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="published", server_default="published")
     descriptor_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
@@ -5319,7 +5326,7 @@ class DiagnosticProviderCredentialRef(Base):
     __tablename__ = "diagnostic_provider_credential_refs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    provider_config_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_provider_configs.id", ondelete="CASCADE"), nullable=False)
+    provider_config_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_provider_configs.id", ondelete=DELETE_CASCADE), nullable=False)
     credential_key: Mapped[str] = mapped_column(String(120), nullable=False)
     secret_ref: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="missing", server_default="missing")
@@ -5373,7 +5380,7 @@ class PlaybookVersion(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     playbook_id: Mapped[int] = mapped_column(
-        BigInteger, sa.ForeignKey("playbook.id", ondelete="CASCADE"), nullable=False, index=True
+        BigInteger, sa.ForeignKey("playbook.id", ondelete=DELETE_CASCADE), nullable=False, index=True
     )
     version: Mapped[str] = mapped_column(String(32), nullable=False)
     manifest_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
@@ -5392,7 +5399,7 @@ class PlaybookStep(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     playbook_version_id: Mapped[int] = mapped_column(
-        BigInteger, sa.ForeignKey("playbook_version.id", ondelete="CASCADE"), nullable=False, index=True
+        BigInteger, sa.ForeignKey("playbook_version.id", ondelete=DELETE_CASCADE), nullable=False, index=True
     )
     step_key: Mapped[str] = mapped_column(String(64), nullable=False)
     order_no: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -5442,7 +5449,7 @@ class PlaybookStepRun(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     playbook_run_id: Mapped[int] = mapped_column(
-        BigInteger, sa.ForeignKey("playbook_run.id", ondelete="CASCADE"), nullable=False, index=True
+        BigInteger, sa.ForeignKey("playbook_run.id", ondelete=DELETE_CASCADE), nullable=False, index=True
     )
     playbook_step_id: Mapped[int] = mapped_column(
         BigInteger, sa.ForeignKey("playbook_step.id", ondelete="RESTRICT"), nullable=False

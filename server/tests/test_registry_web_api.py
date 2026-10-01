@@ -50,12 +50,9 @@ async def test_web_admin_registry_returns_snapshot_for_reestr_ui(test_client, te
                 device_metadata={},
             )
         )
-        await RegistryRepo(session).upsert_agent_asset(
+        await RegistryRepo(session).ensure_device_asset(
             device_id=device_id,
             hostname="DOC-214-02",
-            os_name="Windows 11",
-            agent_version="1.2.0",
-            metadata={},
         )
         service = RegistryIngestionService(session)
         await service.ingest_requester_profile(
@@ -374,12 +371,9 @@ async def test_registry_options_available_to_agent_request_forms_without_full_sn
                 device_metadata={},
             )
         )
-        await RegistryRepo(session).upsert_agent_asset(
+        await RegistryRepo(session).ensure_device_asset(
             device_id=device_id,
             hostname="OPT-214",
-            os_name="Windows 11",
-            agent_version="1.2.0",
-            metadata={},
         )
         service = RegistryIngestionService(session)
         await service.ingest_requester_profile(

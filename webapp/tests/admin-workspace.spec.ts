@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "playwright/test";
+import { endpointDeviceId, mockEndpointFleet } from "./fixtures/endpoint-context";
 
 async function loginAsAdmin(page: Page) {
   await page.goto("/app/admin");
@@ -13,6 +14,7 @@ async function loginAsAdmin(page: Page) {
 }
 
 test("администратор видит отдельные пункты admin-меню и открывает ключевые страницы", async ({ page }) => {
+  await mockEndpointFleet(page);
   await page.goto("/app/admin");
 
   await expect(page.getByRole("heading", { name: "Добро пожаловать" })).toBeVisible();
@@ -25,14 +27,14 @@ test("администратор видит отдельные пункты admi
   await expect(page.getByRole("heading", { name: "Центр администрирования" })).toBeVisible();
   await page.goto("/app/admin/inventory");
   const adminNav = page.getByRole("navigation", { name: "Навигация администрирования" });
-  await expect(page.getByRole("heading", { name: "Агенты" })).toBeVisible();
-  await expect(adminNav.getByRole("link", { name: /Инвентарь устройств/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Устройства", exact: true })).toBeVisible();
+  await expect(adminNav.getByRole("link", { name: /Устройства/ })).toBeVisible();
   await expect(adminNav.getByRole("link", { name: /Карточка устройства/ })).toBeVisible();
   await expect(adminNav.getByRole("link", { name: /Observer/ })).toBeVisible();
 
   await adminNav.getByRole("link", { name: /Карточка устройства/ }).click();
   await expect(page).toHaveURL(/\/app\/admin\/device(?:\?.*)?$/);
-  await expect(page.getByRole("heading", { name: "Карточка устройства" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Укажите корректный идентификатор устройства" })).toBeVisible();
 
   await page.goto("/app/admin/capabilities");
   await expect(page).toHaveURL(/\/app\/admin\/capabilities$/);
@@ -46,22 +48,26 @@ test("администратор видит отдельные пункты admi
   await expect(page.getByRole("heading", { name: "Observer", exact: true })).toBeVisible();
 });
 
-test("admin inventory tokens and notifications tab stay authenticated", async ({ page }) => {
+test("admin opens the exact Endpoint device without retired API traffic and keeps notifications authenticated", async ({ page }) => {
+  await mockEndpointFleet(page);
+  const retiredRequests: string[] = [];
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (/^\/api\/web\/admin\/(devices|inventory|device-tokens)(\/|$)/.test(path)) retiredRequests.push(path);
+  });
   await loginAsAdmin(page);
-
-  const tokensResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/web/admin/device-tokens") && response.status() === 200
-  );
-  await page.goto("/app/admin/inventory?device=device-1&panel=tokens");
-  await tokensResponse;
-  await expect(page.getByRole("button", { name: "Токены" })).toBeVisible();
-  await expect(page.getByText("tok-act")).toBeVisible();
-
-  const revokeResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/web/admin/devices/device-1/tokens/revoke") && response.status() === 200
-  );
-  await page.getByRole("button", { name: "Отозвать" }).first().click();
-  await revokeResponse;
+  await page.goto("/app/admin/inventory");
+  for (const label of ["Платформа", "Расположение", "Связь с Registry", "Связь пользователя", "Актуальность inventory", "Lifecycle устройства", "Порог актуальности inventory"]) {
+    await expect(page.getByLabel(label, {exact: true})).toBeVisible();
+  }
+  await page.getByLabel("Поиск на странице", {exact: true}).fill(endpointDeviceId);
+  await page.getByLabel("Актуальность inventory", {exact: true}).selectOption("missing");
+  await page.getByRole("link", { name: "Windows fixture", exact: true }).click();
+  await expect(page).toHaveURL(`/app/admin/device?device=${endpointDeviceId}`);
+  await expect(page.getByRole("heading", { name: "Windows fixture" })).toBeVisible();
+  await expect(page.getByText("Связь с Registry не подтверждена. Устройство доступно в Endpoint.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Токены", exact: true })).toHaveCount(0);
+  expect(retiredRequests).toEqual([]);
 
   const prefsResponse = page.waitForResponse((response) =>
     response.url().includes("/api/web/notifications/preferences") && response.status() === 200

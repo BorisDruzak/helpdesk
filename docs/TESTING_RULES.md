@@ -14,6 +14,25 @@ python scripts/verify_workspace.py
 
 For an ordinary change, run the narrowest pytest/browser/build layer that covers the files you changed; `verify_workspace.py` is not a routine commit prerequisite.
 
+## Compatibility detail browser fixture
+
+The active support ticket route uses `TicketListPage`. To exercise the exported
+compatibility detail page directly, use `webapp/tests/detail-compatibility.spec.ts`.
+Playwright's webServer startup builds `tests/fixtures/compat-detail.vite.config.ts`
+into ignored `webapp/.e2e-compat/`, then starts the existing Python fixture server.
+No manually prepared `.superpowers` bundle is required. The regular production
+build remains a separate prerequisite for the requester/support app fixtures.
+
+```powershell
+cd webapp
+npm run build
+npm run test:e2e -- tests/detail-compatibility.spec.ts tests/requester-workspace.spec.ts -g "compatibility ticket detail|saved checkbox"
+```
+
+Screenshots and traces go to the disposable Playwright output directory. These
+fixture tests check rendered behavior, not live deployment or DB persistence;
+use the isolated PostgreSQL API layer for persistence acceptance.
+
 ## Server Pytest Layers
 
 Use these layers instead of the old single long `server/tests` run when you need signal quickly:

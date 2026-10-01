@@ -8,8 +8,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    DevicePresenceSnapshot,
     RegistryAudienceGroup,
+    RegistryEndpointDeviceMapping,
     RegistryPersonIdentity,
     RegistryQualityIssueOverride,
     UiUser,
@@ -170,6 +170,9 @@ class RegistrySnapshotService:
 
         registration_service = RegistrationService(self.session)
         assets = await self.repo.list_assets()
+        mappings = (await self.session.execute(select(RegistryEndpointDeviceMapping.device_id,
+            RegistryEndpointDeviceMapping.endpoint_device_ref))).all()
+        endpoint_refs = dict(mappings)
         people = await self.repo.list_people()
         locations = await self.repo.list_locations()
         departments = await self.repo.list_departments()
@@ -257,18 +260,6 @@ class RegistrySnapshotService:
             for identity in identities
             if identity.provider == "ui_login" and identity.normalized_identifier
         }
-        latest_presence_by_device: dict[str, DevicePresenceSnapshot] = {}
-        device_ids = [asset.device_id for asset in assets if asset.device_id]
-        if device_ids:
-            presence_rows = (
-                await self.session.execute(
-                    select(DevicePresenceSnapshot)
-                    .where(DevicePresenceSnapshot.device_id.in_(device_ids))
-                    .order_by(DevicePresenceSnapshot.device_id, desc(DevicePresenceSnapshot.collected_at))
-                )
-            ).scalars().all()
-            for row in presence_rows:
-                latest_presence_by_device.setdefault(row.device_id, row)
         pending_by_device: dict[str, list[Any]] = {}
         for claim in claims:
             if claim.status in {"self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review", "conflict"}:
@@ -370,24 +361,6 @@ class RegistrySnapshotService:
                         "description": binding.device_id,
                         "details": binding.person_id,
                     })
-        for asset in assets:
-            active_binding = active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or "")
-            presence = latest_presence_by_device.get(asset.device_id or "")
-            current_user = (presence.current_user if presence else None) or ""
-            identities = identities_by_person.get(active_binding.person_id if active_binding else "", [])
-            presence_match = _presence_identity_match(current_user, identities)
-            if active_binding and presence_match is False:
-                data_quality.append({
-                    "kind": "presence_user_mismatch",
-                    "severity": "warning",
-                    "object_type": "asset",
-                    "object_id": asset.asset_id,
-                    "device_id": asset.device_id,
-                    "person_id": active_binding.person_id,
-                    "title": "Presence user differs from active binding",
-                    "description": asset.name,
-                    "details": asset.name,
-                })
         for location in locations:
             if location.status == "pending":
                 data_quality.append({
@@ -781,6 +754,7 @@ class RegistrySnapshotService:
                     "name": asset.name,
                     "hostname": asset.hostname,
                     "device_id": asset.device_id,
+                    "endpoint_device_ref": endpoint_refs.get(asset.device_id),
                     "inventory_number": asset.inventory_number,
                     "serial_number": asset.serial_number,
                     "status": asset.status,
@@ -846,17 +820,6 @@ class RegistrySnapshotService:
                     ).isoformat()
                     if pending_by_device.get(asset.device_id or "")
                     else None,
-                    "current_os_user": latest_presence_by_device.get(asset.device_id or "").current_user
-                    if asset.device_id in latest_presence_by_device
-                    else None,
-                    "latest_presence_user": latest_presence_by_device.get(asset.device_id or "").current_user
-                    if asset.device_id in latest_presence_by_device
-                    else None,
-                    "latest_presence_at": latest_presence_by_device.get(asset.device_id or "").collected_at.isoformat()
-                    if asset.device_id in latest_presence_by_device
-                    else None,
-                    "os": (asset.discovery_payload or {}).get("os"),
-                    "agent_version": (asset.discovery_payload or {}).get("agent_version"),
                     "binding_type": (
                         active_primary_by_device.get(asset.device_id or "")
                         or active_responsible_by_device.get(asset.device_id or "")
@@ -877,7 +840,6 @@ class RegistrySnapshotService:
                     "can_bind": bool(asset.device_id),
                     "can_transfer": bool(asset.device_id),
                     "can_revoke": bool(asset.device_id and active_any_by_device.get(asset.device_id or "")),
-                    "last_seen_at": asset.last_seen_at.isoformat() if asset.last_seen_at else None,
                     "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
                     "ticket_count": ticket_counts.get(asset.device_id or "", 0),
                 }

@@ -355,7 +355,29 @@ async def test_registry_snapshot_presence_mismatch_uses_identities_not_display_n
         snapshot = await RegistrySnapshotService(session).build_snapshot()
         await session.commit()
 
-    mismatches = [issue for issue in snapshot["data_quality"] if issue["kind"] == "presence_user_mismatch"]
-    assert [issue["object_id"] for issue in mismatches] == [
-        next(asset["asset_id"] for asset in snapshot["assets"] if asset["device_id"] == mismatched_device_id)
-    ]
+    assert not any(issue["kind"] == "presence_user_mismatch" for issue in snapshot["data_quality"])
+
+
+@pytest.mark.asyncio
+async def test_registry_snapshot_exposes_only_exact_verified_endpoint_mapping(test_engine):
+    from app.db.models import RegistryEndpointDeviceMapping
+
+    mapped_id, unmapped_id, endpoint_id = (str(uuid.uuid4()) for _ in range(3))
+    async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
+        session.add_all([_device(mapped_id), _device(unmapped_id)])
+        await session.flush()
+        from app.repos.registry_repo import RegistryRepo
+        repo = RegistryRepo(session)
+        for device_id in (mapped_id, unmapped_id):
+            await repo.ensure_device_asset(device_id=device_id, hostname="same-business-name")
+        session.add(RegistryEndpointDeviceMapping(
+            device_id=mapped_id, endpoint_device_ref=endpoint_id,
+            verified_at=datetime.now(timezone.utc),
+        ))
+        await session.flush()
+        snapshot = await RegistrySnapshotService(session).build_snapshot()
+        assets = {asset["device_id"]: asset for asset in snapshot["assets"]}
+        assert assets[mapped_id].get("endpoint_device_ref") == endpoint_id
+        assert assets[unmapped_id].get("endpoint_device_ref") is None
+        assert assets[mapped_id]["device_id"] != endpoint_id
+        await session.rollback()

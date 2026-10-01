@@ -8,6 +8,29 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# The Context service projection has no raw transport envelope or secret fields.
+# Its strict immutable wire shape is the port's safe semantic projection.
+try:
+    from domain_ports.endpoint_context import (
+        EndpointDeviceFleet as DeviceFleetWireV1,
+        EndpointDeviceContext as DeviceContextWireV1,
+        EndpointContextCollection as ContextCollectionWireV1,
+        EndpointCollectionDetails as CollectionDetailsWireV1,
+        EndpointContextHistory as ContextHistoryWireV1,
+        EndpointContextComparison as ContextComparisonWireV1,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name not in {"domain_ports", "domain_ports.endpoint_context"}:
+        raise
+    from server.domain_ports.endpoint_context import (
+        EndpointDeviceFleet as DeviceFleetWireV1,
+        EndpointDeviceContext as DeviceContextWireV1,
+        EndpointContextCollection as ContextCollectionWireV1,
+        EndpointCollectionDetails as CollectionDetailsWireV1,
+        EndpointContextHistory as ContextHistoryWireV1,
+        EndpointContextComparison as ContextComparisonWireV1,
+    )
+
 
 class _Wire(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

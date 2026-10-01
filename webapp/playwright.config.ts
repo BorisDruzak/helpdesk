@@ -24,7 +24,7 @@ export default defineConfig({
     video: "retain-on-failure"
   },
   webServer: {
-    command: `python tests/fixtures/support_fixture_server.py --port ${PORT}`,
+    command: `npx vite build --config tests/fixtures/compat-detail.vite.config.ts && python tests/fixtures/support_fixture_server.py --port ${PORT}`,
     url: `${BASE_URL}/app/login`,
     reuseExistingServer: false,
     timeout: 120_000

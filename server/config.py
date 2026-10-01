@@ -360,10 +360,6 @@ PLAYBOOK_SCHEDULER_ENABLED = os.getenv("PLAYBOOK_SCHEDULER_ENABLED", "true").low
 PLAYBOOK_PARALLEL_ENABLED = os.getenv("PLAYBOOK_PARALLEL_ENABLED", "true").lower() == "true"
 CAPABILITY_GATE_STRICT = os.getenv("CAPABILITY_GATE_STRICT", "true").lower() == "true"
 
-# Inventory refresh scheduler: disabled by default until an admin enables policy
-# rows. The runtime only dispatches the existing inventory.collect tool.
-INVENTORY_REFRESH_SCHEDULER_ENABLED = os.getenv("INVENTORY_REFRESH_SCHEDULER_ENABLED", "false").lower() == "true"
-INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC = int(os.getenv("INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC", "60"))
 
 # ============================================================================
 # Logging Configuration

@@ -103,6 +103,20 @@ jobs:
           python -m pytest \
             server/tests/test_endpoint_contract_lock.py \
             server/tests/test_endpoint_http_adapter.py \
+            server/tests/test_endpoint_context_adapter.py server/tests/test_device_cutover_boundary.py server/tests/test_legacy_inventory_retirement_audit.py \
+            server/tests/test_admin_endpoint_handlers.py \
+            server/tests/test_registry_endpoint_device_overlay.py \
+            server/tests/test_registry_registration_snapshot.py::test_registry_snapshot_exposes_only_exact_verified_endpoint_mapping \
+            server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary \
+            server/tests/test_support_endpoint_presence.py \
+            server/tests/test_tech_locator.py \
+            server/tests/test_approval_consent_center.py \
+            server/tests/test_device_registration_service.py \
+            server/tests/test_observer_debug_facade.py server/tests/test_observer_v2_api.py \
+            server/tests/test_registry_admin_actions.py server/tests/test_registry_admin_previews.py \
+            server/tests/test_registry_bulk_actions.py server/tests/test_registry_departments_admin.py \
+            server/tests/test_registry_import_export.py server/tests/test_registry_locations_admin.py \
+            server/tests/test_registry_operation_invariants.py server/tests/test_registry_operation_results.py \
             server/tests/test_endpoint_binding_adapter.py \
             server/tests/test_endpoint_port_contracts.py \
             server/tests/test_endpoint_device_reference_service.py \
@@ -132,6 +146,7 @@ jobs:
           import json
           import os
           import subprocess
+          import xml.etree.ElementTree as ET
           from pathlib import Path
 
           lock = json.loads(Path("integration/endpoint_contract.lock.json").read_text(encoding="utf-8"))
@@ -139,7 +154,8 @@ jobs:
               "helpdesk_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               "endpoint_commit": os.environ["ENDPOINT_COMMIT"],
               "openapi_sha256": lock["openapi_sha256"],
-              "tests_passed": 2,
+              "tests_passed": sum(1 for case in ET.parse("artifacts/endpoint-contract-acceptance.xml").iter("testcase")
+                  if not any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))),
               "provider_app": "real",
               "gateway_wss": "real",
               "agent_client": "protocol_test_client",

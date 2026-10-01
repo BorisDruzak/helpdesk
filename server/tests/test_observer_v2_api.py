@@ -195,7 +195,7 @@ async def test_ticket_root_trace_canonicalizes_lifecycle_events_and_groups_ticke
 
 
 @pytest.mark.asyncio
-async def test_trace_detail_explains_manual_offline_agent_failure_and_stage_semantics(test_client):
+async def test_trace_detail_explains_historical_failure_without_claiming_current_presence(test_client):
     now = datetime.now(timezone.utc)
     ticket_id = "00000000-0000-0000-0000-00000000e201"
     device_id = "00000000-0000-0000-0000-00000000e202"
@@ -322,9 +322,14 @@ async def test_trace_detail_explains_manual_offline_agent_failure_and_stage_sema
         "Тикет T-OBSFAIL01",
         "ручной запуск инструмента",
         "Сбор диагностики",
-        "агент offline",
         "failed",
     ]
+
+    assert explanation["agent_online"] is None
+    assert explanation["agent_status_label"] is None
+    assert explanation["agent_last_handshake_at"] is None
+    assert explanation["agent_last_seen_at"] is None
+    assert not any("handshake" in action.lower() for action in explanation["next_actions"])
 
     queued_stage = next(span for span in data["spans"] if span["name"] == "operation.stage.queued")
     failed_stage = next(span for span in data["spans"] if span["name"] == "operation.stage.failed")

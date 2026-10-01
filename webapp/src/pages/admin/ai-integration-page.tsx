@@ -33,7 +33,6 @@ export function AdminAiIntegrationPage() {
   const mcp = payload?.mcp;
   const runtimeSnapshot = mcp?.runtime_status.snapshot;
   const serviceHealth = runtimeSnapshot?.service_health ?? {};
-  const connectedAgents = runtimeSnapshot?.connected_agents ?? {};
 
   return (
     <section className="space-y-6">
@@ -121,14 +120,6 @@ export function AdminAiIntegrationPage() {
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">Git revision</p>
                   <p className="font-mono text-sm">{formatValue(runtimeSnapshot?.git_revision)}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Agent WS</p>
-                  <p className="text-sm font-medium">{formatValue(serviceHealth.agent_ws_connections)}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Connected agents evidence</p>
-                  <p className="text-sm font-medium">{Object.keys(connectedAgents).length}</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">Collected</p>

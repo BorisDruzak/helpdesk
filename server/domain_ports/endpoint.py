@@ -7,6 +7,12 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, StringConstraints, Field, model_validator
 
+from .endpoint_context import (
+    EndpointDeviceFleet, EndpointDeviceContext, EndpointContextCollection,
+    EndpointCollectionDetails, EndpointContextHistory, EndpointContextComparison,
+    SafeContextProfile, HistoryContextProfile,
+)
+
 
 # Opaque Endpoint references are transport values. Helpdesk must never parse,
 # trim, case-fold, or otherwise derive semantics from them.
@@ -257,6 +263,18 @@ EndpointOperationReadOutcome: TypeAlias = EndpointOperationProjection | Endpoint
 
 @runtime_checkable
 class EndpointPort(Protocol):
+    async def list_device_fleet(self, *, limit: int = 250, cursor: UUID | None = None) -> EndpointDeviceFleet | EndpointFailureOutcome: ...
+
+    async def read_device_context(self, device: EndpointDeviceRef) -> EndpointDeviceContext | EndpointFailureOutcome: ...
+
+    async def request_context_collection(self, device: EndpointDeviceRef, profile: SafeContextProfile, *, idempotency_key: OpaqueEndpointRef) -> EndpointContextCollection | EndpointFailureOutcome: ...
+
+    async def read_context_collection(self, collection: UUID) -> EndpointCollectionDetails | EndpointFailureOutcome: ...
+
+    async def list_context_history(self, device: EndpointDeviceRef, profile: HistoryContextProfile, *, limit: int = 20) -> EndpointContextHistory | EndpointFailureOutcome: ...
+
+    async def compare_context_snapshots(self, device: EndpointDeviceRef, before: UUID, after: UUID) -> EndpointContextComparison | EndpointFailureOutcome: ...
+
     async def redeem_device_binding(self, code: str) -> EndpointBindingVerified | EndpointFailureOutcome: ...
 
     async def availability(self) -> EndpointAvailabilityOutcome: ...

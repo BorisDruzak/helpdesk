@@ -92,7 +92,8 @@ async def test_transfer_owner_apply_returns_operation_result(test_engine):
         await session.commit()
 
     _assert_operation_result(result, operation="transfer_owner")
-    assert {"binding", "registry_asset", "inventory_binding"} <= {item["entity_type"] for item in result["items"]}
+    assert {"binding", "registry_asset"} <= {item["entity_type"] for item in result["items"]}
+    assert "inventory_binding" not in {item["entity_type"] for item in result["items"]}
     assert any(item["id"] == first["binding"]["binding_id"] for item in result["items"])
     assert result["summary"]["success"] >= 3
     assert result["events"] == ["binding_transferred"]

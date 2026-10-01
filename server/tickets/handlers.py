@@ -1596,9 +1596,9 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
             "device_summary": {
                 "device_id": ticket.device_id,
                 "hostname": getattr(device, "hostname", None),
-                "os": getattr(device, "os", None),
-                "agent_version": getattr(device, "agent_version", None),
-                "last_seen_at": device.last_seen_at.isoformat() if device and device.last_seen_at else None,
+                "os": None,
+                "agent_version": None,
+                "last_seen_at": None,
                 "online": None,
             },
             "latest_operations": [

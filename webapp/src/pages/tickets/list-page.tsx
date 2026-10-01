@@ -4187,13 +4187,13 @@ export function TicketListPage() {
                           <div className="flex flex-wrap gap-2">
                             <Link
                               className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"
-                              to={`/app/admin/device?device=${encodeURIComponent(viewModel.right.context.device.id)}`}
+                              to="/app/admin/registry"
                             >
                               Карточка устройства
                             </Link>
                             <Link
                               className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"
-                              to={`/app/admin/device?device=${encodeURIComponent(viewModel.right.context.device.id)}`}
+                              to="/app/admin/registry"
                             >
                               Карточка устройства
                             </Link>

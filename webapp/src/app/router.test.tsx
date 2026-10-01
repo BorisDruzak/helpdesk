@@ -394,7 +394,7 @@ describe("appRoutes", () => {
     expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
     expect((await screen.findAllByRole("link", { name: /Центр действий/ })).length).toBeGreaterThan(0);
     expect((await screen.findAllByRole("link", { name: /Тикеты/ })).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();
   });
 
   it("renders /app/support as the operator command center", async () => {
@@ -477,7 +477,7 @@ describe("appRoutes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Войти" }));
 
     expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();
   });
 
   it("renders /app/admin as the admin center for admin session", async () => {
@@ -505,7 +505,7 @@ describe("appRoutes", () => {
     renderApp(["/app/admin"], fetchMock as typeof fetch);
 
     expect(await screen.findByRole("heading", { name: "Центр администрирования" })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Устройства и агенты/ })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /Устройства/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Тикеты/ })).not.toBeInTheDocument();
   });
 

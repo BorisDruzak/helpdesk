@@ -115,8 +115,7 @@ async def test_bind_primary_leaves_only_one_active_primary(test_engine):
         assert new_row.status == "active"
         assert new_row.person_id == second.person_id
         assert asset.assigned_person_id == second.person_id
-        assert inventory.person_id == second.person_id
-        assert inventory.source_binding_id == new_row.binding_id
+        assert inventory is None
 
 
 @pytest.mark.asyncio
@@ -158,7 +157,7 @@ async def test_transfer_owner_leaves_no_duplicate_active_primary(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_revoke_primary_clears_asset_and_inventory_assignment(test_engine):
+async def test_revoke_primary_clears_canonical_asset_without_creating_inventory(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = _new_id()
 
@@ -191,9 +190,7 @@ async def test_revoke_primary_clears_asset_and_inventory_assignment(test_engine)
         assert row.status == "revoked"
         assert await _active_primary_count(session, device_id) == 0
         assert asset.assigned_person_id is None
-        assert inventory.person_id is None
-        assert inventory.source_binding_id is None
-        assert inventory.registration_status == "revoked"
+        assert inventory is None
 
 
 @pytest.mark.asyncio
@@ -247,8 +244,7 @@ async def test_shared_and_responsible_do_not_change_primary_owner(test_engine):
         assert active_primary.binding_id == primary_binding["binding"]["binding_id"]
         assert active_primary.person_id == primary.person_id
         assert asset.assigned_person_id == primary.person_id
-        assert inventory.person_id == primary.person_id
-        assert inventory.source_binding_id == primary_binding["binding"]["binding_id"]
+        assert inventory is None
 
 
 @pytest.mark.asyncio
@@ -377,7 +373,7 @@ async def test_people_merge_leaves_no_live_duplicate_person_references(test_engi
         assert await _count(session, select(func.count()).select_from(DeviceRegistrationClaim).where(DeviceRegistrationClaim.person_id == duplicate.person_id)) == 0
         assert await _count(session, select(func.count()).select_from(Ticket).where(Ticket.requester_person_id == duplicate.person_id)) == 0
         assert await _count(session, select(func.count()).select_from(RegistryAsset).where(RegistryAsset.assigned_person_id == duplicate.person_id)) == 0
-        assert await _count(session, select(func.count()).select_from(DeviceInventoryBinding).where(DeviceInventoryBinding.person_id == duplicate.person_id)) == 0
+        assert await _count(session, select(func.count()).select_from(DeviceInventoryBinding).where(DeviceInventoryBinding.person_id == duplicate.person_id)) == 1  # Historical reference remains inert.
 
 
 @pytest.mark.asyncio
@@ -418,7 +414,7 @@ async def test_location_merge_leaves_no_duplicate_location_references(test_engin
     async with session_maker() as session:
         assert await _count(session, select(func.count()).select_from(RegistryPerson).where(RegistryPerson.location_id == duplicate["location_id"])) == 0
         assert await _count(session, select(func.count()).select_from(RegistryAsset).where(RegistryAsset.location_id == duplicate["location_id"])) == 0
-        assert (await session.get(DeviceInventoryBinding, device_id)).room == "701"
+        assert (await session.get(DeviceInventoryBinding, device_id)).room == "701A"
 
 
 @pytest.mark.asyncio
@@ -459,7 +455,7 @@ async def test_department_merge_leaves_no_duplicate_department_references(test_e
     async with session_maker() as session:
         assert await _count(session, select(func.count()).select_from(RegistryPerson).where(RegistryPerson.department_id == duplicate["department_id"])) == 0
         assert await _count(session, select(func.count()).select_from(RegistryAsset).where(RegistryAsset.department_id == duplicate["department_id"])) == 0
-        assert (await session.get(DeviceInventoryBinding, device_id)).department == "Operations"
+        assert (await session.get(DeviceInventoryBinding, device_id)).department == "Operations Old"
 
 
 @pytest.mark.asyncio
@@ -540,5 +536,5 @@ async def test_bulk_partial_failure_keeps_successful_items_and_reports_failures(
             {"id": missing_device_id, "status": "error", "error_code": "NOT_FOUND"},
         ]
         assert asset_row.location_id == location["location_id"]
-        assert inventory_row.room == "801"
+        assert inventory_row.room is None
         assert event_count == 1
