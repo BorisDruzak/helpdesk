@@ -314,6 +314,251 @@ class TicketWorkflowService:
         self.ticket_repo = ticket_repo
         self.sla_service = TicketSlaService(session, ticket_repo)
 
+    async def _apply_waiting_effects(self, *, ticket_id, current_device_id, from_status, to_status,
+        actor_id, actor_role, pause_trigger, resume_trigger, event_payload, side_effect_correlation_id):
+        if to_status in WAITING_STATUSES:
+            await run_workflow_side_effect(
+                ticket_repo=self.ticket_repo,
+                ticket_id=ticket_id,
+                device_id=current_device_id,
+                side_effect="sla",
+                action="pause",
+                trigger=pause_trigger,
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                critical=True,
+                operation=lambda: self.sla_service.pause_sla(ticket_id, trigger=pause_trigger, status=to_status),
+                event_payload=event_payload,
+                correlation_id=side_effect_correlation_id,
+            )
+
+            async def _pause_ola() -> object:
+                from tickets.ola_service import pause_ola
+
+                return await pause_ola(self.session, ticket_id, trigger=pause_trigger, status=to_status)
+
+            await run_workflow_side_effect(
+                ticket_repo=self.ticket_repo,
+                ticket_id=ticket_id,
+                device_id=current_device_id,
+                side_effect="ola",
+                action="pause",
+                trigger=pause_trigger,
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                critical=False,
+                operation=_pause_ola,
+                event_payload=event_payload,
+                correlation_id=side_effect_correlation_id,
+            )
+
+        if from_status in WAITING_STATUSES and to_status not in WAITING_STATUSES:
+            await run_workflow_side_effect(
+                ticket_repo=self.ticket_repo,
+                ticket_id=ticket_id,
+                device_id=current_device_id,
+                side_effect="sla",
+                action="resume",
+                trigger=resume_trigger,
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                critical=True,
+                operation=lambda: self.sla_service.resume_sla(ticket_id, trigger=resume_trigger, status=to_status),
+                event_payload=event_payload,
+                correlation_id=side_effect_correlation_id,
+            )
+
+            async def _resume_ola() -> object:
+                from tickets.ola_service import resume_ola
+
+                return await resume_ola(self.session, ticket_id, trigger=resume_trigger, status=to_status)
+
+            await run_workflow_side_effect(
+                ticket_repo=self.ticket_repo,
+                ticket_id=ticket_id,
+                device_id=current_device_id,
+                side_effect="ola",
+                action="resume",
+                trigger=resume_trigger,
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                critical=False,
+                operation=_resume_ola,
+                event_payload=event_payload,
+                correlation_id=side_effect_correlation_id,
+            )
+
+    async def _apply_gate_actions(self, *, ticket_id, ticket, current_device_id, transition_gate, transition_trigger, pause_trigger, resume_trigger, from_status, to_status, actor_id, actor_role, event_payload, side_effect_correlation_id):
+        if transition_gate and transition_gate.sla_action == "pause":
+            applied = await self.sla_service.pause_sla(ticket_id, trigger=pause_trigger, status=to_status)
+            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
+                "status": "executed" if applied else "no_op",
+                "action": "pause",
+            }
+        elif transition_gate and transition_gate.sla_action == "resume":
+            applied = await self.sla_service.resume_sla(ticket_id, trigger=resume_trigger, status=to_status)
+            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
+                "status": "executed" if applied else "no_op",
+                "action": "resume",
+            }
+        elif transition_gate and transition_gate.sla_action == "stop":
+            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
+                "status": "skipped_use_terminal_status",
+                "action": "stop",
+            }
+
+        if transition_gate and transition_gate.approval_action:
+            approval_action = transition_gate.approval_action
+            approval_policy = await resolve_effective_ticket_policy(self.session, ticket, "approval")
+            if not approval_policy or not approval_policy.get("required"):
+                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
+                    "status": "skipped_no_active_policy",
+                    "action": approval_action,
+                }
+            elif approval_action == "create_request":
+                approval_results: list[dict] = []
+
+                async def _ensure_approval_requests() -> dict:
+                    result = await ensure_approval_requests(
+                        self.session,
+                        ticket,
+                        actor_id=actor_id,
+                        actor_role=actor_role,
+                    )
+                    approval_results.append(result)
+                    return result
+
+                await run_workflow_side_effect(
+                    ticket_repo=self.ticket_repo,
+                    ticket_id=ticket_id,
+                    device_id=current_device_id,
+                    side_effect="approval",
+                    action=approval_action,
+                    trigger=transition_trigger or "transition_gate",
+                    from_status=from_status,
+                    to_status=to_status,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    critical=True,
+                    operation=_ensure_approval_requests,
+                    event_payload=event_payload,
+                    correlation_id=side_effect_correlation_id,
+                )
+                approval_request_result = approval_results[0] if approval_results else {}
+                created = int(approval_request_result.get("requests_created") or 0)
+                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
+                    "status": "executed" if created else "no_op_existing",
+                    "action": approval_action,
+                    "requests_created": created,
+                    "approval_mode": approval_request_result.get("approval_mode"),
+                    "approver_source": approval_request_result.get("approver_source"),
+                }
+            else:
+                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
+                    "status": "recorded_marker",
+                    "action": approval_action,
+                }
+
+
+    async def _persist_transition_and_finalize(self, *, ticket_id, current_device_id, from_status, to_status, actor_id, actor_role, reason, now, updates, event_payload, side_effect_correlation_id):
+        await self._sync_wait_ledger(
+            ticket_id=ticket_id,
+            from_status=from_status,
+            to_status=to_status,
+            actor_id=actor_id,
+            reason=reason,
+            now=now,
+        )
+
+        if to_status in ("resolved", "closed"):
+            await run_workflow_side_effect(
+                ticket_repo=self.ticket_repo,
+                ticket_id=ticket_id,
+                device_id=current_device_id,
+                side_effect="sla",
+                action="stop_resolution",
+                trigger="status_changed",
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                critical=True,
+                operation=lambda: self.sla_service.stop_resolution(
+                    ticket_id,
+                    status=to_status,
+                    trigger="status_changed",
+                ),
+                event_payload=event_payload,
+                correlation_id=side_effect_correlation_id,
+            )
+
+        await self.ticket_repo.update_ticket(
+            ticket_id,
+            status=to_status,
+            **updates,
+        )
+
+        if to_status in ("resolved", "closed"):
+            async def _close_ola_processing() -> object:
+                from tickets.ola_service import close_ola_processing
+
+                return await close_ola_processing(self.session, ticket_id, status=to_status, trigger="status_changed")
+
+            await run_workflow_side_effect(
+                ticket_repo=self.ticket_repo,
+                ticket_id=ticket_id,
+                device_id=current_device_id,
+                side_effect="ola",
+                action="close_processing",
+                trigger="status_changed",
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                critical=False,
+                operation=_close_ola_processing,
+                event_payload=event_payload,
+                correlation_id=side_effect_correlation_id,
+            )
+
+        if to_status == "closed":
+            async def _revoke_public_sessions() -> dict[str, object]:
+                auth_repo = AuthTokensRepo(self.session)
+                revoked = await auth_repo.revoke_ticket_public_sessions(ticket_id, commit=False)
+                return {
+                    "status": "executed" if revoked else "no_op",
+                    "revoked_count": int(revoked or 0),
+                }
+
+            await run_workflow_side_effect(
+                ticket_repo=self.ticket_repo,
+                ticket_id=ticket_id,
+                device_id=current_device_id,
+                side_effect="public_session",
+                action="revoke",
+                trigger="ticket_closed",
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                critical=False,
+                operation=_revoke_public_sessions,
+                event_payload=event_payload,
+                correlation_id=side_effect_correlation_id,
+            )
+
+        if from_status in ("resolved", "closed") and to_status == "new":
+            await self.sla_service.on_reopen(ticket_id)
+
+
     async def apply_status_transition(
         self,
         ticket_id: str,
@@ -336,15 +581,7 @@ class TicketWorkflowService:
             raise WorkflowTransitionConflict()
         now = datetime.now(timezone.utc)
         workflow_profile = await load_ticket_workflow_profile(self.session, ticket)
-        updates = {
-            "next_action_owner": next_action_owner_for_status(to_status),
-            "requester_status": requester_status_for_internal(to_status),
-            "status_reason": (
-                reason or None
-                if to_status in WAITING_STATUSES or to_status in {"scheduled", "canceled"}
-                else None
-            ),
-        }
+        updates = _build_status_updates(to_status, reason)
         event_payload = {
             "from_status": from_status,
             "to_status": to_status,
@@ -460,23 +697,7 @@ class TicketWorkflowService:
                         "Для решения тикета требуется подтверждение: "
                         "добавьте доказательство или ссылку evidence_ref"
                     )
-            if ticket and getattr(ticket, "resolved_at", None) is None:
-                updates["resolved_at"] = now
-
-        if to_status == "closed":
-            updates["closed_at"] = now
-            updates["resolution_at"] = now
-
-        if to_status == "canceled":
-            updates["canceled_at"] = now
-
-        if from_status in ("resolved", "closed", "canceled") and to_status in {"new", "in_progress"}:
-            updates["resolved_at"] = None
-            updates["closed_at"] = None
-            updates["resolution_at"] = None
-            updates["resolution_code"] = None
-            updates["root_cause"] = None
-            updates["canceled_at"] = None
+        updates.update(_build_transition_timestamps(ticket, from_status, to_status, now))
 
         transition_trigger = transition_gate.trigger if transition_gate and transition_gate.trigger else None
         approval_completed_trigger = (
@@ -489,244 +710,42 @@ class TicketWorkflowService:
         side_effect_correlation_id = str(uuid.uuid4())
         current_device_id = str(getattr(ticket, "device_id", "") or "")
 
-        if to_status in WAITING_STATUSES:
-            await run_workflow_side_effect(
-                ticket_repo=self.ticket_repo,
-                ticket_id=ticket_id,
-                device_id=current_device_id,
-                side_effect="sla",
-                action="pause",
-                trigger=pause_trigger,
-                from_status=from_status,
-                to_status=to_status,
-                actor_id=actor_id,
-                actor_role=actor_role,
-                critical=True,
-                operation=lambda: self.sla_service.pause_sla(ticket_id, trigger=pause_trigger, status=to_status),
-                event_payload=event_payload,
-                correlation_id=side_effect_correlation_id,
-            )
+        await self._apply_waiting_effects(
+            ticket_id=ticket_id, current_device_id=current_device_id,
+            from_status=from_status, to_status=to_status, actor_id=actor_id, actor_role=actor_role,
+            pause_trigger=pause_trigger, resume_trigger=resume_trigger,
+            event_payload=event_payload, side_effect_correlation_id=side_effect_correlation_id,
+        )
 
-            async def _pause_ola() -> object:
-                from tickets.ola_service import pause_ola
-
-                return await pause_ola(self.session, ticket_id, trigger=pause_trigger, status=to_status)
-
-            await run_workflow_side_effect(
-                ticket_repo=self.ticket_repo,
-                ticket_id=ticket_id,
-                device_id=current_device_id,
-                side_effect="ola",
-                action="pause",
-                trigger=pause_trigger,
-                from_status=from_status,
-                to_status=to_status,
-                actor_id=actor_id,
-                actor_role=actor_role,
-                critical=False,
-                operation=_pause_ola,
-                event_payload=event_payload,
-                correlation_id=side_effect_correlation_id,
-            )
-
-        if from_status in WAITING_STATUSES and to_status not in WAITING_STATUSES:
-            await run_workflow_side_effect(
-                ticket_repo=self.ticket_repo,
-                ticket_id=ticket_id,
-                device_id=current_device_id,
-                side_effect="sla",
-                action="resume",
-                trigger=resume_trigger,
-                from_status=from_status,
-                to_status=to_status,
-                actor_id=actor_id,
-                actor_role=actor_role,
-                critical=True,
-                operation=lambda: self.sla_service.resume_sla(ticket_id, trigger=resume_trigger, status=to_status),
-                event_payload=event_payload,
-                correlation_id=side_effect_correlation_id,
-            )
-
-            async def _resume_ola() -> object:
-                from tickets.ola_service import resume_ola
-
-                return await resume_ola(self.session, ticket_id, trigger=resume_trigger, status=to_status)
-
-            await run_workflow_side_effect(
-                ticket_repo=self.ticket_repo,
-                ticket_id=ticket_id,
-                device_id=current_device_id,
-                side_effect="ola",
-                action="resume",
-                trigger=resume_trigger,
-                from_status=from_status,
-                to_status=to_status,
-                actor_id=actor_id,
-                actor_role=actor_role,
-                critical=False,
-                operation=_resume_ola,
-                event_payload=event_payload,
-                correlation_id=side_effect_correlation_id,
-            )
-
-        if transition_gate and transition_gate.sla_action == "pause":
-            applied = await self.sla_service.pause_sla(ticket_id, trigger=pause_trigger, status=to_status)
-            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
-                "status": "executed" if applied else "no_op",
-                "action": "pause",
-            }
-        elif transition_gate and transition_gate.sla_action == "resume":
-            applied = await self.sla_service.resume_sla(ticket_id, trigger=resume_trigger, status=to_status)
-            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
-                "status": "executed" if applied else "no_op",
-                "action": "resume",
-            }
-        elif transition_gate and transition_gate.sla_action == "stop":
-            event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
-                "status": "skipped_use_terminal_status",
-                "action": "stop",
-            }
-
-        if transition_gate and transition_gate.approval_action:
-            approval_action = transition_gate.approval_action
-            approval_policy = await resolve_effective_ticket_policy(self.session, ticket, "approval")
-            if not approval_policy or not approval_policy.get("required"):
-                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
-                    "status": "skipped_no_active_policy",
-                    "action": approval_action,
-                }
-            elif approval_action == "create_request":
-                approval_results: list[dict] = []
-
-                async def _ensure_approval_requests() -> dict:
-                    result = await ensure_approval_requests(
-                        self.session,
-                        ticket,
-                        actor_id=actor_id,
-                        actor_role=actor_role,
-                    )
-                    approval_results.append(result)
-                    return result
-
-                await run_workflow_side_effect(
-                    ticket_repo=self.ticket_repo,
-                    ticket_id=ticket_id,
-                    device_id=current_device_id,
-                    side_effect="approval",
-                    action=approval_action,
-                    trigger=transition_trigger or "transition_gate",
-                    from_status=from_status,
-                    to_status=to_status,
-                    actor_id=actor_id,
-                    actor_role=actor_role,
-                    critical=True,
-                    operation=_ensure_approval_requests,
-                    event_payload=event_payload,
-                    correlation_id=side_effect_correlation_id,
-                )
-                approval_request_result = approval_results[0] if approval_results else {}
-                created = int(approval_request_result.get("requests_created") or 0)
-                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
-                    "status": "executed" if created else "no_op_existing",
-                    "action": approval_action,
-                    "requests_created": created,
-                    "approval_mode": approval_request_result.get("approval_mode"),
-                    "approver_source": approval_request_result.get("approver_source"),
-                }
-            else:
-                event_payload.setdefault("workflow_transition_action_results", {})["approval"] = {
-                    "status": "recorded_marker",
-                    "action": approval_action,
-                }
-
-        await self._sync_wait_ledger(
+        await self._apply_gate_actions(
             ticket_id=ticket_id,
+            ticket=ticket,
+            current_device_id=current_device_id,
+            transition_gate=transition_gate,
+            transition_trigger=transition_trigger,
+            pause_trigger=pause_trigger,
+            resume_trigger=resume_trigger,
             from_status=from_status,
             to_status=to_status,
             actor_id=actor_id,
+            actor_role=actor_role,
+            event_payload=event_payload,
+            side_effect_correlation_id=side_effect_correlation_id,
+        )
+
+        await self._persist_transition_and_finalize(
+            ticket_id=ticket_id,
+            current_device_id=current_device_id,
+            from_status=from_status,
+            to_status=to_status,
+            actor_id=actor_id,
+            actor_role=actor_role,
             reason=reason,
             now=now,
+            updates=updates,
+            event_payload=event_payload,
+            side_effect_correlation_id=side_effect_correlation_id,
         )
-
-        if to_status in ("resolved", "closed"):
-            await run_workflow_side_effect(
-                ticket_repo=self.ticket_repo,
-                ticket_id=ticket_id,
-                device_id=current_device_id,
-                side_effect="sla",
-                action="stop_resolution",
-                trigger="status_changed",
-                from_status=from_status,
-                to_status=to_status,
-                actor_id=actor_id,
-                actor_role=actor_role,
-                critical=True,
-                operation=lambda: self.sla_service.stop_resolution(
-                    ticket_id,
-                    status=to_status,
-                    trigger="status_changed",
-                ),
-                event_payload=event_payload,
-                correlation_id=side_effect_correlation_id,
-            )
-
-        await self.ticket_repo.update_ticket(
-            ticket_id,
-            status=to_status,
-            **updates,
-        )
-
-        if to_status in ("resolved", "closed"):
-            async def _close_ola_processing() -> object:
-                from tickets.ola_service import close_ola_processing
-
-                return await close_ola_processing(self.session, ticket_id, status=to_status, trigger="status_changed")
-
-            await run_workflow_side_effect(
-                ticket_repo=self.ticket_repo,
-                ticket_id=ticket_id,
-                device_id=current_device_id,
-                side_effect="ola",
-                action="close_processing",
-                trigger="status_changed",
-                from_status=from_status,
-                to_status=to_status,
-                actor_id=actor_id,
-                actor_role=actor_role,
-                critical=False,
-                operation=_close_ola_processing,
-                event_payload=event_payload,
-                correlation_id=side_effect_correlation_id,
-            )
-
-        if to_status == "closed":
-            async def _revoke_public_sessions() -> dict[str, object]:
-                auth_repo = AuthTokensRepo(self.session)
-                revoked = await auth_repo.revoke_ticket_public_sessions(ticket_id, commit=False)
-                return {
-                    "status": "executed" if revoked else "no_op",
-                    "revoked_count": int(revoked or 0),
-                }
-
-            await run_workflow_side_effect(
-                ticket_repo=self.ticket_repo,
-                ticket_id=ticket_id,
-                device_id=current_device_id,
-                side_effect="public_session",
-                action="revoke",
-                trigger="ticket_closed",
-                from_status=from_status,
-                to_status=to_status,
-                actor_id=actor_id,
-                actor_role=actor_role,
-                critical=False,
-                operation=_revoke_public_sessions,
-                event_payload=event_payload,
-                correlation_id=side_effect_correlation_id,
-            )
-
-        if from_status in ("resolved", "closed") and to_status == "new":
-            await self.sla_service.on_reopen(ticket_id)
 
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         event_result = await self.ticket_repo.add_event(
@@ -844,3 +863,43 @@ class TicketWorkflowService:
                     created_by=actor_id,
                 )
             )
+
+
+def _build_transition_updates(ticket, from_status: str, to_status: str, now: datetime, reason: str | None) -> dict:
+    return {**_build_status_updates(to_status, reason), **_build_transition_timestamps(ticket, from_status, to_status, now)}
+
+
+def _build_status_updates(to_status: str, reason: str | None) -> dict:
+    updates = {
+        "next_action_owner": next_action_owner_for_status(to_status),
+        "requester_status": requester_status_for_internal(to_status),
+        "status_reason": (
+            reason or None
+            if to_status in WAITING_STATUSES or to_status in {"scheduled", "canceled"}
+            else None
+        ),
+    }
+    return updates
+
+
+def _build_transition_timestamps(ticket, from_status: str, to_status: str, now: datetime) -> dict:
+    updates = {}
+    if to_status == "resolved" and ticket and getattr(ticket, "resolved_at", None) is None:
+        updates["resolved_at"] = now
+
+    if to_status == "closed":
+        updates["closed_at"] = now
+        updates["resolution_at"] = now
+
+    if to_status == "canceled":
+        updates["canceled_at"] = now
+
+    if from_status in ("resolved", "closed", "canceled") and to_status in {"new", "in_progress"}:
+        updates["resolved_at"] = None
+        updates["closed_at"] = None
+        updates["resolution_at"] = None
+        updates["resolution_code"] = None
+        updates["root_cause"] = None
+        updates["canceled_at"] = None
+
+    return updates
