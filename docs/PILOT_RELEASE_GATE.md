@@ -12,7 +12,7 @@ This is the operator checklist for moving a pilot stand from Tech Panel `READY` 
 - `WEB_SESSION_COOKIE_SECURE=true`.
 - `REQUIRE_HTTPS=true`.
 - `REQUIRE_WSS=true`.
-- `PILOT_MIN_AGENT_VERSION` set to the current approved agent baseline.
+- Endpoint Agent compatibility and approved versions are verified through Endpoint Platform; Helpdesk does not manage Agent baselines.
 - `TECH_RELEASE_STATUS_PATH` and `TECH_BUSINESS_SMOKE_STATUS_PATH` readable by the running server.
 - Latest release and business smoke markers show `status=success`.
 - Production Readiness v1 requires successful verified backup and isolated restore
@@ -86,23 +86,22 @@ verifies TLS by default and requires an actually observed WSS connection.
 TLS acceptance. This smoke remains partial; it cannot replace the full live
 requester/support lifecycle, audit/persistence and Windows/degraded gates.
 
-Optional deeper acceptance requires an explicit test device and ticket:
+Admin inventory refresh uses the safe Context profiles through the device-card BFF.
+Optional deeper ticket diagnostics require an exact verified Endpoint test device
+and ticket, with the existing Endpoint consent and policy controls:
 
 ```powershell
 python scripts/business_smoke.py `
   --base-url https://example.test:9443 `
-  --username $env:BUSINESS_SMOKE_USERNAME `
-  --password $env:BUSINESS_SMOKE_PASSWORD `
   --output $env:TECH_BUSINESS_SMOKE_STATUS_PATH `
   --require-https `
   --require-secure-cookie `
   --browser-check `
   --insecure-tls `
-  --device-id <safe_test_device_id> `
+  --device-id <verified_endpoint_device_id> `
   --create-test-ticket `
-  --run-safe-tool inventory.collect `
-  --operation-wait-seconds 60 `
-  --check-update-recommendation
+  --run-safe-tool endpoint.context.diagnostic.collect `
+  --operation-wait-seconds 60
 ```
 
 The marker must not contain passwords, cookies, bearer tokens or raw secrets.
@@ -148,8 +147,8 @@ Codex cannot make these settings true from a local commit unless a GitHub admin 
 Before expanding beyond the first controlled pilot wave, run a 72-hour soak with:
 
 - HTTPS/WSS-only stand flags enabled.
-- Inventory scheduler either explicitly disabled for the first wave or enabled with `active_task_count <= 1` in Tech Panel runtime details.
-- Several online agents reconnecting through server restarts and network interruptions.
-- No duplicate inventory scheduler tasks.
+- Helpdesk inventory scheduling is retired; inventory and current presence are read from Endpoint Context and DeviceSession projections.
+- Endpoint agents reconnecting through Endpoint restarts and network interruptions, with Helpdesk showing the authoritative state or UNKNOWN when the provider is unavailable.
+- No retired Helpdesk Agent control-plane or inventory/presence API traffic from current device screens.
 - No query-token auth attempts except deliberate negative tests.
 - Business smoke marker refreshed at least once per release candidate.
