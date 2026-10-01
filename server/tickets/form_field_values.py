@@ -195,7 +195,7 @@ def _has_python_only_pattern_syntax(pattern: str) -> bool:
             in_class = False
         elif not in_class:
             if pattern.startswith("(?", index) and index + 2 < len(pattern):
-                if pattern[index + 2] in "PaiLmsux->":
+                if pattern[index + 2] in "PaiLmsux->(#":
                     return True
             if char in "+*?" and pattern[index + 1:index + 2] == "+":
                 return True

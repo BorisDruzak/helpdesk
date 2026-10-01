@@ -115,12 +115,23 @@ def test_schema_rejects_invalid_pattern(alias):
         validate_form_pack_schema(pack_for(field("code", "text", validation={alias: "["})))
 
 
+@pytest.mark.parametrize("alias", ["pattern", "regex"])
+@pytest.mark.parametrize("pattern", ["(a)?(?(1)b|c)", "(?#comment)a"])
+def test_python_only_groups_cannot_be_published_or_used_by_saved_forms(alias, pattern):
+    pack = pack_for(field("code", "text", validation={alias: pattern}))
+    with pytest.raises(ValueError, match="shared Python/JavaScript syntax"):
+        validate_form_pack_schema(pack)
+    with pytest.raises(ValueError, match="Ошибка настройки формата поля"):
+        submit(pack, code="c")
+
+
 def test_submission_does_not_ignore_invalid_saved_pattern():
     with pytest.raises(ValueError):
         submit(pack_for(field("code", "text", validation={"pattern": "["})), code="anything")
 
 
-@pytest.mark.parametrize("pattern, value", [(r"^\++$", "+++"), (r"^\?+$", "???"), ("[++]", "+")])
+@pytest.mark.parametrize("pattern, value", [(r"^\++$", "+++"), (r"^\?+$", "???"), ("[++]", "+"),
+    (r"^\(\?\(1\)\)$", "(?(1))"), (r"^\(\?#comment\)a$", "(?#comment)a"), ("[?(#]+", "?(#")])
 def test_shared_pattern_accepts_escaped_quantifiers_and_character_classes(pattern, value):
     pack = validate_form_pack_schema(pack_for(field("code", "text", validation={"pattern": pattern})))
     assert submit(pack, code=value)["submitted_values"]["code"] == value

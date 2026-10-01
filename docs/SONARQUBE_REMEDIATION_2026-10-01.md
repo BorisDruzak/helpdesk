@@ -13,7 +13,8 @@ working branch `codex/sonarqube-evidence-remediation`. All changes are local.
 - Hidden field errors are removed; errors in visible dependencies remain.
   Schema publication rejects malformed regex, and existing invalid saved regex
   blocks submission with a safe configuration error. Python-only constructs are
-  rejected by token-aware checks; escaped literals and character classes survive.
+  rejected by token-aware checks, including conditional and comment groups;
+  escaped literals and character classes survive.
   This checks a shared syntax subset, not full equivalence of the two regex engines.
 - Scheduler stop awaits shielded child cleanup and preserves parent cancellation,
   including repeated cancellation and a child cleanup exception.

@@ -25,6 +25,8 @@
   sensitive. Hidden values/errors are excluded without masking invalid visible
   dependencies. Required numeric zero is valid subject to min/max. Invalid regex
   is rejected at publication and fails closed on submission of legacy packs.
+  Python conditional/comment groups are outside the shared browser syntax;
+  escaped group-like literals and character classes remain valid.
 - `webapp/src/features/requester/dynamic-form/index.tsx` mirrors these boundary
   cases. Invalid checkbox state remains editable but blocks submission; render
   helpers do not turn a bad string into true or crash the requester form.

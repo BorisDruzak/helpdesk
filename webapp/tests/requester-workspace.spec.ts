@@ -592,6 +592,36 @@ test("requester waiting ticket does not offer solution confirmation", async ({ p
   await expect(page.getByRole("button", { name: "Подтвердить решение" })).toBeHidden();
 });
 
+for (const pattern of ["(a)?(?(1)b|c)", "(?#comment)a"]) {
+  test(`requester saved Python-only pattern blocks submission: ${pattern}`, async ({ page }) => {
+    const errors: string[] = [];
+    let submissions = 0;
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+    page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+    await page.unroute("**/public_api/ticket_forms/current?pack_key=request_forms");
+    await page.route("**/public_api/ticket_forms/current?pack_key=request_forms", route => fulfillJson(route, {
+      status: "ok", pack: { pack_key: "request_forms", version: "regex-regression", forms: [{
+        key: "regex_probe", title: "Regex regression", availability_policy: { available_without_agent_binding: true },
+        fields: [{ key: "code", label: "Код формата", type: "text", validation: { pattern } }],
+      }] },
+    }));
+    await page.route("**/api/web/requester/tickets", route => {
+      if (route.request().method() !== "POST") return route.fallback();
+      submissions += 1;
+      return fulfillJson(route, { status: "success", data: { ticket_id: ticketId, ticket_code: ticketCode } });
+    });
+    await page.goto("/app/requester/new");
+    await page.getByLabel("Категория обращения").selectOption("form:regex_probe");
+    await page.getByLabel("Код формата").fill("c");
+    await page.getByRole("button", { name: "Создать обращение", exact: true }).click();
+    await expect(page.getByText("Ошибка настройки формата поля. Обратитесь в поддержку.", { exact: true }).first()).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/requester\/new$/);
+    expect(submissions).toBe(0);
+    expect(errors).toEqual([]);
+  });
+}
+
 test("requester saved checkbox conditions submit zero and reopen the created ticket", async ({ page }, testInfo) => {
   const errors: string[] = [];
   const failures: string[] = [];

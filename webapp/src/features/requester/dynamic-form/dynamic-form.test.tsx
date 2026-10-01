@@ -27,6 +27,14 @@ const baseOptions = [
 ];
 
 describe("checkbox compatibility", () => {
+  it.each(["(a)?(?(1)b|c)", "(?#comment)a"])("rejects Python-only groups in publication and saved form %s", (pattern) => {
+    for (const alias of ["pattern", "regex"]) {
+      const field: RequestFormField = { key: "code", label: "Code", type: "text", validation: { [alias]: pattern } };
+      const form: RequestFormDefinition = { key: "probe", title: "Probe", fields: [field] };
+      expect(validateDynamicFormSchema(form).canPublish).toBe(false);
+      expect(validateDynamicFormValues(form, { code: "c" }).issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "invalid_pattern" })]));
+    }
+  });
   it("keeps invalid prefill editable while submission validation blocks it", () => {
     const field: RequestFormField = { key: "flag", label: "Flag", type: "checkbox", required: true };
     const form = { fields: [field] };
@@ -38,7 +46,8 @@ describe("checkbox compatibility", () => {
     render(<RequestFormFieldControl field={field} value={values.flag} onChange={() => {}} />);
     expect(screen.getByRole("checkbox")).not.toBeChecked();
   });
-  it.each([[String.raw`^\++$`, "+++"], [String.raw`^\?+$`, "???"], ["[++]", "+"]])(
+  it.each([[String.raw`^\++$`, "+++"], [String.raw`^\?+$`, "???"], ["[++]", "+"],
+    [String.raw`^\(\?\(1\)\)$`, "(?(1))"], [String.raw`^\(\?#comment\)a$`, "(?#comment)a"], ["[?(#]+", "?(#"]])(
     "accepts shared literal/class pattern %s", (pattern, value) => {
       const field: RequestFormField = { key: "code", label: "Code", type: "text", validation: { pattern } };
       const form: RequestFormDefinition = { key: "probe", title: "Probe", fields: [field] };

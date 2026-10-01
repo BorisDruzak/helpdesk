@@ -75,10 +75,11 @@ async def test_saved_checkbox_condition_and_zero_survive_ticket_creation(test_cl
 
 
 @pytest.mark.asyncio
-async def test_invalid_regex_pack_cannot_be_published(test_client, test_engine):
+@pytest.mark.parametrize("pattern", ["[", "(a)?(?(1)b|c)", "(?#comment)a"])
+async def test_invalid_regex_pack_cannot_be_published(test_client, test_engine, pattern):
     await _clear_request_form_packs(test_engine)
     payload = _typed_forms_payload("printer", title="Invalid regex")
-    payload["forms"][0]["fields"][0]["validation"] = {"pattern": "["}
+    payload["forms"][0]["fields"][0]["validation"] = {"pattern": pattern}
     response = await test_client.post("/api/web/admin/forms/publish", json=payload,
         headers={**_admin_headers(), "Content-Type": "application/json"})
     assert response.status == 400, await response.text()

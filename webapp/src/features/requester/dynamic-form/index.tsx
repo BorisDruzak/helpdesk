@@ -800,7 +800,7 @@ function hasPythonOnlyPatternSyntax(pattern: string): boolean {
     if (char === "[" && !inClass) inClass = true;
     else if (char === "]" && inClass) inClass = false;
     else if (!inClass) {
-      if (pattern.startsWith("(?", index) && pattern[index + 2] && "PaiLmsux->".includes(pattern[index + 2])) return true;
+      if (pattern.startsWith("(?", index) && pattern[index + 2] && "PaiLmsux->(#".includes(pattern[index + 2])) return true;
       if ("+*?".includes(char) && pattern[index + 1] === "+") return true;
       if (char === "{" && /^\{\d+(?:,\d*)?\}\+/.test(pattern.slice(index))) return true;
     }

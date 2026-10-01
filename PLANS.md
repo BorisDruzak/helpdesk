@@ -1783,4 +1783,4 @@ and the frontend build/workspace checks pass. Fresh candidate CI and actual
 browser acceptance remain required. The synthetic orphan was denied through
 the browser and all three temporary accounts were disabled; staging was stopped.
 
-Admin cutover 2026-10-01: runtime 35c67c40 full CI/live staging accepted and restored; draft PR 39 excludes pre-existing Sonar work. Documentation and navigation labels final freeze verification/report pending. Production deploy/data deletion excluded.
+Admin cutover 2026-10-01: final 2cf828af full CI and actual Windows/browser staging accepted and restored. The user subsequently authorized merging all cutover and seven Sonar commits into main; PR 39 now targets main. Pre-merge review reproduced accepted Python-only conditional/comment regex groups and a bounded mirrored validation fix adds publication, saved-form and browser regressions. Fresh candidate full CI and main integration are the remaining gates. Production deployment/data deletion remain excluded.
