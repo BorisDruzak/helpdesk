@@ -343,3 +343,7 @@ Approval Center device actions join exact RegistryEndpointDeviceMapping in the
 existing bounded operation query; unmapped actions are disabled. Observer historical
 error diagnosis never presents mutable local Device handshake/last-seen as current
 connection guidance. PostgreSQL regressions and source boundary guards cover both.
+
+Admin device cutover navigation: shared admin search names devices/traces, and
+Tech descriptions explicitly name Endpoint. Generic Helpdesk-owned Agent wording
+is absent from these current device-navigation descriptions.

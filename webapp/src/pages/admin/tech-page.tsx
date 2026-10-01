@@ -710,7 +710,7 @@ export function AdminTechPage() {
             </Button>
           </div>
         }
-        description="Готовность к пилоту, безопасность, runtime, PostgreSQL, агенты, операции, логи и smoke."
+        description="Готовность к пилоту, безопасность, runtime, PostgreSQL, Endpoint, операции, логи и smoke."
         eyebrow="Admin workspace"
         title="Техпанель стенда"
       />

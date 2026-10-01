@@ -38,7 +38,7 @@ console/page errors, retired and direct provider requests were zero. Both DBs,
 releases/config hashes/scopes/Windows enrollment restored; all stage units stopped.
 Draft PR39 targets frozen c935a532 starting base and excludes pre-existing Sonar
 work. Production remains untouched except the approved read-only metadata audit.
-Final delivery: verify the documentation-only freeze with its full exact-SHA CI,
+Final delivery: verify the documentation and navigation labels freeze with its full exact-SHA CI,
 canonical staging revalidation/restore and final 63-item report; no production deploy.
 
 # Completed locally: 2026-10-01 SonarQube evidence remediation
@@ -1783,4 +1783,4 @@ and the frontend build/workspace checks pass. Fresh candidate CI and actual
 browser acceptance remain required. The synthetic orphan was denied through
 the browser and all three temporary accounts were disabled; staging was stopped.
 
-Admin cutover 2026-10-01: runtime 35c67c40 full CI/live staging accepted and restored; draft PR 39 excludes pre-existing Sonar work. Documentation-only final freeze verification/report pending. Production deploy/data deletion excluded.
+Admin cutover 2026-10-01: runtime 35c67c40 full CI/live staging accepted and restored; draft PR 39 excludes pre-existing Sonar work. Documentation and navigation labels final freeze verification/report pending. Production deploy/data deletion excluded.

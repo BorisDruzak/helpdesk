@@ -112,7 +112,7 @@ and Windows enrollment were restored. All three staging units and Windows Agent
 are stopped. Private receipts remain under `.git/admin-cutover-stage/phase2-35c`.
 Draft Helpdesk PR39 uses frozen starting base c935a532 to exclude the pre-existing
 Sonar changes. Production deployment, destructive cleanup and business metadata
-migration remain excluded. A subsequent documentation-only freeze still requires
+migration remain excluded. A subsequent documentation and navigation labels freeze still requires
 its own full exact-SHA CI and canonical staging revalidation before final delivery.
 The installed Agent already emits replacement characters in session-login Context;
 this upstream observation quality issue is reported without Registry substitution.

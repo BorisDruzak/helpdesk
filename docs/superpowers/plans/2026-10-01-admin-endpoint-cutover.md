@@ -89,5 +89,5 @@ OFFLINE / reconnect ONLINE and provider-outage UNKNOWN all verified. Normal erro
 retired/direct-provider requests: 0. Original both databases/releases / configs / scopes / Windows
 enrollment restored, three units/Agent stopped. Final independent review clean;
 30 focused checks passed. Draft PR39 base c935 excludes unrelated Sonar changes.
-Final documentation-only frozen SHA full CI / staging revalidation and 63-item delivery
+Final documentation and navigation labels frozen SHA full CI / staging revalidation and 63-item delivery
 report remain; production untouched and no destructive migration.
