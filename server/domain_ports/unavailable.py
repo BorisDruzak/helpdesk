@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+from .endpoint_context import SafeContextProfile, HistoryContextProfile
+
 from .endpoint import (
     EndpointAvailability,
     EndpointCapabilitiesOutcome,
@@ -197,6 +200,24 @@ class UnavailableRegistryPort:
 
 
 class UnavailableEndpointPort:
+    async def list_device_fleet(self, *, limit: int = 250, cursor: UUID | None = None) -> EndpointUnavailable:
+        return self._unavailable
+
+    async def read_device_context(self, device: EndpointDeviceRef) -> EndpointUnavailable:
+        return self._unavailable
+
+    async def request_context_collection(self, device: EndpointDeviceRef, profile: SafeContextProfile, *, idempotency_key: OpaqueEndpointRef) -> EndpointUnavailable:
+        return self._unavailable
+
+    async def read_context_collection(self, collection: UUID) -> EndpointUnavailable:
+        return self._unavailable
+
+    async def list_context_history(self, device: EndpointDeviceRef, profile: HistoryContextProfile, *, limit: int = 20) -> EndpointUnavailable:
+        return self._unavailable
+
+    async def compare_context_snapshots(self, device: EndpointDeviceRef, before: UUID, after: UUID) -> EndpointUnavailable:
+        return self._unavailable
+
     async def read_device_presence(self, device: EndpointDeviceRef) -> EndpointUnavailable:
         del device
         return EndpointUnavailable()

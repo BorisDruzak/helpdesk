@@ -100,6 +100,7 @@ async def _issue_acceptance_service_token(
     *,
     service_client_id,
     credential_identifier: str,
+    scopes: tuple[str, ...] = ("devices.read", "operations.create", "operations.read", "device-binding.redeem"),
 ) -> str:
     async with provider() as session:
         issued = await create_service_credential(
@@ -109,7 +110,7 @@ async def _issue_acceptance_service_token(
             actor_kind="test",
             actor_identifier="helpdesk-endpoint-acceptance",
             request_id="endpoint-contract-acceptance",
-            scopes=("devices.read", "operations.create", "operations.read", "device-binding.redeem"),
+            scopes=scopes,
             credential_identifier=credential_identifier,
         )
     return issued.token
@@ -447,6 +448,70 @@ async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
     finally:
         await _stop(server, task)
         await provider_database.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.cross_repo_acceptance
+async def test_real_endpoint_context_port_acceptance(tmp_path: Path, test_database_admin_url: str):
+    """Real scoped routes and PostgreSQL, not a mocked JSON service."""
+    from endpoint_server.context.models import ContextCollection, ContextCurrent, ContextSnapshot
+    database = await _disposable_endpoint_postgres(test_database_admin_url)
+    provider = database.provider
+    now = datetime.now(UTC)
+    device_id, first_id, second_id = uuid4(), uuid4(), uuid4()
+    snapshots = []
+    try:
+        async with provider() as session:
+            client = ServiceClient(id=uuid4(), client_identifier="helpdesk-context-acceptance", display_name="Context acceptance")
+            session.add_all([client, Device(id=device_id, device_identifier="context-acceptance", display_name="Windows")])
+            await session.flush()
+            for i, snapshot_id in enumerate((first_id, second_id)):
+                collection = ContextCollection(id=uuid4(), device_id=device_id, profile="inventory_v1",
+                    requested_by="test", idempotency_key=f"seed-{i}", requested_at=now + timedelta(seconds=i), status="completed")
+                session.add(collection)
+                await session.flush()
+                normalized = {"schema_version": "device_context_v1", "profile": "inventory_v1", "collected_at": now.isoformat(),
+                    "warnings": [], "sections": {"system": {"hostname": "WIN", "platform": "windows"},
+                    "hardware": {"model": f"Model-{i}"}, "memory": {"module_count": 0, "modules": [], "total_bytes": 4096},
+                    "storage": {"physical_devices": []}, "interfaces": []}}
+                snapshot = ContextSnapshot(id=snapshot_id, device_id=device_id, collection_id=collection.id,
+                    profile="inventory_v1", collected_at=now + timedelta(seconds=i), semantic_hash=str(i) * 64,
+                    raw_payload={"private": "excluded"}, normalized_projection=normalized)
+                session.add(snapshot)
+                await session.flush()
+                snapshots.append(snapshot)
+            session.add(ContextCurrent(id=uuid4(), device_id=device_id, profile="inventory_v1", snapshot_id=second_id,
+                updated_at=now, last_observed_at=now))
+            await session.commit()
+        token = await _issue_acceptance_service_token(provider, service_client_id=client.id,
+            credential_identifier="c" * 32, scopes=("devices.read", "context.read", "context.collect"))
+        settings = Settings(database_url=database.database_url, public_base_url="https://endpoint.sosnadmin.local",
+            device_token_pepper=_DEVICE_PEPPER, service_token_pepper=_SERVICE_PEPPER, session_secret=b"context-acceptance",
+            allowed_agent_cidrs=(ipaddress.ip_network("127.0.0.0/8"),), allowed_admin_cidrs=(), artifact_root=tmp_path)
+        port = _free_port()
+        server, task = await _start(create_app(settings, provider), port)
+        adapter = ExternalEndpointHttpAdapter(base_url=f"http://127.0.0.1:{port}", service_token=token, ca_file="",
+            timeout_seconds=2, allow_insecure_test_url=True)
+        ref = EndpointDeviceRef(external_id=str(device_id))
+        try:
+            fleet = await adapter.list_device_fleet()
+            assert fleet.items[0].device.id == device_id
+            assert fleet.items[0].inventory_summary.memory_bytes == 4096
+            context = await adapter.read_device_context(ref)
+            assert context.snapshots[0].sections.hardware.model == "Model-1"
+            history = await adapter.list_context_history(ref, "inventory_v1")
+            assert {s.id for s in history.snapshots} == {first_id, second_id}
+            comparison = await adapter.compare_context_snapshots(ref, first_id, second_id)
+            assert comparison.profile == "inventory_v1"
+            requested = await adapter.request_context_collection(ref, "inventory_v1", idempotency_key="context-acceptance-key")
+            replay = await adapter.request_context_collection(ref, "inventory_v1", idempotency_key="context-acceptance-key")
+            assert requested.id == replay.id
+            assert requested.status == "requested"
+            assert (await adapter.read_context_collection(requested.id)).collection.device_id == device_id
+        finally:
+            await _stop(server, task)
+    finally:
+        await database.close()
 
 
 class _FacadeAccess:

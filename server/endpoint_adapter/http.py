@@ -14,6 +14,8 @@ from uuid import uuid4
 import aiohttp
 from pydantic import BaseModel, ValidationError
 
+from .context_http import EndpointContextHttpMixin
+
 from .wire import (
     DeviceCapabilitiesWireV1,
     DeviceSummaryWireV1,
@@ -93,7 +95,7 @@ def _path_ref(value: str) -> str:
     return quote(value, safe="")
 
 
-class ExternalEndpointHttpAdapter(EndpointPort):
+class ExternalEndpointHttpAdapter(EndpointContextHttpMixin, EndpointPort):
     """HTTPS-only Endpoint Operations API v1 client.
 
     The adapter has no database, ticket, WebSocket or logging dependencies.

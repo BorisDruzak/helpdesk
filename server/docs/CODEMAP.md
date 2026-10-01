@@ -293,3 +293,17 @@ This also includes the retired UIA create-ticket harness for the local agent.
   `server/scripts/run_migrations.py`. Reuses Tech Panel backup/restore markers.
 
 - Tech Panel Runtime includes a bounded Endpoint dependency signal: one typed read-only device request using a saved ticket mapping, two-second timeout, no raw DTO/credentials/identifiers in the snapshot. Configuration readiness alone is not live health; absent mapping is unknown. Dependency failure warns without changing core liveness.
+
+## Safe Endpoint Context boundary
+
+- `domain_ports/endpoint.py` declares the six safe Context port methods;
+  `endpoint_context.py` and `endpoint_context_sections.py` own frozen bounded
+  fleet/detail/collection/history/diff DTOs with tuple nesting.
+- `endpoint_adapter/context_http.py` adds these operations through the verified,
+  bounded HTTPS transport in `http.py`. `wire.py` exports the strict wire
+  projections. Runtime code does not import Endpoint Platform.
+- `integration/endpoint_contract.lock.json` pins exact published provider and
+  canonical OpenAPI bytes; `test_endpoint_context_adapter.py` covers projections
+  and transport. The Context case in the true cross-repository acceptance
+  starts the actual pinned provider with isolated PostgreSQL.
+- Boundary contract: `docs/segmentation/HELPDESK_ENDPOINT_CONTEXT_BOUNDARY.md`.

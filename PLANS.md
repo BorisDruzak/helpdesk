@@ -1,3 +1,38 @@
+# Active: 2026-10-01 Admin Device & Inventory Endpoint Cutover v1
+
+## Goal / Scope / Constraints
+
+Execute the supplied coordinated cutover spec through Endpoint provider,
+typed Helpdesk port/BFF, Registry overlay, UI replacement, runtime retirement
+and exact-SHA/staging acceptance. Production deploy and table deletion are
+excluded. Preserve unrelated scanner files and the integrated Sonar fixes.
+
+## Decisions / Current State
+
+Plan and source ownership matrix:
+`docs/superpowers/plans/2026-10-01-admin-endpoint-cutover.md`.
+Helpdesk starts at c935a532657786ae00ab9c9de1dbd34624b1b143 on
+`codex/admin-endpoint-cutover-v1`; Endpoint starts at
+4a8258deace4fa09becdc8e27e4d344d1d1767a7 on
+`codex/admin-device-context-summary`. Provider commit
+464405a659e615f8fed40fe9daac61a7297e30e8 merged by PR 39 into
+73f1b9c83a7cc41063994314df36f4cdeca03cc9. Full Linux/PostgreSQL CI
+36823442540: 1524 passed, 8 skipped; merge CI 36823884973 succeeded.
+Fleet uses UUID pagination and three bulk reads without raw payload loading.
+Provider display-name contract fix 38ddabe3c0badf09a033bb7523a89a7d2c5059a0
+merged via PR 40 as 12c63655b491cd1fc328b05128414eefba4ee49c;
+exact source full Linux/PostgreSQL CI 36825653896 succeeded.
+Helpdesk pins exact published 38ddabe and OpenAPI SHA256
+27425c76c95874606330ad282c66689b25e3bb95666d657cfe712e8e0d1ac137.
+
+## Next Steps / Verification / Handoff
+
+Task B typed immutable safe Context projections and shared HTTPS transport
+implemented; adapter/port selection 84 passed. Real provider PostgreSQL
+acceptance added; execution pending. Complete B review, BFF/Registry overlay,
+UI replacement, runtime retirement, full exact-SHA CI and real staging
+acceptance. No production deployment; staging untouched.
+
 # Completed locally: 2026-10-01 SonarQube evidence remediation
 
 ## Goal / Scope / Constraints

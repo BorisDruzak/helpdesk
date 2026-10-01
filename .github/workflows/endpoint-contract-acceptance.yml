@@ -103,6 +103,7 @@ jobs:
           python -m pytest \
             server/tests/test_endpoint_contract_lock.py \
             server/tests/test_endpoint_http_adapter.py \
+            server/tests/test_endpoint_context_adapter.py \
             server/tests/test_endpoint_binding_adapter.py \
             server/tests/test_endpoint_port_contracts.py \
             server/tests/test_endpoint_device_reference_service.py \
@@ -132,6 +133,7 @@ jobs:
           import json
           import os
           import subprocess
+          import xml.etree.ElementTree as ET
           from pathlib import Path
 
           lock = json.loads(Path("integration/endpoint_contract.lock.json").read_text(encoding="utf-8"))
@@ -139,7 +141,8 @@ jobs:
               "helpdesk_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               "endpoint_commit": os.environ["ENDPOINT_COMMIT"],
               "openapi_sha256": lock["openapi_sha256"],
-              "tests_passed": 2,
+              "tests_passed": sum(1 for case in ET.parse("artifacts/endpoint-contract-acceptance.xml").iter("testcase")
+                  if not any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))),
               "provider_app": "real",
               "gateway_wss": "real",
               "agent_client": "protocol_test_client",
