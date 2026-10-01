@@ -237,7 +237,7 @@ async def test_risky_consent_device_action_requires_exact_endpoint_mapping(test_
         local_id = operation.device_id
         if mapped:
             if await session.get(Device, local_id) is None:
-                session.add(Device(device_id=local_id, protocol_version="registry"))
+                session.add(Device(device_id=local_id, protocol_version="registry", agent_version="not-technical-authority"))
                 await session.flush()
             session.add(RegistryEndpointDeviceMapping(
                 endpoint_device_ref=endpoint_id, device_id=local_id, verified_at=now,
