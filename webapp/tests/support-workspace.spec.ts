@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "playwright/test";
+import { endpointContext, endpointDeviceId, registryContext } from "./fixtures/endpoint-context";
 
 async function loginSupport(page: Page) {
   await page.goto("/app/support");
@@ -23,23 +24,24 @@ test("operator shows Endpoint presence and preserves unknown on provider outage"
     payload.data.detail.snapshot.device.connection_state = online ? "online" : "unknown";
     payload.data.detail.snapshot.device.agent_version = null;
     payload.data.detail.snapshot.device.last_seen_at = null;
-    payload.data.inventory_context = { device_id: payload.data.detail.snapshot.device.device_id,
-      hostname: payload.data.detail.snapshot.device.hostname,
-      agent: { connection_state: online ? "online" : "unknown", last_seen_at: null, version: null },
-      signals: { agent_offline: false } };
+    payload.data.inventory_context = online
+      ? { status: "available", error_code: null, context: endpointContext, registry: registryContext }
+      : { status: "unavailable", error_code: "unavailable", context: null, registry: null };
     await route.fulfill({ response, json: payload });
   });
   await loginSupport(page);
   await page.goto("/app/tickets/ticket-1");
-  const panel = page.getByTestId("ticket-device-agent-panel");
+  const panel = page.getByRole("heading", { name: "Устройство · Endpoint", exact: true }).locator("..");
   await expect(panel).toBeVisible();
-  await expect(panel.getByText("online", { exact: true }).first()).toBeVisible();
-  await expect(panel.getByText("Версия", { exact: true }).locator("+ dd")).toHaveText("—");
+  await expect(panel.getByText("Windows fixture · ONLINE", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("link", { name: "Открыть карточку устройства", exact: true })).toHaveAttribute("href", `/app/admin/device?device=${endpointDeviceId}`);
+  await expect(panel.getByText("Версия", { exact: true })).toHaveCount(0);
   await panel.screenshot({ path: testInfo.outputPath("operator-endpoint-online-card.png") });
   await page.screenshot({ path: testInfo.outputPath("operator-endpoint-online.png"), fullPage: true });
   online = false;
   await page.reload();
-  await expect(panel.getByText("unknown", { exact: true }).first()).toBeVisible();
+  await expect(panel.getByText("UNKNOWN · Endpoint context недоступен", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("link", { name: "Открыть карточку устройства", exact: true })).toHaveCount(0);
   await expect(panel.getByText("Агент offline", { exact: true })).toHaveCount(0);
   await panel.screenshot({ path: testInfo.outputPath("operator-endpoint-unknown-card.png") });
   await page.screenshot({ path: testInfo.outputPath("operator-endpoint-unknown.png"), fullPage: true });

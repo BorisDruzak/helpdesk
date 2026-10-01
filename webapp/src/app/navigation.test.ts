@@ -48,7 +48,7 @@ describe("navigation helpers", () => {
     expect(getActiveWorkspace("/app/help")).toBeNull();
 
     expect(getActiveNavItem("/app/tickets/T-1/passport/print")?.label).toBe("Тикеты");
-    expect(getActiveNavItem("/app/admin/inventory?panel=requests")?.label).toBe("Инвентарь устройств");
+    expect(getActiveNavItem("/app/admin/inventory?panel=requests")?.label).toBe("Устройства");
     expect(getActiveNavItem("/app/admin/policy-health?service=mail")?.label).toBe("Проверка политик");
   });
 

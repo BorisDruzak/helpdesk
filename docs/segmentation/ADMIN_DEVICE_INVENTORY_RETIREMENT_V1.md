@@ -92,3 +92,10 @@ are separate evidence. Final frozen-SHA full Helpdesk CI and live staging browse
 Windows Endpoint online-offline-outage/collection/history/Registry acceptance are
 still required. This document does not authorize production deployment or mark
 the full cutover accepted.
+
+## Browser navigation verification
+
+The admin domain, inventory navigation entry and page heading use «Устройства».
+Fixture browser checks cover the exact Endpoint UUID card link, missing-UUID
+validation, absence of retired device API requests and ticket context UNKNOWN
+on provider failure. These fixture checks do not replace live staging acceptance.

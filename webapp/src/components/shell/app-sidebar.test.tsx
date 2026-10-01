@@ -60,7 +60,7 @@ describe("AppSidebar", () => {
     expect(screen.getByRole("link", { name: /Центр действий/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
     expect(screen.queryByText("Устройства")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();
   });
 
   it("groups admin navigation by domains and expands the active domain", () => {
@@ -74,7 +74,7 @@ describe("AppSidebar", () => {
 
     const devicesGroup = screen.getByRole("button", { name: /Устройства/ });
     expect(devicesGroup).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: /Инвентарь устройств/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /Устройства/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: /Каталог и обращения/ })).toBeInTheDocument();
   });
 
