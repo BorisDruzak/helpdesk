@@ -99,3 +99,9 @@ The admin domain, inventory navigation entry and page heading use «Устрой
 Fixture browser checks cover the exact Endpoint UUID card link, missing-UUID
 validation, absence of retired device API requests and ticket context UNKNOWN
 on provider failure. These fixture checks do not replace live staging acceptance.
+
+Registry PostgreSQL regressions retain primary-owner, merge, preview, partial
+failure and audit checks against canonical records. They also assert that legacy
+inventory rows stay absent or unchanged and that the retired inventory import
+fails closed without overwriting business metadata. The Endpoint integration
+guard runs these suites in addition to the full Helpdesk CI.

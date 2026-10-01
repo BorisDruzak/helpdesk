@@ -326,79 +326,31 @@ async def test_registry_locations_departments_import_preview_and_apply(test_engi
 
 
 @pytest.mark.asyncio
-async def test_registry_device_inventory_mapping_import_updates_asset_inventory_and_blocks_bad_rows(test_engine):
+async def test_registry_retired_inventory_import_is_rejected_without_side_effects(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
-    csv_with_error = (
-        "device_id,hostname,location_id,department_id,building,floor,room,department,responsible_user,inventory_number,status,tags,notes\n"
-        f"{device_id},import-pc,LOC_ID,DEPT_ID,HQ,7,701,Support,Ivan,INV-1,active,\"shared;laptop\",normal\n"
-        f"{uuid.uuid4()},missing-pc,LOC_ID,DEPT_ID,HQ,8,801,Support,Petr,INV-2,active,,missing\n"
-    )
-
     async with session_maker() as session:
-        service = RegistryAdminOperationsService(session)
-        location = (await service.create_location({"building": "HQ", "floor": "7", "room": "701", "reason": "seed"}, actor_id="admin"))["location"]
-        department = (await service.create_department({"code": "SUP", "name": "Support", "reason": "seed"}, actor_id="admin"))["department"]
         session.add(_device(device_id, hostname="import-pc"))
-        asset = RegistryAsset(
-            asset_id=str(uuid.uuid4()),
-            asset_type="pc",
-            name="import-pc",
-            hostname="import-pc",
-            device_id=device_id,
-            source="manual",
-            status="active",
-            discovery_payload={},
-        )
-        session.add(asset)
+        asset = RegistryAsset(asset_id=str(uuid.uuid4()), asset_type="pc", name="Canonical asset",
+            device_id=device_id, inventory_number="CANONICAL-214", source="manual", status="active")
+        historical = DeviceInventoryBinding(device_id=device_id, inventory_number="HISTORICAL-100")
+        session.add_all([asset, historical])
         await session.flush()
-        csv_text = csv_with_error.replace("LOC_ID", location["location_id"]).replace("DEPT_ID", department["department_id"])
-
-        preview = await service.preview_import_csv("device_inventory_mapping", csv_text)
-        assert preview["counts"]["updates"] == 1
-        assert preview["counts"]["errors"] == 1
-
-        bad_preview = await service.preview_import_csv("device_inventory_mapping", csv_text)
-        with pytest.raises(ValueError):
-            await service.apply_import_csv(
-                "device_inventory_mapping",
-                csv_text,
-                preview_id=bad_preview["preview_id"],
-                actor_id="admin",
-                reason="bad mapping",
-            )
-
-        clean_csv = "\n".join(csv_text.splitlines()[:2]) + "\n"
-        clean_preview = await service.preview_import_csv("device_inventory_mapping", clean_csv)
-        applied = await service.apply_import_csv(
-            "device_inventory_mapping",
-            clean_csv,
-            preview_id=clean_preview["preview_id"],
-            actor_id="admin",
-            reason="mapping import",
-        )
+        service = RegistryAdminOperationsService(session)
+        csv_text = f"device_id,inventory_number\n{device_id},OVERWRITE\n"
+        with pytest.raises(ValueError, match="unsupported registry import type"):
+            await service.preview_import_csv("device_inventory_mapping", csv_text)
+        with pytest.raises(ValueError, match="unsupported registry import type"):
+            await service.apply_import_csv("device_inventory_mapping", csv_text, preview_id="retired",
+                actor_id="admin", reason="retired import must fail closed")
         await session.commit()
-
     async with session_maker() as session:
-        asset_row = await session.get(RegistryAsset, asset.asset_id)
-        inventory = await session.get(DeviceInventoryBinding, device_id)
-        event = (
-            await session.execute(
-                select(RegistryAdminEvent).where(
-                    RegistryAdminEvent.event_type == "registry_import_applied",
-                    RegistryAdminEvent.payload["import_type"].astext == "device_inventory_mapping",
-                )
-            )
-        ).scalar_one()
-
-    assert applied["counts"]["updates"] == 1
-    assert asset_row.location_id == location["location_id"]
-    assert asset_row.department_id == department["department_id"]
-    assert inventory.room == "701"
-    assert inventory.department == "Support"
-    assert inventory.inventory_number == "INV-1"
-    assert inventory.tags == ["shared", "laptop"]
-    assert event.reason == "mapping import"
+        assert (await session.get(RegistryAsset, asset.asset_id)).inventory_number == "CANONICAL-214"
+        assert (await session.get(DeviceInventoryBinding, device_id)).inventory_number == "HISTORICAL-100"
+        events = (await session.execute(select(RegistryAdminEvent).where(
+            RegistryAdminEvent.event_type == "registry_import_applied",
+            RegistryAdminEvent.payload["import_type"].astext == "device_inventory_mapping"))).scalars().all()
+        assert events == []
 
 
 @pytest.mark.asyncio

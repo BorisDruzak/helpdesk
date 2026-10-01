@@ -123,7 +123,7 @@ async def test_transfer_owner_preview_lists_effects_without_mutation(test_engine
     assert old_binding.status == "active"
     assert old_binding.person_id == old_person_id
     assert asset.assigned_person_id == old_person_id
-    assert inventory.person_id == old_person_id
+    assert inventory is None
 
 
 @pytest.mark.asyncio
@@ -238,7 +238,6 @@ async def test_people_merge_preview_counts_related_records_without_mutation(test
         "claims_to_move": 1,
         "tickets_to_move": 1,
         "assets_to_move": 1,
-        "inventory_bindings_to_move": 1,
     }
     assert any(change["kind"] == "person" and change["action"] == "mark_merged" for change in preview["changes"])
     assert duplicate_row.status == "active"
@@ -301,8 +300,8 @@ async def test_location_department_and_bulk_previews_are_read_only(test_engine):
         asset_row = await session.get(RegistryAsset, asset.asset_id)
         inventory_row = await session.get(DeviceInventoryBinding, device_id)
 
-    assert location_preview["counts"] == {"people_to_move": 0, "assets_to_move": 1, "inventory_bindings_to_update": 1}
-    assert department_preview["counts"] == {"people_to_move": 0, "assets_to_move": 1, "inventory_bindings_to_update": 1}
+    assert location_preview["counts"] == {"people_to_move": 0, "assets_to_move": 1}
+    assert department_preview["counts"] == {"people_to_move": 0, "assets_to_move": 1}
     assert bulk_preview["operation"] == "devices.assign_location"
     assert bulk_preview["results"][0]["success"] is True
     assert bulk_preview["results"][1]["success"] is False

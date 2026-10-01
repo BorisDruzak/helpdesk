@@ -43,7 +43,7 @@ async def test_location_create_update_duplicate_and_archive(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_location_merge_moves_people_assets_inventory_and_writes_event(test_engine):
+async def test_location_merge_moves_canonical_records_and_preserves_legacy_inventory(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
     async with session_maker() as session:
@@ -87,5 +87,5 @@ async def test_location_merge_moves_people_assets_inventory_and_writes_event(tes
     assert result["moved"] == {"people": 1, "assets": 1}
     assert person_row.location_id == master["location_id"]
     assert asset_row.location_id == master["location_id"]
-    assert inventory.room == "500"
+    assert inventory.room == "501"
     assert event.reason == "same room renamed"

@@ -41,7 +41,7 @@ async def test_department_create_update_duplicate_and_archive(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_department_merge_moves_people_assets_inventory_and_counts_in_snapshot(test_engine):
+async def test_department_merge_moves_canonical_records_and_preserves_legacy_inventory(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
     async with session_maker() as session:
@@ -87,7 +87,7 @@ async def test_department_merge_moves_people_assets_inventory_and_counts_in_snap
     assert result["moved"] == {"people": 1, "assets": 1}
     assert person_row.department_id == master["department_id"]
     assert asset_row.department_id == master["department_id"]
-    assert inventory.department == "Operations"
+    assert inventory.department == "Operations Old"
     assert master_payload["users_count"] == 1
     assert master_payload["devices_count"] == 1
     assert event.reason == "duplicate department"
