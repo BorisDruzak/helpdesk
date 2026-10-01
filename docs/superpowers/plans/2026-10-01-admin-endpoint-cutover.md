@@ -44,7 +44,7 @@
 - [x] D UI: focused endpoint-devices API/types/components; replace inventory-page.tsx and device-page.tsx. Admin primary job: find a device and inspect exact authoritative context. List/detail archetype, primary refresh, secondary Registry/history. Metrics/filter/pagination, UNKNOWN errors, independent freshness and collection lifecycle; typed tabs without raw JSON. Replace legacy client callers/tests and navigation.
 - [x] E Runtime retirement: remove legacy inventory/presence API registration/handlers/services and scheduler config where valid. Remove Registry side reads/writes of legacy binding/presence; preserve canonical business operations. Audit ticket/Tech/AI indicators. Permanent production-source boundary guard and actual BFF route parity tests, CI integration.
 - [x] F Evidence/docs: retirement manifest with readers/writers/FKs/retention blockers and production read-only aggregates/reconciliation export. No table drop or automatic business overwrite. Update architecture/docs/CODEMAP and PLANS.
-- [ ] G Acceptance: focused tests then full suites, cross-contract pin/acceptance, exact-SHA CI, live staging browser with real Windows Endpoint device and outage/refresh/history/Registry. Restore staging state and stop test services; no production deploy. Review final full diff before publication; report exact receipts and every unverified gate honestly.
+- [x] G Acceptance: focused tests then full suites, cross-contract pin/acceptance, exact-SHA CI, live staging browser with real Windows Endpoint device and outage/refresh/history/Registry. Restore staging state and stop test services; no production deploy. Review final full diff before publication; report exact receipts and every unverified gate honestly.
 
 ## Verification ledger
 
@@ -77,3 +77,17 @@ revalidation remain required before G is complete. The installed Windows agent
 also emits replacement characters for the session login; the provider response
 already contains them. This upstream observation quality issue must be reported
 without substituting a Registry identity.
+
+
+### Final runtime acceptance 35c67c40
+
+Full CI 36848506139 passed all 18 canonical layers / 18 logs with no shared DB fallback;
+real pinned-provider/Gateway WSS/Helpdesk acceptance: 3 passed, 0 skipped. Real trusted
+staging Windows, expanded page controls, completed five collections, actual
+history/hash/diff, exact Registry PC link and canonical preview/apply/audit,
+OFFLINE / reconnect ONLINE and provider-outage UNKNOWN all verified. Normal errors/
+retired/direct-provider requests: 0. Original both databases/releases / configs / scopes / Windows
+enrollment restored, three units/Agent stopped. Final independent review clean;
+30 focused checks passed. Draft PR39 base c935 excludes unrelated Sonar changes.
+Final documentation-only frozen SHA full CI / staging revalidation and 63-item delivery
+report remain; production untouched and no destructive migration.

@@ -27,25 +27,19 @@ Helpdesk pins exact published 38ddabe and OpenAPI SHA256
 
 ## Next Steps / Verification / Handoff
 
-A–F are implemented, reviewed and published on the cutover branch. Production
-metadata was inspected read-only; historical tables remain inert and retained.
-Helpdesk a61f0011 passed all 18 exact-SHA full CI layers (36843043522) and real
-contract acceptance (269 guards plus three provider/Gateway/Helpdesk cases).
-Trusted staging browser checks proved actual Windows inventory/profile refresh,
-real history comparison, canonical Registry preview/apply/audit, OFFLINE after
-Agent stop and UNKNOWN after provider outage. Original staging databases,
-release links, scopes and Windows enrollment were restored; all staging units
-and the Windows service are stopped. Production deployment remains excluded.
-
-Acceptance found and fixed the omitted Registry verified mapping link. The
-full-spec UI audit added all required fleet filters/metrics and inventory age,
-exact UUID search, compact overview context and history semantic hashes. A
-truncated Registry binding list is disclosed as uncertain rather than treated
-as proof that a relationship is absent. Focused frontend, browser, boundary,
-TypeScript/build and workspace checks pass. Freeze the updated candidate,
-complete its full exact-SHA CI, revalidate live staging including mapped Registry
-navigation and expanded fleet controls, restore the stand again, and publish the
-final report and scoped draft PR. G remains pending until those checks finish.
+A–G implementation, final runtime review and live acceptance are complete on
+35c67c4080979a2d583ba2b01e79db80b985304e. Exact full CI 36848506139 passed
+all 18 layers with isolated PostgreSQL; real cross-repository contract 3 cases passed.
+Trusted actual staging Windows verified expanded fleet filters, five completed
+safe profile collections, actual history/hash/diff, exact Registry PC link across
+different UUIDs, canonical preview/apply/admin audit with inventory number
+preserved, OFFLINE on Agent stop and UNKNOWN on provider outage. Normal browser
+console/page errors, retired and direct provider requests were zero. Both DBs,
+releases/config hashes/scopes/Windows enrollment restored; all stage units stopped.
+Draft PR39 targets frozen c935a532 starting base and excludes pre-existing Sonar
+work. Production remains untouched except the approved read-only metadata audit.
+Final delivery: verify the documentation-only freeze with its full exact-SHA CI,
+canonical staging revalidation/restore and final 63-item report; no production deploy.
 
 # Completed locally: 2026-10-01 SonarQube evidence remediation
 
@@ -1789,4 +1783,4 @@ and the frontend build/workspace checks pass. Fresh candidate CI and actual
 browser acceptance remain required. The synthetic orphan was denied through
 the browser and all three temporary accounts were disabled; staging was stopped.
 
-Admin cutover 2026-10-01: Provider published/pinned; typed port, BFF, exact UI and legacy runtime retirement implemented. Read-only production audit: one canonicalized legacy binding; all other ten-table rows zero. Full frozen-SHA Helpdesk CI/live staging acceptance pending; no production deploy or data deletion.
+Admin cutover 2026-10-01: runtime 35c67c40 full CI/live staging accepted and restored; draft PR 39 excludes pre-existing Sonar work. Documentation-only final freeze verification/report pending. Production deploy/data deletion excluded.

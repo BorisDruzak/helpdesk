@@ -86,12 +86,36 @@ Audit privacy and transaction safety are covered separately.
 
 ## Acceptance status
 
-Provider changes and immutable contract pin have exact-SHA full CI and real
-cross-repository PostgreSQL acceptance. UI unit/build checks and retirement guards
-are separate evidence. Final frozen-SHA full Helpdesk CI and live staging browser/
-Windows Endpoint online-offline-outage/collection/history/Registry acceptance are
-still required. This document does not authorize production deployment or mark
-the full cutover accepted.
+Provider commit `38ddabe3c0badf09a033bb7523a89a7d2c5059a0` passed full
+Linux/PostgreSQL CI 36825653896; merge CI 36827176730 also passed. Helpdesk
+runtime candidate `35c67c4080979a2d583ba2b01e79db80b985304e` passed full CI
+36848506139: all 18 canonical layers, isolated PostgreSQL/fresh migrations,
+18 downloaded logs checked for no shared database fallback, and three real
+provider/Gateway WSS/Helpdesk contract cases. Independent final review found
+no actionable issues and executed 30 adapter/presence/retirement/audit checks.
+
+Actual trusted HTTPS staging Chromium used no mocks or TLS bypass. Windows 3.2.75
+was ONLINE with all five safe profiles; five refresh collections completed and
+reread current Context. History exposed the actual semantic hash and compared
+two saved baseline snapshots through the provider. Exact mapped/unmapped Registry
+overlays, different local/Endpoint UUID navigation, temporal primary binding,
+asset/person departments and canonical preview/apply/audit with preserved inventory
+number were verified. Agent stop produced OFFLINE and restart produced ONLINE.
+Endpoint outage produced 503 UNKNOWN with technical data hidden; missing, invalid
+and unknown UUID URLs preserved exact identity. Normal console/page errors,
+retired requests and direct browser-to-Endpoint calls were zero; intentional 404 /
+503 resource messages were recorded separately. Three automation text-locator
+assertions were corrected against visible content; they were not product defects.
+
+Both original staging databases, release links, config hashes, principal scopes
+and Windows enrollment were restored. All three staging units and Windows Agent
+are stopped. Private receipts remain under `.git/admin-cutover-stage/phase2-35c`.
+Draft Helpdesk PR39 uses frozen starting base c935a532 to exclude the pre-existing
+Sonar changes. Production deployment, destructive cleanup and business metadata
+migration remain excluded. A subsequent documentation-only freeze still requires
+its own full exact-SHA CI and canonical staging revalidation before final delivery.
+The installed Agent already emits replacement characters in session-login Context;
+this upstream observation quality issue is reported without Registry substitution.
 
 ## Browser navigation verification
 
