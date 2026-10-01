@@ -89,6 +89,49 @@ class VerifiedRequesterBinding:
     binding_id: str
 
 
+@dataclass(frozen=True)
+class RequesterIdentityContext:
+    account_mode: str
+    confirmed_binding: VerifiedRequesterBinding | None
+    browser_person_id: str | None
+    confirmed_binding_requested: bool
+
+
+async def _resolve_requester_identity_context(
+    session: Any,
+    *,
+    device_id: str | None,
+    requester_id: str,
+    requester_account: dict[str, Any] | None,
+    verified_requester_binding: VerifiedRequesterBinding | None,
+    state: Any,
+) -> RequesterIdentityContext:
+    account_mode = str((requester_account or {}).get("account_mode") or "").strip()
+    confirmed_binding_requested = account_mode == "confirmed_binding"
+    confirmed_binding = None
+    if confirmed_binding_requested:
+        requested_person_id = str((requester_account or {}).get("person_id") or "").strip()
+        requested_binding_id = str((requester_account or {}).get("binding_id") or "").strip()
+        if (
+            verified_requester_binding is not None
+            and str(verified_requester_binding.device_id) == str(device_id or "")
+            and str(verified_requester_binding.person_id) == requested_person_id
+            and str(verified_requester_binding.binding_id) == requested_binding_id
+        ):
+            confirmed_binding = verified_requester_binding
+        else:
+            account_mode = ""
+    elif account_mode not in {"", "browser_no_device"}:
+        account_mode = ""
+    verified_browser_person_id = None
+    if account_mode == "browser_no_device":
+        verified_browser_person_id = await _verify_browser_requester_identity(
+            session, actor_id=requester_id,
+            claimed_person_id=(requester_account or {}).get("person_id"), state=state,
+        )
+    return RequesterIdentityContext(account_mode, confirmed_binding, verified_browser_person_id, confirmed_binding_requested)
+
+
 def build_default_priority_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     urgency = data.get("urgency")
     importance = data.get("importance")
@@ -428,6 +471,40 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
     return ticket
 
 
+@dataclass(frozen=True)
+class TicketCreateInput:
+    """Untrusted submission data, separate from verified server context."""
+    device_id: str | None
+    requester_id: str
+    title: str
+    description: str
+    user_display_name: str
+    requester_profile: Optional[dict[str, Any]]
+    normalized_priority: Optional[Dict[str, Any]]
+    initial_message_text: Optional[str]
+    initial_message_sender_role: str
+    initial_message_from: Optional[str]
+    include_public_access: bool
+    ticket_type: str
+    category_id: Optional[int]
+    service_id: Optional[int]
+    subcategory_id: Optional[int]
+    sla_policy_id: Optional[int]
+    catalog_service_id: Optional[str]
+    catalog_offering_id: Optional[str]
+    service_code: Optional[str]
+    offering_code: Optional[str]
+    request_type: Optional[str]
+    business_criticality: Optional[str]
+    reporting_category: Optional[str]
+    service_owner_actor_id: Optional[str]
+    support_group_code: Optional[str]
+    extra_custom_fields: Optional[dict[str, Any]]
+    requester_account: Optional[dict[str, Any]]
+    ticket_context: Optional[dict[str, Any]]
+    device_selection: str | None
+
+
 async def create_ticket_with_side_effects(
     session: Any,
     *,
@@ -464,11 +541,89 @@ async def create_ticket_with_side_effects(
     registry_port: RegistryPort | None = None,
     device_selection: str | None = None,
 ) -> Dict[str, Any]:
+    return await _create_ticket_from_input(
+        session, submission=TicketCreateInput(
+            device_id=device_id,
+            requester_id=requester_id,
+            title=title,
+            description=description,
+            user_display_name=user_display_name,
+            requester_profile=requester_profile,
+            normalized_priority=normalized_priority,
+            initial_message_text=initial_message_text,
+            initial_message_sender_role=initial_message_sender_role,
+            initial_message_from=initial_message_from,
+            include_public_access=include_public_access,
+            ticket_type=ticket_type,
+            category_id=category_id,
+            service_id=service_id,
+            subcategory_id=subcategory_id,
+            sla_policy_id=sla_policy_id,
+            catalog_service_id=catalog_service_id,
+            catalog_offering_id=catalog_offering_id,
+            service_code=service_code,
+            offering_code=offering_code,
+            request_type=request_type,
+            business_criticality=business_criticality,
+            reporting_category=reporting_category,
+            service_owner_actor_id=service_owner_actor_id,
+            support_group_code=support_group_code,
+            extra_custom_fields=extra_custom_fields,
+            requester_account=requester_account,
+            ticket_context=ticket_context,
+            device_selection=device_selection,
+        ), verified_requester_binding=verified_requester_binding, state=state, registry_port=registry_port,
+    )
+
+
+
+
+@dataclass(frozen=True)
+class TicketCreateContext:
+    asset_id: str | None
+    requester_person_id: str | None
+    requester_binding_id: str | None
+    requester_registration_status: str
+    requester_account_mode: str | None
+    requester_account_warning: str | None
+    requester_ref: dict[str, Any] | None
+    requester_snapshot: dict[str, Any] | None
+    requester_registration_context: dict[str, Any]
+    requester_account_context: dict[str, Any]
+    registry_context: dict[str, Any] | None
+    ticket_context_snapshot: dict[str, Any] | None
+
+
+async def _create_ticket_from_input(
+    session: Any, *, submission: TicketCreateInput,
+    verified_requester_binding: VerifiedRequesterBinding | None, state: Any, registry_port: RegistryPort | None,
+) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
     ticket_id = new_ticket_id()
-    registry = registry_port or DomainPortContainer.from_config(
-        registry_session=session
-    ).registry
+    registry = registry_port or DomainPortContainer.from_config(registry_session=session).registry
+    context = await _build_ticket_create_context(
+        session, submission=submission, ticket_id=ticket_id, registry=registry,
+        verified_requester_binding=verified_requester_binding, state=state,
+    )
+    return await _persist_and_initialize_ticket(
+        session, ticket_repo=ticket_repo, ticket_id=ticket_id,
+        submission=submission, context=context, state=state,
+    )
+
+
+async def _build_ticket_create_context(
+    session: Any, *, submission: TicketCreateInput, ticket_id: str, registry: RegistryPort,
+    verified_requester_binding: VerifiedRequesterBinding | None, state: Any,
+) -> TicketCreateContext:
+    device_id = submission.device_id
+    requester_id = submission.requester_id
+    user_display_name = submission.user_display_name
+    requester_profile = submission.requester_profile
+    extra_custom_fields = submission.extra_custom_fields
+    requester_account = submission.requester_account
+    ticket_context = submission.ticket_context
+    device_selection = submission.device_selection
+
     asset_id = None
     registry_context: dict[str, Any] | None = None
     has_requester_account = isinstance(requester_account, dict)
@@ -492,29 +647,15 @@ async def create_ticket_with_side_effects(
         logger.warning(f"[create] registration precheck failed ticket_id={ticket_id} err={exc}")
     except Exception as exc:
         logger.warning(f"[create] registration precheck failed ticket_id={ticket_id} err={exc}")
-    account_mode = str((requester_account or {}).get("account_mode") or "").strip()
-    confirmed_binding_requested = account_mode == "confirmed_binding"
-    confirmed_binding = None
-    if confirmed_binding_requested:
-        requested_person_id = str((requester_account or {}).get("person_id") or "").strip()
-        requested_binding_id = str((requester_account or {}).get("binding_id") or "").strip()
-        if (
-            verified_requester_binding is not None
-            and str(verified_requester_binding.device_id) == str(device_id or "")
-            and str(verified_requester_binding.person_id) == requested_person_id
-            and str(verified_requester_binding.binding_id) == requested_binding_id
-        ):
-            confirmed_binding = verified_requester_binding
-        else:
-            account_mode = ""
-    elif account_mode not in {"", "browser_no_device"}:
-        account_mode = ""
-    verified_browser_person_id = None
-    if account_mode == "browser_no_device":
-        verified_browser_person_id = await _verify_browser_requester_identity(
-            session, actor_id=requester_id,
-            claimed_person_id=(requester_account or {}).get("person_id"), state=state,
-        )
+    identity_context = await _resolve_requester_identity_context(
+        session, device_id=device_id, requester_id=requester_id,
+        requester_account=requester_account,
+        verified_requester_binding=verified_requester_binding, state=state,
+    )
+    account_mode = identity_context.account_mode
+    confirmed_binding_requested = identity_context.confirmed_binding_requested
+    confirmed_binding = identity_context.confirmed_binding
+    verified_browser_person_id = identity_context.browser_person_id
     skip_profile_ingest = account_mode == "browser_no_device"
     if requester_profile:
         if existing_active_binding is None and not skip_profile_ingest:
@@ -676,6 +817,115 @@ async def create_ticket_with_side_effects(
         except Exception as exc:
             logger.warning(f"[create] ticket context build failed ticket_id={ticket_id} err={exc}")
 
+    return TicketCreateContext(
+        asset_id=asset_id,
+        requester_person_id=requester_person_id,
+        requester_binding_id=requester_binding_id,
+        requester_registration_status=requester_registration_status,
+        requester_account_mode=requester_account_mode,
+        requester_account_warning=requester_account_warning,
+        requester_ref=requester_ref,
+        requester_snapshot=requester_snapshot,
+        requester_registration_context=requester_registration_context,
+        requester_account_context=requester_account_context,
+        registry_context=registry_context,
+        ticket_context_snapshot=ticket_context_snapshot,
+    )
+
+
+def _prepare_ticket_custom_fields(
+    submission: TicketCreateInput, context: TicketCreateContext, existing_custom_fields: Any,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str | None]:
+    user_display_name = submission.user_display_name
+    requester_profile = submission.requester_profile
+    normalized_priority = submission.normalized_priority
+    include_public_access = submission.include_public_access
+    extra_custom_fields = submission.extra_custom_fields
+    requester_registration_context = context.requester_registration_context
+    requester_account_context = context.requester_account_context
+    registry_context = context.registry_context
+    ticket_context_snapshot = context.ticket_context_snapshot
+
+    normalized_priority = normalized_priority or build_default_priority_payload({})
+    priority_class = normalized_priority.get("effective_priority") or normalized_priority.get("priority_class") or "P3"
+    priority_decision = {
+        "impact": normalized_priority.get("impact"),
+        "urgency": normalized_priority.get("urgency"),
+        "importance": normalized_priority.get("importance"),
+        "computed_priority": normalized_priority.get("computed_priority") or priority_class,
+        "manual_priority": normalized_priority.get("manual_priority"),
+        "effective_priority": priority_class,
+        "priority_class": priority_class,
+        "legacy_priority": normalized_priority.get("legacy_priority"),
+        "priority_source": normalized_priority.get("priority_source") or "system",
+        "priority_reason": normalized_priority.get("priority_reason")
+        or normalized_priority.get("urgency_reason")
+        or "Не указано при создании",
+        "manual_priority_reason": normalized_priority.get("manual_priority_reason"),
+        "applied_modifiers": normalized_priority.get("applied_modifiers") or [],
+        "manual_override_event": normalized_priority.get("manual_override_event"),
+        "priority_explanation": normalized_priority.get("priority_explanation") or {},
+    }
+    custom_fields = merge_requester_custom_fields(
+        existing_custom_fields,
+        user_display_name=user_display_name,
+        requester_profile=requester_profile or {},
+        priority_class=priority_class,
+    )
+    custom_fields["priority_decision"] = priority_decision
+    if extra_custom_fields:
+        custom_fields.update(extra_custom_fields)
+    if ticket_context_snapshot:
+        custom_fields.update(TicketContextBuilder.custom_fields(ticket_context_snapshot))
+    custom_fields["requester_registration"] = requester_registration_context
+    custom_fields["requester_account_context"] = requester_account_context
+    if registry_context:
+        custom_fields["registry_context"] = registry_context
+
+    public_access_code: Optional[str] = None
+    if include_public_access:
+        public_access_code = generate_public_access_code()
+        custom_fields = set_public_access_code(custom_fields, public_access_code)
+
+    return normalized_priority, priority_decision, custom_fields, public_access_code
+
+
+async def _persist_and_initialize_ticket(
+    session: Any, *, ticket_repo: TicketEventsRepo, ticket_id: str,
+    submission: TicketCreateInput, context: TicketCreateContext, state: Any,
+) -> Dict[str, Any]:
+    device_id = submission.device_id
+    requester_id = submission.requester_id
+    title = submission.title
+    description = submission.description
+    normalized_priority = submission.normalized_priority
+    initial_message_text = submission.initial_message_text
+    initial_message_sender_role = submission.initial_message_sender_role
+    initial_message_from = submission.initial_message_from
+    ticket_type = submission.ticket_type
+    category_id = submission.category_id
+    service_id = submission.service_id
+    subcategory_id = submission.subcategory_id
+    sla_policy_id = submission.sla_policy_id
+    catalog_service_id = submission.catalog_service_id
+    catalog_offering_id = submission.catalog_offering_id
+    service_code = submission.service_code
+    offering_code = submission.offering_code
+    request_type = submission.request_type
+    business_criticality = submission.business_criticality
+    reporting_category = submission.reporting_category
+    service_owner_actor_id = submission.service_owner_actor_id
+    support_group_code = submission.support_group_code
+    asset_id = context.asset_id
+    requester_person_id = context.requester_person_id
+    requester_binding_id = context.requester_binding_id
+    requester_registration_status = context.requester_registration_status
+    requester_account_mode = context.requester_account_mode
+    requester_account_warning = context.requester_account_warning
+    requester_ref = context.requester_ref
+    requester_snapshot = context.requester_snapshot
+    ticket_context_snapshot = context.ticket_context_snapshot
+
     ticket = await ticket_repo.create_ticket(
         ticket_id=ticket_id,
         device_id=device_id,
@@ -707,46 +957,9 @@ async def create_ticket_with_side_effects(
         requester_snapshot=requester_snapshot,
     )
 
-    normalized_priority = normalized_priority or build_default_priority_payload({})
-    priority_class = normalized_priority.get("effective_priority") or normalized_priority.get("priority_class") or "P3"
-    priority_decision = {
-        "impact": normalized_priority.get("impact"),
-        "urgency": normalized_priority.get("urgency"),
-        "importance": normalized_priority.get("importance"),
-        "computed_priority": normalized_priority.get("computed_priority") or priority_class,
-        "manual_priority": normalized_priority.get("manual_priority"),
-        "effective_priority": priority_class,
-        "priority_class": priority_class,
-        "legacy_priority": normalized_priority.get("legacy_priority"),
-        "priority_source": normalized_priority.get("priority_source") or "system",
-        "priority_reason": normalized_priority.get("priority_reason")
-        or normalized_priority.get("urgency_reason")
-        or "Не указано при создании",
-        "manual_priority_reason": normalized_priority.get("manual_priority_reason"),
-        "applied_modifiers": normalized_priority.get("applied_modifiers") or [],
-        "manual_override_event": normalized_priority.get("manual_override_event"),
-        "priority_explanation": normalized_priority.get("priority_explanation") or {},
-    }
-    custom_fields = merge_requester_custom_fields(
-        getattr(ticket, "custom_fields", None),
-        user_display_name=user_display_name,
-        requester_profile=requester_profile or {},
-        priority_class=priority_class,
+    normalized_priority, priority_decision, custom_fields, public_access_code = _prepare_ticket_custom_fields(
+        submission, context, getattr(ticket, "custom_fields", None),
     )
-    custom_fields["priority_decision"] = priority_decision
-    if extra_custom_fields:
-        custom_fields.update(extra_custom_fields)
-    if ticket_context_snapshot:
-        custom_fields.update(TicketContextBuilder.custom_fields(ticket_context_snapshot))
-    custom_fields["requester_registration"] = requester_registration_context
-    custom_fields["requester_account_context"] = requester_account_context
-    if registry_context:
-        custom_fields["registry_context"] = registry_context
-
-    public_access_code: Optional[str] = None
-    if include_public_access:
-        public_access_code = generate_public_access_code()
-        custom_fields = set_public_access_code(custom_fields, public_access_code)
 
     await ticket_repo.update_ticket(
         ticket_id,
