@@ -35,7 +35,7 @@ async def test_exact_mapping_populated_overlay_two_reads_and_binding_cutoff(test
         await session.flush()
         for i, person_id in enumerate(people):
             session.add(DeviceUserBinding(binding_id=str(uuid4()), device_id=local_id, asset_id=asset_id, person_id=person_id,
-                relationship_type="primary_user" if i == 0 else "shared_user", status="revoked" if i == 8 else "active",
+                relationship_type="primary_user" if i == 0 else "owner", status="revoked" if i == 8 else "active",
                 valid_from=now + timedelta(days=1) if i == 10 else now - timedelta(days=1),
                 valid_to=now - timedelta(hours=1) if i == 9 else None))
         await session.flush()

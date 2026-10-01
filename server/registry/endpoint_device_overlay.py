@@ -4,7 +4,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,7 +65,9 @@ async def read_registry_device_overlays(session: AsyncSession, devices: tuple[UU
     binding = DeviceUserBinding
     ranked = select(binding.binding_id,
         func.row_number().over(partition_by=binding.device_id,
-            order_by=(binding.relationship_type, binding.valid_from.desc(), binding.binding_id)).label("position"),
+            order_by=(case((binding.relationship_type == "primary_user", 0),
+                (binding.relationship_type == "responsible", 1), (binding.relationship_type == "owner", 2), else_=3),
+                binding.relationship_type, binding.valid_from.desc(), binding.binding_id)).label("position"),
         func.count().over(partition_by=binding.device_id).label("total"),
     ).where(binding.device_id.in_(tuple(row["device_id"] for row in rows)), binding.status == "active",
         binding.valid_from <= now, or_(binding.valid_to.is_(None), binding.valid_to > now)).subquery()
