@@ -87,10 +87,12 @@ async def run(args: argparse.Namespace) -> int:
     server_md = out_dir / "server_worker.md"
 
     py = sys.executable
-    env_readonly = os.getenv(
-        "READONLY_DATABASE_URL",
-        "postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client",
-    )
+    env_readonly = os.getenv("READONLY_DATABASE_URL", "").strip()
+    if not env_readonly:
+        raise SystemExit(
+            "READONLY_DATABASE_URL must be configured explicitly; "
+            "no database credential is embedded in the repository."
+        )
 
     cmd_server = [
         py,
