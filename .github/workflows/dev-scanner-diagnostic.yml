@@ -2,6 +2,11 @@ name: DEV-SCANNER diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/dev-scanner-diagnostic.yml
 
 permissions:
   contents: read
