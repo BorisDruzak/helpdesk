@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 DEFAULT_ADMIN_URL = "http://example.test:8666/admin"
-DEFAULT_DB_URL = "postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client"
+DEFAULT_DB_URL = ""
 
 
 def check_files(repo_root: Path) -> dict:
@@ -63,6 +63,13 @@ def check_admin_url(url: str) -> dict:
 
 
 async def check_db_async(url: str) -> dict:
+    if not url:
+        return {
+            "ok": False,
+            "available": False,
+            "error": "READONLY_DATABASE_URL is not configured",
+        }
+
     try:
         import asyncpg  # type: ignore
     except Exception as e:  # noqa: BLE001
@@ -160,7 +167,10 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Server subagent worker")
     p.add_argument("--repo-root", default=str(default_repo))
     p.add_argument("--admin-url", default=DEFAULT_ADMIN_URL)
-    p.add_argument("--readonly-db-url", default=os.getenv("READONLY_DATABASE_URL", DEFAULT_DB_URL))
+    p.add_argument(
+        "--readonly-db-url",
+        default=os.getenv("READONLY_DATABASE_URL", DEFAULT_DB_URL).strip(),
+    )
     p.add_argument("--output-json", required=True)
     p.add_argument("--output-md", required=True)
     return p.parse_args()
