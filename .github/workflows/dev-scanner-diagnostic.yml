@@ -2,6 +2,11 @@ name: DEV-SCANNER diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/dev-scanner-diagnostic.yml
 
 permissions:
   contents: read
@@ -19,7 +24,7 @@ jobs:
       - x64
       - helpdesk-ci
       - scanner
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Runner identity
@@ -29,6 +34,7 @@ jobs:
           echo "RUNNER_NAME=${RUNNER_NAME}"
           echo "RUNNER_OS=${RUNNER_OS}"
           echo "RUNNER_ARCH=${RUNNER_ARCH}"
+          echo "HOME=${HOME}"
           hostname
           id
           nproc
@@ -36,7 +42,7 @@ jobs:
           df -h /
 
       - name: Checkout exact workflow SHA
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -60,6 +66,58 @@ jobs:
           curl --version | head -1
           docker --version
           docker compose version
+
+      - name: Canonical Node and pnpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "node=$(node --version)"
+          echo "npm=$(npm --version)"
+          echo "corepack=$(corepack --version)"
+          echo "pnpm=$(pnpm --version)"
+          test "$(node --version)" = "v24.15.0"
+          test "$(pnpm --version)" = "10.33.0"
+
+      - name: Install webapp dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir webapp install --frozen-lockfile --prefer-offline
+
+      - name: Playwright version and Chromium smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(pnpm --dir webapp exec playwright --version)" = "Version 1.55.0"
+
+          cd webapp
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { chromium } from "playwright";
+
+          const executable = chromium.executablePath();
+          console.log(`chromium=${executable}`);
+          if (!fs.existsSync(executable)) {
+            throw new Error(`Chromium executable is missing: ${executable}`);
+          }
+
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage();
+          await page.setContent("<title>DEV-SCANNER</title><h1>PASS</h1>");
+
+          const title = await page.title();
+          const text = await page.locator("h1").textContent();
+
+          console.log(`title=${title}`);
+          console.log(`h1=${text}`);
+
+          if (title !== "DEV-SCANNER" || text !== "PASS") {
+            throw new Error("Playwright smoke assertion failed");
+          }
+
+          await browser.close();
+          console.log("Playwright Chromium smoke: PASS");
+          NODE
 
       - name: Docker execution
         shell: bash
