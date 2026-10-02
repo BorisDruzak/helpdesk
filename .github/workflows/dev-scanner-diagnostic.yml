@@ -19,7 +19,6 @@ jobs:
       - x64
       - helpdesk-ci
       - scanner
-
     timeout-minutes: 10
 
     steps:
@@ -27,11 +26,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           echo "RUNNER_NAME=${RUNNER_NAME}"
           echo "RUNNER_OS=${RUNNER_OS}"
           echo "RUNNER_ARCH=${RUNNER_ARCH}"
-
           hostname
           id
           nproc
@@ -49,23 +46,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           ACTUAL_SHA="$(git rev-parse HEAD)"
-
           echo "Expected: ${GITHUB_SHA}"
           echo "Actual:   ${ACTUAL_SHA}"
-
           test "${ACTUAL_SHA}" = "${GITHUB_SHA}"
 
       - name: Core tools
         shell: bash
         run: |
           set -euo pipefail
-
           git --version
           python3 --version
           curl --version | head -1
-
           docker --version
           docker compose version
 
@@ -73,28 +65,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           docker run --rm hello-world > /tmp/docker-hello.txt
           grep -q "Hello from Docker!" /tmp/docker-hello.txt
-
           echo "Docker execution: PASS"
 
       - name: GitHub outbound
         shell: bash
         run: |
           set -euo pipefail
-
-          curl -fsS             --connect-timeout 5             --max-time 15             -o /dev/null             https://github.com/
-
-          curl -fsS             --connect-timeout 5             --max-time 15             -o /dev/null             https://api.github.com/
-
+          curl -fsS --connect-timeout 5 --max-time 15 -o /dev/null https://github.com/
+          curl -fsS --connect-timeout 5 --max-time 15 -o /dev/null https://api.github.com/
           echo "GitHub outbound: PASS"
 
       - name: Internal DNS
         shell: bash
         run: |
           set -euo pipefail
-
           getent hosts sonar.sosnadmin.local
           getent hosts sentry.sosnadmin.local
 
@@ -102,9 +88,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          curl -fsS             --connect-timeout 5             --max-time 15             https://sonar.sosnadmin.local/api/system/status
-
+          curl -fsS --connect-timeout 5 --max-time 15 https://sonar.sosnadmin.local/api/system/status
           echo
           echo "SonarQube TLS: PASS"
 
@@ -112,9 +96,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          curl -fsS             --connect-timeout 5             --max-time 15             https://sentry.sosnadmin.local/_health/
-
+          curl -fsS --connect-timeout 5 --max-time 15 https://sentry.sosnadmin.local/_health/
           echo
           echo "Sentry TLS: PASS"
 
@@ -122,6 +104,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           ip route get 192.168.101.118
           echo "Staging route: PASS"
