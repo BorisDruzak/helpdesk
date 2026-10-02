@@ -98,6 +98,7 @@ jobs:
           echo "SonarQube TLS: PASS"
 
       - name: Sentry TLS
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -106,6 +107,7 @@ jobs:
           echo "Sentry TLS: PASS"
 
       - name: Staging network route
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
