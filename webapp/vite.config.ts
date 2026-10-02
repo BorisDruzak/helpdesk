@@ -8,6 +8,7 @@ process.env.TZ = "Asia/Yekaterinburg";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: { sourcemap: false },
   test: {
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts", "src/**/*.spec.tsx"],
     exclude: ["tests/**/*.spec.ts"],

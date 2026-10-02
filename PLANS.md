@@ -1,3 +1,18 @@
+# Completed locally: 2026-10-02 Helpdesk Sentry Browser Observability v1
+
+Approved spec and plan: `docs/superpowers/specs/2026-10-02-helpdesk-sentry-browser-v1.md`
+and `docs/superpowers/plans/2026-10-02-helpdesk-sentry-browser-v1.md`.
+Baseline `03e0cb1557b714b6f21fbc20c73f473625a459ca`; branch `codex/sentry-browser-v1`.
+Runtime public config, React 19/Router tracing and positive payload projection
+are implemented. Verification: 580 frontend tests, 70 server/static/backend
+observability tests, 36 affected Playwright flows, production build, workspace
+verifier, compileall and diff checks passed. Independent read-only review has
+no outstanding findings; its same-origin ingestion cookie finding was reproduced
+and fixed with credential/referrer omission. Real disabled browser load was
+checked with clean console and no horizontal overflow. No production deployment
+or Endpoint/Sentry-server changes.
+Source-map upload remains deferred to internal CI/scanner infrastructure.
+
 # Active: 2026-10-02 Post-Cutover Legacy Cleanup
 
 Baseline `1818f1988306061e806aa5668347f4389a5b91ca`; candidate branch

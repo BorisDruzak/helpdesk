@@ -2,6 +2,17 @@
 
 ## Entry points
 
+- `server/observability/browser_runtime.py` validates the independent public
+  browser DSN/rate and reuses backend environment/release identity. Its fixed
+  schema is safely serialized into dynamic HTML by
+  `server/static_pages/webapp_assets.py`; immutable assets contain no runtime
+  DSN. Asset handlers refuse source maps.
+- `webapp/src/observability/` owns runtime parsing, route-template matching,
+  positive event/span projection and minimal SDK initialization. `main.tsx`
+  installs React 19 root callbacks and the supported Router wrapper before
+  rendering only when configuration is valid. SDK 11 uses explicit static
+  trace lifecycle so the transaction privacy hook runs.
+
 - `server/server.py` builds the Helpdesk aiohttp application.
 - `server/observability/sentry.py` owns optional process Sentry initialization
   after `create_app()` and before `web.run_app()`, plus bounded shutdown after
