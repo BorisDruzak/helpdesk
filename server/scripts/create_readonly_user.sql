@@ -1,9 +1,10 @@
 -- Создание read-only пользователя для доступа к БД pc_client извне
 -- (например, для второго чат-агента).
 -- Запуск: sudo -u postgres psql -d pc_client -f create_readonly_user.sql
--- Перед запуском замените REPLACE_WITH_STRONG_PASSWORD на свой пароль в строке ниже.
+-- Пароль в репозитории не хранится. После выполнения скрипта задайте его
+-- интерактивно командой: \password pc_client_ro
 
-CREATE ROLE pc_client_ro WITH LOGIN PASSWORD 'REPLACE_WITH_STRONG_PASSWORD' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+CREATE ROLE pc_client_ro WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
 
 -- Подключение к БД pc_client
 GRANT CONNECT ON DATABASE pc_client TO pc_client_ro;
@@ -23,4 +24,4 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO pc_client_ro
 -- ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO pc_client_ro;
 
 -- Готово
-SELECT 'Read-only user pc_client_ro created. Grant SELECT on public.' AS result;
+SELECT 'Read-only user pc_client_ro created without an embedded password. Set it with \\password pc_client_ro.' AS result;
