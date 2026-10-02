@@ -4,6 +4,8 @@ import mimetypes
 from pathlib import Path
 
 from aiohttp import web
+import config
+from observability.browser_runtime import browser_runtime_config, serialize_browser_runtime_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -77,12 +79,19 @@ async def handle_webapp_page(request: web.Request) -> web.Response:
     index_path = WEBAPP_DIST_DIR / "index.html"
     if not index_path.exists():
         return _missing_bundle_response()
-    return _read_text_response(index_path, "text/html", no_cache=True)
+    html = index_path.read_text(encoding="utf-8")
+    payload = serialize_browser_runtime_config(browser_runtime_config(config))
+    block = '<script type="application/json" id="helpdesk-runtime-config">' + payload + '</script>'
+    # Place before any module in head; prepend for minimal fixture documents.
+    html = html.replace('<head>', '<head>' + block, 1) if '<head>' in html else block + html
+    response = web.Response(text=html, content_type="text/html", charset="utf-8")
+    response.headers.update(_NO_CACHE_HEADERS)
+    return response
 
 
 async def handle_webapp_asset(request: web.Request) -> web.Response:
     relative_path = _ensure_relative_path(request.match_info["asset_path"])
-    if relative_path is None:
+    if relative_path is None or relative_path.suffix.lower() == '.map':
         raise web.HTTPNotFound()
 
     asset_path = WEBAPP_DIST_DIR / "assets" / relative_path
@@ -93,7 +102,7 @@ async def handle_webapp_asset(request: web.Request) -> web.Response:
 
 async def handle_webapp_public_asset(request: web.Request) -> web.Response:
     relative_path = _resolve_public_asset_relative_path(request)
-    if relative_path is None:
+    if relative_path is None or relative_path.suffix.lower() == '.map':
         raise web.HTTPNotFound()
 
     asset_path = WEBAPP_DIST_DIR / relative_path

@@ -1,3 +1,7 @@
+import json
+import re
+
+import config
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
@@ -103,6 +107,44 @@ async def test_webapp_page_serves_dist_index(tmp_path, monkeypatch):
     assert response.headers["Cache-Control"] == "no-store, no-cache, must-revalidate"
     assert "lang='ru'" in response.text
     assert "/assets/app.js" in response.text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_webapp_runtime_config_is_public_dynamic_and_precedes_module(tmp_path, monkeypatch):
+    index = "<html><head></head><body><script type='module' src='/assets/app.js'></script></body></html>"
+    (tmp_path / 'index.html').write_text(index, encoding='utf-8')
+    monkeypatch.setattr(webapp_assets_module, 'WEBAPP_DIST_DIR', tmp_path)
+    monkeypatch.setattr(config, 'SENTRY_BROWSER_DSN', 'https://public_test_key@sentry.example.invalid/1')
+    monkeypatch.setattr(config, 'SENTRY_RELEASE', 'c'*40)
+    monkeypatch.setattr(config, 'SENTRY_DSN', 'BACKEND_SECRET')
+    response = await handle_webapp_page(make_mocked_request('GET', '/app/login'))
+    match = re.search(r'<script type="application/json" id="helpdesk-runtime-config">(.*?)</script>', response.text)
+    assert match is not None
+    payload = json.loads(match.group(1))
+    assert payload['sentry']['release'] == 'c'*40
+    assert payload['sentry']['dsn'] == 'https://public_test_key@sentry.example.invalid/1'
+    assert 'BACKEND_SECRET' not in response.text
+    assert response.text.index('helpdesk-runtime-config') < response.text.index("type='module'")
+    assert (tmp_path / 'index.html').read_text(encoding='utf-8') == index
+    monkeypatch.setattr(config, 'SENTRY_BROWSER_DSN', '')
+    disabled = await handle_webapp_page(make_mocked_request('GET', '/app/login'))
+    assert '"sentry":null' in disabled.text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+@pytest.mark.parametrize('handler,match_info,path', [
+    (handle_webapp_asset, {'asset_path': 'app.js.map'}, '/assets/app.js.map'),
+    (handle_webapp_public_asset, {'asset_name': 'app.js.map'}, '/app.js.map'),
+])
+async def test_source_maps_are_never_served(tmp_path, monkeypatch, handler, match_info, path):
+    (tmp_path/'assets').mkdir()
+    (tmp_path/'assets'/'app.js.map').write_text('PRIVATE_SOURCE')
+    (tmp_path/'app.js.map').write_text('PRIVATE_SOURCE')
+    monkeypatch.setattr(webapp_assets_module, 'WEBAPP_DIST_DIR', tmp_path)
+    with pytest.raises(web.HTTPNotFound):
+        await handler(make_mocked_request('GET', path, match_info=match_info))
 
 
 @pytest.mark.no_db

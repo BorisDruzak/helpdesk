@@ -31,6 +31,8 @@ SENTRY_DSN = os.getenv("SENTRY_DSN", "") or ""
 SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "") or ""
 SENTRY_TRACES_SAMPLE_RATE = os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.10") or "0.10"
 SENTRY_RELEASE = os.getenv("SENTRY_RELEASE", "") or ""
+SENTRY_BROWSER_DSN = os.getenv("SENTRY_BROWSER_DSN", "") or ""
+SENTRY_BROWSER_TRACES_SAMPLE_RATE = os.getenv("SENTRY_BROWSER_TRACES_SAMPLE_RATE", "0.05") or "0.05"
 
 # External-domain composition is fail-closed. Knowledge has no runtime adapter;
 # Registry remains on its local compatibility adapter until external acceptance.

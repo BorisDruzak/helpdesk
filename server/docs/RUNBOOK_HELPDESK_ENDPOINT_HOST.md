@@ -101,6 +101,53 @@ Use the reviewed remote management script above instead.
 
 ## Optional backend Sentry observability
 
+### Optional browser Sentry v1
+
+The immutable React bundle uses runtime configuration from dynamic, no-cache
+HTML. Set `SENTRY_BROWSER_DSN=` and `SENTRY_BROWSER_TRACES_SAMPLE_RATE=0.05`
+in `/etc/helpdesk/helpdesk.env` only after a separately authorized deployment.
+Empty/unset or malformed browser DSN disables browser monitoring; invalid,
+nonfinite or out-of-range rates use 0.05. Errors remain unsampled. Production
+requires HTTPS. Apply environment changes through the reviewed Helpdesk service
+procedure; newly loaded pages receive the configuration without rebuilding JS.
+Existing open tabs retain their initial configuration until reload.
+
+Use a separate browser client key for independent rotation. A browser DSN is
+public by protocol and visible in HTML/network requests, but real keys are never
+committed or logged. The injected JSON contains only the browser DSN, validated
+environment, optional exact release SHA and sample rate. Backend DSN and other
+server settings are excluded. Environment and immutable release identity follow
+the backend policy below; invalid identity omits release.
+
+Pinned `@sentry/react` 11.2.0 captures global errors/unhandled rejections and
+React 19 root errors. Router transactions use registered templates, never raw
+ticket/operation identifiers. Only same-origin Helpdesk `/api/*` requests receive
+trace headers; Sentry ingestion, external origins and assets are excluded.
+The ingestion fetch transport omits credentials and Referer, including for a
+same-origin DSN; Helpdesk API cookie/auth behavior is unchanged.
+`traceLifecycle: 'static'` is deliberate: SDK 11's streaming default bypasses
+`beforeSendTransaction`. Revisit this boundary before upgrading to SDK 12.
+
+Defaults are disabled. No sessions, replay, feedback, console/breadcrumb capture,
+profiling or application logs/metrics are transmitted. BrowserTracing's automatic
+WebVitals collector is blocked by an inert integration. Collection of user data,
+headers, cookies, bodies, queries, frame variables and source context is disabled.
+Last-mile hooks rebuild error/transaction/span payloads using safe fields only:
+route templates, built-in exception types, compiled asset locations, bounded
+function identifiers, release/environment and trace/timing identifiers.
+Free-text error messages, user/request data, arbitrary contexts/tags/extras,
+breadcrumbs and attachments are discarded. This limits message-level triage;
+the existing protected diagnostics remain the content-bearing source.
+
+Source maps are intentionally absent from production builds and refused by
+static handlers. Upload/symbolication is deferred to the planned internal
+CI/scanner runner because GitHub-hosted CI cannot reach internal Sentry. Initial
+browser stacks refer to minified assets. SDK/network failures must not prevent
+UI startup; unavailable Sentry may lose events. Automated tests use synthetic
+keys and intercepted/in-memory transport, never the real service.
+
+### Backend configuration
+
 Sentry is optional observability, never a Helpdesk availability dependency.
 The server process initializes the pinned Python SDK with only the explicit
 aiohttp integration before serving requests. No SDK initialization occurs on
