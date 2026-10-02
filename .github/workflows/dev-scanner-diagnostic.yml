@@ -2,6 +2,11 @@ name: DEV-SCANNER diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/dev-scanner-diagnostic.yml
 
 permissions:
   contents: read
@@ -113,6 +118,80 @@ jobs:
           await browser.close();
           console.log("Playwright Chromium smoke: PASS");
           NODE
+
+      - name: Semgrep baseline validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "semgrep=$(semgrep --version)"
+
+          SAST_JSON="$RUNNER_TEMP/semgrep-sast.json"
+          SECRETS_JSON="$RUNNER_TEMP/semgrep-secrets.json"
+
+          semgrep scan \
+            --metrics=off \
+            --jobs 4 \
+            --config p/security-audit \
+            --exclude "*.test.ts" \
+            --exclude "*.test.tsx" \
+            --exclude "*.spec.ts" \
+            --exclude "*.spec.tsx" \
+            --json \
+            --output "$SAST_JSON" \
+            server shared scripts webapp/src
+
+          semgrep scan \
+            --metrics=off \
+            --jobs 4 \
+            --config p/secrets \
+            --json \
+            --output "$SECRETS_JSON" \
+            .
+
+          python3 - "$SAST_JSON" "$SECRETS_JSON" <<'PY'
+          import json
+          import sys
+          from collections import Counter
+
+          sast_path, secrets_path = sys.argv[1:3]
+
+          with open(sast_path, encoding="utf-8") as f:
+              sast = json.load(f)
+          with open(secrets_path, encoding="utf-8") as f:
+              secrets = json.load(f)
+
+          sast_results = sast.get("results", [])
+          sast_errors = sast.get("errors", [])
+          secret_results = secrets.get("results", [])
+          secret_errors = secrets.get("errors", [])
+
+          severities = Counter(
+              r.get("extra", {}).get("severity", "UNKNOWN")
+              for r in sast_results
+          )
+          rules = Counter(r.get("check_id", "UNKNOWN") for r in sast_results)
+
+          print("===== SEMGREP SAST SUMMARY =====")
+          print(f"findings: {len(sast_results)}")
+          print(f"errors: {len(sast_errors)}")
+          for severity, count in sorted(severities.items()):
+              print(f"{severity}: {count}")
+          print("top rules:")
+          for rule, count in rules.most_common(10):
+              print(f"{count:4} {rule}")
+
+          print("===== SEMGREP SECRETS SUMMARY =====")
+          print(f"findings: {len(secret_results)}")
+          print(f"errors: {len(secret_errors)}")
+
+          if sast_errors:
+              raise SystemExit("Semgrep SAST returned parser/scan errors")
+          if secret_errors:
+              raise SystemExit("Semgrep secrets scan returned errors")
+          if secret_results:
+              raise SystemExit("Semgrep secrets scan found credential-like material")
+          PY
 
       - name: Docker execution
         shell: bash
