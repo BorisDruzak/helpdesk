@@ -138,29 +138,26 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO pc_client_ro
 | **Password** | тот, что задали при создании пользователя |
 | **Database** | `pc_client` |
 
-**Строка подключения (для клиентов, ожидающих обычный postgres URL):**
+**Строку подключения не хранить в документации или репозитории.**
 
-```text
-postgresql://pc_client_ro:YOUR_PASSWORD@example.test:5432/pc_client
+Сформируйте её вне Git и передайте через секрет-хранилище или переменную окружения:
+
+```bash
+export READONLY_DATABASE_URL='<set in secret manager or protected environment>'
 ```
 
-Для asyncpg (Python):
-
-```text
-postgresql://pc_client_ro:YOUR_PASSWORD@example.test:5432/pc_client
-```
-
-(Тот же URL; asyncpg использует стандартный формат.)
+И `psql`, и `asyncpg` могут использовать значение этой переменной; буквальный пароль в команду, код или документацию не вставляйте.
 
 ---
 
 ## 6. Проверка
 
-С другой машины (или с хоста второго агента):
+С другой машины (или с хоста второго агента), после безопасной настройки `READONLY_DATABASE_URL`:
 
 ```bash
-psql "postgresql://pc_client_ro:YOUR_PASSWORD@example.test:5432/pc_client" -c "SELECT 1;"
-psql "postgresql://pc_client_ro:YOUR_PASSWORD@example.test:5432/pc_client" -c "SELECT COUNT(*) FROM tickets;"
+test -n "$READONLY_DATABASE_URL"
+psql "$READONLY_DATABASE_URL" -c "SELECT 1;"
+psql "$READONLY_DATABASE_URL" -c "SELECT COUNT(*) FROM tickets;"
 ```
 
 Попытка записи должна завершаться ошибкой:
@@ -182,20 +179,24 @@ psql "..." -c "DELETE FROM tickets LIMIT 1;"
 
 ### 7.1. Задать/сбросить пароль для pc_client_ro
 
+Не передавайте пароль в аргументах командной строки и не фиксируйте его в Git. Для существующей роли используйте интерактивную команду PostgreSQL:
+
 ```bash
-sudo -u postgres psql -d pc_client -c "ALTER ROLE pc_client_ro PASSWORD '1.Abcdef';"
+sudo -u postgres psql -d pc_client -c '\\password pc_client_ro'
 ```
 
-Если роли `pc_client_ro` ещё нет — создать и выдать права:
+Если роли `pc_client_ro` ещё нет — сначала создайте её без литерального пароля, выдайте права, затем задайте пароль интерактивно:
 
 ```bash
 sudo -u postgres psql -d pc_client -c "
-CREATE ROLE pc_client_ro WITH LOGIN PASSWORD '1.Abcdef' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+CREATE ROLE pc_client_ro WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
 GRANT CONNECT ON DATABASE pc_client TO pc_client_ro;
 GRANT USAGE ON SCHEMA public TO pc_client_ro;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO pc_client_ro;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO pc_client_ro;
 "
+
+sudo -u postgres psql -d pc_client -c '\\password pc_client_ro'
 ```
 
 ### 7.2. Добавить в pg_hba.conf правило для вашего IP
@@ -221,16 +222,21 @@ sudo -u postgres psql -c "SELECT pg_reload_conf();"
 
 ### 7.3. Проверка с клиента (10.10.10.2)
 
+Перед проверкой получите `READONLY_DATABASE_URL` из одобренного секрет-хранилища или защищённого окружения.
+
 ```bash
-psql "postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client" -c "SELECT 1;"
-psql "postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client" -c "SELECT COUNT(*) FROM tickets;"
+test -n "$READONLY_DATABASE_URL"
+psql "$READONLY_DATABASE_URL" -c "SELECT 1;"
+psql "$READONLY_DATABASE_URL" -c "SELECT COUNT(*) FROM tickets;"
 ```
 
 Через Python (psycopg):
 
 ```python
+import os
 import psycopg
-conn = psycopg.connect("postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client")
+
+conn = psycopg.connect(os.environ["READONLY_DATABASE_URL"])
 print(conn.execute("SELECT 1").fetchone())
 print(conn.execute("SELECT COUNT(*) FROM tickets").fetchone())
 conn.close()
