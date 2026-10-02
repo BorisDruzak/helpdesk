@@ -1,0 +1,127 @@
+name: DEV-SCANNER diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-scanner-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    if: github.ref == 'refs/heads/main'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - helpdesk-ci
+      - scanner
+
+    timeout-minutes: 10
+
+    steps:
+      - name: Runner identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "RUNNER_NAME=${RUNNER_NAME}"
+          echo "RUNNER_OS=${RUNNER_OS}"
+          echo "RUNNER_ARCH=${RUNNER_ARCH}"
+
+          hostname
+          id
+          nproc
+          free -h
+          df -h /
+
+      - name: Checkout exact workflow SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          clean: true
+
+      - name: Verify exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+
+          echo "Expected: ${GITHUB_SHA}"
+          echo "Actual:   ${ACTUAL_SHA}"
+
+          test "${ACTUAL_SHA}" = "${GITHUB_SHA}"
+
+      - name: Core tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git --version
+          python3 --version
+          curl --version | head -1
+
+          docker --version
+          docker compose version
+
+      - name: Docker execution
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm hello-world > /tmp/docker-hello.txt
+          grep -q "Hello from Docker!" /tmp/docker-hello.txt
+
+          echo "Docker execution: PASS"
+
+      - name: GitHub outbound
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl -fsS             --connect-timeout 5             --max-time 15             -o /dev/null             https://github.com/
+
+          curl -fsS             --connect-timeout 5             --max-time 15             -o /dev/null             https://api.github.com/
+
+          echo "GitHub outbound: PASS"
+
+      - name: Internal DNS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          getent hosts sonar.sosnadmin.local
+          getent hosts sentry.sosnadmin.local
+
+      - name: SonarQube TLS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl -fsS             --connect-timeout 5             --max-time 15             https://sonar.sosnadmin.local/api/system/status
+
+          echo
+          echo "SonarQube TLS: PASS"
+
+      - name: Sentry TLS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl -fsS             --connect-timeout 5             --max-time 15             https://sentry.sosnadmin.local/_health/
+
+          echo
+          echo "Sentry TLS: PASS"
+
+      - name: Staging network route
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ip route get 192.168.101.118
+          echo "Staging route: PASS"
