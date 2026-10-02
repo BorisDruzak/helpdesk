@@ -237,11 +237,13 @@ async def test_operator_command_center_aggregates_operations_agent_diagnostics_c
 
     assert summary["failed_operation_count"] == 1
     assert summary["pending_consent_count"] == 1
-    assert summary["agent_offline_active_count"] == 1
+    assert summary["agent_offline_active_count"] == 0
     assert summary["diagnostics_recommended_count"] == 1
     assert summary["closure_blocked_count"] == 1
     assert summary["similar_spikes_count"] == 1
     failed_section = next(section for section in data["sections"] if section["key"] == "failed_operation")
+    assert failed_section["items"][0]["agent"]["connection_state"] == "unknown"
+    assert failed_section["items"][0]["agent"]["last_seen_at"] is None
     assert failed_section["items"][0]["operation"]["error_summary"] == "Spooler service unavailable"
     diagnostics_section = next(section for section in data["sections"] if section["key"] == "diagnostics_recommended")
     assert diagnostics_section["items"][0]["diagnostics"]["profile_code"] == "printer"

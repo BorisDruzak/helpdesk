@@ -85,6 +85,10 @@ Canonical business edits remain in Registry preview/apply/audit flows.
 read; page-level metrics/search/status/department filters are explicitly scoped
 to that page. Unmapped Endpoint devices remain visible. Links contain the exact
 Endpoint UUID. Loading and provider failure do not produce false offline counts.
+Successful device rows and the status filter use only ONLINE/OFFLINE, matching
+Endpoint's boolean `device.online`. UNKNOWN is a page-level degraded state on
+provider failure, including a failed refresh of previously loaded data; no
+UNKNOWN row filter or fixed UNKNOWN=0 metric is offered.
 
 `/app/admin/device?device=UUID` reads that exact device only; invalid/missing or
 unknown UUID never selects the first fleet item or rewrites the URL. Tabs appear
@@ -118,6 +122,19 @@ Observer/Tech legacy timestamp, policy, scheduler and baseline signals are retir
 Historical tables remain inert. See
 `docs/segmentation/ADMIN_DEVICE_INVENTORY_RETIREMENT_V1.md` for counts, ownership,
 removed reader/writer matrix, retention blockers and acceptance status.
+
+Helpdesk has no inventory refresh scheduler configuration or builtin Agent
+module switch. The unused shared inventory/presence descriptors are retired;
+historical schema defaults, migration rows, operation fixtures and migration
+matrices remain compatibility evidence, not tool registration or dispatch.
+Internal `agent_offline`, `stale_agent` and `target_agent_status` terminology
+remains for historical signals/parsers. Tech locator keeps local Device presence
+unknown regardless of last-seen/handshake age; these names do not authorize a
+local telemetry fallback.
+Command center also ignores local last-seen ages and saved inventory offline
+signals; absent a provider projection it returns unknown without an observation
+timestamp. Its compatibility field and section names remain unchanged.
+Unknown presence is not counted or described by the offline section.
 
 Support device snapshots on absent Endpoint references or failed presence reads
 keep hostname, OS, version and observation time empty with UNKNOWN connection

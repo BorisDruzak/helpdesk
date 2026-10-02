@@ -41,7 +41,7 @@ export function AdminInventoryPage() {
       && (filters.freshness === "all" || inventoryObservation(item, ageHours, now).state === filters.freshness)
       && (filters.lifecycle === "all" || (filters.lifecycle === "retired" ? Boolean(item.device.retired_at) : !item.device.retired_at));
   });
-  const metrics = [["На странице", items.length], ["ONLINE", items.filter(item => item.device.online).length], ["OFFLINE", items.filter(item => !item.device.online).length], ["UNKNOWN", 0],
+  const metrics = [["На странице", items.length], ["ONLINE", items.filter(item => item.device.online).length], ["OFFLINE", items.filter(item => !item.device.online).length],
     ["Без inventory context", items.filter(item => inventoryObservation(item, ageHours, now).state === "missing").length],
     ["Устаревший inventory context", items.filter(item => inventoryObservation(item, ageHours, now).state === "stale").length],
     ["Без Registry-привязки", items.filter(item => item.registry.status === "unmapped").length]] as const;
@@ -50,7 +50,7 @@ export function AdminInventoryPage() {
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{metrics.map(([label, count]) => <div className="rounded-panel border border-border bg-white p-4" key={label}><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold">{fleet.isError ? "UNKNOWN" : fleet.isPending ? "…" : count}</p></div>)}</div>
     <div className="grid gap-3 md:grid-cols-3">
       <Input aria-label="Поиск на странице" placeholder="Имя, UUID, модель, пользователь, инв. номер" value={search} onChange={event => setSearch(event.target.value)}/>
-      <Select aria-label="Статус устройства" value={status} onChange={event => setStatus(event.target.value)}><option value="all">Все статусы</option><option value="online">ONLINE</option><option value="offline">OFFLINE</option><option value="unknown">UNKNOWN</option></Select>
+      <Select aria-label="Статус устройства" value={status} onChange={event => setStatus(event.target.value)}><option value="all">Все статусы</option><option value="online">ONLINE</option><option value="offline">OFFLINE</option></Select>
       <Select aria-label="Платформа" value={filters.platform} onChange={event => choose("platform", event.target.value)}><option value="all">Все платформы</option><option value="windows">Windows</option><option value="linux">Linux</option><option value="missing">Платформа не предоставлена</option></Select>
       <Select aria-label="Подразделение" value={department} onChange={event => setDepartment(event.target.value)}><option value="">Все подразделения на странице</option>{departments.map(name => <option key={name}>{name}</option>)}</Select>
       <Select aria-label="Расположение" value={filters.location} onChange={event => choose("location", event.target.value)}><option value="all">Все расположения на странице</option>{locations.map(name => <option key={name}>{name}</option>)}</Select>

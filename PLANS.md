@@ -1,3 +1,19 @@
+# Active: 2026-10-02 Post-Cutover Legacy Cleanup
+
+Baseline `1818f1988306061e806aa5668347f4389a5b91ca`; candidate branch
+`codex/post-cutover-legacy-cleanup`. Plan:
+`docs/superpowers/plans/2026-10-02-post-cutover-legacy-cleanup.md`.
+Remove fleet UNKNOWN controls and proven-dead scheduler/Agent/descriptors;
+preserve Endpoint technical and Registry business authority, historical data,
+and compatibility vocabulary. Discovered command-center local telemetry
+fallback is removed under specification item 8. No production deployment.
+Focused backend (17), fleet component (6), typecheck, Vitest (534), build,
+workspace verifier and browser (4 tests, both target sizes) passed. Independent
+review resolved unknown-as-offline aggregation and its regression assertions.
+Exact-SHA canonical CI/Endpoint acceptance remain in progress.
+
+---
+
 # Active: 2026-10-01 Helpdesk Sentry Backend Observability v1
 
 ## Goal / Scope / Constraints

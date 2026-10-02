@@ -95,10 +95,12 @@ def test_command_center_aggregates_compact_ticket_signals_without_db():
     assert payload.summary.sla_risk_count == 1
     assert payload.summary.failed_operation_count == 1
     assert payload.summary.pending_approval_count == 1
-    assert payload.summary.agent_offline_active_count == 1
+    assert payload.summary.agent_offline_active_count == 0
     assert payload.summary.diagnostics_recommended_count == 1
     assert payload.summary.closure_blocked_count == 1
     failed = next(section for section in payload.sections if section.key == "failed_operation")
+    assert failed.items[0].agent.connection_state == "unknown"
+    assert failed.items[0].agent.last_seen_at is None
     assert failed.items[0].operation.error_summary == "Profile missing"
     assert failed.items[0].href == "/app/tickets/ticket-1"
     approval = next(section for section in payload.sections if section.key == "pending_approval")

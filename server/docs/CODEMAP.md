@@ -334,6 +334,11 @@ This also includes the retired UIA create-ticket harness for the local agent.
   safe observations. Fleet controls use the bounded page and distinguish inventory
   age from provider presence; truncated Registry relationships remain disclosed
   candidates. History exposes actual timestamps, semantic hashes and warnings.
+  Fleet row status/filter/counts use ONLINE/OFFLINE only; UNKNOWN is the
+  provider failure state for the page, including failed refetches. The cutover
+  boundary guard also prevents retired scheduler/Agent configuration and
+  inventory/presence descriptor registration from returning. Historical
+  schema defaults and migration/test evidence remain inert.
   `endpoint-context-actions.tsx` owns bounded collection
   polling and baseline/inventory history/diff interaction.
 - The old `features/admin/admin-workspace.tsx` and

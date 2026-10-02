@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchEndpointFleet, EndpointContextApiError } from "../../features/admin/endpoint-context-api";
@@ -21,6 +21,11 @@ describe("Endpoint fleet", () => {
     expect(screen.queryByText("Не добавлено в реестр")).not.toBeInTheDocument();
     expect(mocked).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Токены/)).not.toBeInTheDocument();
+    const statusFilter = within(screen.getByLabelText("Статус устройства"));
+    expect(statusFilter.getByRole("option", {name: "ONLINE"})).toBeInTheDocument();
+    expect(statusFilter.getByRole("option", {name: "OFFLINE"})).toBeInTheDocument();
+    expect(statusFilter.queryByRole("option", {name: "UNKNOWN"})).not.toBeInTheDocument();
+    expect(screen.queryByText("UNKNOWN", {exact: true})).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Статус устройства"), {target: {value: "offline"}});
     expect(screen.queryByRole("link", {name: "Windows"})).not.toBeInTheDocument();
   });
@@ -36,7 +41,22 @@ describe("Endpoint fleet", () => {
     mocked.mockRejectedValue(new EndpointContextApiError("endpoint_unavailable", 503));
     view();
     expect(await screen.findByRole("alert")).toHaveTextContent("UNKNOWN");
+    expect(screen.getByRole("alert")).toHaveTextContent("Endpoint недоступен");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByText("OFFLINE", {selector: "p"}).nextElementSibling).toHaveTextContent("UNKNOWN");
     expect(screen.queryByText("Endpoint не вернул устройств.")).not.toBeInTheDocument();
+  });
+  it("hides cached rows and unknown counts after a failed fleet refresh", async () => {
+    mocked.mockResolvedValueOnce({items: [item, {...item, device: {...item.device, id: "offline-id", display_name: "Offline device", online: false}}], next_cursor: null, technical_source: "endpoint", business_source: "registry"})
+      .mockRejectedValueOnce(new EndpointContextApiError("endpoint_unavailable", 503));
+    view();
+    await screen.findByRole("link", {name: "Windows"});
+    expect(screen.getByRole("link", {name: "Offline device"})).toBeInTheDocument();
+    expect(screen.getByText("OFFLINE", {selector: "p"}).nextElementSibling).toHaveTextContent("1");
+    fireEvent.click(screen.getByRole("button", {name: "Обновить список"}));
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByText("OFFLINE", {selector: "p"}).nextElementSibling).toHaveTextContent("UNKNOWN");
   });
   it("filters exact provider and Registry fields without additional provider requests", async () => {
     const fresh: AdminEndpointFleetItem = {

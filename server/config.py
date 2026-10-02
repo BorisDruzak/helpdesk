@@ -229,12 +229,6 @@ SERVER_PUBLIC_BASE_URL = os.getenv(
     f"http://127.0.0.1:{SERVER_PORT}"
 )
 
-AGENT_BUILTIN_MODULES = {
-    module.strip().lower()
-    for module in os.getenv("AGENT_BUILTIN_MODULES", "system,screen,diag,inventory,presence").split(",")
-    if module.strip()
-}
-
 # ============================================================================
 # Users Configuration
 # ============================================================================

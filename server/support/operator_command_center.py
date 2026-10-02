@@ -37,7 +37,6 @@ ACTIVE_STATUSES = {
 TERMINAL_STATUSES = {"resolved", "closed", "canceled"}
 HIGH_PRIORITIES = {"p1", "p2", "critical", "high"}
 SPIKE_THRESHOLD = 3
-AGENT_OFFLINE_AFTER = timedelta(minutes=15)
 _JUNK_DISPLAY_MARKERS = (
     "???",
     "\ufffd",
@@ -274,25 +273,16 @@ def _agent_state(
     device_id = str(ticket_data.get("device_id") or "").strip()
     if not device_id:
         return None
-    last_seen_at = parse_iso_datetime(getattr(device, "last_seen_at", None)) if device is not None else None
-    custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
-    inventory_context = custom_fields.get("inventory_context") if isinstance(custom_fields, dict) else None
-    signals = inventory_context.get("signals") if isinstance(inventory_context, dict) else None
-    explicit_offline = bool(signals.get("agent_offline")) if isinstance(signals, dict) else False
+    # Local Device timestamps and historical inventory signals are not live
+    # technical authority. An absent provider projection remains unknown.
     if online_device_ids is not None and device_id in online_device_ids:
         state = "online"
-    elif explicit_offline:
-        state = "offline"
-    elif last_seen_at is None:
-        state = "unknown"
-    elif (now - last_seen_at) > AGENT_OFFLINE_AFTER:
-        state = "offline"
     else:
-        state = "online"
+        state = "unknown"
     return CommandCenterAgentState(
         device_id=device_id,
         connection_state=state,
-        last_seen_at=last_seen_at.isoformat() if last_seen_at else None,
+        last_seen_at=None,
     )
 
 
@@ -607,7 +597,7 @@ def build_operator_command_center_payload(
                 "failed_operation",
                 critical=high_priority,
             )
-        if agent is not None and agent.connection_state in {"offline", "unknown"}:
+        if agent is not None and agent.connection_state == "offline":
             needs_agent = diagnostics is not None or operation is not None or item.status in {"in_progress", "assigned"}
             if needs_agent:
                 add(

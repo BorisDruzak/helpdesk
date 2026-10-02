@@ -81,3 +81,51 @@ test("admin opens the exact Endpoint device without retired API traffic and keep
   await alertsResponse;
   await expect(page.getByText("env_uuid-дубли")).toBeVisible();
 });
+
+for (const viewport of [{width: 1366, height: 768}, {width: 1920, height: 1080}]) {
+  test(`fleet offers boolean row states and degrades on refresh failure at ${viewport.width}`, async ({page}, testInfo) => {
+    await page.setViewportSize(viewport);
+    const pageErrors: string[] = [];
+    const consoleErrors: string[] = [];
+    const badResponses: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
+    page.on("response", response => {
+      if (response.status() >= 400 && !(response.status() === 503 && response.url().includes("/api/web/admin/endpoint/devices?"))) {
+        badResponses.push(`${response.status()} ${new URL(response.url()).pathname}`);
+      }
+    });
+    // The shared fixture omits this shell read; supply its current contract.
+    await page.route("**/api/web/notifications/unread_count", route => route.fulfill({
+      json: {status: "success", unread_count: 0},
+    }));
+    await mockEndpointFleet(page);
+    await loginAsAdmin(page);
+    await page.goto("/app/admin/inventory");
+    await expect(page.getByRole("link", {name: "Windows fixture", exact: true})).toBeVisible();
+    const filter = page.getByLabel("Статус устройства", {exact: true});
+    await expect(filter.locator("option")).toHaveText(["Все статусы", "ONLINE", "OFFLINE"]);
+    await expect(page.getByText("UNKNOWN", {exact: true})).toHaveCount(0);
+    await filter.selectOption("offline");
+    await expect(page.getByRole("link", {name: "Windows fixture", exact: true})).toHaveCount(0);
+    await filter.selectOption("online");
+    await expect(page.getByRole("link", {name: "Windows fixture", exact: true})).toBeVisible();
+    const refresh = page.getByRole("button", {name: "Обновить список"});
+    expect((await refresh.boundingBox())!.y).toBeLessThan(viewport.height);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+    await page.screenshot({path: testInfo.outputPath("fleet-success.png"), fullPage: true});
+    await page.route("**/api/web/admin/endpoint/devices?*", route => route.fulfill({
+      status: 503, json: {status: "error", error: {code: "endpoint_unavailable", message: "Endpoint unavailable"}},
+    }));
+    await refresh.click();
+    await expect(page.getByRole("alert")).toContainText("UNKNOWN");
+    await expect(page.getByRole("alert")).toContainText("Endpoint недоступен");
+    await expect(page.getByRole("table")).toHaveCount(0);
+    await expect(page.locator("p").filter({hasText: /^OFFLINE$/}).locator("..")).toContainText("UNKNOWN");
+    await page.screenshot({path: testInfo.outputPath("fleet-degraded.png"), fullPage: true});
+    expect(pageErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+    expect(consoleErrors.filter(message => !message.includes("503"))).toEqual([]);
+    await testInfo.attach("console-errors", {body: JSON.stringify(consoleErrors), contentType: "application/json"});
+  });
+}
