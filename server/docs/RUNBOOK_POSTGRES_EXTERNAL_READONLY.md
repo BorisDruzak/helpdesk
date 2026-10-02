@@ -110,19 +110,14 @@ sudo -u postgres psql -d pc_client -f /path/to/server/scripts/create_readonly_us
 
 **Скрипт:** `server/scripts/create_readonly_user.sql` — создаёт пользователя `pc_client_ro`, выдаёт ему CONNECT на БД, USAGE и SELECT на схему `public` (все текущие и будущие таблицы).
 
-**Вариант одной командой (подставьте свой пароль вместо `YourStrongPassword`):**
+**Безопасный вариант:** скрипт создаёт роль без литерального пароля. После выполнения задайте пароль интерактивно, чтобы он не попадал ни в Git, ни в shell history:
 
 ```bash
-sudo -u postgres psql -d pc_client -c "
-CREATE ROLE pc_client_ro WITH LOGIN PASSWORD 'YourStrongPassword' NOSUPERUSER NOCREATEDB NOCREATEROLE;
-GRANT CONNECT ON DATABASE pc_client TO pc_client_ro;
-GRANT USAGE ON SCHEMA public TO pc_client_ro;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO pc_client_ro;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO pc_client_ro;
-"
+sudo -u postgres psql -d pc_client -f /path/to/server/scripts/create_readonly_user.sql
+sudo -u postgres psql -d pc_client -c '\\password pc_client_ro'
 ```
 
-Пароль в скрипте-файле — заглушка: замените `REPLACE_WITH_STRONG_PASSWORD` и не коммитьте пароль в репозиторий.
+Пароль храните только в одобренном секрет-хранилище или защищённом окружении.
 
 ---
 
