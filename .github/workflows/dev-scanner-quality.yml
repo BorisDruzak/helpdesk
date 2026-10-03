@@ -1,0 +1,490 @@
+name: DEV-SCANNER quality gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-scanner-quality
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    if: github.repository == 'BorisDruzak/helpdesk' && github.ref == 'refs/heads/main'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - helpdesk-ci
+      - scanner
+    timeout-minutes: 360
+
+    env:
+      SONAR_HOST_URL: https://sonar.sosnadmin.local
+      SONAR_IMAGE: sonarsource/sonar-scanner-cli@sha256:a3f4215076706c95a17a68c19322ee916e40a3acd081a8c1a1e839e0194afa57
+      SONAR_SSL_DIR: /opt/actions-runner/_tool/sonar/ssl
+      COVERAGE_TOOL_HOME: /opt/actions-runner/_tool/python-coverage/3.12
+      POSTGRES_CONTAINER: helpdesk-quality-pg
+      POSTGRES_PORT: "55432"
+
+    steps:
+      - name: Runner guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_REPOSITORY" = "BorisDruzak/helpdesk"
+          echo "runner=$RUNNER_NAME"
+          hostname
+          id
+          nproc
+          free -h
+          df -h /
+
+      - name: Checkout exact dispatch SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          clean: true
+
+      - name: Verify exact SHA and commissioning baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "expected=$GITHUB_SHA"
+          echo "actual=$ACTUAL_SHA"
+          test "$ACTUAL_SHA" = "$GITHUB_SHA"
+
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("quality/dev-scanner-baseline.json").read_text(encoding="utf-8"))
+          print(f"DEV_SCANNER_BASELINE_SHA={data['git_sha']}")
+          print(f"SONAR_PROJECT_KEY={data['sonarqube']['project_key']}")
+          print(f"SONAR_PROJECT_VERSION={data['sonarqube']['project_version']}")
+          PY
+
+          BASELINE_SHA="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("quality/dev-scanner-baseline.json").read_text(encoding="utf-8"))["git_sha"])
+          PY
+          )"
+
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git merge-base --is-ancestor "$BASELINE_SHA" HEAD
+          echo "commissioning baseline is an ancestor: $BASELINE_SHA"
+
+      - name: Toolchain preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v24.15.0"
+          test "$(pnpm --version)" = "10.33.0"
+          test "$(semgrep --version)" = "1.178.0"
+          python --version
+          docker --version
+          docker compose version
+          test -s "$SONAR_SSL_DIR/truststore.p12"
+          docker image inspect "$SONAR_IMAGE" --format 'sonar_image={{.Id}}' || docker pull "$SONAR_IMAGE"
+
+      - name: Install webapp dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_web_toolchain.py
+          pnpm --dir webapp install --frozen-lockfile --prefer-offline
+
+      - name: Semgrep SAST and secrets baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EVIDENCE="artifacts/dev-scanner-quality/$GITHUB_SHA"
+          mkdir -p "$EVIDENCE"
+
+          SAST_JSON="$EVIDENCE/semgrep-sast.json"
+          SECRETS_JSON="$EVIDENCE/semgrep-secrets.json"
+
+          semgrep scan             --metrics=off             --jobs 4             --config p/security-audit             --exclude "*.test.ts"             --exclude "*.test.tsx"             --exclude "*.spec.ts"             --exclude "*.spec.tsx"             --json             --output "$SAST_JSON"             server shared scripts webapp/src
+
+          semgrep scan             --metrics=off             --jobs 4             --config p/secrets             --json             --output "$SECRETS_JSON"             .
+
+          python3 - "$SAST_JSON" "$SECRETS_JSON" quality/dev-scanner-baseline.json <<'PY'
+          import json
+          import sys
+          from collections import Counter
+
+          sast_path, secrets_path, baseline_path = sys.argv[1:4]
+          sast = json.load(open(sast_path, encoding="utf-8"))
+          secrets = json.load(open(secrets_path, encoding="utf-8"))
+          baseline = json.load(open(baseline_path, encoding="utf-8"))["semgrep_at_commissioning"]
+
+          sast_results = sast.get("results", [])
+          sast_errors = sast.get("errors", [])
+          secret_results = secrets.get("results", [])
+          secret_errors = secrets.get("errors", [])
+
+          severities = Counter(
+              r.get("extra", {}).get("severity", "UNKNOWN")
+              for r in sast_results
+          )
+          rules = Counter(r.get("check_id", "UNKNOWN") for r in sast_results)
+
+          print("===== SEMGREP SAST =====")
+          print("findings:", len(sast_results))
+          print("scan errors:", len(sast_errors))
+          for severity, count in sorted(severities.items()):
+              print(f"{severity}: {count}")
+          print("commissioning findings:", baseline["sast_findings"])
+          for rule, count in rules.most_common(10):
+              print(f"{count:4} {rule}")
+
+          print("===== SEMGREP SECRETS =====")
+          print("findings:", len(secret_results))
+          print("scan errors:", len(secret_errors))
+
+          if sast_errors:
+              raise SystemExit("Semgrep SAST returned parser/scan errors")
+          if secret_errors:
+              raise SystemExit("Semgrep secrets scan returned errors")
+          if secret_results:
+              raise SystemExit("Semgrep secrets scan found credential-like material")
+          PY
+
+      - name: Generate frontend coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          restore_manifests() {
+            git restore --source=HEAD -- webapp/package.json webapp/pnpm-lock.yaml
+          }
+          trap restore_manifests EXIT
+
+          pnpm --dir webapp add             -D             --save-exact             --prefer-offline             @vitest/coverage-v8@4.1.4
+
+          pnpm --dir webapp exec vitest run             --pool=threads             --maxWorkers=1             --coverage.enabled=true             --coverage.provider=v8             --coverage.reporter=text             --coverage.reporter=lcov             --coverage.reportsDirectory=coverage             --coverage.include="src/**/*.{ts,tsx}"             --coverage.exclude="src/**/*.test.{ts,tsx}"             --coverage.exclude="src/**/*.spec.{ts,tsx}"             --coverage.exclude="src/test/**"             --coverage.exclude="src/**/*.d.ts"
+
+          test -s webapp/coverage/lcov.info
+          echo "lcov source files=$(grep -c '^SF:' webapp/coverage/lcov.info)"
+
+      - name: Prepare Python coverage toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VENV="$COVERAGE_TOOL_HOME/venv"
+          mkdir -p "$COVERAGE_TOOL_HOME"
+
+          if [ ! -x "$VENV/bin/python" ]; then
+            python3 -m venv "$VENV"
+          fi
+
+          "$VENV/bin/python" -m pip install --disable-pip-version-check -r requirements-ci.txt "coverage==7.16.2"
+
+          test "$("$VENV/bin/python" - <<'PY'
+          import coverage
+          print(coverage.__version__)
+          PY
+          )" = "7.16.2"
+
+          cat > "$COVERAGE_TOOL_HOME/helpdesk.coveragerc" <<'EOF'
+          [run]
+          branch = True
+          parallel = True
+          relative_files = True
+          patch =
+              subprocess
+          source =
+              server
+              shared
+              scripts
+          omit =
+              */tests/*
+              test_*.py
+              */__pycache__/*
+
+          [report]
+          skip_empty = True
+
+          [xml]
+          output = coverage.xml
+          EOF
+
+      - name: Start isolated PostgreSQL 16
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker rm -f "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+
+          docker run -d             --name "$POSTGRES_CONTAINER"             -e POSTGRES_USER=postgres             -e POSTGRES_PASSWORD=postgres             -e POSTGRES_DB=postgres             -p "127.0.0.1:$POSTGRES_PORT:5432"             --health-cmd="pg_isready -U postgres -d postgres"             --health-interval=2s             --health-timeout=5s             --health-retries=60             postgres:16
+
+          for _ in $(seq 1 120); do
+            STATUS="$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")"
+            echo "postgres=$STATUS"
+            [ "$STATUS" = "healthy" ] && break
+            sleep 1
+          done
+
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = "healthy"
+
+      - name: Canonical backend coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REPO="$GITHUB_WORKSPACE"
+          VENV="$COVERAGE_TOOL_HOME/venv"
+          CFG="$COVERAGE_TOOL_HOME/helpdesk.coveragerc"
+
+          export PATH="$VENV/bin:$PATH"
+          export COVERAGE_RCFILE="$CFG"
+          export COVERAGE_FILE="$REPO/.coverage"
+          export TEST_DATABASE_ADMIN_URL="postgresql+asyncpg://postgres:postgres@127.0.0.1:$POSTGRES_PORT/postgres"
+
+          cd "$REPO"
+          python -m coverage erase
+
+          python -m coverage run             --rcfile="$CFG"             scripts/run_ci_suite.py             --workspace "$REPO"             --parallel             --max-workers 2             --layer scripts_pytest_no_db             --layer server_pytest_no_db             --layer migration_schema             --layer server_pytest_db_tickets             --layer server_pytest_db_observer_diagnostics             --layer server_pytest_db_agent_runtime             --layer server_pytest_db_web_api
+
+          echo "coverage fragments=$(find "$REPO" -maxdepth 1 -name '.coverage.*' | wc -l)"
+
+      - name: Build Sonar coverage reports
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REPO="$GITHUB_WORKSPACE"
+          VENV="$COVERAGE_TOOL_HOME/venv"
+          CFG="$COVERAGE_TOOL_HOME/helpdesk.coveragerc"
+
+          cd "$REPO"
+          export COVERAGE_RCFILE="$CFG"
+          export COVERAGE_FILE="$REPO/.coverage"
+
+          "$VENV/bin/python" -m coverage combine --keep
+
+          "$VENV/bin/python" - <<'PY'
+          from pathlib import Path
+          from coverage import CoverageData
+
+          repo = Path.cwd().resolve()
+          src_path = repo / ".coverage"
+          dst_path = repo / ".coverage.sonar"
+          roots = ("server", "shared", "scripts")
+
+          src = CoverageData(basename=str(src_path))
+          src.read()
+
+          stats = {"direct": 0, "remapped": 0}
+
+          def map_path(raw: str) -> str:
+              p = Path(raw)
+              if p.is_absolute():
+                  try:
+                      rel = p.resolve().relative_to(repo)
+                  except ValueError as exc:
+                      raise RuntimeError(f"coverage path outside repository: {raw}") from exc
+              else:
+                  rel = p
+
+              if (repo / rel).is_file():
+                  stats["direct"] += 1
+                  return rel.as_posix()
+
+              matches = [
+                  Path(root) / rel
+                  for root in roots
+                  if (repo / root / rel).is_file()
+              ]
+              if len(matches) != 1:
+                  raise RuntimeError(
+                      f"cannot deterministically map {raw!r}: "
+                      f"{[m.as_posix() for m in matches]}"
+                  )
+
+              stats["remapped"] += 1
+              return matches[0].as_posix()
+
+          dst_path.unlink(missing_ok=True)
+          dst = CoverageData(basename=str(dst_path))
+          dst.update(src, map_path=map_path)
+          dst.write()
+
+          check = CoverageData(basename=str(dst_path))
+          check.read()
+          files = sorted(check.measured_files())
+          absolute = [f for f in files if Path(f).is_absolute()]
+          missing = [f for f in files if not (repo / f).is_file()]
+
+          print("source measured files:", len(src.measured_files()))
+          print("target measured files:", len(files))
+          print("direct mappings:", stats["direct"])
+          print("remapped mappings:", stats["remapped"])
+          print("absolute paths:", len(absolute))
+          print("missing source files:", len(missing))
+          print("source has arcs:", src.has_arcs())
+          print("target has arcs:", check.has_arcs())
+
+          if absolute or missing:
+              raise SystemExit("Coverage remap validation failed")
+          if src.has_arcs() != check.has_arcs():
+              raise SystemExit("Coverage arc mode changed during remap")
+          PY
+
+          export COVERAGE_FILE="$REPO/.coverage.sonar"
+          "$VENV/bin/python" -m coverage xml             --rcfile="$CFG"             -o "$REPO/coverage-sonar.xml"
+
+          "$VENV/bin/python" - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          repo = Path.cwd().resolve()
+          path = repo / "coverage-sonar.xml"
+          tree = ET.parse(path)
+          root = tree.getroot()
+
+          for node in root.findall("./sources/source"):
+              raw = (node.text or "").strip()
+              if not raw:
+                  continue
+              source = Path(raw)
+              try:
+                  rel = source.resolve().relative_to(repo)
+              except ValueError as exc:
+                  raise SystemExit(f"Unexpected Cobertura source outside repository: {raw}") from exc
+              node.text = f"/usr/src/{rel.as_posix()}"
+
+          tree.write(path, encoding="utf-8", xml_declaration=True)
+          print("coverage-sonar.xml normalized")
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          repo = Path.cwd().resolve()
+          src = repo / "webapp/coverage/lcov.info"
+          dst = repo / "webapp/coverage/lcov-sonar.info"
+
+          output = []
+          unresolved = []
+          count = 0
+
+          for line in src.read_text(encoding="utf-8").splitlines():
+              if not line.startswith("SF:"):
+                  output.append(line)
+                  continue
+
+              raw = line[3:].strip()
+              p = Path(raw)
+
+              if p.is_absolute():
+                  try:
+                      rel = p.resolve().relative_to(repo)
+                  except ValueError:
+                      unresolved.append(raw)
+                      output.append(line)
+                      continue
+              else:
+                  rel = p
+                  if not (repo / rel).is_file():
+                      candidate = Path("webapp") / rel
+                      if (repo / candidate).is_file():
+                          rel = candidate
+
+              if not (repo / rel).is_file():
+                  unresolved.append(raw)
+                  output.append(line)
+                  continue
+
+              count += 1
+              output.append(f"SF:{rel.as_posix()}")
+
+          dst.write_text("\n".join(output) + "\n", encoding="utf-8")
+
+          print("LCOV source files:", count)
+          print("LCOV unresolved:", len(unresolved))
+          if unresolved:
+              raise SystemExit("LCOV normalization failed")
+          PY
+
+          test -s coverage-sonar.xml
+          test -s webapp/coverage/lcov-sonar.info
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: SonarQube analysis and Quality Gate
+        id: sonar
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          test -n "$SONAR_TOKEN"
+
+          EVIDENCE="artifacts/dev-scanner-quality/$GITHUB_SHA"
+          mkdir -p "$EVIDENCE"
+
+          docker run --rm             -v "$GITHUB_WORKSPACE:/usr/src:ro"             -v "$SONAR_SSL_DIR:/opt/sonar-scanner/.sonar/ssl:ro"             -e SONAR_HOST_URL="$SONAR_HOST_URL"             -e SONAR_TOKEN="$SONAR_TOKEN"             "$SONAR_IMAGE"             -Dsonar.projectKey="$SONAR_PROJECT_KEY"             -Dsonar.projectVersion="$SONAR_PROJECT_VERSION"             -Dsonar.sources=server,shared,scripts,webapp/src             -Dsonar.tests=server/tests,scripts,webapp/src             "-Dsonar.test.inclusions=server/tests/**/*.py,scripts/test_*.py,webapp/src/**/*.test.ts,webapp/src/**/*.test.tsx,webapp/src/**/*.spec.ts,webapp/src/**/*.spec.tsx"             -Dsonar.sourceEncoding=UTF-8             -Dsonar.python.version=3.12             -Dsonar.python.coverage.reportPaths=coverage-sonar.xml             -Dsonar.javascript.lcov.reportPaths=webapp/coverage/lcov-sonar.info             -Dsonar.javascript.node.maxspace=4096             -Dsonar.typescript.tsconfigPaths=webapp/tsconfig.json             -Dsonar.scanner.truststorePassword=changeit             -Dsonar.working.directory=/tmp/.scannerwork             -Dsonar.qualitygate.wait=true             -Dsonar.qualitygate.timeout=300             2>&1 | tee "$EVIDENCE/sonar.log"
+
+      - name: Write evidence summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EVIDENCE="artifacts/dev-scanner-quality/$GITHUB_SHA"
+          mkdir -p "$EVIDENCE"
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          out = Path("artifacts/dev-scanner-quality") / os.environ["GITHUB_SHA"] / "summary.json"
+          baseline = json.loads(Path("quality/dev-scanner-baseline.json").read_text(encoding="utf-8"))
+
+          payload = {
+              "schema": "helpdesk.dev-scanner-quality-evidence.v1",
+              "git_sha": os.environ["GITHUB_SHA"],
+              "git_ref": os.environ["GITHUB_REF"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "baseline_sha": baseline["git_sha"],
+              "sonar_project_key": baseline["sonarqube"]["project_key"],
+              "sonar_project_version": baseline["sonarqube"]["project_version"],
+              "sonar_step_outcome": "${{ steps.sonar.outcome }}",
+              "production_changed": False,
+          }
+
+          out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+
+          cp coverage-sonar.xml "$EVIDENCE/" 2>/dev/null || true
+          cp webapp/coverage/lcov-sonar.info "$EVIDENCE/" 2>/dev/null || true
+
+      - name: Stop isolated PostgreSQL
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+
+      - name: Upload DEV-SCANNER evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dev-scanner-quality-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            artifacts/dev-scanner-quality/${{ github.sha }}/
+            artifacts/ci/${{ github.sha }}/
+          if-no-files-found: warn
+          retention-days: 14

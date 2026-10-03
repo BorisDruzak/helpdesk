@@ -1,0 +1,31 @@
+{
+  "schema": "helpdesk.dev-scanner-baseline.v1",
+  "commissioned_on": "2026-10-03",
+  "git_sha": "906cd3d0a04b370651275b5bcd03785cc0dd9abb",
+  "sonarqube": {
+    "project_key": "Helpdesk",
+    "project_version": "2026.10.03-dev-scanner",
+    "new_code_definition": "Previous version",
+    "quality_gate_at_commissioning": {
+      "status": "OK",
+      "cayc_status": "compliant",
+      "new_violations": 0
+    }
+  },
+  "coverage_at_commissioning": {
+    "python_line_rate": 0.7362,
+    "python_branch_rate": 0.5419,
+    "frontend_line_percent": 67.78
+  },
+  "semgrep_at_commissioning": {
+    "version": "1.178.0",
+    "sast_findings": 17,
+    "sast_scan_errors": 0,
+    "secrets_findings": 0,
+    "secrets_scan_errors": 0
+  },
+  "runner": {
+    "labels": ["self-hosted", "linux", "x64", "helpdesk-ci", "scanner"],
+    "sonar_scanner_image": "sonarsource/sonar-scanner-cli@sha256:a3f4215076706c95a17a68c19322ee916e40a3acd081a8c1a1e839e0194afa57"
+  }
+}
