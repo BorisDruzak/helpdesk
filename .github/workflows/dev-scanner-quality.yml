@@ -2,6 +2,16 @@ name: DEV-SCANNER quality gate
 
 on:
   workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact 40-character helpdesk commit SHA to scan
+        required: true
+        type: string
+  push:
+    branches:
+      - ci/dev-scanner-slowdown-fix
+    paths:
+      - .github/workflows/dev-scanner-quality.yml
 
 permissions:
   contents: read
@@ -12,7 +22,12 @@ concurrency:
 
 jobs:
   quality:
-    if: github.repository == 'BorisDruzak/helpdesk' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'BorisDruzak/helpdesk' &&
+      (
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/ci/dev-scanner-slowdown-fix')
+      )
     runs-on:
       - self-hosted
       - linux
@@ -22,6 +37,7 @@ jobs:
     timeout-minutes: 360
 
     env:
+      TARGET_SHA: ${{ github.event_name == 'push' && github.event.before || inputs.target_sha }}
       SONAR_HOST_URL: https://sonar.sosnadmin.local
       SONAR_IMAGE: sonarsource/sonar-scanner-cli@sha256:a3f4215076706c95a17a68c19322ee916e40a3acd081a8c1a1e839e0194afa57
       SONAR_SSL_DIR: /opt/actions-runner/_tool/sonar/ssl
@@ -34,10 +50,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
-          test "$GITHUB_REF" = "refs/heads/main"
           test "$GITHUB_REPOSITORY" = "BorisDruzak/helpdesk"
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch)
+              test "$GITHUB_REF" = "refs/heads/main"
+              ;;
+            push)
+              test "$GITHUB_REF" = "refs/heads/ci/dev-scanner-slowdown-fix"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
           echo "runner=$RUNNER_NAME"
+          echo "workflow_sha=$GITHUB_SHA"
+          echo "target_sha=$TARGET_SHA"
           hostname
           id
           nproc
@@ -47,6 +75,7 @@ jobs:
       - name: Checkout exact dispatch SHA
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ env.TARGET_SHA }}
           persist-credentials: false
           fetch-depth: 0
           clean: true
@@ -57,9 +86,9 @@ jobs:
           set -euo pipefail
 
           ACTUAL_SHA="$(git rev-parse HEAD)"
-          echo "expected=$GITHUB_SHA"
+          echo "expected=$TARGET_SHA"
           echo "actual=$ACTUAL_SHA"
-          test "$ACTUAL_SHA" = "$GITHUB_SHA"
+          test "$ACTUAL_SHA" = "$TARGET_SHA"
 
           python3 - <<'PY' >> "$GITHUB_ENV"
           import json
@@ -107,7 +136,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          EVIDENCE="artifacts/dev-scanner-quality/$GITHUB_SHA"
+          EVIDENCE="artifacts/dev-scanner-quality/$TARGET_SHA"
           mkdir -p "$EVIDENCE"
 
           SAST_JSON="$EVIDENCE/semgrep-sast.json"
@@ -188,7 +217,12 @@ jobs:
             python3 -m venv "$VENV"
           fi
 
-          "$VENV/bin/python" -m pip install --disable-pip-version-check -r requirements-ci.txt "coverage==7.16.2"
+          "$VENV/bin/python" -m pip install --disable-pip-version-check -r requirements-ci.txt
+          "$VENV/bin/python" -m pip install             --disable-pip-version-check             --force-reinstall             --no-deps             --only-binary=:all:             "coverage==7.16.2"
+
+          COVERAGE_VERSION="$("$VENV/bin/python" -m coverage --version)"
+          printf '%s\n' "$COVERAGE_VERSION"
+          grep -Fq "Coverage.py, version 7.16.2 with C extension" <<<"$COVERAGE_VERSION"
 
           test "$("$VENV/bin/python" - <<'PY'
           import coverage
@@ -199,6 +233,7 @@ jobs:
           cat > "$COVERAGE_TOOL_HOME/helpdesk.coveragerc" <<'EOF'
           [run]
           branch = True
+          core = ctrace
           parallel = True
           relative_files = True
           patch =
@@ -254,7 +289,7 @@ jobs:
           cd "$REPO"
           python -m coverage erase
 
-          python -m coverage run             --rcfile="$CFG"             scripts/run_ci_suite.py             --workspace "$REPO"             --parallel             --max-workers 2             --layer scripts_pytest_no_db             --layer server_pytest_no_db             --layer migration_schema             --layer server_pytest_db_tickets             --layer server_pytest_db_observer_diagnostics             --layer server_pytest_db_agent_runtime             --layer server_pytest_db_web_api
+          python -m coverage run             --rcfile="$CFG"             --debug=sys             scripts/run_ci_suite.py             --workspace "$REPO"             --layer scripts_pytest_no_db             --layer server_pytest_no_db             --layer migration_schema             --layer server_pytest_db_tickets             --layer server_pytest_db_observer_diagnostics             --layer server_pytest_db_agent_runtime             --layer server_pytest_db_web_api
 
           echo "coverage fragments=$(find "$REPO" -maxdepth 1 -name '.coverage.*' | wc -l)"
 
@@ -431,10 +466,24 @@ jobs:
 
           test -n "$SONAR_TOKEN"
 
-          EVIDENCE="artifacts/dev-scanner-quality/$GITHUB_SHA"
+          EVIDENCE="artifacts/dev-scanner-quality/$TARGET_SHA"
           mkdir -p "$EVIDENCE"
 
-          docker run --rm             -v "$GITHUB_WORKSPACE:/usr/src:ro"             -v "$SONAR_SSL_DIR:/opt/sonar-scanner/.sonar/ssl:ro"             -e SONAR_HOST_URL="$SONAR_HOST_URL"             -e SONAR_TOKEN="$SONAR_TOKEN"             "$SONAR_IMAGE"             -Dsonar.projectKey="$SONAR_PROJECT_KEY"             -Dsonar.projectVersion="$SONAR_PROJECT_VERSION"             -Dsonar.sources=server,shared,scripts,webapp/src             -Dsonar.tests=server/tests,scripts,webapp/src             "-Dsonar.test.inclusions=server/tests/**/*.py,scripts/test_*.py,webapp/src/**/*.test.ts,webapp/src/**/*.test.tsx,webapp/src/**/*.spec.ts,webapp/src/**/*.spec.tsx"             -Dsonar.sourceEncoding=UTF-8             -Dsonar.python.version=3.12             -Dsonar.python.coverage.reportPaths=coverage-sonar.xml             -Dsonar.javascript.lcov.reportPaths=webapp/coverage/lcov-sonar.info             -Dsonar.javascript.node.maxspace=4096             -Dsonar.typescript.tsconfigPaths=webapp/tsconfig.json             -Dsonar.scanner.truststorePassword=changeit             -Dsonar.working.directory=/tmp/.scannerwork             -Dsonar.qualitygate.wait=true             -Dsonar.qualitygate.timeout=300             2>&1 | tee "$EVIDENCE/sonar.log"
+          docker run --rm             -v "$GITHUB_WORKSPACE:/usr/src:ro"             -v "$GITHUB_WORKSPACE/$EVIDENCE:/evidence"             -v "$SONAR_SSL_DIR:/opt/sonar-scanner/.sonar/ssl:ro"             -e SONAR_HOST_URL="$SONAR_HOST_URL"             -e SONAR_TOKEN="$SONAR_TOKEN"             "$SONAR_IMAGE"             -Dsonar.projectKey="$SONAR_PROJECT_KEY"             -Dsonar.projectVersion="$SONAR_PROJECT_VERSION"             -Dsonar.sources=server,shared,scripts,webapp/src             -Dsonar.tests=server/tests,scripts,webapp/src             "-Dsonar.test.inclusions=server/tests/**/*.py,scripts/test_*.py,webapp/src/**/*.test.ts,webapp/src/**/*.test.tsx,webapp/src/**/*.spec.ts,webapp/src/**/*.spec.tsx"             -Dsonar.sourceEncoding=UTF-8             -Dsonar.python.version=3.12             -Dsonar.python.coverage.reportPaths=coverage-sonar.xml             -Dsonar.javascript.lcov.reportPaths=webapp/coverage/lcov-sonar.info             -Dsonar.javascript.node.maxspace=4096             -Dsonar.typescript.tsconfigPaths=webapp/tsconfig.json             -Dsonar.scanner.truststorePassword=changeit             -Dsonar.working.directory=/evidence/.scannerwork             -Dsonar.scanner.metadataFilePath=/evidence/report-task.txt             -Dsonar.qualitygate.wait=true             -Dsonar.qualitygate.timeout=300             2>&1 | tee "$EVIDENCE/sonar.log"
+
+      - name: Require Sonar Quality Gate success
+        if: always()
+        shell: bash
+        env:
+          SONAR_OUTCOME: ${{ steps.sonar.outcome }}
+        run: |
+          set -euo pipefail
+          EVIDENCE="artifacts/dev-scanner-quality/$TARGET_SHA"
+          echo "sonar_step_outcome=$SONAR_OUTCOME"
+          test "$SONAR_OUTCOME" = "success"
+          test -s "$EVIDENCE/sonar.log"
+          test -s "$EVIDENCE/report-task.txt"
+          grep -q '^ceTaskId=' "$EVIDENCE/report-task.txt"
 
       - name: Write evidence summary
         if: always()
@@ -442,7 +491,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          EVIDENCE="artifacts/dev-scanner-quality/$GITHUB_SHA"
+          EVIDENCE="artifacts/dev-scanner-quality/$TARGET_SHA"
           mkdir -p "$EVIDENCE"
 
           python3 - <<'PY'
@@ -450,12 +499,13 @@ jobs:
           import os
           from pathlib import Path
 
-          out = Path("artifacts/dev-scanner-quality") / os.environ["GITHUB_SHA"] / "summary.json"
+          out = Path("artifacts/dev-scanner-quality") / os.environ["TARGET_SHA"] / "summary.json"
           baseline = json.loads(Path("quality/dev-scanner-baseline.json").read_text(encoding="utf-8"))
 
           payload = {
               "schema": "helpdesk.dev-scanner-quality-evidence.v1",
-              "git_sha": os.environ["GITHUB_SHA"],
+              "git_sha": os.environ["TARGET_SHA"],
+              "workflow_sha": os.environ["GITHUB_SHA"],
               "git_ref": os.environ["GITHUB_REF"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
@@ -482,9 +532,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: dev-scanner-quality-${{ github.sha }}-${{ github.run_attempt }}
+          name: dev-scanner-quality-${{ env.TARGET_SHA }}-${{ github.run_attempt }}
           path: |
-            artifacts/dev-scanner-quality/${{ github.sha }}/
-            artifacts/ci/${{ github.sha }}/
+            artifacts/dev-scanner-quality/${{ env.TARGET_SHA }}/
+            artifacts/ci/${{ env.TARGET_SHA }}/
           if-no-files-found: warn
           retention-days: 14
