@@ -7,11 +7,6 @@ on:
         description: Exact 40-character helpdesk commit SHA to scan
         required: true
         type: string
-  push:
-    branches:
-      - ci/dev-scanner-slowdown-fix
-    paths:
-      - .github/workflows/dev-scanner-quality.yml
 
 permissions:
   contents: read
@@ -22,12 +17,7 @@ concurrency:
 
 jobs:
   quality:
-    if: >-
-      github.repository == 'BorisDruzak/helpdesk' &&
-      (
-        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-        (github.event_name == 'push' && github.ref == 'refs/heads/ci/dev-scanner-slowdown-fix')
-      )
+    if: github.repository == 'BorisDruzak/helpdesk' && github.ref == 'refs/heads/main'
     runs-on:
       - self-hosted
       - linux
@@ -37,7 +27,7 @@ jobs:
     timeout-minutes: 360
 
     env:
-      TARGET_SHA: ${{ github.event_name == 'push' && github.event.before || inputs.target_sha }}
+      TARGET_SHA: ${{ inputs.target_sha }}
       SONAR_HOST_URL: https://sonar.sosnadmin.local
       SONAR_IMAGE: sonarsource/sonar-scanner-cli@sha256:a3f4215076706c95a17a68c19322ee916e40a3acd081a8c1a1e839e0194afa57
       SONAR_SSL_DIR: /opt/actions-runner/_tool/sonar/ssl
@@ -50,18 +40,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
           test "$GITHUB_REPOSITORY" = "BorisDruzak/helpdesk"
-          case "$GITHUB_EVENT_NAME" in
-            workflow_dispatch)
-              test "$GITHUB_REF" = "refs/heads/main"
-              ;;
-            push)
-              test "$GITHUB_REF" = "refs/heads/ci/dev-scanner-slowdown-fix"
-              ;;
-            *)
-              exit 1
-              ;;
-          esac
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
           echo "runner=$RUNNER_NAME"
           echo "workflow_sha=$GITHUB_SHA"
