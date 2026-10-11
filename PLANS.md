@@ -1,3 +1,18 @@
+# Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI
+
+Goal: restore readable SLA/profile data and use the shared support shell for tickets;
+separate requester ticket list from a full-height chat; localize the quality dashboard.
+Approved bounded design: shared navigation/light default, dedicated existing detail URL,
+fixed reply composer, secondary description/history view. No Endpoint changes or migrations.
+
+Current state: implementation in the canonical checkout; independent review has no remaining findings.
+Verification: 77 focused backend/domain/HTTP-adapter tests, 92 frontend tests and 16 browser
+scenarios passed; typecheck/build and scoped workspace verifier passed. Browser evidence at
+1366x768/1920x1080 and requester mobile is in artifacts/ui/2026-10-11.
+Deployment has not occurred; DB-backed support integration and the production release
+gate (exact-SHA CI artifacts, staging evidence and accepted release configuration) remain open.
+Handoff: preserve unrelated Sonar/scanner files; publish/deploy only through the reviewed release workflow.
+
 # Completed locally: 2026-10-02 Helpdesk Sentry Browser Observability v1
 
 Approved spec and plan: `docs/superpowers/specs/2026-10-02-helpdesk-sentry-browser-v1.md`

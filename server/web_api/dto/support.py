@@ -1316,6 +1316,8 @@ class SupportTicketTimerPayload(BaseModel):
     due_at: str | None = None
     remaining_seconds: int | None = None
     target_seconds: int | None = None
+    completed_at: str | None = None
+    completed_within_target: bool | None = None
     status: str = "unknown"
 
 

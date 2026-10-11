@@ -288,7 +288,7 @@ test("requester receives external operator message and status without reload", a
   expect(errors).toEqual([]);
 });
 
-test("requester split routes render without legacy workspace leakage", async ({ page }) => {
+test("requester split routes render without legacy workspace leakage", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1366, height: 768 });
 
   await page.goto("/app/requester");
@@ -303,7 +303,19 @@ test("requester split routes render without legacy workspace leakage", async ({ 
 
   await page.goto(`/app/requester/tickets/${ticketCode}`);
   await expect(page.getByText("Please confirm VPN error code.")).toBeVisible();
+  await expect(page.getByLabel("Поиск по обращениям")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Описание и история" })).toHaveAttribute("aria-expanded", "false");
   await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath("requester-chat-1366.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath("requester-chat-mobile.png") });
+  await page.getByRole("link", { name: "Все обращения" }).click();
+  await expect(page.getByLabel("Поиск по обращениям")).toBeVisible();
+  await expect(page.getByLabel("Ответ заявителя")).toHaveCount(0);
+  await page.setViewportSize({ width: 1366, height: 768 });
 
   await page.goto("/app/requester/profile");
   await expect(page.getByText("Alex Requester").first()).toBeVisible();

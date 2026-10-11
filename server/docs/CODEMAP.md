@@ -374,3 +374,12 @@ connection guidance. PostgreSQL regressions and source boundary guards cover bot
 Admin device cutover navigation: shared admin search names devices/traces, and
 Tech descriptions explicitly name Endpoint. Generic Helpdesk-owned Agent wording
 is absent from these current device-navigation descriptions.
+# Ticket UI and profile/SLA projections
+
+See [ticket UI behavior](../../docs/HELPDESK_TICKET_UI.md).
+`web_api/support_handlers.py` projects completed and paused SLA timers and
+enriches validated requester identity with actor-scoped Registry profile contacts.
+`domain_ports/registry_contracts.py` bounds the optional profile contact fields;
+`registry_adapter/local.py` supplies them without profile metadata.
+Frontend chat entrypoint: `webapp/src/pages/requester/ticket-chat-page.tsx`,
+with mutations in `use-ticket-chat.ts`; `tickets-page.tsx` owns the list only.

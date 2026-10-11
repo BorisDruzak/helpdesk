@@ -48,6 +48,10 @@ export const RequesterTicketsPage = lazy(() =>
   import("../../pages/requester/tickets-page").then((module) => ({ default: module.RequesterTicketsPage })),
 );
 
+export const RequesterTicketChatPage = lazy(() =>
+  import("../../pages/requester/ticket-chat-page").then((module) => ({ default: module.RequesterTicketChatPage })),
+);
+
 export const RequesterProfilePage = lazy(() =>
   import("../../pages/requester/profile-page").then((module) => ({ default: module.RequesterProfilePage })),
 );

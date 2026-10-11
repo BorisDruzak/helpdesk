@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RequesterTicketsPage } from "./tickets-page";
+import { RequesterTicketChatPage } from "./ticket-chat-page";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -25,7 +26,7 @@ function renderTicketsPage(initialEntry = "/app/requester/tickets") {
         <QueryClientProvider client={queryClient}>
           <Routes>
             <Route path="/app/requester/tickets" element={children} />
-            <Route path="/app/requester/tickets/:ticketId" element={children} />
+            <Route path="/app/requester/tickets/:ticketId" element={<RequesterTicketChatPage />} />
           </Routes>
         </QueryClientProvider>
       </MemoryRouter>
@@ -39,6 +40,15 @@ afterEach(() => {
 });
 
 describe("RequesterTicketsPage", () => {
+  it("opens a dedicated chat without a ticket list or expanded description", async () => {
+    installTicketsMock({ initialDetailStatus: "waiting_on_user" });
+    renderTicketsPage("/app/requester/tickets/REQ-1001");
+    expect(await screen.findByRole("heading", { name: "Ноутбук не включается" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Поиск по обращениям")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Все обращения/ })).toHaveAttribute("href", "/app/requester/tickets");
+    expect(screen.getByLabelText("Ответ заявителя")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Описание и история" })).toHaveAttribute("aria-expanded", "false");
+  });
   it.each([
     ["OPERATION_DELIVERY_UNAVAILABLE", "Доставка операции недоступна. Обратитесь в службу поддержки."],
     ["OPERATION_STATE_CONFLICT", "Состояние операции изменилось. Обновите страницу и попробуйте еще раз."],
@@ -150,6 +160,7 @@ describe("RequesterTicketsPage", () => {
       reason_code: "problem_returned",
       linked_feedback_id: "fb-1",
     });
+    fireEvent.click(screen.getByRole("button", { name: "Описание и история" }));
     expect(within(screen.getByRole("list", { name: "История обращения" })).getByText("Оператор запросил диагностику")).toBeInTheDocument();
   });
 

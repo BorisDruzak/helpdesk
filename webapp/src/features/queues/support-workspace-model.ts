@@ -75,7 +75,8 @@ export type SupportWorkspaceTimer = {
   dueAt: string | null;
   remainingSeconds: number | null;
   remainingLabel: string;
-  status: "ok" | "at_risk" | "breached" | "paused" | "unknown";
+  status: "ok" | "at_risk" | "breached" | "paused" | "unknown" | "completed" | "completed_late";
+  completedAt?: string | null;
   progress: number;
 };
 

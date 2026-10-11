@@ -711,24 +711,14 @@ describe("TicketListPage", () => {
     });
   });
 
-  it("shows support workspace navigation and logs out from the isolated ticket topbar", async () => {
+  it("keeps ticket actions in a toolbar while shared navigation owns logout", async () => {
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
-
     renderTicketListPage("/app/tickets/ticket-1");
-
-    const nav = await screen.findByRole("navigation", { name: "Разделы поддержки" });
-    expect(within(nav).getByRole("link", { name: /Тикеты/ })).toHaveAttribute("href", "/app/tickets");
-    expect(within(nav).getByRole("link", { name: /Отчёты/ })).toHaveAttribute("href", "/app/reports");
-    expect(within(nav).queryByRole("link", { name: /Знания/ })).not.toBeInTheDocument();
-    expect(within(nav).getByRole("link", { name: /Настройки/ })).toHaveAttribute("href", "/app/settings");
-
-    fireEvent.click(screen.getByRole("button", { name: /Выйти/ }));
-
-    await waitFor(() => {
-      expect(logoutMock).toHaveBeenCalledTimes(1);
-    });
-    expect(await screen.findByText("Login page")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Тикеты", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Создать обращение" })).toHaveAttribute("href", "/app/help");
+    expect(screen.queryByRole("button", { name: /Выйти/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-theme", "light");
   });
 
   it("renders built-in and custom smart-view counts and sends selected smart view to the queue API", async () => {
@@ -1417,13 +1407,13 @@ describe("TicketListPage", () => {
     renderTicketListPage("/app/tickets/ticket-1");
 
     expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
-    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-theme", "dark");
-
-    fireEvent.click(screen.getByRole("button", { name: "Светлая тема" }));
-
-    expect(window.localStorage.getItem("support-workspace-theme")).toBe("light");
     expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-theme", "light");
-    expect(screen.getByRole("button", { name: "Тёмная тема" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Тёмная тема" }));
+
+    expect(window.localStorage.getItem("support-workspace-theme")).toBe("dark");
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-theme", "dark");
+    expect(screen.getByRole("button", { name: "Светлая тема" })).toBeInTheDocument();
   });
 
   it("renders the operator command strip and ticket inspector shell", async () => {

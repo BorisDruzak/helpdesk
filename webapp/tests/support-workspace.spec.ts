@@ -1,6 +1,11 @@
 import { expect, type Page, test } from "playwright/test";
 import { endpointContext, endpointDeviceId, registryContext } from "./fixtures/endpoint-context";
 
+test.beforeEach(async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+});
+
 async function loginSupport(page: Page) {
   await page.goto("/app/support");
 
@@ -99,7 +104,7 @@ test("оператор открывает tickets workspace через новы�
   await page.getByRole("link", { name: "Тикеты" }).click();
   await expect(page).toHaveURL(/\/app\/tickets$/);
   await expect(page.getByRole("heading", { name: "Тикеты" })).toBeVisible();
-  await expect(page.getByText("Service Desk")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Навигация поддержки" })).toBeVisible();
   await expect(page.getByText("Мой рабочий список")).toBeVisible();
   await expect(page.getByRole("button", { name: /T-200001 Ошибка синхронизации/ })).toBeVisible();
 
@@ -150,8 +155,8 @@ test("оператор видит безопасное состояние диа
   expect(failedDiagnosticsRequests).toEqual([]);
   expect(unexpectedFailedRequests).toEqual([]);
   expect(knownFixtureFailures).toEqual([
-    "404 GET http://127.0.0.1:4173/api/web/support/tickets/ticket-1/timeline?filter=all",
-    "404 POST http://127.0.0.1:4173/api/web/support/tickets/ticket-1/read",
+    `404 GET ${new URL(page.url()).origin}/api/web/support/tickets/ticket-1/timeline?filter=all`,
+    `404 POST ${new URL(page.url()).origin}/api/web/support/tickets/ticket-1/read`,
   ]);
   expect(consoleErrors).toEqual([
     "Failed to load resource: the server responded with a status of 404 (Not Found)",
@@ -175,11 +180,15 @@ for (const width of [1366, 1440, 1920]) {
     await page.goto("/app/tickets/ticket-1");
     await expect(page.getByText(/T-200001 Ошибка синхронизации/)).toBeVisible();
     await expect(page.getByText("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ")).toBeVisible();
+    if (width < 1460) await page.getByRole("button", { name: "Inspector", exact: true }).click();
     await expect(page.getByRole("button", { name: "Паспорт", exact: true })).toBeVisible();
+    if (width < 1460) await page.getByRole("button", { name: "Вернуться к переписке", exact: true }).click();
 
     const root = page.getByTestId("support-workspace-root");
-    await expect(root).toHaveAttribute("data-theme", "dark");
+    await expect(root).toHaveAttribute("data-theme", "light");
 
+    await page.getByRole("button", { name: "Тёмная тема" }).click();
+    await expect(root).toHaveAttribute("data-theme", "dark");
     await page.getByRole("button", { name: "Светлая тема" }).click();
     await expect(root).toHaveAttribute("data-theme", "light");
     await expect(page.getByRole("button", { name: "Выполнить действие" })).toBeVisible();

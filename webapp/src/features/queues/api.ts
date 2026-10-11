@@ -1037,6 +1037,8 @@ export type SupportTicketSlaOlaTimerPayload = {
   due_at: string | null;
   remaining_seconds: number | null;
   target_seconds: number | null;
+  completed_at?: string | null;
+  completed_within_target?: boolean | null;
   status: "ok" | "at_risk" | "breached" | "paused" | "unknown" | string;
 };
 

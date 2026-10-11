@@ -368,6 +368,8 @@ class LocalRegistryAdapter:
                 display_name=snapshot.display_name,
                 department_label=department_label,
                 location_label=location_label,
+                email=cls._safe_label(getattr(person, "email", None)),
+                phone=cls._safe_label(getattr(person, "phone", None)),
                 status=status,
                 source="local_authoritative",
             )

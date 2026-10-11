@@ -300,6 +300,8 @@ class RequesterProfileProjection(_ImmutableRegistryDTO):
     display_name: RequesterDisplayName
     department_label: RegistryDisplayLabel | None = None
     location_label: RegistryDisplayLabel | None = None
+    email: RegistryDisplayLabel | None = None
+    phone: RegistryDisplayLabel | None = None
     status: SafeRegistryCode
     source: Literal["local_authoritative", "external_authoritative"]
 

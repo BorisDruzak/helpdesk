@@ -145,7 +145,7 @@
     box-shadow: -24px 0 60px rgba(0, 0, 0, 0.42);
   }
 
-  .support-workspace[data-compact-layout="true"][data-mode="ticket"] .support-workspace__right-panel--drawer {
+  .support-workspace[data-compact-layout="true"][data-mode="ticket"] .support-workspace__right-panel--drawer[data-open="false"] {
     display: none !important;
   }
 
@@ -256,6 +256,59 @@
   .support-workspace[data-theme="light"] .text-white,
   .support-workspace[data-theme="light"] .text-slate-100 {
     color: #0f172a !important;
+  }
+
+  .support-workspace[data-theme="light"] .bg-brand-700 {
+    color: #ffffff !important;
+  }
+
+  .support-workspace[data-theme="light"] .bg-\[\#081321\]\/90 {
+    background-color: #f8fafc !important;
+  }
+
+  .support-workspace[data-theme="light"] .bg-\[\#081321\]\/70 {
+    background-color: #f8fafc !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-blue-100,
+  .support-workspace[data-theme="light"] .text-blue-200 {
+    color: #114f31 !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-emerald-100 {
+    color: #047857 !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-amber-50,
+  .support-workspace[data-theme="light"] .text-amber-100,
+  .support-workspace[data-theme="light"] .text-amber-100\/80 {
+    color: #92400e !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-red-200 {
+    color: #b91c1c !important;
+  }
+
+  .support-workspace[data-theme="light"] .bg-blue-600 {
+    background-color: #0d6a3d !important;
+    color: white !important;
+  }
+
+  .support-workspace[data-theme="light"] .bg-blue-600\/15 {
+    background-color: #eef8f2 !important;
+  }
+
+  .support-workspace[data-theme="light"] .border-blue-500 {
+    border-color: #288c59 !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-slate-200,
+  .support-workspace[data-theme="light"] .text-slate-300 {
+    color: #334155;
+  }
+
+  .support-workspace[data-theme="light"] .text-slate-400 {
+    color: #64748b;
   }
 
   .knowledge-tiptap-editor .ProseMirror {

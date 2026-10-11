@@ -51,14 +51,17 @@ from customer_history.context_builder import CustomerHistoryContextBuilder
 from customer_history.projection_service import CustomerHistoryProjectionService
 from domain_ports import (
     ActiveBindingProjection,
+    ActorRef,
     DeviceRef,
     DomainPortContainer,
     PersonRef,
     RegistryNotFound,
     RegistryPort,
+    RegistryReadActor,
     RegistryUnavailable,
     RequesterSnapshot,
 )
+from domain_ports.registry_contracts import RequesterProfileProjection
 from observer.integrity_service import ObserverIntegrityService
 from observer.service import ObserverOverlayService
 from observer.web_event_writer import write_web_cabinet_observer_event
@@ -757,16 +760,22 @@ def _ticket_timer_payload(
     target_seconds = None
     if anchor_at is not None and due_at is not None:
         target_seconds = max(0, int((due_at - anchor_at).total_seconds()))
-    if completed_attr and _aware_datetime(getattr(ticket, completed_attr, None)) is not None:
+    completed_at = _aware_datetime(getattr(ticket, completed_attr, None)) if completed_attr else None
+    if completed_at is not None:
         return SupportTicketTimerPayload(
             due_at=None,
             remaining_seconds=None,
             target_seconds=target_seconds,
-            status="unknown",
+            status="completed",
+            completed_at=completed_at.isoformat(),
+            completed_within_target=False if breached_attr and getattr(ticket, breached_attr, None) is not None
+            else completed_at <= effective_due_at if effective_due_at else None,
         )
+    paused_at = _aware_datetime(getattr(ticket, paused_attr, None)) if paused_attr else None
+    countdown_at = paused_at or now
     return SupportTicketTimerPayload(
         due_at=due_at.isoformat() if due_at is not None else None,
-        remaining_seconds=int((effective_due_at - now).total_seconds()) if effective_due_at is not None else None,
+        remaining_seconds=int((effective_due_at - countdown_at).total_seconds()) if effective_due_at is not None else None,
         target_seconds=target_seconds,
         status=_ticket_timer_status(
             due_at,
@@ -796,6 +805,8 @@ def _build_support_sla_ola_payload(ticket, now: datetime | None = None) -> Suppo
             breached_attr="resolution_breached_at",
             paused_attr="sla_paused_at",
             paused_seconds_attr="sla_paused_seconds",
+            completed_attr=("resolution_at" if getattr(ticket, "resolution_at", None) is not None else "resolved_at")
+            if getattr(ticket, "status", None) in {"resolved", "closed"} else None,
             now=now,
         ),
         ola_ack=_ticket_timer_payload(
@@ -2873,7 +2884,7 @@ async def _recent_ticket_operations(session, ticket: object, *, limit: int = 5) 
     return scoped
 
 
-async def _build_support_registry_snapshot(
+async def _build_support_registry_identity(
     ticket: object,
     *,
     registry_port: RegistryPort,
@@ -2974,6 +2985,44 @@ async def _build_support_registry_snapshot(
     )
 
 
+async def _build_support_registry_snapshot(
+    ticket: object,
+    *,
+    registry_port: RegistryPort,
+    actor: RegistryReadActor | None = None,
+) -> SupportTicketRegistrySnapshot | None:
+    snapshot = await _build_support_registry_identity(ticket, registry_port=registry_port)
+    if snapshot is None or snapshot.status != "available" or not snapshot.person_id or actor is None:
+        return snapshot
+    # Contacts are a current, actor-scoped profile read, never ticket history or
+    # a device-owner fallback. Reject mismatches before exposing profile fields.
+    if actor.role not in {"support", "admin"}:
+        return snapshot
+    try:
+        requester_ref, _ = requester_reference_snapshot_from_record(ticket)
+    except (TypeError, ValueError):
+        return snapshot
+    ticket_requester_id = requester_ref.external_id if requester_ref is not None else str(
+        getattr(ticket, "requester_person_id", "") or ""
+    ).strip()
+    if not ticket_requester_id or ticket_requester_id != snapshot.person_id:
+        return snapshot
+    try:
+        profile = await registry_port.requester_profile(PersonRef(external_id=snapshot.person_id), actor=actor)
+    except Exception:
+        return snapshot
+    if not isinstance(profile, RequesterProfileProjection) or profile.requester.external_id != snapshot.person_id:
+        return snapshot
+    return snapshot.model_copy(update={
+        "person_display_name": profile.display_name,
+        "person_phone": profile.phone,
+        "person_email": profile.email,
+        "person_source": profile.source,
+        "department_name": profile.department_label,
+        "location_display_name": profile.location_label,
+    })
+
+
 async def _build_support_device_snapshot(ticket, device, *, endpoint_port, legacy_online: bool = False) -> SupportTicketDeviceSnapshot:
     from domain_ports.endpoint import EndpointDevicePresenceProjection, EndpointDeviceRef
 
@@ -3015,6 +3064,8 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
     registry_snapshot = await _build_support_registry_snapshot(
         ticket,
         registry_port=registry_port,
+        actor=RegistryReadActor(actor=ActorRef(external_id=auth_context.actor_id), role=auth_context.actor_role)
+        if auth_context.actor_role in {"support", "admin"} else None,
     )
     if getattr(ticket, "device_id", None):
         device = await DevicesRepo(session).get_by_device_id(ticket.device_id)

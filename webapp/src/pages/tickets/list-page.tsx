@@ -213,9 +213,9 @@ const WORKSPACE_COLUMN_LIMITS_BY_MODE: Record<
 
 function getInitialSupportWorkspaceTheme(): SupportWorkspaceTheme {
   if (typeof window === "undefined") {
-    return "dark";
+    return "light";
   }
-  return window.localStorage.getItem(SUPPORT_WORKSPACE_THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+  return window.localStorage.getItem(SUPPORT_WORKSPACE_THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -572,7 +572,7 @@ function toneClasses(tone: string) {
 }
 
 function progressTone(status: string) {
-  if (status === "breached") {
+  if (status === "breached" || status === "completed_late") {
     return "bg-red-400";
   }
   if (status === "at_risk") {
@@ -586,6 +586,10 @@ function progressTone(status: string) {
 
 function timerStatusLabel(status: SupportWorkspaceTimer["status"]) {
   switch (status) {
+    case "completed":
+      return "Выполнено";
+    case "completed_late":
+      return "Выполнено с нарушением";
     case "breached":
       return "Нарушен";
     case "at_risk":
@@ -601,12 +605,14 @@ function timerStatusLabel(status: SupportWorkspaceTimer["status"]) {
 
 function timerStatusRing(status: SupportWorkspaceTimer["status"]) {
   switch (status) {
+    case "completed_late":
     case "breached":
       return "ring-1 ring-red-400/40";
     case "at_risk":
       return "ring-1 ring-amber-400/35";
     case "paused":
       return "ring-1 ring-slate-400/25";
+    case "completed":
     case "ok":
       return "ring-1 ring-emerald-400/25";
     default:
@@ -614,7 +620,7 @@ function timerStatusRing(status: SupportWorkspaceTimer["status"]) {
   }
 }
 
-function formatDueLabel(dueAt: string | null) {
+function formatDueLabel(dueAt: string | null, label = "Срок") {
   if (!dueAt) {
     return "Срок не задан";
   }
@@ -622,7 +628,7 @@ function formatDueLabel(dueAt: string | null) {
   if (Number.isNaN(date.getTime())) {
     return "Срок не задан";
   }
-  return `Срок: ${date.toLocaleString("ru-RU", {
+  return `${label}: ${date.toLocaleString("ru-RU", {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
@@ -1215,127 +1221,17 @@ function ObserverDiagnosticCard({
   );
 }
 
-function SupportWorkspaceTopbar({
-  theme,
-  onToggleTheme,
-  onLogout,
-  notificationCount,
-  onRefresh,
-  refreshing,
-  userLogin,
-  userRole,
-}: {
-  theme: SupportWorkspaceTheme;
-  onToggleTheme: () => void;
-  onLogout: () => void;
-  notificationCount: number;
-  onRefresh: () => void;
-  refreshing: boolean;
-  userLogin: string;
-  userRole: string;
+function SupportWorkspaceTopbar({ theme, onToggleTheme, onRefresh, refreshing }: {
+  theme: SupportWorkspaceTheme; onToggleTheme: () => void; onRefresh: () => void; refreshing: boolean;
 }) {
-  const isLightTheme = theme === "light";
-  const navItems = [
-    { label: "Тикеты", to: "/app/tickets", icon: ClipboardList, active: true },
-    { label: "Отчёты", to: "/app/reports", icon: BarChart3, active: false },
-    { label: "Настройки", to: "/app/settings", icon: Settings2, active: false },
-  ];
-
+  const isLight = theme === "light";
   return (
-    <header className={`flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur-xl ${isLightTheme ? "border-slate-200 bg-white/95 text-slate-950" : "border-white/10 bg-[#081321]/95 text-slate-100"}`}>
-      <Link className="flex min-w-[180px] items-center gap-3" to="/app/tickets">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-950/40">
-          <ShieldCheck className="h-5 w-5" />
-        </span>
-        <span className="text-base font-semibold">Service Desk</span>
-        <span className="sr-only">Тикеты</span>
-      </Link>
-
-      <nav
-        aria-label="Разделы поддержки"
-        className={`hidden items-center gap-1 rounded-xl border p-1 min-[1180px]:flex ${isLightTheme ? "border-slate-200 bg-slate-100" : "border-white/10 bg-white/[0.04]"}`}
-      >
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-semibold transition ${
-                item.active
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-950/20"
-                  : isLightTheme
-                    ? "text-slate-600 hover:bg-white hover:text-slate-950"
-                    : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
-              }`}
-              key={item.to}
-              to={item.to}
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="ml-auto flex items-center gap-1.5">
-        <Link
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-500"
-          title="Создать новую заявку от имени пользователя"
-          to="/app/help"
-        >
-          Создать
-          <ChevronDown className="h-4 w-4" />
-        </Link>
-        <button
-          aria-label="Обновить"
-          className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 transition hover:text-white"
-          disabled={refreshing}
-          onClick={onRefresh}
-          title="Обновить очередь и выбранный тикет"
-          type="button"
-        >
-          <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-        </button>
-        <button
-          aria-label={isLightTheme ? "Тёмная тема" : "Светлая тема"}
-          className={`flex h-10 w-10 items-center justify-center rounded-xl border transition ${isLightTheme ? "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-950" : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"}`}
-          onClick={onToggleTheme}
-          title={isLightTheme ? "Переключить на тёмную тему" : "Переключить на светлую тему"}
-          type="button"
-        >
-          {isLightTheme ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-        </button>
-        <button
-          aria-label="Уведомления"
-          className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300"
-          title="Уведомления по тикетам и SLA"
-          type="button"
-        >
-          <Bell className="h-4 w-4" />
-          {notificationCount > 0 ? (
-            <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-              {notificationCount > 99 ? "99+" : notificationCount}
-            </span>
-          ) : null}
-        </button>
-        <div className="hidden items-center gap-3 pl-2 md:flex">
-          <div className={`flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl ${isLightTheme ? "bg-slate-200" : "bg-slate-700"}`}>
-            <UserRound className={`h-5 w-5 ${isLightTheme ? "text-slate-700" : "text-slate-200"}`} />
-          </div>
-          <div className="leading-tight">
-            <p className={`text-sm font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>{userLogin}</p>
-            <p className={`text-xs ${isLightTheme ? "text-slate-500" : "text-slate-400"}`}>{userRole}</p>
-          </div>
-        </div>
-        <button
-          aria-label="Выйти из Service Desk"
-          className={`flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition ${isLightTheme ? "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-950" : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"}`}
-          onClick={onLogout}
-          title="Выйти"
-          type="button"
-        >
-          <LogOut className="h-4 w-4" />
-          <span className="hidden 2xl:inline">Выйти</span>
-        </button>
+    <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#111f33] px-4 py-2">
+      <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Поддержка</p><h1 className="text-lg font-semibold">Тикеты</h1></div>
+      <div className="flex items-center gap-2">
+        <Link className="rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white" to="/app/help">Создать обращение</Link>
+        <button aria-label="Обновить очередь" disabled={refreshing} onClick={onRefresh} className="rounded-lg border border-white/10 p-2" type="button"><RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /></button>
+        <button aria-label={isLight ? "Тёмная тема" : "Светлая тема"} onClick={onToggleTheme} className="rounded-lg border border-white/10 p-2" type="button">{isLight ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}</button>
       </div>
     </header>
   );
@@ -1346,7 +1242,7 @@ export function TicketListPage() {
   const params = useParams<{ ticketId?: string }>();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const { logout, session } = useSession();
+  const { session } = useSession();
   const initialUrlStateRef = useRef(getTicketsWorkspaceUrlState(searchParams));
   const shouldKeepQueueRouteRef = useRef(initialUrlStateRef.current.shouldOpenQueue);
   const [scope, setScope] = useState<SupportQueueScope>("all");
@@ -1363,6 +1259,7 @@ export function TicketListPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => (initialUrlStateRef.current.shouldOpenQueue ? "queue" : getInitialWorkspaceMode()));
   const [moreOpen, setMoreOpen] = useState(false);
+  const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const [toolsWorkspaceTab, setToolsWorkspaceTab] = useState<ToolsWorkspaceTab>("quick");
   const [slaWorkspaceTab, setSlaWorkspaceTab] = useState<SlaWorkspaceTab>("overview");
   const [passportWorkspaceTab, setPassportWorkspaceTab] = useState<PassportWorkspaceTab>("sections");
@@ -1383,6 +1280,7 @@ export function TicketListPage() {
   const [automationCatalogFilter, setAutomationCatalogFilter] = useState<AutomationCatalogFilter>("all");
   const [automationCatalogSearch, setAutomationCatalogSearch] = useState("");
   const [showUnavailableAutomation, setShowUnavailableAutomation] = useState(false);
+  const workspaceRootRef = useRef<HTMLElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const selectedTicketIdRef = useRef<string | null>(null);
@@ -1461,6 +1359,7 @@ export function TicketListPage() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        setCompactInspectorOpen(false);
         setWorkspaceMode((current) => (current === "ticket" ? current : "ticket"));
       }
     };
@@ -1485,9 +1384,12 @@ export function TicketListPage() {
   }, [workspaceColumnsByMode]);
 
   useEffect(() => {
-    const handleResize = () => setWorkspaceViewportWidth(window.innerWidth || 1366);
+    const handleResize = () => setWorkspaceViewportWidth(workspaceRootRef.current?.getBoundingClientRect().width || window.innerWidth || 1366);
+    handleResize();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleResize) : null;
+    if (workspaceRootRef.current) observer?.observe(workspaceRootRef.current);
     window.addEventListener("resize", handleResize, { passive: true });
-    return () => window.removeEventListener("resize", handleResize);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", handleResize); };
   }, []);
 
   useEffect(() => {
@@ -1847,6 +1749,7 @@ export function TicketListPage() {
   }, [queryClient, selectedTicketId]);
 
   function selectRightTab(tab: SidebarTab) {
+    setCompactInspectorOpen(true);
     setSidebarTab(tab);
     if (tab === "tools" || tab === "sla" || tab === "passport") {
       setWorkspaceMode(tab);
@@ -2328,13 +2231,6 @@ export function TicketListPage() {
 
   const isLightTheme = workspaceTheme === "light";
 
-  async function handleLogout() {
-    await logout();
-    startTransition(() => {
-      navigate("/app/login", { replace: true });
-    });
-  }
-
   function startColumnResize(pane: WorkspaceResizePane, event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     resizeStateRef.current = {
@@ -2359,22 +2255,18 @@ export function TicketListPage() {
 
   return (
     <section
-      className={`support-workspace flex h-screen min-h-screen flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
+      className={`support-workspace flex h-full min-h-0 flex-1 flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
+      ref={workspaceRootRef}
       data-testid="support-workspace-root"
       data-compact-layout={isCompactWorkspace ? "true" : "false"}
       data-mode={workspaceMode}
       data-theme={workspaceTheme}
     >
-      <h1 className="sr-only">Тикеты</h1>
       <SupportWorkspaceTopbar
         theme={workspaceTheme}
         onToggleTheme={toggleWorkspaceTheme}
-        onLogout={() => void handleLogout()}
-        notificationCount={workspaceQuery.data?.detail.snapshot.notification_unread ?? 0}
         onRefresh={refreshAll}
         refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
-        userLogin={session?.user_login ?? "operator"}
-        userRole={session?.actor_role === "admin" ? "Администратор" : "Оператор L1"}
       />
 
       <div
@@ -2389,7 +2281,7 @@ export function TicketListPage() {
           data-testid="support-command-strip"
         >
           <div className="min-w-0 pr-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Command console</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Рабочая очередь</p>
             <p className="truncate text-sm font-semibold text-white">
               {selectedTicket ? `${selectedTicket.code} · ${selectedTicket.subject}` : "Queue focus"}
             </p>
@@ -2431,6 +2323,7 @@ export function TicketListPage() {
               onClick={() => {
                 setSidebarTab("context");
                 setWorkspaceMode("ticket");
+                setCompactInspectorOpen(true);
               }}
               type="button"
             >
@@ -3416,6 +3309,7 @@ export function TicketListPage() {
             rightPanelInDrawer ? "support-workspace__right-panel--drawer" : ""
           }`}
           data-layout={rightPanelInDrawer ? "drawer-inspector" : "side-inspector"}
+          data-open={compactInspectorOpen}
           data-testid="support-inspector-panel"
         >
           {workspaceMode === "queue" ? (
@@ -3439,6 +3333,7 @@ export function TicketListPage() {
           ) : (
             <>
           <div className="border-b border-white/10 bg-[#081321]/70 px-3 py-3" data-testid="support-inspector-summary">
+            {rightPanelInDrawer ? <button className="mb-3 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300" onClick={() => { setCompactInspectorOpen(false); setWorkspaceMode("ticket"); }} type="button">Вернуться к переписке</button> : null}
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Ticket inspector</p>
@@ -3808,7 +3703,7 @@ export function TicketListPage() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-semibold text-white">{timer.label}</p>
-                              <p className="mt-1 text-xs text-slate-500">{formatDueLabel(timer.dueAt)}</p>
+                              <p className="mt-1 text-xs text-slate-500">{timer.completedAt ? formatDueLabel(timer.completedAt, "Выполнено") : formatDueLabel(timer.dueAt)}</p>
                             </div>
                             <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
                               {timerStatusLabel(timer.status)}
@@ -3855,7 +3750,7 @@ export function TicketListPage() {
                             </span>
                           </div>
                           <p className="mt-3 text-lg font-semibold text-white">{timer.remainingLabel}</p>
-                          <p className="mt-1 text-xs text-slate-500">{formatDueLabel(timer.dueAt)}</p>
+                          <p className="mt-1 text-xs text-slate-500">{timer.completedAt ? formatDueLabel(timer.completedAt, "Выполнено") : formatDueLabel(timer.dueAt)}</p>
                         </div>
                       )) : (
                         <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400 md:col-span-2">
@@ -3914,7 +3809,7 @@ export function TicketListPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-semibold text-white">{timer.label}</p>
-                          <p className="mt-1 text-xs text-slate-500">{formatDueLabel(timer.dueAt)}</p>
+                          <p className="mt-1 text-xs text-slate-500">{timer.completedAt ? formatDueLabel(timer.completedAt, "Выполнено") : formatDueLabel(timer.dueAt)}</p>
                         </div>
                         <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
                           {timerStatusLabel(timer.status)}
@@ -3924,7 +3819,7 @@ export function TicketListPage() {
                         <div>
                           <p className="text-2xl font-semibold tracking-tight text-white">{timer.remainingLabel}</p>
                           <p className="mt-1 text-xs text-slate-500">
-                            {timer.status === "paused" ? "Отсчёт приостановлен" : timer.status === "unknown" ? "Контрольный срок неизвестен" : "До контрольного срока"}
+                            {timer.status.startsWith("completed") ? "Отсчёт завершён" : timer.status === "paused" ? "Отсчёт приостановлен" : timer.status === "unknown" ? "Контрольный срок неизвестен" : "До контрольного срока"}
                           </p>
                         </div>
                         <span className="text-xs font-semibold text-slate-500">{timer.progress}%</span>
@@ -4781,13 +4676,13 @@ export function TicketListPage() {
 }
 
 function timerStatusToTone(status: string) {
-  if (status === "breached") {
+  if (status === "breached" || status === "completed_late") {
     return "danger";
   }
   if (status === "at_risk") {
     return "warning";
   }
-  if (status === "ok") {
+  if (status === "ok" || status === "completed") {
     return "success";
   }
   return "neutral";

@@ -113,6 +113,8 @@ export function AppShell({ children }: AppShellProps) {
   const hasAdmin = hasWorkspaceAccess(session, "admin");
   const hasRequester = hasWorkspaceAccess(session, "requester");
   const isTicketWorkspaceRoute = /^\/app\/tickets(?:\/[^/]+)?\/?$/.test(location.pathname);
+  const isRequesterChatRoute = /^\/app\/requester\/tickets\/[^/]+\/?$/.test(location.pathname);
+  const isFullHeightWorkspace = isTicketWorkspaceRoute || isRequesterChatRoute;
   const isFormsBuilderRoute = /^\/app\/admin\/forms\/?$/.test(location.pathname);
   const currentWorkspace = getActiveWorkspace(location.pathname) ?? "support";
   const [adminSidebarCollapsed, setAdminSidebarCollapsed] = useState(() => readAdminSidebarCollapsed(isFormsBuilderRoute));
@@ -128,10 +130,6 @@ export function AppShell({ children }: AppShellProps) {
     const currentPath = `${location.pathname}${location.search}${location.hash}`;
     rememberWorkspacePath(currentPath, session);
   }, [location.hash, location.pathname, location.search, session]);
-
-  if (isTicketWorkspaceRoute) {
-    return <div className="min-h-screen bg-[#07111f] text-slate-100">{children}</div>;
-  }
 
   const workspaceOptions = [
     hasRequester ? { label: "Кабинет пользователя", value: "requester" } : null,
@@ -177,8 +175,8 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-app text-slate-950">
-      <div className="flex min-h-screen">
+    <div className={`${isFullHeightWorkspace ? "h-dvh overflow-hidden" : "min-h-screen"} bg-app text-slate-950`}>
+      <div className={`flex ${isFullHeightWorkspace ? "h-full min-h-0" : "min-h-screen"}`}>
         <AppSidebar
           collapsed={shouldManageSidebar ? adminSidebarCollapsed : false}
           hasAdminAccess={hasAdmin}
@@ -190,7 +188,7 @@ export function AppShell({ children }: AppShellProps) {
           showCollapseToggle={shouldManageSidebar}
         />
 
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <div className={`flex min-w-0 flex-1 flex-col ${isFullHeightWorkspace ? "h-full min-h-0" : "min-h-screen"}`}>
           <AppTopbar
             onLogout={() => void handleLogout()}
             onWorkspaceChange={handleWorkspaceChange}
@@ -208,8 +206,8 @@ export function AppShell({ children }: AppShellProps) {
             />
           ) : null}
 
-          <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6">
-            <DomainTabs permissions={session?.permissions ?? []} />
+          <main className={isFullHeightWorkspace ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : "min-w-0 flex-1 overflow-x-hidden px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6"}>
+            {!isFullHeightWorkspace ? <DomainTabs permissions={session?.permissions ?? []} /> : null}
             {children}
           </main>
         </div>

@@ -527,7 +527,7 @@ function buildTimer(
 }
 
 function normalizeTimerPayloadStatus(status: string): SupportWorkspaceTimer["status"] {
-  if (status === "ok" || status === "at_risk" || status === "breached" || status === "paused" || status === "unknown") {
+  if (status === "ok" || status === "at_risk" || status === "breached" || status === "paused" || status === "unknown" || status === "completed") {
     return status;
   }
   return "unknown";
@@ -540,6 +540,7 @@ function buildCompactTimer(
 ): SupportWorkspaceTimer {
   const targetSeconds = timer.target_seconds ?? null;
   const remainingSeconds = timer.remaining_seconds ?? null;
+  const completed = timer.status === "completed";
   const progress =
     targetSeconds && remainingSeconds !== null
       ? Math.max(0, Math.min(100, 100 - (remainingSeconds / targetSeconds) * 100))
@@ -549,9 +550,10 @@ function buildCompactTimer(
     label,
     dueAt: timer.due_at ?? null,
     remainingSeconds,
-    remainingLabel: formatRemainingSeconds(remainingSeconds),
-    status: normalizeTimerPayloadStatus(timer.status),
-    progress,
+    remainingLabel: completed ? (key === "first_response" ? "Ответ получен" : "Завершено") : formatRemainingSeconds(remainingSeconds),
+    status: completed && timer.completed_within_target === false ? "completed_late" : normalizeTimerPayloadStatus(timer.status),
+    progress: completed ? 100 : progress,
+    completedAt: timer.completed_at ?? null,
   };
 }
 
@@ -677,6 +679,8 @@ export function mapSupportTimelineEntries(
 }
 
 const requesterSourceLabels: Record<string, string> = {
+  local_authoritative: "Профиль: реестр",
+  external_authoritative: "Профиль: реестр",
   directory: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u043a\u0430\u0442\u0430\u043b\u043e\u0433",
   form: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u0444\u043e\u0440\u043c\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
   import: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u0438\u043c\u043f\u043e\u0440\u0442",

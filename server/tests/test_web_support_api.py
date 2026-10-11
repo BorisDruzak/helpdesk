@@ -2604,7 +2604,8 @@ async def test_web_support_ticket_workspace_stops_first_response_timer_after_rep
     assert data["detail"]["ticket"]["first_response_at"] == (now - timedelta(minutes=1)).isoformat()
     assert data["sla_ola"]["first_response"]["due_at"] is None
     assert data["sla_ola"]["first_response"]["remaining_seconds"] is None
-    assert data["sla_ola"]["first_response"]["status"] == "unknown"
+    assert data["sla_ola"]["first_response"]["status"] == "completed"
+    assert data["sla_ola"]["first_response"]["completed_at"] == (now - timedelta(minutes=1)).isoformat()
     assert data["sla_ola"]["resolution"]["due_at"] == (now + timedelta(hours=3)).isoformat()
 
 

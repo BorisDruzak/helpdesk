@@ -31,6 +31,7 @@ import {
   RequesterProfilePage,
   RequesterTicketPage,
   RequesterTicketsPage,
+  RequesterTicketChatPage,
   SettingsPage,
   SupportCommandCenterPage,
   TicketDetailPage,
@@ -263,7 +264,7 @@ export const appRoutes: RouteObject[] = [
             path: "requester/tickets/:ticketId",
             element: (
               <WorkspaceAccessGate workspace="requester">
-                <RequesterTicketsPage />
+                <RequesterTicketChatPage />
               </WorkspaceAccessGate>
             )
           },

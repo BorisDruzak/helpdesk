@@ -264,11 +264,11 @@ export function TicketReplyComposer({
   setMessageText: (value: string) => void;
 }) {
   return (
-    <section aria-labelledby="requester-reply-title" className="sticky bottom-4 rounded-panel border border-slate-200 bg-white p-4 shadow-lg">
+    <section aria-labelledby="requester-reply-title" className="bg-white">
       <h3 className="text-lg font-semibold text-slate-950" id="requester-reply-title">Ответить</h3>
       <Textarea
         aria-label="Ответ заявителя"
-        className="mt-3 min-h-28 text-sm"
+        className="mt-2 h-20 min-h-16 max-h-40 text-sm"
         onChange={(event) => setMessageText(event.currentTarget.value)}
         value={messageText}
       />

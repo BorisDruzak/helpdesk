@@ -1108,6 +1108,18 @@ describe("support workspace mappers", () => {
     expect(viewModel.selectedTicket?.nextAction.hint).toBe("Продолжить диагностику или подготовить решение");
   });
 
+  it("shows a completed first response rather than a missing deadline", () => {
+    const detail = detailPayload();
+    detail.ticket.first_response_at = "2026-05-05T09:05:00+05:00";
+    const sla = slaOlaPayload();
+    sla.first_response = { due_at: null, remaining_seconds: null, target_seconds: 900, status: "completed" };
+    const vm = mapSupportWorkspaceViewModel({ activeQueueId: null, activeSmartView: "all", detail,
+      slaOla: sla, queue: queuePayload(), selectedTicketId: "ticket-1", now: NOW });
+    expect(vm.selectedTicket?.timers[0].status).toBe("completed");
+    expect(vm.selectedTicket?.timers[0].remainingLabel).toBe("Ответ получен");
+    expect(vm.selectedTicket?.timers[0].progress).toBe(100);
+  });
+
   it("keeps observer trace links in the support admin observer surface", () => {
     const detail = detailPayload();
     detail.observer.summary = {
