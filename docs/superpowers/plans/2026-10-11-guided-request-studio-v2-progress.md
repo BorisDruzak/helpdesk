@@ -194,3 +194,35 @@ P1 changed files: `server/web_api/dto/request_scenario.py`,
 `quality/db_table_classification.toml`, frontend `scenario-contract.ts` and its
 wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
 `PLANS.md` and this ledger. No HTTP route or running application was added.
+
+## P2 evidence (PASS)
+
+- P1 commit: `651b6e54f649961919df02b759a7be2ce88c9659`
+  (`feat(studio): add versioned scenario domain and persistence`).
+- Runtime safety initial RED: **32 failed** (missing modules), then GREEN
+  **32 passed**. Covers invalid graphs, strict values, visible/hidden required
+  fields, Back cleanup, revision conflicts, explicit self-service completion,
+  unavailable diagnostics and 60 seeded DAG executions.
+- Additional RED/GREEN regressions: 1200-field dependency chain (recursion),
+  overlapping multi-select branches, oversized integers (OverflowError), finite
+  floats normalized into unsafe integers (**2 failed**), and resolution coverage
+  depending on an absent answer (**1 failed**, independent review finding).
+  Iterative traversal, conservative overlap/coverage and bounded numeric guards
+  correct these cases.
+- `python -m pytest server/tests/test_request_scenario_runtime.py
+  server/tests/test_request_scenario_contract.py scripts/tests/test_reset_test_data_script.py
+  -q -k 'not requester_session_read'`: **80 passed, 3 deselected**. Three original
+  HTTP owner/auth checks remain RED until P6 without skip/xfail.
+- `python -m pytest server/tests/test_form_process_preview.py
+  server/tests/test_form_business_validation.py -m no_db -q`: **18 passed**.
+- `pnpm --dir webapp exec tsc --noEmit`: **PASS**;
+  `pnpm --dir webapp test src/features/request-template-studio`: **21 passed,
+  5 files**. Transition priority mirrors the TS wire contract.
+- Runtime inventory: **1 file, zero issues**, canonical no-DB suite. Workspace
+  verifier initially required docs updates; its final rerun follows CODEMAP/domain
+  documentation updates. No migration or browser surface changed in P2.
+- Independent review reproduced coverage failure, reviewed corrections and found
+  no remaining blockers; it ran diff whitespace validation, not the full suite.
+- Changed: three pure `tickets/request_scenario_*` modules, runtime test,
+  DTO/TS transition priority, domain docs, CODEMAP, PLANS and ledger. No HTTP
+  route, actual ticket/Endpoint operation, deployment or publication.

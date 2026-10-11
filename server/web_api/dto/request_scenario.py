@@ -85,6 +85,7 @@ Negation.model_rebuild()
 class Transition(StrictModel):
     to: Key
     when: Condition | None = None
+    priority: int | None = Field(default=None, ge=1, le=10000)
 
 
 class FieldOption(StrictModel):

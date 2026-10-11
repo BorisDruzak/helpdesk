@@ -28,7 +28,7 @@ export type ScenarioField = {
   group?: string | null;
   aliases?: string[];
 };
-export type ScenarioTransition = { to: string; when?: ScenarioCondition | null };
+export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null };
 type BlockBase = { id: string; title: string; transitions?: ScenarioTransition[] };
 export type ScenarioBlock = BlockBase & (
   | { kind: "form_page"; layout?: "single" | "group" | "section"; fields: ScenarioField[] }

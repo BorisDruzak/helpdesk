@@ -58,6 +58,38 @@ retains legacy data. Never cross forward-only revisions 144/143. Re-upgrade to
 147 recreates empty scenario tables. Rollback is a release procedure, not a
 requester operation; it is validated only on a harness-owned private database.
 
-P1 introduces contracts and storage only. New HTTP runtime, publication and UI
-remain gated by P2–P10. No production deployment or live scenario publication is
+P1 introduces contracts and storage; P2 adds the pure graph runtime. HTTP runtime,
+publication and UI remain gated by P3–P10. No production deployment or live publication is
 authorized by this implementation.
+
+## Canonical graph semantics (P2)
+
+`tickets/request_scenario_validation.py` rejects duplicate/unknown identifiers,
+unreachable blocks, graph/field dependency cycles, unsupported capabilities,
+unsafe authority fact keys and incompatible condition/role types. Dependency
+checking is iterative across long multi-page chains. Raw HTML and executable
+Markdown links are rejected for instructions; the UI must also render safely.
+
+Conditions are typed: boolean differs from number; missing values do not match
+comparisons (including neq); membership on multi-select matches any selected item.
+Numeric ordering/input/bounds accept finite numbers with absolute value at most
+9007199254740991. Both integers and floats share this wire/conversion safety bound.
+There is no string-to-number coercion at this boundary. Existing canonical codecs
+and constraints normalize valid field values.
+
+Branches execute in ascending explicit priority, then use the final unconditional
+fallback. Overlapping conditions require distinct priorities; multi-select branches
+may overlap even when their expected choice sets are disjoint. A resolution check
+may omit fallback only when result-only conditions cover yes/no/unknown. Conditions
+depending on answers cannot prove coverage using an empty answer set. Finish needs
+an explicit positive resolution check on every reachable path; acknowledging an
+instruction does not establish success.
+
+The pure runtime copies its definition/state and bounds automatic traversal.
+Diagnostics yield unavailable/pre_ticket_contract_unavailable with no network
+operation. Visible required answers are validated; hidden values are pruned.
+Back retains earlier/target-page answers and removes subsequent history, answers
+and derived results. Revision/current-block checks reject stale input. Ticket
+creation, authorization, immutable version pinning and persistent compare-and-swap
+are caller responsibilities in later stages. This engine cannot create tickets,
+execute policies or dispatch Endpoint operations.

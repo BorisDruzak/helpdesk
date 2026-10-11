@@ -36,8 +36,14 @@
 - Guided scenario contracts/storage: `web_api/dto/request_scenario.py`,
   `app/db/request_scenario_models.py`, additive migration 147. See
   `GUIDED_REQUEST_SCENARIOS.md` for limits, immutable version/session pins,
-  cleanup classification and the 147 → 146 rollback boundary. Graph execution
-  and new APIs are not introduced by the storage layer.
+  cleanup classification and the 147 → 146 rollback boundary.
+- `tickets/request_scenario_validation.py` validates reachable acyclic graphs,
+  field dependencies, typed conditions, terminal/fallback safety and role mapping.
+  `request_scenario_conditions.py` owns the canonical condition evaluator.
+  `request_scenario_runtime.py` executes that graph for simulation and sessions,
+  normalizes visible answers through existing codecs and clears downstream state
+  on Back. It has no DB, ticket creation or Endpoint dispatch side effects.
+  New authenticated APIs and persistent sessions are later stages.
 
 - `server/tickets/form_catalog.py` is the compatibility facade and catalog
   persistence/augmentation boundary. Existing import names and callable

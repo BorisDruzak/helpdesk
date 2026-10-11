@@ -7,7 +7,9 @@ P0 PASS: new domain/auth RED 13 failures + 2 legacy passes; existing PostgreSQL 
 no-DB server 22 and frontend 74 passes. Independent review and owned DB/tunnel cleanup complete.
 P1 PASS: typed DTO/TS + migration147/storage; PostgreSQL10 and corrected FK/concurrency2,
 DTO/reset42 and frontendwire1 pass; tsc, cleanup/inventory/workspace gates pass.
-Independent review has no remaining findings. P2 is next; P3–P10 remain gated.
+P2 PASS: canonical graph runtime, 80 domain/runtime/reset and 18 legacy form/preview
+tests; frontend21, tsc and inventory pass. Independent review has no blockers.
+P3 admin APIs are next; P4–P10 remain gated.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI
