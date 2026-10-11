@@ -33,6 +33,20 @@
 
 ## Dynamic request forms
 
+- Scenario publication/readiness: `tickets/request_scenario_publication.py`
+  and `tickets/request_scenario_readiness.py` reuse the canonical evaluator,
+  form/catalog processing dry-run and existing signed confirmation storage.
+  Admin `readiness`, `publish-preview`, `publish` and `rollback-draft` routes
+  require revision checks; publication validates locked canonical sources,
+  creates an immutable version, changes the active pointer and consumes the
+  actor/scope-bound token in one audited transaction. Business calendars are
+  part of source binding. A rollback copies history into a new draft revision.
+- `tickets/service_catalog_preview.py::simulate_service_catalog_processing`
+  passes the already validated canonical submission to Policy Health via a
+  trusted internal keyword. Request JSON cannot inject that context. Requester
+  preview and admin scenario simulation share this path without ticket writes.
+  Frontend publication, simulation and version history live in the corresponding
+  `webapp/src/features/request-template-studio/scenario-*.tsx` modules.
 - Guided scenario contracts/storage: `web_api/dto/request_scenario.py`,
   `app/db/request_scenario_models.py`, additive migration 147. See
   `GUIDED_REQUEST_SCENARIOS.md` for limits, immutable version/session pins,

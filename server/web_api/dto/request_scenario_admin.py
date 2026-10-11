@@ -1,7 +1,7 @@
 """Strict admin editing inputs; publication and enablement are separate actions."""
 from typing import Annotated, Literal
 
-from pydantic import Field, StrictInt
+from pydantic import Field, StrictInt, model_validator
 
 from web_api.dto.request_scenario import CatalogCode, ScenarioAnswerRequest, ScenarioDraftDefinition, StrictModel
 
@@ -34,3 +34,20 @@ class RevisionInput(StrictModel):
 
 class SimulationInput(RevisionInput):
     steps: Annotated[list[ScenarioAnswerRequest], Field(max_length=256)] = Field(default_factory=list)
+    preview: ScenarioAnswerRequest | None = None
+
+
+class ScenarioPublish(RevisionInput):
+    confirmation_token: Annotated[str, Field(min_length=1, max_length=4096)]
+    confirm: Literal[True]
+
+    @model_validator(mode="before")
+    @classmethod
+    def explicit_confirmation(cls, raw):
+        if not isinstance(raw, dict) or raw.get("confirm") is not True:
+            raise ValueError("Explicit confirmation is required")
+        return raw
+
+
+class ScenarioRollback(RevisionInput):
+    version_id: Identifier

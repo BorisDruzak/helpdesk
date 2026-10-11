@@ -218,9 +218,10 @@ class PolicyHealthService:
                 return item
         return None
 
-    async def simulate(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def simulate(self, payload: dict[str, Any], *, validated_submission: dict[str, Any] | None = None) -> dict[str, Any]:
         if self.session is None:
             raise RuntimeError("session is required")
+        trusted_submission = validated_submission is not None
         template_code = str(payload.get("template_code") or payload.get("request_template_key") or "").strip()
         repo = HelpdeskPolicyRepo(self.session)
         catalog_selection = None
@@ -268,19 +269,19 @@ class PolicyHealthService:
         if template.get("sla_policy_id") is not None:
             template_context["sla_policy_id"] = template.get("sla_policy_id")
 
-        validated_submission = await apply_effective_registry_policies(
-            self.session,
-            {
-                "form_key": template_code,
-                "ticket_type": template.get("ticket_type"),
-                "template_context": template_context,
-            },
-        )
-        if catalog_selection is not None:
-            validated_submission = await ServiceCatalogRuntimeResolver(self.session).apply_to_validated_submission(
-                validated_submission,
-                catalog_selection,
+        if validated_submission is None:
+            validated_submission = await apply_effective_registry_policies(
+                self.session,
+                {"form_key": template_code, "ticket_type": template.get("ticket_type"), "template_context": template_context},
             )
+            if catalog_selection is not None:
+                validated_submission = await ServiceCatalogRuntimeResolver(self.session).apply_to_validated_submission(validated_submission, catalog_selection)
+        else:
+            # Trusted caller-only keyword: the public JSON payload cannot supply
+            # this context. Preserve the same normalized form and policy overlays
+            # that actual canonical creation will use.
+            validated_submission = deepcopy(validated_submission)
+            request_form_data = deepcopy(validated_submission.get("submitted_values") or {})
         template_context = validated_submission.get("template_context") or template_context
         if not isinstance(template_context, dict):
             template_context = {}
@@ -310,6 +311,9 @@ class PolicyHealthService:
             custom_fields["diagnostic_consent"] = deepcopy(diagnostic_consent)
 
         now = datetime.now(timezone.utc)
+        ticket_type = template.get("ticket_type") or "service_request"
+        if trusted_submission:
+            ticket_type = validated_submission.get("ticket_type") or template_context.get("ticket_type") or ticket_type
         ticket = Ticket(
             ticket_id=f"dry-run-{uuid.uuid4()}",
             ticket_code="DRY-RUN",
@@ -319,10 +323,10 @@ class PolicyHealthService:
             status="new",
             priority=legacy_priority,
             requester_id=str(requester_context.get("requester_id") or "dry-run:requester"),
-            ticket_type=str(template.get("ticket_type") or "service_request"),
-            category_id=template.get("category_id"),
-            service_id=template.get("service_id"),
-            subcategory_id=template.get("subcategory_id"),
+            ticket_type=str(ticket_type),
+            category_id=template_context.get("category_id") if trusted_submission else template.get("category_id"),
+            service_id=template_context.get("service_id") if trusted_submission else template.get("service_id"),
+            subcategory_id=template_context.get("subcategory_id") if trusted_submission else template.get("subcategory_id"),
             custom_fields=custom_fields,
             created_at=now,
             updated_at=now,

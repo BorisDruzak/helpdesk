@@ -14,7 +14,9 @@ from auth.middleware import require_auth
 from tickets.request_scenario_runtime import ScenarioConflict, ScenarioInputError
 from tickets.request_scenario_validation import ScenarioValidationError
 from web_api.dto.request_scenario import StrictModel
-from web_api.dto.request_scenario_admin import CategoryInput, Identifier, RevisionInput, ScenarioCreate, ScenarioSave, SimulationInput
+from web_api.dto.request_scenario_admin import CategoryInput, Identifier, RevisionInput, ScenarioCreate, ScenarioSave, SimulationInput, ScenarioPublish, ScenarioRollback
+from tickets.request_scenario_publication import ScenarioPublicationService
+from tickets.request_studio_publication import RequestStudioConfirmationError
 
 
 class CatalogQuery(StrictModel):
@@ -45,7 +47,9 @@ async def _run(request, operation, *, write=False):
             result = await operation(RequestScenarioRepo(session, request["auth_context"]))
             if write:
                 await session.commit()
-        return web.json_response({"status": "success", "data": result})
+        return web.json_response({"status": "success", "data": result}, headers={"Cache-Control": "no-store"})
+    except RequestStudioConfirmationError as exc:
+        return web.json_response({"status": "error", "error_code": exc.error_code}, status=exc.status, headers={"Cache-Control": "no-store"})
     except ScenarioAdminError as exc:
         return web.json_response({"status": "error", "error_code": exc.code}, status=exc.status)
     except ScenarioValidationError as exc:
@@ -140,3 +144,33 @@ async def handle_scenario_simulate(request):
     async def operation(repo):
         return await repo.simulate(_id(request), await _payload(request, SimulationInput))
     return await _run(request, operation)
+
+
+@require_auth("admin", "auditor")
+async def handle_scenario_readiness(request):
+    async def operation(repo):
+        payload = await _payload(request, RevisionInput)
+        return await ScenarioPublicationService(repo).preview(_id(request), payload.revision, issue_token=False)
+    return await _run(request, operation)
+
+
+@require_auth("admin")
+async def handle_scenario_publish_preview(request):
+    async def operation(repo):
+        payload = await _payload(request, RevisionInput)
+        return await ScenarioPublicationService(repo).preview(_id(request), payload.revision)
+    return await _run(request, operation, write=True)
+
+
+@require_auth("admin")
+async def handle_scenario_publish(request):
+    async def operation(repo):
+        return await ScenarioPublicationService(repo).publish(_id(request), await _payload(request, ScenarioPublish))
+    return await _run(request, operation, write=True)
+
+
+@require_auth("admin")
+async def handle_scenario_rollback_draft(request):
+    async def operation(repo):
+        return await ScenarioPublicationService(repo).rollback_draft(_id(request), await _payload(request, ScenarioRollback))
+    return await _run(request, operation, write=True)

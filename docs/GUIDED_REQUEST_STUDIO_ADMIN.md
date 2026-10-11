@@ -136,3 +136,26 @@ new scenario publication/readiness is the separate P8 gate.
 The selected computer uses the existing ownership gate. Changing that selection
 invalidates the UI preview and pending responses; disagreement with a retained
 scenario device picker is rejected rather than silently replacing its target.
+
+The publication step separates Policy Health from Scenario Readiness. Prepare
+publication only after saving; examine the diff and blockers, then explicitly
+confirm. A confirmation belongs to the authenticated administrator, saved
+revision and complete canonical source snapshot. Changes to policy, form,
+catalog, taxonomy, queue or SLA calendar require another preview. Tokens expire
+and can be consumed only once. The publisher repeats readiness in the same
+transaction that creates the immutable version and switches its active pointer.
+
+Readiness enumerates finite answers through the canonical scenario evaluator,
+including optional instruction acknowledgments and all resolution outcomes.
+Processing is checked through the existing form and policy runtime. Above 512
+variants, or when an unbounded fact can affect branching/processing, publication
+is blocked with a specific explanation. Policy Health alone cannot clear this.
+
+«История версий» loads published history on demand. Select a version and return
+it to the saved draft; unsaved changes must be handled first. This replaces the
+draft through the normal revision gate, while the active publication remains
+effective. Review and publish the restored draft to create a new version.
+The simulation step accepts typed test answers and shows actual server priority,
+queue, deadline and approval requirement without creating a ticket or running
+device operations. P8 acceptance and full staging signoff are tracked in the
+implementation progress ledger.

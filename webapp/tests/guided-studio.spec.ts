@@ -23,6 +23,57 @@ async function fixture(page: Page) {
   });
   return { errors, failures, mutations };
 }
+
+for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
+  test(`guided studio publication confirmation ${viewport.width}`, async ({ page }, info) => {
+    await page.setViewportSize(viewport);
+    const state = await fixture(page);
+    await page.route("**/api/web/admin/request-studio/scenarios/s1/versions", route => route.fulfill({ json: { status: "success", data: [{ id: "v1", version: 1, state: "retired" }] } }));
+    await page.route("**/api/web/admin/request-studio/scenarios/s1/rollback-draft", async route => {
+      expect(route.request().postDataJSON()).toEqual({ revision: 3, version_id: "v1" });
+      await route.fulfill({ json: { status: "success", data: { scenario: { id: "s1", archived: false }, draft: { revision: 4,
+        definition: { schema_version: 1, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Прежний сценарий печати", category_id: "c1", blocks: [], process_binding: { request_template_key: "printer" } } } } } });
+    });
+    await page.route("**/api/web/admin/request-studio/scenarios/s1/publish*", async route => {
+      const body = route.request().postDataJSON();
+      let data: unknown;
+      if (new URL(route.request().url()).pathname.endsWith("/publish-preview")) {
+        expect(body).toEqual({ revision: 3 });
+        data = { revision: 3, health: { health_status: "ok" }, readiness: { can_publish: true, issues: [], variants_checked: 4 },
+          diff: [{ path: "title", before: "Раньше", after: "Не печатает" }, ...Array.from({ length: 35 }, (_, index) => ({ path: `Вопрос ${index + 1}`, before: "Не задано", after: `Уточнение ${index + 1}` }))],
+          confirmation_token: "browser-fixture-token", expires_at: "2099-01-01T00:00:00Z", source_hash: "fixture" };
+      } else {
+        expect(body).toEqual({ revision: 3, confirm: true, confirmation_token: "browser-fixture-token" });
+        data = { version: { version: 1 }, scenario: { id: "s1" }, draft: { revision: 3 } };
+      }
+      await route.fulfill({ json: { status: "success", data } });
+    });
+    await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("button", { name: "Не печатает", exact: true }).click();
+    await page.getByRole("button", { name: "5. Публикация", exact: true }).click();
+    await page.getByRole("button", { name: "Подготовить публикацию", exact: true }).click();
+    await expect(page.getByText("Раньше", { exact: true })).toBeVisible();
+    const checkbox = page.getByRole("checkbox", { name: "Изменения проверены, подтверждаю публикацию" });
+    await checkbox.scrollIntoViewIfNeeded();
+    const publish = page.getByRole("button", { name: "Опубликовать сценарий", exact: true });
+    await expect(publish).toBeDisabled();
+    await checkbox.focus(); await page.keyboard.press("Space");
+    await expect(publish).toBeEnabled(); await expect(publish).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`${viewport.width}-publication-confirmation.png`) });
+    await publish.click();
+    await expect(page.getByText("Опубликована версия 1.", { exact: true })).toBeVisible();
+    await expect(publish).toHaveCount(0);
+    await page.getByRole("button", { name: "История версий", exact: true }).click();
+    await page.getByRole("combobox", { name: "Версия для черновика", exact: true }).selectOption("v1");
+    const restore = page.getByRole("button", { name: "Вернуть выбранную версию в черновик", exact: true });
+    await restore.focus(); await page.keyboard.press("Enter");
+    await expect(page.getByText("Версия скопирована в черновик. Перед публикацией проверьте её заново.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "1. Категория и назначение", exact: true }).click();
+    await expect(page.getByLabel("Название сценария", { exact: true })).toHaveValue("Прежний сценарий печати");
+    expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
+  });
+}
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
   test(`guided studio catalog and wizard ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);

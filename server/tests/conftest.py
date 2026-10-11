@@ -1274,6 +1274,7 @@ def ensure_db_ready(request):
 
 FULL_CLEANUP_TABLES = (
     "request_studio_sessions",
+    "request_studio_publish_tokens",
     "requester_ticket_create_requests",
     "observer_integrity_check_runs",
     "observer_integrity_events",

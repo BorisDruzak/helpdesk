@@ -226,7 +226,16 @@ class RequestScenarioRepo:
         state = engine.initial_state()
         for step in payload.steps:
             state = engine.advance(state, step)
-        return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"), "revision": draft.revision}
+        from tickets.request_scenario_session import project_step
+        projected = engine.preview_answers(state, payload.preview) if payload.preview else state
+        processing = None
+        if engine.blocks[state.current_block_id].kind == "submit_ticket":
+            from tickets.request_scenario_submission import build_scenario_submission
+            from tickets.service_catalog_preview import simulate_service_catalog_processing
+            data, snapshot = build_scenario_submission(engine.definition, state, session_id="simulation", version_id="draft")
+            _, processing = await simulate_service_catalog_processing(self.session, data, scenario_snapshot=snapshot)
+        return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"),
+                "current_step": project_step(engine.definition, projected)["block"], "processing": processing, "revision": draft.revision}
 
     async def catalog_view(self, *, query="", status="all", offset=0, limit=100, category_id=None):
         categories = await self.categories()

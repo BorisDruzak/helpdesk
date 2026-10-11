@@ -44,7 +44,7 @@ def _safe_text(value: Any) -> str | None:
     return text or None
 
 
-async def build_requester_service_catalog_preview(session: Any, payload: dict[str, Any], *, scenario_snapshot=None) -> dict[str, Any]:
+async def simulate_service_catalog_processing(session: Any, payload: dict[str, Any], *, scenario_snapshot=None):
     resolver = ServiceCatalogRuntimeResolver(session)
     try:
         selection = await resolver.resolve_selection(
@@ -76,7 +76,7 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
             from tickets.request_scenario_submission import augment_scenario_submission
             validated = augment_scenario_submission(validated, scenario_snapshot)
         validated = await resolver.apply_to_validated_submission(validated, selection)
-        await apply_effective_registry_policies(session, validated)
+        validated = await apply_effective_registry_policies(session, validated)
     except ValueError as exc:
         details = exc.args[0] if exc.args else "invalid form payload"
         raise ServiceCatalogPreviewError({"form_payload": details}) from exc
@@ -94,7 +94,12 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
         "description": _safe_text(payload.get("description")) or "",
         "diagnostic_consent": deepcopy(payload.get("diagnostic_consent") if isinstance(payload.get("diagnostic_consent"), dict) else {}),
     }
-    simulation = await PolicyHealthService(session).simulate(simulate_payload)
+    simulation = await PolicyHealthService(session).simulate(simulate_payload, validated_submission=validated)
+    return selection, simulation
+
+
+async def build_requester_service_catalog_preview(session: Any, payload: dict[str, Any], *, scenario_snapshot=None) -> dict[str, Any]:
+    selection, simulation = await simulate_service_catalog_processing(session, payload, scenario_snapshot=scenario_snapshot)
 
     service = selection.service or {}
     offering = selection.offering or {}

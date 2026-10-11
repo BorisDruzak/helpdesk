@@ -485,3 +485,51 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
   No listeners remain on 4188/55438; owned temporary databases are harness-cleaned.
   Publication readiness/source pinning remain P8; no deployment, live offering
   publication or Endpoint execution. P8–P10 remain required.
+
+### P8 — PASS
+
+- Added distinct graph/processing readiness, bounded canonical variant execution,
+  nested diff, actor/scope/source-bound one-use confirmation, atomic immutable
+  version publication and rollback into a new draft revision. API simulation
+  now supports current-page conditional projection and actual policy dry-run.
+- Shared confirmation helpers preserve the legacy publication API. Source
+  binding includes canonical form packs, templates, policies, catalog, taxonomy,
+  queues, SLA/OLA targets and business calendars. Publication locks those static
+  source tables in SHARE mode until commit; preview and simulation do not.
+  The conservative global source hash may require a new preview after unrelated
+  administrative edits. Neither operation dispatches Endpoint diagnostics.
+- Independent review identified optional instruction outcomes, priority
+  importance/modifier references and omitted calendar content/locking. Genuine
+  RED tests reproduced all three; pure and PostgreSQL fixes now pass. The
+  calendar reproduction originally published after a timezone change (expected
+  409); the corrected source binding rejects it. Used tokens now enter full
+  isolated test cleanup; the legacy global token count assertion is unchanged.
+- Readiness fails closed above 512 finite variants or for unbounded facts that
+  influence branching/processing. This is an explicit current limitation, not
+  proof that all supported field combinations are publishable.
+- A focused review of the shared dry-run extension found normalized ticket
+  type/taxonomy and empty-answer parity defects. Genuine RED covered differing
+  raw/canonical type, while the regression also preserves an empty normalized
+  map despite raw hidden facts. Canonical overlay return values are retained.
+  These fixes preserve the legacy no-keyword simulator. No review blockers
+  remain. Optional acknowledgment is available in both admin and requester UI.
+- Final fast backend command across readiness/submission/admin contract/graph/
+  runtime/Policy Health: **122 passed in 1.33s**. Studio and requester frontend
+  tests: **61 passed in 6.26s**. `pnpm --dir webapp build`: **PASS**, with the
+  existing shared-chunk warning. Scoped workspace verification and strict test
+  inventory for all three new backend files: **PASS**, zero inventory issues.
+- PostgreSQL publication/calendar plus complete legacy Studio and requester
+  catalog/Policy Health catalog regressions: **14 passed in 458.51s**. After the
+  final parity fixes, simulation-vs-actual-create with offering type override,
+  actual P2/SLA120 no-write preview and calendar binding: **3 passed in 119.42s**.
+  Actor mismatch, invalid/reused/expired tokens, changed sources/revisions,
+  concurrent publish, audit rollback and rollback-as-new-version are covered.
+- Final `PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm --dir webapp test:e2e
+  guided-studio.spec.ts`: **11 passed in 28.3s** across four sizes, including
+  keyboard publication and history restore into a new draft. Screenshots are
+  retained in ignored `artifacts/browser_checks/guided-request-studio-v2/p8/`,
+  1366 inspected. This is fixture browser evidence, not P10 actual signoff.
+- Full-task follow-through still requires policy selection inside the processing
+  step, complete simulated-result presentation and actual A–J staging acceptance.
+  These remain explicit P10 acceptance gaps; P8 only accepts its publication
+  contract. P9/P10 remain required. No production deployment or live publication.

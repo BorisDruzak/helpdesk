@@ -357,6 +357,7 @@ from web_api.request_scenario_admin_handlers import (
     handle_scenario_catalog, handle_scenario_category_create, handle_scenario_category_update,
     handle_scenario_category_archive, handle_scenario_create, handle_scenario_detail,
     handle_scenario_draft_save, handle_scenario_archive, handle_scenario_versions, handle_scenario_simulate,
+    handle_scenario_readiness, handle_scenario_publish_preview, handle_scenario_publish, handle_scenario_rollback_draft,
 )
 from web_api.request_scenario_handlers import (
     handle_web_requester_scenario_start, handle_web_requester_scenario_session,
@@ -722,6 +723,10 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/request-studio/scenarios/{identifier}/archive', handle_scenario_archive),
         web.get('/api/web/admin/request-studio/scenarios/{identifier}/versions', handle_scenario_versions),
         web.post('/api/web/admin/request-studio/scenarios/{identifier}/simulate', handle_scenario_simulate),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/readiness', handle_scenario_readiness),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/publish-preview', handle_scenario_publish_preview),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/publish', handle_scenario_publish),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/rollback-draft', handle_scenario_rollback_draft),
         web.post('/api/web/admin/request-studio/validate-draft', handle_web_admin_request_studio_validate_draft),
         web.post('/api/web/admin/request-studio/publish-preview', handle_web_admin_request_studio_publish_preview),
         web.post('/api/web/admin/request-studio/publish', handle_web_admin_request_studio_publish),

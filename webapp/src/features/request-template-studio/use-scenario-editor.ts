@@ -44,5 +44,5 @@ export function useScenarioEditor() {
   }
   function close() { requestSequence.current += 1; setLoadId(null); setLoading(false); setDefinition(null); setDetail(null); setError(""); setMessage(""); setConflict(false); }
   function change(value: ScenarioDraftDefinition) { setDefinition(value); setMessage(""); }
-  return { definition, detail, dirty, message, error, conflict, loading, loadId, save, archive, open, create, close, change, busy: loading || save.isPending || archive.isPending };
+  return { definition, detail, dirty, message, error, conflict, loading, loadId, save, archive, open, create, close, change, accept, busy: loading || save.isPending || archive.isPending };
 }

@@ -99,13 +99,14 @@ it("reveals a conditional required field before displaying answer errors", async
   expect(screen.getAllByRole("textbox")).toHaveLength(2);
 });
 
-it("requires acknowledgment and sends the explicit result", async () => {
+it.each([true, false])("supports required or optional acknowledgment (%s) and sends the explicit result", async required => {
   const fetchMock = vi.fn(async () => response({ id: "session", revision: 3, state: "active", back_targets: [],
-    block: { id: "instruction", kind: "instruction", title: "Проверьте питание", content: { body: "Подключите кабель", format: "plain" }, acknowledgment_required: true } }));
+    block: { id: "instruction", kind: "instruction", title: "Проверьте питание", content: { body: "Подключите кабель", format: "plain" }, acknowledgment_required: required } }));
   vi.stubGlobal("fetch", fetchMock);
   render(<ScenarioSession offering="workplace.printer" />);
   await screen.findByText("Подключите кабель");
-  expect(screen.getByRole("button", { name: "Продолжить" })).toBeDisabled();
+  if (required) expect(screen.getByRole("button", { name: "Продолжить" })).toBeDisabled();
+  else expect(screen.getByRole("button", { name: "Продолжить" })).toBeEnabled();
   fireEvent.click(screen.getByRole("checkbox", { name: "Инструкция выполнена" }));
   fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));

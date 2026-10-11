@@ -25,8 +25,13 @@ workspace and independent review pass.
 P7 PASS: canonical ticket preview/create, trusted facts and human summary,
 owner/device gates, transactional session/ledger/audit and idempotent submit.
 Fast217, frontend28, PostgreSQL3 plus final legacy regression9, browser8,
-build/inventory/workspace and independent review pass. P8–P10 remain gated,
-including safe publication and actual staging acceptance.
+build/inventory/workspace and independent review pass.
+P8 PASS: independent readiness, source-bound one-use confirmation, atomic version
+publication and rollback into a new draft; canonical dry-run parity fixes.
+Fast122, frontend61, PostgreSQL14 plus latest parity/calendar3, browser11,
+build/inventory/workspace and independent review pass. Finite coverage limits
+and remaining processing/UI acceptance gaps are explicit in the ledger.
+P9/P10 remain gated, including safe diagnostics/attachments and actual staging acceptance.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI
