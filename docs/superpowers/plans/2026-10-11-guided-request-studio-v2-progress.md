@@ -337,3 +337,57 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
   and admin tests, CODEMAP/domain/admin guide/PLANS/ledger. No deployment or live
   publication. P5 block editing, P6/P7 requester/ticket flow and P8 publication
   are next gates, with P9/P10 still required for the full goal.
+
+## P5 PASS — block workbench
+
+- Wizard step 2 now has an explorer, one selected block editor and optional
+  selected-step preview. Palette insertion focuses the new title; drag/drop and
+  keyboard buttons reorder without rewriting explicit transitions. Copy generates
+  fresh block/field/fact identifiers and remaps copied local conditions. Removal
+  displays incoming routes/entry and requires reassignment; externally referenced
+  answers block deletion. Undo/redo keeps at most 100 local snapshots.
+- Form pages support single/group/section layouts and one selected question
+  editor. Local disclosures contain typed conditions, compatible multiple roles,
+  validation, aliases, facts and dependency uses. Source/target pickers use titles;
+  field sources are limited to current/upstream pages. Option labels and stable
+  values are separate. File type is unavailable; diagnostics cannot execute.
+- Model/component suites first failed on missing implementation modules (RED),
+  then passed. Final command `pnpm --dir webapp test
+  src/pages/admin/request-template-studio-page.test.tsx
+  src/pages/admin/request-template-studio-catalog.test.tsx
+  src/features/request-template-studio`: **59 passed in 12 files**. Covers safe
+  graph operations, multiple roles, selected-only editors, focus, undo/redo,
+  readonly controls, exact result/operator domains, separator typing and numeric
+  wire safety, plus all P4 catalog/CAS/conflict/navigation regressions.
+- Fast server regression command from P4: **94 passed, 3 deselected in 1.16s**.
+  The three requester-session auth RED tests remain the explicit P6 gate;
+  no skip/xfail was added. P5 changes no backend route, schema or DB operation;
+  PostgreSQL P3/P4 receipts carry forward without an artificial repeated DB run.
+- `pnpm --dir webapp build`: **PASS**, TypeScript and production bundle. Existing
+  common chunk >500 KiB warning remains; no dependency/threshold change.
+- Independent read-only review found and corrected two blockers: separator loss
+  during ordinary membership/alias typing and incompatible operators/results.
+  Incremental typing retains raw separators while emitting parsed canonical
+  values; enum/boolean membership uses typed checkboxes. Exact block result domains
+  and numeric/multiselect operator restrictions preserve invalid saved conditions
+  with an explicit warning. Final source review has no remaining blockers.
+- Visual inspection caught overlapping breakpoint rules that moved wide preview
+  below the editor. Non-overlapping media rules and browser geometry assertions
+  now require the third column right of the editor at the same Y. Partial header
+  overlap also obscured Save; a genuine failing regression was fixed with full
+  anchor visibility observation. Browser checks require the complete primary
+  action inside the viewport and below the shell header.
+- Final browser command `PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm --dir webapp
+  test:e2e guided-studio.spec.ts`: **7 passed in 22.7s**, including builder
+  at 1366×768, 1440×900, 1920×1080 and 820×1180. Checks include ordinary alias
+  typing, enum membership, keyboard move, correct preview columns/drawer,
+  full Save visibility, save/reload persistence and no horizontal overflow.
+  Normal flows have zero console/page/network errors; the separate retry case
+  permits only its intentional catalog 500. Screenshots are retained in the
+  ignored `artifacts/browser_checks/guided-request-studio-v2/p5/` directory.
+  These are fixture API/UI checks, not actual staging acceptance (P10).
+- Test inventory: **2 existing server files, zero issues**. Scoped workspace
+  verification and `git diff --check` passed. GitNexus query preceded narrow
+  source inspection; no external contract/Endpoint behavior changed. No live
+  publication or deployment. P6 requester sessions, P7 real ticket/policy binding,
+  P8 readiness/publication and P9 compatibility/import remain required.

@@ -7,7 +7,7 @@ export function ScenarioActionBar({ children }: { children: ReactNode }) {
   const [floating, setFloating] = useState(false);
   useEffect(() => {
     if (!anchor.current || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(([entry]) => setFloating(!entry.isIntersecting && entry.boundingClientRect.top < 80), { rootMargin: "-80px 0px 0px 0px" });
+    const observer = new IntersectionObserver(([entry]) => setFloating(entry.boundingClientRect.top < 80), { rootMargin: "-80px 0px 0px 0px", threshold: [0, 1] });
     observer.observe(anchor.current);
     return () => observer.disconnect();
   }, []);

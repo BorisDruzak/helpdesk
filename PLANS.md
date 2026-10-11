@@ -14,8 +14,11 @@ fast92, inventory/cleanup/workspace and independent review pass.
 P4 PASS: catalog/five-step React shell, legacy form inventory, category filter
 before pagination, CAS save/reload and unsaved navigation guard. Frontend39,
 fast94, PostgreSQL2, browser3, build/inventory/workspace and independent review
-pass; details/screenshots are in the execution ledger. P5 block builder is next;
-P6–P10 remain gated.
+pass; details/screenshots are in the execution ledger.
+P5 PASS: selected block/field workbench, typed conditions and multi-role mappings,
+safe graph edits, bounded undo/redo and responsive preview. Frontend59, fast94,
+browser7, build/inventory/workspace and independent review pass. P6–P10 remain
+gated, including actual staging acceptance and legacy-form import/compatibility.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI

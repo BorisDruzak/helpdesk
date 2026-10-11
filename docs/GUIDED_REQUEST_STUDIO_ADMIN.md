@@ -38,10 +38,36 @@ Ambiguous/missing context stays in the catalog with an explicit notice. A
 paginated/incomplete catalog also requires an explicit search/open choice;
 absence from its first page never causes automatic creation of another draft.
 
-P4 provides the catalog and wizard shell. The block builder (P5), requester
-sessions/ticket submission (P6/P7), and publication/diff/confirmation flow (P8)
+P4 provides the catalog and wizard shell. P5 adds the block builder. Requester
+sessions/ticket submission (P6/P7) and publication/diff/confirmation flow (P8)
 are subsequent gates. No publication, enabling of requester scenarios,
 production deployment, or Endpoint execution is performed by this shell.
+
+## Block workbench
+
+The second wizard step contains the block explorer and exactly one selected
+block editor. Add from the palette inserts after selection and focuses its title.
+Drag/drop and keyboard-accessible up/down buttons change list order without
+rewriting explicit graph transitions. Copy assigns fresh block/field/fact keys
+and remaps copied local dependencies. Removal shows incoming transitions and
+requires an existing replacement for references/entry. An answer still referenced
+elsewhere cannot be removed until its dependencies are edited. Local undo/redo
+is bounded to 100 snapshots and resets on an externally replaced definition.
+
+Question pages have single/group/section layout, a question list and exactly one
+field editor. Labels, types, required/help/placeholder and option labels are
+primary controls. Each field/option/block/instruction has its own inline advanced
+settings: stable identifiers, typed conditions, length/numeric bounds, aliases,
+fact key, dependency uses and compatible multiple process roles. Changing a
+field type removes incompatible roles/bounds/options. File fields are explicitly
+unavailable. Conditions use human-readable source/target pickers, never a JSON
+editor. The server remains authoritative for graph and answer semantics.
+
+Selected-step preview is collapsible and renders content as safe text; it does
+not execute transitions. At 1440px and above it is the third workbench column;
+at smaller widths it is a keyboard-contained drawer with Escape/close and focus
+restoration. Tablet uses the explorer list above the full-width selected editor.
+Canonical branch execution is the separate server testing/session flow.
 
 ## Components and verification
 
@@ -55,7 +81,9 @@ Component checks cover catalog/loading/empty/error/retry/search/category,
 creation, one visible step, CAS save/reload/conflict, auditor, legacy forms,
 deep links and unsaved navigation/unload. `webapp/tests/guided-studio.spec.ts`
 uses the project fixture server and mocked API contracts to verify the rendered
-catalog/wizard at 1366×768 and 1920×1080, visible primary actions, inline settings,
+catalog/wizard at 1366×768 and 1920×1080, and the block builder at those widths,
+1440×900 and tablet 820×1180. It checks preview column geometry, keyboard focus,
+separator typing, typed membership, save/reload, fully visible primary actions, inline settings,
 no horizontal document overflow, and console/network errors. Screenshots are
 normal test artifacts under `webapp/test-results`; this is fixture browser
 evidence, not staging runtime acceptance (P10).
