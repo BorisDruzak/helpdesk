@@ -63,5 +63,5 @@ export type ScenarioAnswerRequest = {
   expected_block_id: string;
   revision: number;
   answers?: Record<string, ScenarioAnswer>;
-  current_result?: "yes" | "no" | "unknown" | "acknowledged" | null;
+  current_result?: "yes" | "no" | "unknown" | "acknowledged" | "request_ticket" | null;
 };

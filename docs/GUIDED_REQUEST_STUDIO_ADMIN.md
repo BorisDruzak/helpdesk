@@ -230,3 +230,13 @@ Selected-step preview renders the existing requester controls in a disabled
 view; it does not evaluate conditions or execute the branch. «Предпросмотр всей
 ветки» opens the server testing stage. Its «Не знаю» control sends explicit null
 for fields allowing an unknown answer, matching the requester contract.
+
+To let a requester reach support without completing a long instruction, open
+that instruction's local advanced transitions and choose the result «Нужна
+помощь поддержки» with a review block as its destination. Use an explicit
+equality condition. The server shows the matching button only when this is the
+selected transition; an earlier matching branch can make it unavailable. The
+requester and simulator can take this branch without checking «Инструкция
+выполнена». Answers already collected remain available for review; mandatory
+ticket facts and processing checks still apply. Ordinary «Продолжить» retains
+the configured acknowledgment requirement.

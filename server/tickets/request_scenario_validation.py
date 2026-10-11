@@ -4,7 +4,7 @@ from collections import deque
 import re
 
 from web_api.dto.request_scenario import Comparison, Membership, Exists
-from tickets.request_scenario_conditions import evaluate_condition, finite_number, guarantees_yes, leaves, mutually_exclusive
+from tickets.request_scenario_conditions import evaluate_condition, finite_number, guarantees_yes, leaves, mutually_exclusive, explicit_ticket_request
 
 DIAGNOSTIC_CAPABILITIES = frozenset({"endpoint.context.diagnostic.collect"})
 DIAGNOSTIC_FAILURE_STATUSES = ("unavailable", "denied", "timeout", "capability_absent")
@@ -111,6 +111,18 @@ def validate_scenario(definition):
         if (overlap and any(value is None for value in priorities)) or len([p for p in priorities if p is not None]) != len({p for p in priorities if p is not None}):
             add("ambiguous_precedence", path, "Overlapping branches require distinct explicit priorities")
         for edge in block.transitions:
+            ticket_result = False
+            if block.kind == "instruction" and edge.when is not None:
+                ticket_result = any(
+                    leaf.source == "current_result" and (
+                        "request_ticket" in leaf.value if isinstance(leaf, Membership)
+                        else getattr(leaf, "value", None) == "request_ticket")
+                    for leaf in leaves(edge.when))
+            if ticket_result:
+                if not explicit_ticket_request(edge.when):
+                    add("invalid_ticket_request_condition", path, "A ticket request requires an explicit current-result equality")
+                if edge.to in blocks and blocks[edge.to].kind != "review":
+                    add("invalid_ticket_request_target", path, "A ticket request must lead to a review block")
             if edge.to not in blocks:
                 add("unknown_target", path, "Transition target does not exist")
             else:
@@ -169,7 +181,7 @@ def validate_scenario(definition):
                     elif kind in {"select", "radio", "multi_select"} and any(value is not None and value not in {opt.value for opt in field.options} for value in values):
                         add("incompatible_condition", path, "Condition uses an undeclared option")
             else:
-                allowed = {"resolution_check": ("yes", "no", "unknown"), "instruction": ("acknowledged",), "diagnostic": DIAGNOSTIC_FAILURE_STATUSES}.get(block.kind, ())
+                allowed = {"resolution_check": ("yes", "no", "unknown"), "instruction": ("acknowledged", "request_ticket"), "diagnostic": DIAGNOSTIC_FAILURE_STATUSES}.get(block.kind, ())
                 if field_key or not allowed or isinstance(leaf, Comparison) and leaf.op not in {"eq", "neq"}:
                     add("incompatible_condition", path, "Current result is not available at this condition")
                 elif not isinstance(leaf, Exists):

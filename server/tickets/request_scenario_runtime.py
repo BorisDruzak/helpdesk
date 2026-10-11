@@ -9,7 +9,7 @@ from datetime import date, datetime
 import json
 
 from tickets.form_field_values import _field_constraint_error, _normalize_field_value
-from tickets.request_scenario_conditions import evaluate_condition, finite_number, leaves
+from tickets.request_scenario_conditions import evaluate_condition, finite_number, leaves, selected_transition, can_request_ticket
 from tickets.request_scenario_validation import DIAGNOSTIC_FAILURE_STATUSES, require_valid_scenario
 
 
@@ -48,15 +48,13 @@ class ScenarioRuntime:
         return self._settle(RuntimeState(self.definition.entry_block_id))
 
     def _next(self, block, answers, result=None):
-        conditional = [edge for edge in block.transitions if edge.when is not None]
-        conditional.sort(key=lambda edge: edge.priority if edge.priority is not None else 10001)
-        for edge in conditional:
-            if evaluate_condition(edge.when, answers, result):
-                return edge.to
-        fallback = next((edge for edge in block.transitions if edge.when is None), None)
-        if fallback is None:
+        edge = selected_transition(block, answers, result)
+        if edge is None:
             raise ScenarioInputError({"transition": "No valid transition for this result"})
-        return fallback.to
+        return edge.to
+
+    def can_request_ticket(self, state):
+        return state.state == "active" and can_request_ticket(self.blocks[state.current_block_id], self.blocks, state.answers)
 
     def _settle(self, state):
         for _ in range(len(self.blocks) + 1):
@@ -170,8 +168,12 @@ class ScenarioRuntime:
                 raise ScenarioInputError({"answers": "This block does not accept field answers"})
             if block.kind == "resolution_check" and result not in {"yes", "no", "unknown"}:
                 raise ScenarioInputError({"current_result": "Explicit yes/no/unknown is required"})
-            if block.kind == "instruction" and (result not in {None, "acknowledged"} or block.acknowledgment_required and result != "acknowledged"):
-                raise ScenarioInputError({"current_result": "Instruction acknowledgment is required"})
+            if block.kind == "instruction":
+                if result == "request_ticket":
+                    if not self.can_request_ticket(state):
+                        raise ScenarioInputError({"current_result": "No explicit ticket request transition is available"})
+                elif result not in {None, "acknowledged"} or block.acknowledgment_required and result != "acknowledged":
+                    raise ScenarioInputError({"current_result": "Instruction acknowledgment is required"})
             if block.kind == "review" and result is not None:
                 raise ScenarioInputError({"current_result": "Review has no result confirmation"})
             if result is not None:

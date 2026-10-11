@@ -146,6 +146,8 @@ def _submission_variants(definition, *, limit, process_fields, diagnostic_outcom
             variants = [({}, value) for value in ("yes", "no", "unknown")]
         elif block.kind == "instruction":
             variants = [({}, "acknowledged")] if block.acknowledgment_required else [({}, None), ({}, "acknowledged")]
+            if runtime.can_request_ticket(state):
+                variants.append(({}, "request_ticket"))
         advanced = []
         for answers, result in variants:
             try:

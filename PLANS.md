@@ -1949,3 +1949,10 @@ focused harness GREEN 42 passed after preserving exact Studio runtime entries.
 Owned staging pilot draft configured through the wizard; readiness checks 192
 outcomes and correctly blocks missing closure/visibility registry policies and
 draft categories despite Health=ok. No publication/tickets; staging stopped.
+
+P10 instruction escape: explicit current-result equality to review grants the
+server-projected support action without claiming acknowledgment. Required facts
+and canonical submit checks remain enforced; old graphs retain their behavior.
+RED 8 / GREEN 8, focused backend 107, full no-DB 1279 and frontend 25 pass;
+full frontend 654, build/typecheck and 12 requester fixture browser cases pass. Independent review
+has no blockers. Actual installed acceptance and final quality gates remain open.

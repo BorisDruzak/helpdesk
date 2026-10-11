@@ -18,7 +18,7 @@ export function ScenarioConditionEditor({ label, value, fields, resultValues = [
   const field = "field" in leaf ? fields.find(item => item.key === leaf.field) : undefined;
   const choices: { value: ScenarioScalar; label: string }[] = field?.options?.length ? field.options
     : field?.type === "checkbox" ? [{ value: true, label: "Да" }, { value: false, label: "Нет" }]
-    : "source" in leaf && leaf.source === "current_result" ? resultValues.map(result => ({ value: result, label: ({ yes: "Да", no: "Нет", unknown: "Не знаю", acknowledged: "Прочитано", ...diagnosticFailureLabels } as Record<string, string>)[result] || "Недопустимый результат" })) : [];
+    : "source" in leaf && leaf.source === "current_result" ? resultValues.map(result => ({ value: result, label: ({ yes: "Да", no: "Нет", unknown: "Не знаю", acknowledged: "Прочитано", request_ticket: "Нужна помощь поддержки", ...diagnosticFailureLabels } as Record<string, string>)[result] || "Недопустимый результат" })) : [];
   function scalar(text: string): ScenarioScalar {
     if (field?.type === "checkbox") return text === "true";
     if (field?.type !== "number") return text;

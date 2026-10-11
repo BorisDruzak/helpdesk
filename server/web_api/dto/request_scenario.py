@@ -237,7 +237,7 @@ class ScenarioAnswerRequest(StrictModel):
     expected_block_id: Key
     revision: int = Field(ge=1)
     answers: dict[Key, Answer] = Field(default_factory=dict)
-    current_result: Literal["yes", "no", "unknown", "acknowledged"] | None = None
+    current_result: Literal["yes", "no", "unknown", "acknowledged", "request_ticket"] | None = None
 
     @model_validator(mode="before")
     @classmethod

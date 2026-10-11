@@ -16,6 +16,7 @@ type Step = {
     has_dynamic_fields?: boolean;
     content?: { body: string; format: string };
     acknowledgment_required?: boolean;
+    can_request_ticket?: boolean;
     message?: string;
     answers?: { key: string; label: string; type: string; value: unknown; display_value: string }[];
   };
@@ -159,6 +160,7 @@ export function ScenarioSession({ offering, owner = "", deviceId }: { offering: 
         </>} />
         {step.block.content ? <p className="whitespace-pre-wrap break-words">{step.block.content.body}</p> : null}
         {step.block.kind === "instruction" ? <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />Инструкция выполнена</label> : null}
+        {step.block.kind === "instruction" && step.block.can_request_ticket ? <Button type="button" variant="outline" onClick={() => void answer("request_ticket")}>Нужна помощь поддержки</Button> : null}
         {step.block.answers ? <dl className="grid gap-3">{step.block.answers.map(item => <div key={item.key}><dt className="font-medium">{item.label}</dt><dd className="break-words text-sm">{item.display_value}</dd></div>)}</dl> : null}
         {step.block.message ? <p>{step.block.message}</p> : null}
         {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}

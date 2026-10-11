@@ -60,6 +60,29 @@ function response(data: unknown, status = 200) {
   return new Response(JSON.stringify({ status: "success", data }), { status, headers: { "Content-Type": "application/json" } });
 }
 
+it.each([undefined, false, true])("offers instruction escape only when the server grants it (%s)", async allowed => {
+  const step = { id: "session", revision: 2, state: "active", back_targets: [], block: {
+    id: "instruction", kind: "instruction", title: "Проверьте питание", acknowledgment_required: true,
+    can_request_ticket: allowed, content: { body: "Проверьте кабель", format: "plain" },
+  } };
+  const fetchMock = vi.fn(async (url: string, _options?: RequestInit) => response(url.endsWith("/advance")
+    ? { ...step, revision: 3, block: { id: "review", kind: "review", title: "Проверьте ответы", answers: [] } }
+    : step));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" />);
+  await screen.findByRole("heading", { name: "Проверьте питание" });
+  expect(screen.getByRole("button", { name: "Продолжить" })).toBeDisabled();
+  const escape = screen.queryByRole("button", { name: "Нужна помощь поддержки" });
+  if (!allowed) { expect(escape).not.toBeInTheDocument(); return; }
+  fireEvent.click(escape!);
+  await screen.findByRole("heading", { name: "Проверьте ответы" });
+  const advances = fetchMock.mock.calls.filter(([url]) => url.endsWith("/advance"));
+  expect(advances).toHaveLength(1);
+  // Inspect outside mocked fetch so request error handling cannot swallow failures.
+  expect(JSON.parse(String(advances[0]?.[1]?.body))).toEqual({ expected_block_id: "instruction", revision: 2, current_result: "request_ticket" });
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/submit") || url.endsWith("/ticket-preview"))).toBe(false);
+});
+
 it("renders server-projected sections with human group names and unchanged fields", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => response({ id: "session", revision: 1, state: "active", back_targets: [], block: {
     id: "questions", kind: "form_page", title: "Что происходит", layout: "section", fields: [

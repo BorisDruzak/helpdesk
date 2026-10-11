@@ -27,7 +27,7 @@ export type ScenarioCatalog = {
 export type SimulationState = { current_block_id: string; revision: number; state: string; answers: Record<string, unknown>; history: string[]; results: Record<string, unknown> };
 export type ScenarioSimulation = { revision: number; current_block: ScenarioBlock; state: SimulationState;
   current_step?: { id: string; kind: string; title: string; fields?: (RequestFormField & { value?: unknown; allow_unknown?: boolean; group?: string | null; group_title?: string | null })[]; layout?: "single" | "group" | "section";
-    has_dynamic_fields?: boolean; content?: { body: string }; acknowledgment_required?: boolean; message?: string;
+    has_dynamic_fields?: boolean; content?: { body: string }; acknowledgment_required?: boolean; can_request_ticket?: boolean; message?: string;
     answers?: { key: string; label: string; display_value: string }[] };
   processing?: { priority: { priority_class: string; reason?: string | null }; routing: { queue_title?: string | null; queue_code?: string; queue_id?: number };
     sla: { first_response_min?: number; resolution_min?: number }; ola?: { policy_code?: string | null; ack_min?: number; processing_min?: number };

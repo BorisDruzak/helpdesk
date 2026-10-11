@@ -84,7 +84,9 @@
   selected-step preview; no client component executes the server graph.
 - `tickets/request_scenario_validation.py` validates reachable acyclic graphs,
   field dependencies, typed conditions, terminal/fallback safety and role mapping.
-  `request_scenario_conditions.py` owns the canonical condition evaluator.
+  `request_scenario_conditions.py` owns the canonical condition evaluator and
+  priority-ordered transition selection, including explicit instruction escape
+  permission (`request_ticket` to review) shared by projection and advance.
   `request_scenario_runtime.py` executes that graph for simulation and sessions,
   normalizes visible answers through existing codecs and clears downstream state
   on Back. It has no DB, ticket creation or Endpoint dispatch side effects.

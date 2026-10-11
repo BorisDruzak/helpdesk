@@ -75,6 +75,7 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       }} />Не знаю</label>}</>} />
       {block.content && <p className="whitespace-pre-wrap">{block.content.body}</p>}
       {block.kind === "instruction" && <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />Инструкция выполнена</label>}
+      {block.kind === "instruction" && block.can_request_ticket ? <Button variant="outline" onClick={() => answer("request_ticket")}>Нужна помощь поддержки</Button> : null}
       {block.answers && <dl className="space-y-2">{block.answers.map(item => <div key={item.key}><dt className="font-medium">{item.label}</dt><dd>{item.display_value}</dd></div>)}</dl>}
       {block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{(["yes", "no", "unknown"] as const).map(value => <Button key={value} onClick={() => answer(value)}>{value === "yes" ? "Да, решено" : value === "no" ? "Нет, нужна помощь" : "Не знаю"}</Button>)}</div> : null}
       {["form_page", "instruction", "review"].includes(block.kind) && <Button disabled={block.acknowledgment_required && !acknowledged} onClick={() => answer(block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить проверку</Button>}

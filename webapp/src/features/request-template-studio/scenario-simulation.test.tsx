@@ -84,6 +84,27 @@ it("can acknowledge an optional instruction before a conditional transition", as
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
+it("simulates an explicitly allowed instruction escape without acknowledgment", async () => {
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ status: "success", data: { revision: 1,
+      state: { revision: body.steps.length + 1, results: {}, answers: {}, history: [] },
+      current_step: body.steps.length ? { id: "review", kind: "review", title: "Проверьте ответы", answers: [] }
+        : { id: "instruction", kind: "instruction", title: "Проверьте бумагу", acknowledgment_required: true, can_request_ticket: true, content: { body: "Добавьте бумагу" } },
+    } }), { headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSimulationPanel id="scenario" revision={1} dirty={false} disabled={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
+  const escape = await screen.findByRole("button", { name: "Нужна помощь поддержки" });
+  expect(screen.getByRole("button", { name: "Продолжить проверку" })).toBeDisabled();
+  fireEvent.click(escape);
+  await screen.findByRole("heading", { name: "Проверьте ответы" });
+  const sent = JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body));
+  expect(sent.steps).toEqual([{ expected_block_id: "instruction", revision: 1, current_result: "request_ticket" }]);
+  expect(fetchMock.mock.calls.every(([url]) => url.endsWith("/simulate"))).toBe(true);
+});
+
 it("sends typed answers through the server and shows actual dry-run processing", async () => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));

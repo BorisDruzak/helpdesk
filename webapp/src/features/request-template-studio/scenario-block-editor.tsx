@@ -17,7 +17,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
   const targets = (definition.blocks ?? []).filter(item => item.id !== block.id);
   const transitions = block.transitions ?? [];
   const terminal = block.kind === "finish" || block.kind === "submit_ticket";
-  const resultValues = ({ resolution_check: ["yes", "no", "unknown"], instruction: ["acknowledged"], diagnostic: Object.keys(diagnosticFailureLabels) } as Partial<Record<ScenarioBlock["kind"], string[]>>)[block.kind] ?? [];
+  const resultValues = ({ resolution_check: ["yes", "no", "unknown"], instruction: ["acknowledged", "request_ticket"], diagnostic: Object.keys(diagnosticFailureLabels) } as Partial<Record<ScenarioBlock["kind"], string[]>>)[block.kind] ?? [];
   return <div className="min-w-0 space-y-4">
     <label className="block">Название блока<Input ref={titleRef} disabled={disabled} maxLength={300} value={block.title} onChange={event => onChange({ ...block, title: event.target.value })} /></label>
     {block.kind === "form_page" && <ScenarioFormPageEditor block={block} definition={definition} disabled={disabled} onChange={onChange} />}

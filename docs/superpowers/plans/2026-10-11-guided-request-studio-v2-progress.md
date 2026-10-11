@@ -907,3 +907,18 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
 - No scenario published and no pilot ticket created. Staging service stopped
   through the canonical lifecycle command; inactive confirmed. Synthetic accounts
   and owned draft receipt retained for continuation. Full P10 remains in progress.
+
+- P10 instruction escape fidelity correction: explicit `request_ticket` equality
+  to review, selected-transition permission shared by server advance/projection,
+  typed DTO/TS result, human builder option and requester/simulator buttons.
+  No acknowledged result is fabricated; fallback/neq/exists or higher-priority
+  branches cannot authorize escape. Readiness enumerates it; required initial
+  facts remain enforced. RED 8, GREEN 8; focused backend 107 PASS; full no-DB
+  1279 PASS/1 skipped; frontend focused 25 PASS; build/typecheck PASS; browser
+  fixture 12 PASS (four viewports, normal and escape flow). Independent review
+  found no blocking issue. Full frontend regression: 111 files / 654 tests PASS.
+- c7 exact CI attempt 2 passed the prior database teardown but failed raw-SQL
+  concurrent category reparent: expected 23514, received 40P01. The trigger's
+  row-before-advisory lock ordering can deadlock opposing UPDATEs; Admin API
+  obtains the service lock first. The original teardown timeout RCA remains
+  unproven. CI remains red, and latest candidate is not installed or published.

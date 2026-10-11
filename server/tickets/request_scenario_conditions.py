@@ -55,6 +55,25 @@ def evaluate_condition(condition, answers, current_result=None):
             "lt": lambda: value < condition.value, "lte": lambda: value <= condition.value}[condition.op]()
 
 
+def explicit_ticket_request(condition):
+    """Only a declared instruction result grants the escape action."""
+    return isinstance(condition, Comparison) and condition.source == "current_result" and condition.op == "eq" and condition.value == "request_ticket"
+
+
+def selected_transition(block, answers, result=None):
+    conditional = sorted((edge for edge in block.transitions if edge.when is not None),
+                         key=lambda edge: edge.priority if edge.priority is not None else 10001)
+    return next((edge for edge in conditional if evaluate_condition(edge.when, answers, result)),
+                next((edge for edge in block.transitions if edge.when is None), None))
+
+
+def can_request_ticket(block, blocks, answers):
+    if block.kind != "instruction":
+        return False
+    edge = selected_transition(block, answers, "request_ticket")
+    return bool(edge and explicit_ticket_request(edge.when) and blocks.get(edge.to) and blocks[edge.to].kind == "review")
+
+
 def guarantees_yes(condition):
     """Conservative proof for paths allowed to finish without a ticket."""
     if isinstance(condition, AllAny):

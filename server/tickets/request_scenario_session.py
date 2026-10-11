@@ -1,5 +1,5 @@
 """Safe requester projection; graph execution stays in ScenarioRuntime."""
-from tickets.request_scenario_conditions import evaluate_condition
+from tickets.request_scenario_conditions import evaluate_condition, can_request_ticket
 
 
 INTERACTIVE = {"form_page", "instruction", "resolution_check", "review"}
@@ -34,7 +34,8 @@ def project_step(definition, state):
                 field["value"] = state.answers[item.key]
             payload["fields"].append(field)
     elif block.kind == "instruction":
-        payload.update(content=block.content.model_dump(), acknowledgment_required=block.acknowledgment_required)
+        payload.update(content=block.content.model_dump(), acknowledgment_required=block.acknowledgment_required,
+                       can_request_ticket=state.state == "active" and can_request_ticket(block, blocks, state.answers))
     elif block.kind == "finish":
         payload["message"] = block.message
     elif block.kind in {"review", "submit_ticket"}:

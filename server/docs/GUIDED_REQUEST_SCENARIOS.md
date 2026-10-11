@@ -226,3 +226,14 @@ and conflicting titles within a page's group. Old definitions without titles
 remain valid. The existing safe projection includes only the current visible
 fields and their group/title; conditions still run on the server. This adds no
 migration or endpoint and preserves field keys, typed answers and policy facts.
+
+An instruction may offer a support escape through an explicit transition with
+`source=current_result`, `op=eq`, `value=request_ticket` targeting a `review`
+block. The server's priority-ordered selected transition must be that edge;
+fallback, broad comparisons and a higher-priority branch cannot grant permission.
+The safe current-step projection exposes only `can_request_ticket`. The action
+does not record acknowledgment and does not submit a ticket. Readiness includes
+this route, and preview/submission retain canonical mandatory facts, authorization,
+routing and policy checks. Other block kinds reject this result. Existing graphs
+without the explicit edge retain the acknowledgment flow. No migration or route
+is added; the typed instruction result extends the existing advance contract.
