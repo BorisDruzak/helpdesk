@@ -486,3 +486,9 @@ scenario fields in named sections without evaluating conditions. It is shared
 by requester sessions, admin simulation and disabled block preview. The Studio
 `scenario-field-group.tsx` assigns/renames section titles in the draft; server
 scenario DTO/graph validation bound and validate `group_title` alongside `group`.
+
+Guided Studio candidate quality gate: `.github/workflows/dev-scanner-quality.yml`
+keeps its main-only job and adds a manual exact-head draft PR41 job. YAML aliases
+share canonical security/coverage steps; candidate admission precedes checkout
+and Sonar upload, with explicit PR parameters and no main-analysis fallback.
+Synthetic admission checks live in `.github/tests/test_dev_scanner_candidate_workflow.py`.

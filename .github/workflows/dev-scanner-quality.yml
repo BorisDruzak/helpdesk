@@ -13,7 +13,7 @@ concurrency:
 jobs:
   quality:
     if: github.repository == 'BorisDruzak/helpdesk' && github.ref == 'refs/heads/main'
-    runs-on:
+    runs-on: &scanner_runner
       - self-hosted
       - linux
       - x64
@@ -21,7 +21,7 @@ jobs:
       - scanner
     timeout-minutes: 360
 
-    env:
+    env: &scanner_environment
       SONAR_HOST_URL: https://sonar.sosnadmin.local
       SONAR_IMAGE: sonarsource/sonar-scanner-cli@sha256:a3f4215076706c95a17a68c19322ee916e40a3acd081a8c1a1e839e0194afa57
       SONAR_SSL_DIR: /opt/actions-runner/_tool/sonar/ssl
@@ -44,14 +44,16 @@ jobs:
           free -h
           df -h /
 
-      - name: Checkout exact dispatch SHA
+      - &scanner_step_1
+        name: Checkout exact dispatch SHA
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 0
           clean: true
 
-      - name: Verify exact SHA and commissioning baseline
+      - &scanner_step_2
+        name: Verify exact SHA and commissioning baseline
         shell: bash
         run: |
           set -euo pipefail
@@ -82,7 +84,8 @@ jobs:
           git merge-base --is-ancestor "$BASELINE_SHA" HEAD
           echo "commissioning baseline is an ancestor: $BASELINE_SHA"
 
-      - name: Toolchain preflight
+      - &scanner_step_3
+        name: Toolchain preflight
         shell: bash
         run: |
           set -euo pipefail
@@ -95,14 +98,16 @@ jobs:
           test -s "$SONAR_SSL_DIR/truststore.p12"
           docker image inspect "$SONAR_IMAGE" --format 'sonar_image={{.Id}}' || docker pull "$SONAR_IMAGE"
 
-      - name: Install webapp dependencies
+      - &scanner_step_4
+        name: Install webapp dependencies
         shell: bash
         run: |
           set -euo pipefail
           python scripts/bootstrap_web_toolchain.py
           pnpm --dir webapp install --frozen-lockfile --prefer-offline
 
-      - name: Semgrep SAST and secrets baseline
+      - &scanner_step_5
+        name: Semgrep SAST and secrets baseline
         shell: bash
         run: |
           set -euo pipefail
@@ -159,7 +164,8 @@ jobs:
               raise SystemExit("Semgrep secrets scan found credential-like material")
           PY
 
-      - name: Generate frontend coverage
+      - &scanner_step_6
+        name: Generate frontend coverage
         shell: bash
         run: |
           set -euo pipefail
@@ -176,7 +182,8 @@ jobs:
           test -s webapp/coverage/lcov.info
           echo "lcov source files=$(grep -c '^SF:' webapp/coverage/lcov.info)"
 
-      - name: Prepare Python coverage toolchain
+      - &scanner_step_7
+        name: Prepare Python coverage toolchain
         shell: bash
         run: |
           set -euo pipefail
@@ -219,7 +226,8 @@ jobs:
           output = coverage.xml
           EOF
 
-      - name: Start isolated PostgreSQL 16
+      - &scanner_step_8
+        name: Start isolated PostgreSQL 16
         shell: bash
         run: |
           set -euo pipefail
@@ -237,7 +245,8 @@ jobs:
 
           test "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = "healthy"
 
-      - name: Canonical backend coverage
+      - &scanner_step_9
+        name: Canonical backend coverage
         shell: bash
         run: |
           set -euo pipefail
@@ -258,7 +267,8 @@ jobs:
 
           echo "coverage fragments=$(find "$REPO" -maxdepth 1 -name '.coverage.*' | wc -l)"
 
-      - name: Build Sonar coverage reports
+      - &scanner_step_10
+        name: Build Sonar coverage reports
         shell: bash
         run: |
           set -euo pipefail
@@ -436,7 +446,8 @@ jobs:
 
           docker run --rm             -v "$GITHUB_WORKSPACE:/usr/src:ro"             -v "$SONAR_SSL_DIR:/opt/sonar-scanner/.sonar/ssl:ro"             -e SONAR_HOST_URL="$SONAR_HOST_URL"             -e SONAR_TOKEN="$SONAR_TOKEN"             "$SONAR_IMAGE"             -Dsonar.projectKey="$SONAR_PROJECT_KEY"             -Dsonar.projectVersion="$SONAR_PROJECT_VERSION"             -Dsonar.sources=server,shared,scripts,webapp/src             -Dsonar.tests=server/tests,scripts,webapp/src             "-Dsonar.test.inclusions=server/tests/**/*.py,scripts/test_*.py,webapp/src/**/*.test.ts,webapp/src/**/*.test.tsx,webapp/src/**/*.spec.ts,webapp/src/**/*.spec.tsx"             -Dsonar.sourceEncoding=UTF-8             -Dsonar.python.version=3.12             -Dsonar.python.coverage.reportPaths=coverage-sonar.xml             -Dsonar.javascript.lcov.reportPaths=webapp/coverage/lcov-sonar.info             -Dsonar.javascript.node.maxspace=4096             -Dsonar.typescript.tsconfigPaths=webapp/tsconfig.json             -Dsonar.scanner.truststorePassword=changeit             -Dsonar.working.directory=/tmp/.scannerwork             -Dsonar.qualitygate.wait=true             -Dsonar.qualitygate.timeout=300             2>&1 | tee "$EVIDENCE/sonar.log"
 
-      - name: Write evidence summary
+      - &scanner_step_12
+        name: Write evidence summary
         if: always()
         shell: bash
         run: |
@@ -472,13 +483,15 @@ jobs:
           cp coverage-sonar.xml "$EVIDENCE/" 2>/dev/null || true
           cp webapp/coverage/lcov-sonar.info "$EVIDENCE/" 2>/dev/null || true
 
-      - name: Stop isolated PostgreSQL
+      - &scanner_step_13
+        name: Stop isolated PostgreSQL
         if: always()
         shell: bash
         run: |
           docker rm -f "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
 
-      - name: Upload DEV-SCANNER evidence
+      - &scanner_step_14
+        name: Upload DEV-SCANNER evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -488,3 +501,88 @@ jobs:
             artifacts/ci/${{ github.sha }}/
           if-no-files-found: warn
           retention-days: 14
+
+  # Manual, same-repository draft candidate only; never dispatches main analysis.
+  quality_candidate:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'BorisDruzak/helpdesk' && github.ref == 'refs/heads/codex/guided-request-studio-v2'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: *scanner_runner
+    timeout-minutes: 360
+    env: *scanner_environment
+    steps:
+      - &candidate_admission
+        name: Verify exact draft PR candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          expected = {
+              "GITHUB_EVENT_NAME": "workflow_dispatch",
+              "GITHUB_REF": "refs/heads/codex/guided-request-studio-v2",
+              "GITHUB_REPOSITORY": "BorisDruzak/helpdesk",
+              "GITHUB_JOB": "quality_candidate",
+          }
+          if any(os.environ.get(key) != value for key, value in expected.items()):
+              raise SystemExit("Candidate dispatch rejected")
+          request = urllib.request.Request(
+              "https://api.github.com/repos/BorisDruzak/helpdesk/pulls/41",
+              headers={
+                  "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as result:
+              pull = json.load(result)
+          head = pull.get("head") or {}
+          base = pull.get("base") or {}
+          approved = (
+              pull.get("number") == 41 and pull.get("state") == "open"
+              and pull.get("draft") is True
+              and head.get("ref") == "codex/guided-request-studio-v2"
+              and head.get("sha") == os.environ["GITHUB_SHA"]
+              and (head.get("repo") or {}).get("full_name") == "BorisDruzak/helpdesk"
+              and base.get("ref") == "main"
+              and (base.get("repo") or {}).get("full_name") == "BorisDruzak/helpdesk"
+          )
+          if not approved:
+              raise SystemExit("Candidate PR admission rejected")
+          print("Exact draft PR 41 candidate admitted: " + os.environ["GITHUB_SHA"])
+          PY
+      - *scanner_step_1
+      - *scanner_step_2
+      - *scanner_step_3
+      - *scanner_step_4
+      - *scanner_step_5
+      - *scanner_step_6
+      - *scanner_step_7
+      - *scanner_step_8
+      - *scanner_step_9
+      - *scanner_step_10
+      - *candidate_admission
+      - name: SonarQube analysis and Quality Gate
+        id: sonar
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          test -n "$SONAR_TOKEN"
+
+          EVIDENCE="artifacts/dev-scanner-quality/$GITHUB_SHA"
+          mkdir -p "$EVIDENCE"
+
+          docker run --rm             -v "$GITHUB_WORKSPACE:/usr/src:ro"             -v "$SONAR_SSL_DIR:/opt/sonar-scanner/.sonar/ssl:ro"             -e SONAR_HOST_URL="$SONAR_HOST_URL"             -e SONAR_TOKEN="$SONAR_TOKEN"             "$SONAR_IMAGE"             -Dsonar.pullrequest.key=41             -Dsonar.pullrequest.branch=codex/guided-request-studio-v2             -Dsonar.pullrequest.base=main             -Dsonar.projectKey="$SONAR_PROJECT_KEY"             -Dsonar.projectVersion="$SONAR_PROJECT_VERSION"             -Dsonar.sources=server,shared,scripts,webapp/src             -Dsonar.tests=server/tests,scripts,webapp/src             "-Dsonar.test.inclusions=server/tests/**/*.py,scripts/test_*.py,webapp/src/**/*.test.ts,webapp/src/**/*.test.tsx,webapp/src/**/*.spec.ts,webapp/src/**/*.spec.tsx"             -Dsonar.sourceEncoding=UTF-8             -Dsonar.python.version=3.12             -Dsonar.python.coverage.reportPaths=coverage-sonar.xml             -Dsonar.javascript.lcov.reportPaths=webapp/coverage/lcov-sonar.info             -Dsonar.javascript.node.maxspace=4096             -Dsonar.typescript.tsconfigPaths=webapp/tsconfig.json             -Dsonar.scanner.truststorePassword=changeit             -Dsonar.working.directory=/tmp/.scannerwork             -Dsonar.qualitygate.wait=true             -Dsonar.qualitygate.timeout=300             2>&1 | tee "$EVIDENCE/sonar.log"
+
+      - *scanner_step_12
+      - *scanner_step_13
+      - *scanner_step_14

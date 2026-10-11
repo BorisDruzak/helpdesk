@@ -1025,3 +1025,23 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   installed acceptance is inferred from local results. The list correction
   requires its own exact candidate gate. Backend coverage continues on frozen08
   with byte-identical server/shared/scripts trees; candidate Sonar remains open.
+
+- Candidate b9e71f81 full frontend coverage:112 files/663 tests PASS;
+  line66.90%, branch57.36%. Full Studio/sections/requester browser:49 PASS at
+  four viewports, with persistent screenshots. Semgrep1.178.0:17 unchanged
+  findings outside task paths, zero task findings/secrets/errors. Exact CI
+  38171834372 PASS: downloaded exact-SHA summary has all18 steps green and
+  full merge gate satisfied; Endpoint contract suite PASS. The preceding
+  3b86fdc6 failed-job rerun was cancelled by the newer dispatch, not accepted.
+  Frozen08 seven-layer coverage is still running; no coverage completion claim.
+- Sonar main gate is OK with zero new violations, but PR41 analysis is absent.
+  A separate manual candidate job now shares the existing scanner pipeline
+  through YAML aliases. Original main job, trigger, permissions and concurrency
+  are exactly equivalent after YAML expansion. Candidate admits only the exact
+  same-repository open draft PR41 head/base before checkout and immediately
+  before analysis; all three PR parameters are fixed, with no main fallback.
+  Admission checks RED15 (missing candidate)/GREEN15; scoped workspace PASS;
+  independent security review found no blockers. Actual GitHub acceptance,
+  supported Sonar edition and exact candidate gate remain unverified. An
+  unsupported PR-analysis response must block, without widening token rights.
+  This workflow change requires a new exact-SHA CI and staging acceptance.

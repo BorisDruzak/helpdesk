@@ -108,6 +108,17 @@ no horizontal document overflow, and console/network errors. Screenshots are
 normal test artifacts under `webapp/test-results`; this is fixture browser
 evidence, not staging runtime acceptance (P10).
 
+P10 candidate quality analysis uses the existing `dev-scanner-quality.yml`
+manual workflow on `codex/guided-request-studio-v2`. Its separate candidate job
+admits only same-repository, open draft PR #41 targeting main, with the dispatched
+SHA matching its head. Admission runs before checkout and again before analysis.
+It shares the canonical Semgrep and frontend/backend coverage steps and pinned
+scanner with the unchanged main job, but sets all three Sonar pull-request
+parameters explicitly. Unsupported PR analysis or a failed Quality Gate is a
+blocker; it must never fall back to analyzing the candidate as main. This workflow
+does not install or publish the Studio. Exact-SHA CI and installed staging A–J
+remain separate requirements.
+
 ## Requester sessions
 
 Published, enabled scenarios add `guided_scenario_enabled` to their public
