@@ -793,3 +793,32 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   policy engine. Remaining: inline creation UI, readiness fidelity audit, actual
   isolated staging A–J, exact full CI/security/coverage/Sonar and final acceptance
   matrix. P10 remains IN PROGRESS.
+
+### P10 fidelity increment: inline new offering and human profile
+
+- Purpose step now creates a public draft under a published/public parent via
+  existing catalog `save-draft`; code is generated once per form. Only active
+  published templates are selectable. Canonical ticket type follows the template;
+  human installation profile maps to existing `service_request` and is retained
+  in offering metadata. No parallel profile/policy processing engine is added.
+- New offering is selected locally and catalog refreshed; explicit saved
+  publication intent enables the already verified atomic backend. Existing
+  offerings are not edited. Latest definition ref preserves edits made during
+  the request. Wizard/page actions use the existing inline dirty/open guards;
+  loading/error/empty states block submit, retry retains input, cancel confirms
+  dirty discard. Publication diff has human labels for new offering promotion.
+- RED missing inline creation action; GREEN component verifies draft payload,
+  unpublished/private filtering, software-install mapping, generated code,
+  explicit intent, no immediate publication and latest title preservation.
+  Error/retry/empty registry regression also passes. Studio: 61 passed (10.49s).
+- Independent review's missing software-install profile finding closed with
+  compatible mapping and regression; no further confirmed issues.
+- Build/typecheck PASS (existing common chunk warning). Browser
+  `pnpm --dir webapp test:e2e tests/guided-studio.spec.ts --grep 'inline offering'`:
+  4 passed (9.7s), 1366/1440/1920/820. Keyboard create, save/leave/step guards,
+  canonical draft selection/save, no overflow/console/network errors. Initial
+  stale-dist run stopped and rebuilt; a locator failure was corrected to the
+  combobox's accessible role. Final screenshots visually checked at 1366.
+- This is fixture browser evidence. Actual staging A–J, readiness fidelity audit,
+  full exact CI/security/coverage/Sonar and final acceptance matrix remain open.
+  P10 remains IN PROGRESS.

@@ -1,5 +1,47 @@
 import { expect, type Page, test } from "playwright/test";
 
+for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
+  test(`guided studio inline offering ${viewport.width}`, async ({ page }, info) => {
+    await page.setViewportSize(viewport);
+    const state = await fixture(page);
+    let offering: Record<string, unknown> | null = null;
+    await page.route("**/api/web/admin/request-studio/catalog?**", route => route.fulfill({ json: { status: "success", data: { services: [{ code: "it", public_title: "Рабочее место", lifecycle_status: "published", visibility: "public" }], offerings: offering ? [offering] : [], categories: [], scenarios: [], total: 0, offset: 0, limit: 100 } } }));
+    await page.route("**/api/web/admin/helpdesk-model/policies", route => route.fulfill({ json: { status: "success", data: { request_templates: [{ template_code: "printer", version: "1", public_title: "Проблема печати", ticket_type: "incident", is_active: true, published_at: "2026-01-01" }] } } }));
+    await page.route("**/api/web/admin/service-catalog/offerings/save-draft", async route => {
+      const body = route.request().postDataJSON();
+      expect(body).toMatchObject({ service_code: "it", public_title: "Не печатает", lifecycle_status: "draft", visibility: "public", request_template_key: "printer", ticket_type_code: "incident" });
+      offering = { ...body, full_code: `it.${body.code}` };
+      await route.fulfill({ json: { status: "ok", offering } });
+    });
+    await page.route("**/api/web/admin/request-studio/scenarios", async route => {
+      const body = route.request().postDataJSON();
+      expect(body.definition.publish_offering).toBe(true);
+      expect(body.definition.offering_full_code).toBe(offering?.full_code);
+      await route.fulfill({ json: { status: "success", data: { scenario: { id: "new", archived: false }, draft: { revision: 1, definition: body.definition } } } });
+    });
+    await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("button", { name: "Создать сценарий", exact: true }).click();
+    await page.getByRole("button", { name: "Создать услугу здесь", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Вернуться в каталог", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "2. Пользовательский сценарий", exact: true })).toBeDisabled();
+    await page.getByLabel("Название услуги", { exact: true }).fill("Не печатает");
+    await page.getByLabel("Краткое описание услуги", { exact: true }).fill("Помощь с печатью");
+    await page.getByRole("combobox", { name: "Шаблон обработки", exact: true }).selectOption("printer");
+    const create = page.getByRole("button", { name: "Создать черновик услуги", exact: true });
+    await create.scrollIntoViewIfNeeded(); await create.focus();
+    await expect(create).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`${viewport.width}-inline-offering.png`) });
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "Новая услуга", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Услуга", exact: true })).toHaveValue(String(offering?.full_code));
+    await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
+    await expect(page.getByRole("button", { name: "2. Пользовательский сценарий", exact: true })).toBeEnabled();
+    expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
+  });
+}
+
 async function fixture(page: Page, publication = false) {
   const errors: string[] = [];
   const failures: string[] = [];

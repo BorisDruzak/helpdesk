@@ -16,7 +16,7 @@ function humanValue(value: unknown): string {
   if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${humanValue(item)}`).join("; ");
   return String(value);
 }
-const labels: Record<string, string> = { title: "Название", description: "Описание", blocks: "Шаги и вопросы", entry_block_id: "Первый шаг", category_id: "Категория", process_binding: "Обработка обращения", service_code: "Раздел", offering_full_code: "Услуга", scenario_key: "Сценарий", schema_version: "Формат" };
+const labels: Record<string, string> = { title: "Название", description: "Описание", blocks: "Шаги и вопросы", entry_block_id: "Первый шаг", category_id: "Категория", process_binding: "Обработка обращения", service_code: "Раздел", offering_full_code: "Услуга", scenario_key: "Сценарий", schema_version: "Формат", publish_offering: "Опубликовать новую услугу со сценарием", "offering.lifecycle_status": "Публикация новой услуги" };
 
 export function ScenarioPublication({ id, revision, dirty, disabled, definition, offeringTitle }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; offeringTitle?: string }) {
   const cache = useQueryClient();

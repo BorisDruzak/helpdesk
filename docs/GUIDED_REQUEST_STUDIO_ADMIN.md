@@ -21,6 +21,17 @@ Later steps become available after saving a valid purpose/offering binding;
 navigation between them preserves local changes. The category tree is grouped
 into collapsible service branches.
 
+**Создать услугу здесь** creates a public draft inside the purpose step, under
+an already published/public service. Choose a human profile and an active
+published processing template. Software installation maps to existing
+`service_request`, retaining its human profile in offering metadata; ticket type
+comes from the selected canonical template. No second policy engine is created.
+The draft stays unavailable to requesters until source-bound scenario publication
+promotes both objects atomically. The existing Service Catalog validator must
+pass. Loading/error/empty template states prevent submission; retry keeps edits.
+While this inline form is open, draft saving and wizard/page navigation are
+guarded. Cancel requires discarding local changes explicitly.
+
 Saving creates or updates a disabled draft and displays its server revision.
 A conflict preserves local edits. **Загрузить серверную версию** explicitly
 replaces them. Unsaved scenario/category changes are protected on router

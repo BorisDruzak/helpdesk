@@ -39,8 +39,11 @@
   with explicit atomic promotion of a bound public draft offering through the
   existing Service Catalog validator/repository. `publish_offering` defaults
   false; internal candidate simulation never takes authority from public JSON.
-  including all four simulation-only diagnostic failure outcomes (bounded
-  coverage); imported unsupported pre-ticket attachments block publication.
+  The wizard's `scenario-offering-form.tsx` reuses catalog draft creation and the
+  published template registry; software-install profile maps to `service_request`
+  with existing offering metadata, leaving canonical ticket/policy runtime intact.
+  Readiness includes all four simulation-only diagnostic failure outcomes
+  (bounded coverage); imported unsupported pre-ticket attachments block publication.
   Admin `readiness`, `publish-preview`, `publish` and `rollback-draft` routes
   require revision checks; publication validates locked canonical sources,
   creates an immutable version, changes the active pointer and consumes the
