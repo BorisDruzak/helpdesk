@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { formatRussianDateTime } from "../../components/ui-page";
+import { qualityLabel } from "./labels";
 import {
   closeImprovementAction,
   completeQualityReview,
@@ -18,7 +20,7 @@ import {
 
 function metric(value: number | null | undefined, suffix = "") {
   if (value === null || value === undefined) {
-    return "n/a";
+    return "Нет данных";
   }
   return `${value}${suffix}`;
 }
@@ -76,7 +78,7 @@ export function QualityDashboard() {
   });
 
   const closeActionMutation = useMutation({
-    mutationFn: (actionId: string) => closeImprovementAction(actionId, "Closed from quality dashboard."),
+    mutationFn: (actionId: string) => closeImprovementAction(actionId, "Завершено в разделе качества."),
     onSuccess: invalidate,
   });
 
@@ -111,37 +113,37 @@ export function QualityDashboard() {
     <section className="workspace-page grid gap-5">
       <div className="workspace-page__header">
         <div>
-          <p className="workspace-boot__eyebrow">Experience quality</p>
-          <h1>Quality loop</h1>
-          <p>CSAT, reopen reasons, QA reviews, service quality and continuous improvement actions.</p>
+          <p className="workspace-boot__eyebrow">Качество обслуживания</p>
+          <h1>Управление качеством</h1>
+          <p>Оценки пользователей, причины повторных обращений, проверки качества и задачи по улучшению обслуживания.</p>
         </div>
         <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => void invalidate()} type="button" variant="outline">
-          Refresh
+          Обновить
         </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
-            <CardDescription>Avg CSAT</CardDescription>
+            <CardDescription>Средняя оценка пользователей</CardDescription>
             <CardTitle>{metric(summary?.avg_csat)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader>
-            <CardDescription>Feedback</CardDescription>
+            <CardDescription>Оценки пользователей</CardDescription>
             <CardTitle>{metric(summary?.feedback_count)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader>
-            <CardDescription>Reopens</CardDescription>
+            <CardDescription>Повторные открытия</CardDescription>
             <CardTitle>{metric(summary?.reopen_count)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader>
-            <CardDescription>Open actions</CardDescription>
+            <CardDescription>Открытые задачи улучшения</CardDescription>
             <CardTitle>{metric(summary?.improvement_action_count)}</CardTitle>
           </CardHeader>
         </Card>
@@ -149,10 +151,10 @@ export function QualityDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Service and offering quality</CardTitle>
+          <CardTitle>Качество услуг</CardTitle>
           <CardDescription>
-            Aggregated metrics only; requester identifiers and feedback comments are not shown here.
-            Last computed: {serviceQualityQuery.data?.lastComputedAt ?? "not yet scheduled"}.
+            Показаны только сводные показатели без персональных данных заявителей и комментариев к оценкам.
+            Последний расчёт: {formatRussianDateTime(serviceQualityQuery.data?.lastComputedAt, { emptyText: "ещё не выполнен" })}.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -160,15 +162,15 @@ export function QualityDashboard() {
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-3 py-2">Service</th>
-                  <th className="px-3 py-2">Offering</th>
-                  <th className="px-3 py-2">Tickets</th>
-                  <th className="px-3 py-2">CSAT</th>
-                  <th className="px-3 py-2">Reopen rate</th>
-                  <th className="px-3 py-2">SLA breach</th>
-                  <th className="px-3 py-2">KB failed</th>
-                  <th className="px-3 py-2">QA failed</th>
-                  <th className="px-3 py-2">Actions</th>
+                  <th className="px-3 py-2">Услуга</th>
+                  <th className="px-3 py-2">Вариант услуги</th>
+                  <th className="px-3 py-2">Обращения</th>
+                  <th className="px-3 py-2">Оценка пользователей</th>
+                  <th className="px-3 py-2">Повторные открытия</th>
+                  <th className="px-3 py-2">Нарушения SLA</th>
+                  <th className="px-3 py-2">Статья не помогла</th>
+                  <th className="px-3 py-2">Не пройдена проверка</th>
+                  <th className="px-3 py-2">Задачи улучшения</th>
                 </tr>
               </thead>
               <tbody>
@@ -194,22 +196,22 @@ export function QualityDashboard() {
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>QA review queue</CardTitle>
-            <CardDescription>Ticket-level QA work is internal to support and admins.</CardDescription>
+            <CardTitle>Очередь проверок качества</CardTitle>
+            <CardDescription>Проверки обращений доступны сотрудникам поддержки и администраторам.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {(reviewsQuery.data ?? []).slice(0, 12).map((review) => (
               <div className="rounded-[0.75rem] border border-border px-3 py-3" key={review.review_id}>
                 <div className="flex items-center justify-between gap-3">
-                  <strong>{review.review_type}</strong>
-                  <span>{review.status}</span>
+                  <strong>{qualityLabel(review.review_type)}</strong>
+                  <span>{qualityLabel(review.status)}</span>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  {review.severity} / {review.service_code ?? "legacy"} / {review.ticket_id}
+                  {qualityLabel(review.severity)} / {review.service_code ?? "Услуга не указана"} / {review.ticket_id}
                 </p>
                 {["open", "assigned", "in_review"].includes(review.status) ? (
                   <Button className="mt-3" onClick={() => completeReviewMutation.mutate(review.review_id)} size="sm" type="button" variant="outline">
-                    Complete pass
+                    Завершить проверку
                   </Button>
                 ) : null}
               </div>
@@ -219,29 +221,29 @@ export function QualityDashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Improvement actions</CardTitle>
-            <CardDescription>Actions have owner, status and audit fields; they are not requester-visible.</CardDescription>
+            <CardTitle>Задачи по улучшению</CardTitle>
+            <CardDescription>Для каждой задачи указаны ответственный и статус; действия фиксируются в аудите. Заявители эти задачи не видят.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-2 md:grid-cols-[1fr_180px_auto]">
-              <input className="field-base px-3 py-2" onChange={(event) => setActionTitle(event.currentTarget.value)} placeholder="Action title" value={actionTitle} />
-              <input className="field-base px-3 py-2" onChange={(event) => setActionOwner(event.currentTarget.value)} placeholder="Owner" value={actionOwner} />
+              <input className="field-base px-3 py-2" onChange={(event) => setActionTitle(event.currentTarget.value)} placeholder="Название задачи" value={actionTitle} />
+              <input className="field-base px-3 py-2" onChange={(event) => setActionOwner(event.currentTarget.value)} placeholder="Ответственный" value={actionOwner} />
               <Button disabled={!actionTitle.trim() || createActionMutation.isPending} onClick={() => createActionMutation.mutate()} type="button">
-                Create
+                Создать
               </Button>
             </div>
             {(actionsQuery.data ?? []).slice(0, 12).map((action) => (
               <div className="rounded-[0.75rem] border border-border px-3 py-3" key={action.action_id}>
                 <div className="flex items-center justify-between gap-3">
                   <strong>{action.title}</strong>
-                  <span>{action.status}</span>
+                  <span>{qualityLabel(action.status)}</span>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  {action.priority} / {action.action_type} / owner {action.owner_actor_id ?? "unassigned"}
+                  {qualityLabel(action.priority)} / {qualityLabel(action.action_type)} / Ответственный: {action.owner_actor_id ?? "Не назначен"}
                 </p>
                 {action.status !== "done" && action.status !== "dismissed" ? (
                   <Button className="mt-3" onClick={() => closeActionMutation.mutate(action.action_id)} size="sm" type="button" variant="outline">
-                    Close
+                    Завершить
                   </Button>
                 ) : null}
               </div>
@@ -252,27 +254,27 @@ export function QualityDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Quality policy</CardTitle>
-          <CardDescription>Effective policy preview and override editor by service or offering.</CardDescription>
+          <CardTitle>Правила контроля качества</CardTitle>
+          <CardDescription>Просмотр действующих правил и настройка исключений для услуги или её варианта.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 md:grid-cols-[1fr_1fr_140px_auto]">
             <input
-              aria-label="Policy service code"
+              aria-label="Код услуги для правил качества"
               className="field-base px-3 py-2"
               onChange={(event) => setPolicyServiceCode(event.currentTarget.value)}
-              placeholder="service_code"
+              placeholder="Код услуги"
               value={policyServiceCode}
             />
             <input
-              aria-label="Policy offering code"
+              aria-label="Код варианта услуги для правил качества"
               className="field-base px-3 py-2"
               onChange={(event) => setPolicyOfferingCode(event.currentTarget.value)}
-              placeholder="offering_code"
+              placeholder="Код варианта услуги"
               value={policyOfferingCode}
             />
             <input
-              aria-label="Low CSAT threshold"
+              aria-label="Порог низкой оценки"
               className="field-base px-3 py-2"
               max={5}
               min={1}
@@ -281,15 +283,15 @@ export function QualityDashboard() {
               value={policyThreshold}
             />
             <Button disabled={savePolicyMutation.isPending} onClick={() => savePolicyMutation.mutate()} type="button">
-              Save override
+              Сохранить настройки
             </Button>
           </div>
           <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-5">
-            <span>Scope: {policy?.scope_type ?? "global"}</span>
-            <span>Low CSAT threshold: {policy?.low_csat_threshold ?? "n/a"}</span>
-            <span>Reopen review: {policy?.reopen_review_enabled ? "on" : "off"}</span>
-            <span>SLA review: {policy?.sla_breach_review_enabled ? "on" : "off"}</span>
-            <span>QA due hours: {policy?.qa_due_hours ?? "n/a"}</span>
+            <span>Область: {qualityLabel(policy?.scope_type ?? "global")}</span>
+            <span>Порог низкой оценки: {policy?.low_csat_threshold ?? "Нет данных"}</span>
+            <span>Проверять повторные открытия: {policy?.reopen_review_enabled ? "Да" : "Нет"}</span>
+            <span>Проверять нарушения SLA: {policy?.sla_breach_review_enabled ? "Да" : "Нет"}</span>
+            <span>Срок проверки, ч: {policy?.qa_due_hours ?? "Нет данных"}</span>
           </div>
         </CardContent>
       </Card>

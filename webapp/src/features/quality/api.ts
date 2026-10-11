@@ -122,25 +122,25 @@ function ticketFilter(ticketId?: string | null): string {
 
 export async function fetchQualitySummary(): Promise<QualitySummary> {
   const response = await fetch("/api/web/quality/summary", { credentials: "same-origin" });
-  const payload = await readOk<{ summary: QualitySummary }>(response, "Failed to load quality summary");
+  const payload = await readOk<{ summary: QualitySummary }>(response, "Не удалось загрузить сводку качества");
   return payload.summary;
 }
 
 export async function fetchServiceQuality(): Promise<ServiceQualityRows> {
   const response = await fetch("/api/web/quality/service-quality", { credentials: "same-origin" });
-  const payload = await readOk<{ rows: ServiceQualityRow[]; last_computed_at?: string | null }>(response, "Failed to load service quality");
+  const payload = await readOk<{ rows: ServiceQualityRow[]; last_computed_at?: string | null }>(response, "Не удалось загрузить качество услуг");
   return Object.assign(payload.rows, { lastComputedAt: payload.last_computed_at ?? null });
 }
 
 export async function fetchQualityReviews(ticketId?: string | null): Promise<QualityReview[]> {
   const response = await fetch(`/api/web/quality/reviews${ticketFilter(ticketId)}`, { credentials: "same-origin" });
-  const payload = await readOk<{ reviews: QualityReview[] }>(response, "Failed to load quality reviews");
+  const payload = await readOk<{ reviews: QualityReview[] }>(response, "Не удалось загрузить проверки качества");
   return payload.reviews;
 }
 
 export async function fetchImprovementActions(ticketId?: string | null): Promise<ImprovementAction[]> {
   const response = await fetch(`/api/web/quality/improvement-actions${ticketFilter(ticketId)}`, { credentials: "same-origin" });
-  const payload = await readOk<{ actions: ImprovementAction[] }>(response, "Failed to load improvement actions");
+  const payload = await readOk<{ actions: ImprovementAction[] }>(response, "Не удалось загрузить задачи улучшения");
   return payload.actions;
 }
 
@@ -161,7 +161,7 @@ export async function createImprovementAction(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const result = await readOk<{ action: ImprovementAction }>(response, "Failed to create improvement action");
+  const result = await readOk<{ action: ImprovementAction }>(response, "Не удалось создать задачу улучшения");
   return result.action;
 }
 
@@ -172,7 +172,7 @@ export async function completeQualityReview(reviewId: string, score: number): Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ score, findings: { improvement_needed: score < 80 } }),
   });
-  const result = await readOk<{ review: QualityReview }>(response, "Failed to complete quality review");
+  const result = await readOk<{ review: QualityReview }>(response, "Не удалось завершить проверку качества");
   return result.review;
 }
 
@@ -183,7 +183,7 @@ export async function closeImprovementAction(actionId: string, outcomeNotes: str
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ outcome_notes: outcomeNotes }),
   });
-  const result = await readOk<{ action: ImprovementAction }>(response, "Failed to close improvement action");
+  const result = await readOk<{ action: ImprovementAction }>(response, "Не удалось завершить задачу улучшения");
   return result.action;
 }
 
@@ -200,7 +200,7 @@ export async function fetchQualityPolicy(filters?: { serviceCode?: string | null
   }
   const query = params.toString();
   const response = await fetch(`/api/web/quality/policies${query ? `?${query}` : ""}`, { credentials: "same-origin" });
-  const payload = await readOk<{ policy: QualityPolicy }>(response, "Failed to load quality policy");
+  const payload = await readOk<{ policy: QualityPolicy }>(response, "Не удалось загрузить правила качества");
   return payload.policy;
 }
 
@@ -211,6 +211,6 @@ export async function saveQualityPolicy(payload: QualityPolicy): Promise<Quality
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const result = await readOk<{ policy: QualityPolicy }>(response, "Failed to save quality policy");
+  const result = await readOk<{ policy: QualityPolicy }>(response, "Не удалось сохранить правила качества");
   return result.policy;
 }

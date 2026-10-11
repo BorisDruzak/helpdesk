@@ -403,7 +403,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Качество",
-    description: "CSAT, повторные открытия, QA и улучшения",
+    description: "Оценки пользователей, повторные открытия, проверки и улучшения",
     icon: BarChart3,
     section: "admin",
     workspace: "admin",
