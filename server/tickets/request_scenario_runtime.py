@@ -98,7 +98,7 @@ class ScenarioRuntime:
             raise ValueError(error)
         return value
 
-    def _page_answers(self, block, previous, supplied):
+    def _page_answers(self, block, previous, supplied, *, enforce_required=True):
         fields = {item.key: item for item in block.fields}
         if set(supplied) - fields.keys():
             raise ScenarioInputError({"answers": "Only fields from the current page may be submitted"})
@@ -123,7 +123,7 @@ class ScenarioRuntime:
             required = item.required or item.required_when is not None and evaluate_condition(item.required_when, normalized)
             unknown = key in supplied and supplied[key] is None and item.allow_unknown
             empty = value is None or value == "" or value == [] or item.type == "checkbox" and value is False
-            if required and empty and not unknown:
+            if enforce_required and required and empty and not unknown:
                 errors[key] = "Field is required"
                 return
             if not empty or unknown or item.type == "checkbox":
@@ -134,6 +134,16 @@ class ScenarioRuntime:
         if len(json.dumps(normalized, ensure_ascii=False).encode("utf-8")) > 65536:
             raise ScenarioInputError({"answers": "Accumulated answers exceed limit"})
         return normalized
+
+    def preview_answers(self, state, request):
+        if state.revision != request.revision or state.current_block_id != request.expected_block_id or state.state != "active":
+            raise ScenarioConflict("Scenario revision or current block changed")
+        block = self.blocks[state.current_block_id]
+        if block.kind != "form_page" or request.current_result is not None:
+            raise ScenarioInputError({"block": "Only current form answers can be previewed"})
+        preview = deepcopy(state)
+        preview.answers = self._page_answers(block, state.answers, request.answers, enforce_required=False)
+        return preview
 
     def advance(self, state, request):
         if state.revision != request.revision or state.current_block_id != request.expected_block_id:

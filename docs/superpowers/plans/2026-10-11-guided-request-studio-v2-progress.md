@@ -391,3 +391,56 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
   source inspection; no external contract/Endpoint behavior changed. No live
   publication or deployment. P6 requester sessions, P7 real ticket/policy binding,
   P8 readiness/publication and P9 compatibility/import remain required.
+
+## P6 PASS — requester sessions
+
+- Added owner-only strict commands, 24-hour TTL, locked revision checks,
+  immutable version pinning, safe current-step/review projection and last-command
+  replay. Start resumes the same active owner/version. Retired versions remain
+  pinned; expired/revoked sessions cannot execute. Canonical runtime handles Back
+  pruning and unavailable diagnostics; no ticket or Endpoint side effects.
+- Genuine RED: three missing requester auth handler tests; six missing session
+  DTO/projection cases; missing runtime preview; missing review answer projection;
+  missing public offering flag; UI missing module, late owner response and null
+  restoration. Each received implementation and focused GREEN evidence.
+- Final fast backend command: `python -m pytest
+  server/tests/test_request_scenario_session_contract.py
+  server/tests/test_request_scenario_admin_contract.py
+  server/tests/test_request_scenario_contract.py
+  server/tests/test_request_scenario_runtime.py
+  scripts/tests/test_reset_test_data_script.py -q`: **106 passed in 1.21s**.
+  The original three requester-auth RED tests now pass without deselection.
+- Final frontend command: `pnpm --dir webapp test
+  src/features/requester/scenario-session.test.tsx
+  src/pages/requester/new-request-page.test.tsx`: **24 passed in 3.66s**,
+  including all 16 legacy requester page tests. Covers owner response races,
+  explicit unknown, preview ordering, stale-handle recovery, instruction consent,
+  typed commands and human review labels. `pnpm --dir webapp build`: **PASS**
+  (TypeScript/Vite; existing common chunk >500 KiB warning remains).
+- PostgreSQL sessions plus existing catalog fallback: **5 passed in 161.14s**.
+  Final session suite after picker/audit/display additions:
+  `python -m pytest server/tests/test_request_scenario_session_api.py -q`:
+  **3 passed in 105.50s**. A fixture initially omitted required device protocol
+  metadata; corrected fixture then passed. New forced audit failure/rollback case
+  in `-k owner_resume`: **1 passed, 2 deselected in 47.68s**. Checks owner 404,
+  start resume, concurrent identical replay, changed stale 409, invalid required,
+  Back, retired version pinning, TTL, same-page preview without save, instruction
+  acknowledgment, unavailable diagnostic, self-service finish replay, owned
+  device/department choices, forged ID rejection, safe display and audit rollback.
+- Browser first exposed restoration before catalog arrival; restore now waits
+  for catalog loading. Final `PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm --dir webapp
+  test:e2e guided-requester.spec.ts`: **4 passed in 11.4s**,
+  including reload/resume, instruction acknowledgment, resolution/self-service,
+  focus, full primary action visibility, no overflow or normal console/network
+  errors. These are fixture checks, not P10 staging acceptance.
+- Independent review corrections: owner lifecycle cancellation,
+  explicit-null preservation, stale-handle restart, supported picker sources and
+  server identifier validation, preview ordering and human summary labels. Final
+  bounded read-only review has no blockers. Owner-authorized review API retains
+  typed `value` alongside `display_value`; UI displays the human label only.
+- Inventory audit: two new files, zero issues. Scoped workspace and diff checks
+  pass. Seven requester routes are documented in CODEMAP/admin guide. Responses
+  use no-store. Ports 4188/55438 have no remaining listener; temporary test DBs
+  were dropped by the harness. Screenshots are preserved under ignored
+  `artifacts/browser_checks/guided-request-studio-v2/p6/`. No live publication,
+  deployment, ticket creation or Endpoint execution. P7–P10 remain required.

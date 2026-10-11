@@ -402,6 +402,17 @@ Tech descriptions explicitly name Endpoint. Generic Helpdesk-owned Agent wording
 is absent from these current device-navigation descriptions.
 # Ticket UI and profile/SLA projections
 
+Guided requester runtime: `web_api/request_scenario_handlers.py` registers
+owner-only session start/read/answer/advance/back/finish/step-preview routes in
+`routes.py`. `app/repos/request_scenario_session_repo.py` owns PostgreSQL locks,
+TTL, immutable version pinning, last-command replay and redacted catalog audit.
+`tickets/request_scenario_runtime.py` remains the only graph evaluator;
+`request_scenario_session.py` projects one safe step, and
+`request_scenario_pickers.py` reads/validates scoped Registry entities.
+`request_scenario_catalog.py` adds per-offering availability to the existing
+Service Catalog. Requester UI uses `features/requester/scenario-session.tsx`
+from `pages/requester/new-request-page.tsx`; legacy offering UI remains default.
+
 See [ticket UI behavior](../../docs/HELPDESK_TICKET_UI.md).
 `web_api/support_handlers.py` projects completed and paused SLA timers and
 enriches validated requester identity with actor-scoped Registry profile contacts.

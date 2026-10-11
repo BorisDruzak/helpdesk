@@ -87,3 +87,35 @@ separator typing, typed membership, save/reload, fully visible primary actions, 
 no horizontal document overflow, and console/network errors. Screenshots are
 normal test artifacts under `webapp/test-results`; this is fixture browser
 evidence, not staging runtime acceptance (P10).
+
+## Requester sessions
+
+Published, enabled scenarios add `guided_scenario_enabled` to their public
+offering. Public category ancestors must also be published/public. Other
+offerings retain the existing form UI at `/app/requester/new`.
+
+Requester-only endpoints under `/api/web/requester/request-scenarios/sessions`
+start/resume a session (POST), read its current step (GET `/{identifier}`),
+and accept `answer`, `advance`, `back`, `finish` and `step-preview` POST commands.
+The owner comes exclusively from verified `AuthContext`; another owner receives
+404. Commands carry revision/current block and strict typed answers, never
+actor/policy authority. Sessions expire after 24 hours, pin an immutable version,
+and allow retired versions to continue unless revoked/disabled. Back clears
+downstream answers/results. Repeating the latest identical command returns its
+saved result; a changed stale command returns 409. Start resumes an active session
+for the same owner/version. Ticket submit idempotency belongs to the existing
+create ledger integration in P7.
+
+`step-preview` uses the canonical runtime to reevaluate current-page conditions
+without advancing or saving. The safe projection contains only the current step,
+evaluated fields, visited Back targets and retained review answers. Picker options
+come from existing Registry/catalog/identity sources. Device choices are restricted
+to the owner's active bindings; user choices currently contain the verified self
+profile. Selected identifiers are checked again server-side. No Endpoint dispatch
+occurs. Session audit entries contain version/block/revision/state, never answers.
+
+The requester component stores only an opaque session ID per login/offering in
+sessionStorage. Late responses are canceled/ignored on owner/offering change;
+resume preserves explicit unknown answers. Instructions are rendered as text;
+resolution checks require explicit yes/no/unknown. Actual ticket creation and
+policy preview are the following P7 gate, not a P6 success claim.

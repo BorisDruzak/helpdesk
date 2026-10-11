@@ -1,0 +1,159 @@
+import { useEffect, useRef, useState } from "react";
+import { RequestFormFieldControl, type DynamicFormValues } from "./dynamic-form";
+import type { RequestFormField } from "./types";
+import { Button } from "./ui/form-controls";
+
+type Step = {
+  id: string;
+  revision: number;
+  state: string;
+  back_targets: { id: string; title: string }[];
+  block: {
+    id: string; kind: string; title: string;
+    fields?: (RequestFormField & { value?: DynamicFormValues[string]; allow_unknown?: boolean })[];
+    has_dynamic_fields?: boolean;
+    content?: { body: string; format: string };
+    acknowledgment_required?: boolean;
+    message?: string;
+    answers?: { key: string; label: string; type: string; value: unknown; display_value: string }[];
+  };
+};
+
+class SessionError extends Error {
+  constructor(public code: string, public fields: Record<string, string> = {}) { super(code); }
+}
+
+const base = "/api/web/requester/request-scenarios/sessions";
+async function request(path: string, body?: unknown, signal?: AbortSignal): Promise<Step> {
+  const response = await fetch(path, {
+    method: body === undefined ? "GET" : "POST", credentials: "same-origin", cache: "no-store", signal,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const result = await response.json();
+  if (!response.ok || result.status !== "success") throw new SessionError(result.error_code || "SESSION_OPERATION_FAILED", result.errors);
+  return result.data;
+}
+
+export function ScenarioSession({ offering, owner = "" }: { offering: string; owner?: string }) {
+  const [step, setStep] = useState<Step | null>(null);
+  const [values, setValues] = useState<DynamicFormValues>({});
+  const [error, setError] = useState<SessionError | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [reload, setReload] = useState(0);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const requestSequence = useRef(0);
+  const lifecycle = useRef(0);
+  const commandControllers = useRef(new Set<AbortController>());
+  const storageKey = owner ? `pc_client.scenario.session:${owner}:${offering}` : null;
+
+  function remember(data: Step) {
+    if (storageKey) {
+      try { sessionStorage.setItem(storageKey, data.id); } catch { /* Server start can still resume. */ }
+    }
+  }
+  function accept(data: Step) {
+    setStep(data);
+    setValues(Object.fromEntries((data.block.fields || []).map(field => [field.key, field.value])));
+    setAcknowledged(false);
+    setError(null);
+    remember(data);
+  }
+
+  useEffect(() => {
+    lifecycle.current++;
+    const controller = new AbortController();
+    setStep(null); setError(null); setBusy(true);
+    let saved: string | null = null;
+    try { saved = storageKey ? sessionStorage.getItem(storageKey) : null; } catch { /* Optional opaque ID. */ }
+    const path = saved ? `${base}/${encodeURIComponent(saved)}` : base;
+    request(path, saved ? undefined : { offering_full_code: offering }, controller.signal)
+      .then(data => { if (!controller.signal.aborted) accept(data); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause); })
+      .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    return () => {
+      lifecycle.current++; controller.abort(); requestSequence.current++;
+      for (const pending of commandControllers.current) pending.abort();
+      commandControllers.current.clear();
+    };
+  }, [offering, storageKey, reload]); // A server response replaces local values only on explicit resume/advance.
+
+  useEffect(() => { heading.current?.focus(); }, [step?.block.id]);
+
+  async function command(kind: string, body: unknown) {
+    if (!step || busy) return;
+    const generation = lifecycle.current;
+    const controller = new AbortController();
+    commandControllers.current.add(controller);
+    const current = () => generation === lifecycle.current && !controller.signal.aborted;
+    requestSequence.current++; setBusy(true); setError(null);
+    try {
+      if (kind === "answer" && step.block.has_dynamic_fields) {
+        const projected = await request(`${base}/${step.id}/step-preview`, body, controller.signal);
+        if (!current()) return;
+        setStep(current => current ? { ...current, block: projected.block } : current);
+      }
+      const data = await request(`${base}/${step.id}/${kind}`, body, controller.signal);
+      if (current()) accept(data);
+    }
+    catch (cause) { if (current()) setError(cause as SessionError); }
+    finally { commandControllers.current.delete(controller); if (current()) setBusy(false); }
+  }
+
+  async function preview() {
+    if (!step?.block.has_dynamic_fields || busy) return;
+    const sequence = ++requestSequence.current;
+    try {
+      const data = await request(`${base}/${step.id}/step-preview`, {
+        expected_block_id: step.block.id, revision: step.revision, answers: values,
+      });
+      if (sequence === requestSequence.current) {
+        setStep(current => current ? { ...current, block: data.block } : current);
+        setValues(current => Object.fromEntries((data.block.fields || []).map(field => [field.key, current[field.key]])));
+        setError(null);
+      }
+    } catch (cause) { if (sequence === requestSequence.current) setError(cause as SessionError); }
+  }
+
+  const answer = (result?: string) => command(step?.block.kind === "form_page" ? "answer" : "advance", {
+    expected_block_id: step?.block.id, revision: step?.revision,
+    ...(step?.block.kind === "form_page" ? { answers: values } : {}),
+    ...(result ? { current_result: result } : {}),
+  });
+  const expired = ["SESSION_EXPIRED", "SESSION_REVOKED", "SESSION_NOT_FOUND"].includes(error?.code || "");
+
+  return <section className="grid gap-4 rounded-panel border border-slate-200 bg-white p-5" aria-busy={busy}>
+    {error ? <div role="alert" className="text-sm text-rose-700">
+      {error.code === "REVISION_CONFLICT" ? "Сценарий изменился в другом окне. Загрузите сохранённый шаг." : expired ? "Срок действия сценария завершён или доступ отозван." : "Не удалось выполнить действие. Проверьте ответы и повторите."}
+      <Button type="button" variant="outline" onClick={() => {
+        if (expired && storageKey) { try { sessionStorage.removeItem(storageKey); } catch { /* Optional storage. */ } }
+        setReload(value => value + 1);
+      }}>{expired ? "Начать заново" : "Загрузить сохранённый шаг"}</Button>
+    </div> : null}
+    {!step && busy ? <p>Загружаем сценарий...</p> : null}
+    {step ? <>
+      <h2 ref={heading} tabIndex={-1} className="text-xl font-semibold text-slate-950">{step.block.title}</h2>
+      <fieldset disabled={busy} className="grid min-w-0 gap-4" onBlur={() => void preview()}>
+        {(step.block.fields || []).map(field => <div key={field.key}>
+          <RequestFormFieldControl field={field} value={values[field.key]} error={error?.fields[field.key]} onChange={value => {
+            requestSequence.current++; setValues(current => ({ ...current, [field.key]: value })); setError(null);
+          }} />
+          {field.allow_unknown ? <label className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={values[field.key] === null} onChange={event => {
+            requestSequence.current++; setError(null);
+            setValues(current => ({ ...current, [field.key]: event.target.checked ? null : undefined }));
+          }} />Не знаю</label> : null}
+        </div>)}
+        {step.block.content ? <p className="whitespace-pre-wrap break-words">{step.block.content.body}</p> : null}
+        {step.block.kind === "instruction" && step.block.acknowledgment_required ? <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />Инструкция выполнена</label> : null}
+        {step.block.answers ? <dl className="grid gap-3">{step.block.answers.map(item => <div key={item.key}><dt className="font-medium">{item.label}</dt><dd className="break-words text-sm">{item.display_value}</dd></div>)}</dl> : null}
+        {step.block.message ? <p>{step.block.message}</p> : null}
+        {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}
+        {["form_page", "instruction", "review"].includes(step.block.kind) ? <Button type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить</Button> : null}
+        {step.block.kind === "finish" ? <Button type="button" onClick={() => void command("finish", { revision: step.revision })}>Завершить</Button> : null}
+        {step.block.kind === "submit_ticket" ? <p>Ответы собраны. Отправка обращения будет доступна после проверки обработки.</p> : null}
+        {step.back_targets.length ? <div className="flex flex-wrap gap-2">{step.back_targets.map(target => <Button key={target.id} type="button" variant="outline" onClick={() => void command("back", { revision: step.revision, target_block_id: target.id })}>Вернуться: {target.title}</Button>)}</div> : null}
+      </fieldset>
+    </> : null}
+  </section>;
+}

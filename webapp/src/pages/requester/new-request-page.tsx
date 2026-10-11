@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "../../features/auth/session-provider";
 import { pendingCreateKey, clearCreateKey } from "../../features/requester/create-intent";
+import { ScenarioSession } from "../../features/requester/scenario-session";
 
 import { createRequesterTicket, previewRequesterTicket, RequesterApiError, searchRequesterOnBehalfPeople } from "../../features/requester/api";
 import {
@@ -38,6 +39,7 @@ import {
   recommendOffering,
   requesterFormPrefillFromContext,
   resolveRecommendedCategoryKey,
+  CategorySelector,
 } from "./new-request-workflow";
 import type {
   RequestFormDefinition,
@@ -497,7 +499,7 @@ export function RequesterNewRequestPage() {
   ]);
 
   useEffect(() => {
-    if (!requestDraftStorageKey || restoredDraftRef.current || !formPackQuery.data || !categoryOptions.length) {
+    if (!requestDraftStorageKey || restoredDraftRef.current || !formPackQuery.data || catalogQuery.isLoading || !categoryOptions.length) {
       return;
     }
     restoredDraftRef.current = true;
@@ -524,7 +526,7 @@ export function RequesterNewRequestPage() {
     setFieldServerErrors({});
     setCategoryError(null);
     setError(null);
-  }, [categoryOptions, formPackQuery.data, requestDraftStorageKey, requestIntent]);
+  }, [categoryOptions, formPackQuery.data, catalogQuery.isLoading, requestDraftStorageKey, requestIntent]);
 
   useEffect(() => {
     if (!requestDraftStorageKey || !formPackQuery.data || !restoredDraftRef.current) {
@@ -805,7 +807,11 @@ export function RequesterNewRequestPage() {
             }}>Начать отдельное обращение</button>
           </div>
         ) : null}
-        <DetailsStepPanel
+        {selectedOffering?.guided_scenario_enabled ? <>
+          <CategorySelector options={categorySelectorOptions} selectedKey={selectedCategoryKey}
+            recommendedKey={recommendedCategoryKey} onChange={selectCategoryKey} />
+          <ScenarioSession key={selectedOffering.full_code} offering={selectedOffering.full_code} owner={session?.user_login || ""} />
+        </> : <DetailsStepPanel
           categoryError={categoryError}
           categoryInputRef={(element) => {
             categorySelectRef.current = element;
@@ -847,7 +853,7 @@ export function RequesterNewRequestPage() {
           submitting={submitting}
           validationAttempted={validationAttempted}
           valueValidation={valueValidation}
-        />
+        />}
       </RequestWizardShell>
       <RequestSummaryAside
         bootstrap={bootstrap}

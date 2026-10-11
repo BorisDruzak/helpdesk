@@ -358,6 +358,12 @@ from web_api.request_scenario_admin_handlers import (
     handle_scenario_category_archive, handle_scenario_create, handle_scenario_detail,
     handle_scenario_draft_save, handle_scenario_archive, handle_scenario_versions, handle_scenario_simulate,
 )
+from web_api.request_scenario_handlers import (
+    handle_web_requester_scenario_start, handle_web_requester_scenario_session,
+    handle_web_requester_scenario_answer, handle_web_requester_scenario_advance,
+    handle_web_requester_scenario_back, handle_web_requester_scenario_finish,
+    handle_web_requester_scenario_step_preview,
+)
 from web_api.service_catalog_handlers import (
     handle_service_catalog_current,
     handle_service_catalog_offering,
@@ -747,6 +753,13 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/playbooks/save', handle_web_admin_playbooks_save),
         web.get('/api/registry/options', handle_registry_options),
         web.get('/api/web/requester/bootstrap', handle_web_requester_bootstrap),
+        web.post('/api/web/requester/request-scenarios/sessions', handle_web_requester_scenario_start),
+        web.get('/api/web/requester/request-scenarios/sessions/{identifier}', handle_web_requester_scenario_session),
+        web.post('/api/web/requester/request-scenarios/sessions/{identifier}/answer', handle_web_requester_scenario_answer),
+        web.post('/api/web/requester/request-scenarios/sessions/{identifier}/advance', handle_web_requester_scenario_advance),
+        web.post('/api/web/requester/request-scenarios/sessions/{identifier}/back', handle_web_requester_scenario_back),
+        web.post('/api/web/requester/request-scenarios/sessions/{identifier}/step-preview', handle_web_requester_scenario_step_preview),
+        web.post('/api/web/requester/request-scenarios/sessions/{identifier}/finish', handle_web_requester_scenario_finish),
         web.get('/api/web/requester/profile', handle_web_requester_profile),
         web.put('/api/web/requester/profile', handle_web_requester_profile_update),
         web.get('/api/web/requester/consents', handle_web_requester_consents),

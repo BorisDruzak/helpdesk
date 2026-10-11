@@ -17,8 +17,12 @@ fast94, PostgreSQL2, browser3, build/inventory/workspace and independent review
 pass; details/screenshots are in the execution ledger.
 P5 PASS: selected block/field workbench, typed conditions and multi-role mappings,
 safe graph edits, bounded undo/redo and responsive preview. Frontend59, fast94,
-browser7, build/inventory/workspace and independent review pass. P6–P10 remain
-gated, including actual staging acceptance and legacy-form import/compatibility.
+browser7, build/inventory/workspace and independent review pass.
+P6 PASS: owner-scoped pinned sessions, typed steps/Back/TTL/replay, safe picker
+choices and redacted audit; per-offering requester flow preserves legacy forms.
+Fast106, frontend24, PostgreSQL3 plus audit rollback1, browser4, build/inventory/
+workspace and independent review pass. P7–P10 remain gated, including canonical
+ticket/policy integration, safe publication and actual staging acceptance.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI
