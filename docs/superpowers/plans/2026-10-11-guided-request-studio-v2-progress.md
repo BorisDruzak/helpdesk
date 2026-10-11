@@ -852,3 +852,30 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   service remains inactive on its previous release. No secret output, production
   changes, or deployment occurred during this increment. Actual staging A–J,
   canonical exact-SHA full CI/security/coverage/Sonar and final matrix remain open.
+
+### P10 installed staging and unknown-answer handling
+
+- Candidate `8fd099ee9bfdbd917bc6a59d17d4cf2df0ba8b9a` installed through the
+  canonical release script on isolated staging. Release identity matches; schema
+  revision is 147. Pre-migration revision 146 backup passed archive-list validation:
+  11746448 bytes, SHA256
+  `e6a6e6c6ffd70abb9395c1c7c3f8ef361b7962019bf9265f3cf9e423699ebcf0`.
+  This is backup verification, not restore-drill acceptance.
+- Four synthetic pilot accounts created through the canonical user repository;
+  passwords are held in a local DPAPI profile. Strict HTTPS API login and Studio
+  catalog return 200 using the approved Windows CA in the Node test process.
+  Installed catalog browser checks at 1366x768, 1440x900 and 1920x1080 have no
+  horizontal overflow. Evidence: ignored `artifacts/browser_checks/
+  guided-request-studio-v2/p10/staging/*-installed-catalog.png`.
+- Exact-SHA canonical CI run 38155806187 attempt 1 failed one simulator unknown
+  test (648 others passed); Endpoint contract job passed. Original local full
+  frontend suite passed 649/649. One unchanged-SHA diagnostic rerun is in progress.
+  The original CI root cause remains unproven; no gate has been weakened.
+- Review identified reading mutable checkbox DOM state inside deferred functional
+  updates in both simulator and requester. Capture the checked value synchronously.
+  Tests cover checked null and unchecked omission; request assertions are outside
+  mocked fetch so simulator error handling cannot swallow them. Review found no
+  blocking issues. Focused frontend: 21 passed; full frontend: 650 passed.
+- Actual printer A-J, exact final-candidate CI/security/coverage/Sonar, restore
+  acceptance and final AC matrix remain open. No production changes or real
+  Endpoint operations occurred.

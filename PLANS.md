@@ -1933,3 +1933,12 @@ missing simulator unknown-answer controls; RED/GREEN and browser now verify
 explicit null. Server 146 PASS; frontend 72 PASS; owned PostgreSQL selected-policy
 publication/session/ticket creation 1 PASS (67.70s); 32-question browser all four
 viewports PASS (10.9s); build/typecheck PASS. Full P10 remains in progress.
+
+Guided Studio P10 staging: candidate 8fd099ee installed with schema 147 and a
+verified pre-migration backup. Strict HTTPS synthetic login/catalog and installed
+catalog at three required desktop viewports pass. Original exact-SHA CI failed
+one simulator test; one unchanged-SHA diagnostic rerun is underway. Synchronous
+unknown checkbox snapshots prevent reading mutable DOM in deferred updates;
+null/omission tests and focused 21/full 650 frontend checks pass, build and scoped
+workspace pass, review has no blocking findings. Original CI RCA remains unproven.
+Actual printer A-J, final exact-SHA CI/security/Sonar and full acceptance remain open.

@@ -3,20 +3,26 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSimulationPanel } from "./scenario-simulation";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it("simulates an explicit unknown answer as null rather than omitting the field", async () => {
-  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+it.each([true, false])("preserves explicit unknown versus unchecked omission (unknown=%s)", async unknownSelected => {
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     if (body.steps.length) {
-      expect(body.steps[0].answers).toEqual({ printer: null });
       return new Response(JSON.stringify({ status: "success", data: { state: { revision: 2, results: {}, history: ["questions"] }, current_step: { id: "review", kind: "review", title: "Проверка ответов" } } }), { headers: { "Content-Type": "application/json" } });
     }
     return new Response(JSON.stringify({ status: "success", data: { state: { revision: 1, results: {}, history: [] }, current_step: { id: "questions", kind: "form_page", title: "Принтер", fields: [{ key: "printer", label: "Модель", type: "text", allow_unknown: true }] } } }), { headers: { "Content-Type": "application/json" } });
-  }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
   render(<ScenarioSimulationPanel id="scenario" revision={1} dirty={false} disabled={false} />);
   fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
-  fireEvent.click(await screen.findByRole("checkbox", { name: "Не знаю" }));
+  const unknown = await screen.findByRole("checkbox", { name: "Не знаю" });
+  fireEvent.change(screen.getByRole("textbox", { name: "Модель" }), { target: { value: "temporary" } });
+  fireEvent.click(unknown);
+  expect(unknown).toBeChecked();
+  if (!unknownSelected) { fireEvent.click(unknown); expect(unknown).not.toBeChecked(); }
   fireEvent.click(screen.getByRole("button", { name: "Продолжить проверку" }));
   await screen.findByRole("heading", { name: "Проверка ответов" });
+  const sent = JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body));
+  expect(sent.steps[0].answers).toEqual(unknownSelected ? { printer: null } : {});
 });
 
 it.each([false, true])("shows canonical facts and processing with canonical OLA object (configured=%s)", async configured => {

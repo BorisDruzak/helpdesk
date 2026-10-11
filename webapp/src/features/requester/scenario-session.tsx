@@ -152,8 +152,9 @@ export function ScenarioSession({ offering, owner = "", deviceId }: { offering: 
             requestSequence.current++; setValues(current => ({ ...current, [field.key]: value })); setError(null);
           }} />
           {field.allow_unknown ? <label className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={values[field.key] === null} onChange={event => {
+            const value = event.currentTarget.checked ? null : undefined;
             requestSequence.current++; setError(null);
-            setValues(current => ({ ...current, [field.key]: event.target.checked ? null : undefined }));
+            setValues(current => ({ ...current, [field.key]: value }));
           }} />Не знаю</label> : null}
         </>} />
         {step.block.content ? <p className="whitespace-pre-wrap break-words">{step.block.content.body}</p> : null}

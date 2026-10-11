@@ -70,7 +70,8 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       <ScenarioFields fields={block.fields || []} layout={block.layout} renderField={field => <><RequestFormFieldControl field={field} value={values[field.key]} onChange={value => {
         sequence.current++; setValues(previous => ({ ...previous, [field.key]: value })); setError("");
       }} />{field.allow_unknown && <label className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={values[field.key] === null} onChange={event => {
-        sequence.current++; setError(""); setValues(previous => ({ ...previous, [field.key]: event.target.checked ? null : undefined }));
+        const value = event.currentTarget.checked ? null : undefined;
+        sequence.current++; setError(""); setValues(previous => ({ ...previous, [field.key]: value }));
       }} />Не знаю</label>}</>} />
       {block.content && <p className="whitespace-pre-wrap">{block.content.body}</p>}
       {block.kind === "instruction" && <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />Инструкция выполнена</label>}
