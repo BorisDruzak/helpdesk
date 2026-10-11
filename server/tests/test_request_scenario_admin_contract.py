@@ -63,7 +63,10 @@ async def test_error_filter_includes_published_scenario_with_invalid_new_draft()
     row = RequestStudioScenario(id="scenario", scenario_key="printer", service_code="workplace", offering_full_code="workplace.printer", title="Printer", description="", published_version_id="version", archived=False, enabled=False)
     draft = RequestStudioDraft(scenario_id=row.id, definition={}, revision=2, updated_by="admin-test")
     class Result:
-        def all(self): return [(row, draft)]
+        def all(self):
+            from datetime import datetime, timezone
+            row.updated_at = draft.updated_at = datetime.now(timezone.utc)
+            return [(row, draft, 3)]
     class Session:
         async def execute(self, statement): return Result()
     class Catalog:
@@ -76,6 +79,7 @@ async def test_error_filter_includes_published_scenario_with_invalid_new_draft()
     result = await repo.catalog_view(status="errors")
     assert result["total"] == 1 and result["scenarios"][0]["id"] == row.id
     assert result["scenarios"][0]["status"] == "published"
+    assert result["scenarios"][0]["published_version"] == 3
 
 
 @pytest.mark.asyncio
@@ -85,7 +89,9 @@ async def test_category_tree_filter_applies_before_pagination():
     rows = []
     for identifier, category in [("outside", "other"), ("nested", "child"), ("root_item", "root")]:
         row = RequestStudioScenario(id=identifier, scenario_key=identifier, service_code="it", offering_full_code="it.printer", title=identifier, description="", category_id=category, archived=False)
-        rows.append((row, RequestStudioDraft(scenario_id=identifier, definition={}, revision=1, updated_by="test")))
+        from datetime import datetime, timezone
+        row.updated_at = datetime.now(timezone.utc)
+        rows.append((row, RequestStudioDraft(scenario_id=identifier, definition={}, revision=1, updated_by="test", updated_at=row.updated_at), None))
     class Result:
         def all(self): return rows
     class Session:
