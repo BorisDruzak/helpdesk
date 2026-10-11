@@ -235,7 +235,8 @@ class RequestScenarioRepo:
             from tickets.request_scenario_submission import build_scenario_submission
             from tickets.service_catalog_preview import simulate_service_catalog_processing
             data, snapshot = build_scenario_submission(engine.definition, state, session_id="simulation", version_id="draft")
-            _, processing = await simulate_service_catalog_processing(self.session, data, scenario_snapshot=snapshot)
+            _, processing = await simulate_service_catalog_processing(self.session, data, scenario_snapshot=snapshot,
+                **({"allow_draft_offering": True} if draft.definition.get("publish_offering") is True else {}))
         return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"),
                 "current_step": project_step(engine.definition, projected)["block"], "processing": processing, "revision": draft.revision}
 

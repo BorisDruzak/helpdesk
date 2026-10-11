@@ -36,6 +36,9 @@
 - Scenario publication/readiness: `tickets/request_scenario_publication.py`
   and `tickets/request_scenario_readiness.py` reuse the canonical evaluator,
   form/catalog processing dry-run and existing signed confirmation storage,
+  with explicit atomic promotion of a bound public draft offering through the
+  existing Service Catalog validator/repository. `publish_offering` defaults
+  false; internal candidate simulation never takes authority from public JSON.
   including all four simulation-only diagnostic failure outcomes (bounded
   coverage); imported unsupported pre-ticket attachments block publication.
   Admin `readiness`, `publish-preview`, `publish` and `rollback-draft` routes

@@ -54,7 +54,8 @@ async def test_processing_dry_run_uses_returned_canonical_policy_overlay(monkeyp
     monkeypatch.setattr(module, "resolve_create_form_submission", AsyncMock(return_value={}))
     monkeypatch.setattr(module, "apply_effective_registry_policies", AsyncMock(return_value=canonical))
     monkeypatch.setattr(module, "PolicyHealthService", lambda _: health)
-    _, result = await module.simulate_service_catalog_processing(object(), {"offering_full_code": "workplace.printer"})
+    _, result = await module.simulate_service_catalog_processing(object(), {"offering_full_code": "workplace.printer", "allow_draft_offering": True})
+    assert resolver.resolve_selection.call_args.kwargs["actor_role"] == "requester"
     assert result["sla"]["resolution_min"] == 120
     assert health.simulate.call_args.kwargs["validated_submission"] == canonical
 
@@ -73,6 +74,33 @@ async def test_publication_freezes_business_calendar_source():
         async def execute(self, statement): calls.append(str(statement))
     await ScenarioPublicationService(SimpleNamespace(session=Session()))._freeze_sources()
     assert "ticket_business_calendars" in calls[0]
+
+
+@pytest.mark.asyncio
+async def test_catalog_promotion_acquires_write_compatible_source_lock():
+    from types import SimpleNamespace
+    from tickets.request_scenario_publication import ScenarioPublicationService
+    calls = []
+    class Session:
+        async def execute(self, statement): calls.append(str(statement))
+    await ScenarioPublicationService(SimpleNamespace(session=Session()))._freeze_sources(write_offering=True)
+    assert calls[0].endswith("IN SHARE ROW EXCLUSIVE MODE")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_status,service_visibility,offering_status,offering_visibility", [
+    ("draft", "public", "draft", "public"), ("published", "internal", "draft", "public"),
+    ("published", "public", "retired", "public"), ("published", "public", "draft", "internal")])
+async def test_internal_candidate_preview_cannot_bypass_public_parent_and_visibility(monkeypatch, service_status, service_visibility, offering_status, offering_visibility):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from tickets import service_catalog_preview as module
+    selection = SimpleNamespace(service={"lifecycle_status": service_status, "visibility": service_visibility},
+        offering={"lifecycle_status": offering_status, "visibility": offering_visibility})
+    resolver = SimpleNamespace(resolve_selection=AsyncMock(return_value=selection))
+    monkeypatch.setattr(module, "ServiceCatalogRuntimeResolver", lambda _: resolver)
+    with pytest.raises(module.ServiceCatalogPreviewError):
+        await module.simulate_service_catalog_processing(object(), {}, allow_draft_offering=True)
 
 
 def test_optional_instruction_checks_both_acknowledgment_outcomes():

@@ -64,6 +64,21 @@ authorized by this implementation.
 
 ## Canonical graph semantics (P2)
 
+Draft definition `publish_offering` is a strict boolean, default false. An admin
+may explicitly include its bound public draft offering in scenario publication.
+Preview preserves draft status and shows the offering promotion in the same diff;
+canonical Service Catalog validation and scenario readiness must both pass.
+Only an already published/public parent service is eligible. Private, retired or
+invalid catalog objects never receive a confirmation token. Public requester
+payloads cannot enable internal candidate simulation.
+
+Publication revalidates source-bound confirmation under a write-compatible
+source lock, promotes the offering through `ServiceCatalogRepo`, then writes the
+immutable scenario version with the promoted offering snapshot, token consumption
+and audits in the same transaction. Any failure rolls all of them back. An
+already published offering is not modified by this flag. No new table or API is
+introduced; inline offering creation uses the existing catalog draft API.
+
 `tickets/request_scenario_validation.py` rejects duplicate/unknown identifiers,
 unreachable blocks, graph/field dependency cycles, unsupported capabilities,
 unsafe authority fact keys and incompatible condition/role types. Dependency

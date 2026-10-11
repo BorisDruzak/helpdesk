@@ -50,6 +50,7 @@ export type ScenarioDraftDefinition = {
   category_id?: string | null;
   title: string;
   description?: string;
+  publish_offering?: boolean;
   entry_block_id?: string | null;
   blocks?: ScenarioBlock[];
   process_binding: { request_template_key: string; priority_source?: "existing_server_policy_runtime"; policy_refs?: Partial<Record<ScenarioPolicyKind, string>> };

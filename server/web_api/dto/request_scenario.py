@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 Key = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_]*$")]
 CatalogCode = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_-]*$")]
@@ -212,6 +212,7 @@ class ScenarioDraftDefinition(StrictModel):
     entry_block_id: Key | None = None
     blocks: Annotated[list[Block], Field(max_length=256)] = Field(default_factory=list)
     process_binding: ProcessBinding
+    publish_offering: StrictBool = False
 
     @model_validator(mode="before")
     @classmethod

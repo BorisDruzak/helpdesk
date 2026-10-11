@@ -44,7 +44,7 @@ def _safe_text(value: Any) -> str | None:
     return text or None
 
 
-async def simulate_service_catalog_processing(session: Any, payload: dict[str, Any], *, scenario_snapshot=None):
+async def simulate_service_catalog_processing(session: Any, payload: dict[str, Any], *, scenario_snapshot=None, allow_draft_offering: bool = False):
     resolver = ServiceCatalogRuntimeResolver(session)
     try:
         selection = await resolver.resolve_selection(
@@ -52,11 +52,20 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
             offering_code=_safe_text(payload.get("offering_code")),
             offering_full_code=_safe_text(payload.get("offering_full_code") or payload.get("full_offering_code")),
             request_template_key=_safe_text(payload.get("request_template_key")),
-            actor_role="requester",
+            # Internal admin candidate preview only; never read this authority
+            # from a requester payload or scenario answer.
+            actor_role="admin" if allow_draft_offering else "requester",
             require_catalog=True,
         )
     except ServiceCatalogResolutionError as exc:
         raise ServiceCatalogPreviewError(exc.details) from exc
+
+    if allow_draft_offering and (not selection.service or not selection.offering
+            or selection.service.get("lifecycle_status") != "published"
+            or selection.service.get("visibility") != "public"
+            or selection.offering.get("visibility") != "public"
+            or selection.offering.get("lifecycle_status") not in {"draft", "published"}):
+        raise ServiceCatalogPreviewError({"offering_code": "draft candidate must have a published public parent and public visibility"})
 
     template_key = selection.request_template_key or _safe_text(payload.get("request_template_key"))
     if not template_key:

@@ -17,6 +17,7 @@ from tickets.request_scenario_submission import build_scenario_submission
 from tickets.request_scenario_validation import ScenarioValidationError
 from tickets.request_studio_publication import RequestStudioPublicationService
 from tickets.service_catalog_preview import simulate_service_catalog_processing
+from tickets.service_catalog_publication import ServiceCatalogPublicationService
 from web_api.dto.request_scenario import ScenarioDefinition
 
 SCOPE = "request_scenario.publish"
@@ -119,8 +120,14 @@ class ScenarioPublicationService:
                 add(kind + "_missing", f"Не настроена действующая политика {label}.")
         for key in ("service", "offering"):
             item = source.get(key) or {}
-            if item.get("lifecycle_status") != "published" or item.get("visibility") != "public":
+            candidate = key == "offering" and draft.definition.get("publish_offering") is True and item.get("lifecycle_status") == "draft"
+            if (item.get("lifecycle_status") != "published" and not candidate) or item.get("visibility") != "public":
                 add(key + "_unavailable", "Услуга и раздел должны быть опубликованы и доступны сотруднику.")
+        candidate_offering = draft.definition.get("publish_offering") is True and (source.get("offering") or {}).get("lifecycle_status") == "draft"
+        if candidate_offering:
+            validation = await ServiceCatalogPublicationService(self.session).validate_offering(row.offering_full_code)
+            if validation["blocking"]:
+                add("offering_not_ready", "Новая услуга не прошла действующую проверку Service Catalog. Исправьте шаблон, маршрут или политики.", "offering_full_code")
         if (source.get("offering") or {}).get("request_template_key") != draft.definition["process_binding"]["request_template_key"]:
             add("binding_changed", "Привязка услуги к шаблону изменилась.")
         if row.category_id:
@@ -158,7 +165,7 @@ class ScenarioPublicationService:
                 continue
             try:
                 payload, snapshot = build_scenario_submission(definition, state, session_id="readiness", version_id="draft")
-                _, result = await simulate_service_catalog_processing(self.session, payload, scenario_snapshot=snapshot)
+                _, result = await simulate_service_catalog_processing(self.session, payload, scenario_snapshot=snapshot, **({"allow_draft_offering": True} if candidate_offering else {}))
                 routing, sla, approval = result["routing"], result["sla"], result["approval"]
                 if routing.get("queue_id") is None and not routing.get("queue_code"):
                     add("routing_unavailable", "Одна из ветвей не попадает в действующую очередь.")
@@ -182,20 +189,25 @@ class ScenarioPublicationService:
         old = await self.session.get(RequestStudioScenarioVersion, row.published_version_id) if row.published_version_id else None
         before = old.definition if old else {}
         result["diff"] = scenario_diff(before, draft.definition)
+        if draft.definition.get("publish_offering") is True and (source.get("offering") or {}).get("lifecycle_status") == "draft":
+            result["diff"].append({"path": "offering.lifecycle_status", "before": "draft", "after": "published"})
         result.update(confirmation_token=None, expires_at=None, source_hash=definition_hash(source), revision=draft.revision)
         if issue_token and result["readiness"]["can_publish"]:
             token, expiry = await self.tokens.issue_bound_confirmation_token(self._binding(row, draft, source), scope=SCOPE, auth_context=self.repo.auth, summary={"scenario_id": row.id, "revision": draft.revision})
             result.update(confirmation_token=token, expires_at=expiry.isoformat())
         return result
 
-    async def _freeze_sources(self):
+    async def _freeze_sources(self, *, write_offering=False):
         # Prevent canonical source DML between revalidation and commit. Names are
         # static SQLAlchemy metadata, never request input. Only publish takes this
         # short transaction lock; preview/simulation never locks source tables.
         models = [FormSchema, FormField, RequestTemplate, TicketQueue, TicketSlaPolicy, TicketSlaTarget,
                   TicketQueueOlaTarget, TicketBusinessCalendar, TicketFormPack, ServerConfig, RequestStudioCategory, *POLICY_MODELS.values()]
         names = sorted({model.__tablename__ for model in models} | {"helpdesk_services", "helpdesk_service_offerings"})
-        await self.session.execute(text("LOCK TABLE " + ", ".join(names) + " IN SHARE MODE"))
+        # Acquire a write-compatible source lock up front for catalog promotion;
+        # two concurrent SHARE holders must not deadlock while upgrading later.
+        mode = "SHARE ROW EXCLUSIVE" if write_offering else "SHARE"
+        await self.session.execute(text("LOCK TABLE " + ", ".join(names) + " IN " + mode + " MODE"))
 
     async def publish(self, identifier, payload):
         current, _ = await self.repo.detail(identifier)
@@ -203,13 +215,15 @@ class ScenarioPublicationService:
         row, draft = await self.repo.detail(identifier, lock=True)
         if row.archived or draft.revision != payload.revision:
             raise ScenarioAdminError("REVISION_CONFLICT", 409)
-        await self._freeze_sources()
+        await self._freeze_sources(write_offering=draft.definition.get("publish_offering") is True)
         source = await self._snapshot(row, draft)
         token = await self.tokens.validate_bound_confirmation_token(payload.confirmation_token, self._binding(row, draft, source), scope=SCOPE, auth_context=self.repo.auth)
         assessment = await self._assess(row, draft, source)
         if not assessment["readiness"]["can_publish"]:
             raise ScenarioAdminError("SCENARIO_NOT_READY", 409)
         before = self.repo._draft_audit(row, draft)
+        if draft.definition.get("publish_offering") is True and (source.get("offering") or {}).get("lifecycle_status") == "draft":
+            source["offering"] = await self.repo.catalog.publish_offering(row.offering_full_code, actor_id=self.repo.auth.actor_id, actor_role=self.repo.auth.actor_role)
         previous = await self.session.get(RequestStudioScenarioVersion, row.published_version_id) if row.published_version_id else None
         if previous:
             previous.state = "retired"

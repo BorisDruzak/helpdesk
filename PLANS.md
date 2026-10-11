@@ -9,6 +9,8 @@ Inline new offering/profile, actual staging A–J and exact CI
 remain open; P10 is IN PROGRESS.
 P10 publication result now includes target offering, immutable definition summary
 and a catalog-validated requester deep link with isolated draft restoration.
+P10 new-offering backend adds explicit source-bound atomic catalog promotion;
+inline creation UI and full staging/CI gates remain open.
 Branch: `codex/guided-request-studio-v2`, specification baseline `507ee7154b947391d51148d3a8929b77983eb77e`.
 P0 PASS: new domain/auth RED 13 failures + 2 legacy passes; existing PostgreSQL API 5,
 no-DB server 22 and frontend 74 passes. Independent review and owned DB/tunnel cleanup complete.

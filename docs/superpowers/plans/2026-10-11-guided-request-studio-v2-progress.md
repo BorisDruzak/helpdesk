@@ -762,3 +762,34 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
 - No backend/schema/policy/dependency change. Remaining: inline new offering/
   profile, readiness coverage fidelity, actual staging A–J and canonical CI/
   security/coverage/Sonar/final acceptance matrix. P10 remains IN PROGRESS.
+
+### P10 fidelity increment: atomic new-offering publication backend
+
+- Strict saved `publish_offering` defaults false. Explicit intent permits only
+  a public draft offering under a published public parent, using the existing
+  Service Catalog validator and canonical processing preview. Requester JSON
+  cannot enable candidate authority. Preview remains non-mutating and includes
+  offering promotion in the source-bound confirmation diff.
+- Promotion, immutable scenario version with published offering snapshot, active
+  pointer, token consumption and both audits share one transaction. A catalog
+  source lock is acquired in write-compatible mode before revalidation to avoid
+  concurrent SHARE-lock upgrade deadlock; promotion serializes catalog writes
+  for the duration of this transaction. Existing published offerings stay intact.
+- RED: strict-contract test lacked the field; HTTP promotion tests rejected the
+  new definition. Canonical readiness then exposed a missing request type in the
+  test fixture; the fixture was corrected without relaxing catalog validation.
+- Final owned PostgreSQL command: `python -m pytest
+  server/tests/test_request_scenario_offering_publication_api.py
+  server/tests/test_request_scenario_publication_api.py::test_atomic_publish_replay_actor_scope_and_rollback_as_new_version
+  -q --tb=short`: 4 passed (206.93s). Covers atomic success, audit-failure rollback,
+  no-intent rejection, private offering, unpublished parent, invalid catalog,
+  replay rejection and existing publication/rollback behavior.
+- Scenario no-DB regression: 152 passed, 1 skipped, 1956 deselected (2.48s).
+  Catalog mocks were aligned with the previously added active-version projection
+  in separate test-only commit `3abb7521ae212368f10d89d0477f8987f5ba7077`.
+  Wire contract component: 1 passed (2.35s). Independent review found no blocking
+  source issues; requested negative HTTP boundaries are now covered.
+- Additive saved JSON field; no migration, new endpoint, dependency or second
+  policy engine. Remaining: inline creation UI, readiness fidelity audit, actual
+  isolated staging A–J, exact full CI/security/coverage/Sonar and final acceptance
+  matrix. P10 remains IN PROGRESS.

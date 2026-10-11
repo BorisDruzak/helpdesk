@@ -17,6 +17,15 @@ from web_api.dto.request_studio import RequestStudioDraftRequest
 pytestmark = pytest.mark.no_db
 
 
+def test_catalog_publication_intent_is_explicit_and_strict_boolean():
+    raw = _definition()
+    assert _dto().ScenarioDefinition.model_validate(raw).publish_offering is False
+    assert _dto().ScenarioDefinition.model_validate(dict(raw, publish_offering=True)).publish_offering is True
+    for value in ("true", 1, None):
+        with pytest.raises(ValidationError):
+            _dto().ScenarioDefinition.model_validate(dict(raw, publish_offering=value))
+
+
 def test_scenario_tables_are_registered_with_existing_metadata():
     import_module("app.db.models")
     base = import_module("app.db.base").Base
