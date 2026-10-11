@@ -10,8 +10,12 @@ DTO/reset42 and frontendwire1 pass; tsc, cleanup/inventory/workspace gates pass.
 P2 PASS: canonical graph runtime, 80 domain/runtime/reset and 18 legacy form/preview
 tests; frontend21, tsc and inventory pass. Independent review has no blockers.
 P3 PASS: admin CRUD/RBAC/CAS/audit + pure simulation; PostgreSQL14 (9new+5legacy),
-fast92, inventory/cleanup/workspace and independent review pass. P4 React catalog
-and five-step wizard are next; P5–P10 remain gated.
+fast92, inventory/cleanup/workspace and independent review pass.
+P4 PASS: catalog/five-step React shell, legacy form inventory, category filter
+before pagination, CAS save/reload and unsaved navigation guard. Frontend39,
+fast94, PostgreSQL2, browser3, build/inventory/workspace and independent review
+pass; details/screenshots are in the execution ledger. P5 block builder is next;
+P6–P10 remain gated.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI

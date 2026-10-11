@@ -228,8 +228,16 @@ class RequestScenarioRepo:
             state = engine.advance(state, step)
         return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"), "revision": draft.revision}
 
-    async def catalog_view(self, *, query="", status="all", offset=0, limit=100):
+    async def catalog_view(self, *, query="", status="all", offset=0, limit=100, category_id=None):
         categories = await self.categories()
+        selected = {category_id} if category_id else None
+        if selected is not None:
+            # Include all descendants before slicing the result page.
+            for _ in range(len(categories)):
+                additions = {item["id"] for item in categories if item["parent_id"] in selected}
+                if additions <= selected:
+                    break
+                selected.update(additions)
         category_names = {item["id"]: item["title"] for item in categories}
         rows = (await self.session.execute(select(RequestStudioScenario, RequestStudioDraft).join(RequestStudioDraft, RequestStudioDraft.scenario_id == RequestStudioScenario.id).order_by(RequestStudioScenario.title, RequestStudioScenario.id))).all()
         scenarios = []
@@ -247,7 +255,16 @@ class RequestScenarioRepo:
             matches_status = (status == "all" or item["status"] == status
                 or status == "errors" and bool(issues) and not row.archived
                 or status == "draft" and not row.archived and not row.published_version_id)
-            if (not query or query.casefold() in text_value) and matches_status:
+            if (not query or query.casefold() in text_value) and matches_status and (selected is None or row.category_id in selected):
                 scenarios.append(item)
-        return {"categories": categories, "scenarios": scenarios[offset:offset + limit], "total": len(scenarios),
-            "offset": offset, "limit": limit, "services": await self.catalog.list_services(), "offerings": await self.catalog.list_offerings()}
+        offerings = await self.catalog.list_offerings()
+        bound = {row.offering_full_code for row, _ in rows if not row.archived}
+        legacy = [item for item in offerings if item["full_code"] not in bound
+            and status in {"all", "form_only"} and selected is None
+            and (not query or query.casefold() in " ".join(str(item.get(key) or "") for key in ("public_title", "short_description", "full_code", "service_code")).casefold())]
+        entries = [("scenario", item) for item in scenarios] + [("legacy", item) for item in legacy]
+        entries.sort(key=lambda entry: (str(entry[1].get("title") or entry[1].get("public_title") or "").casefold(), entry[0], entry[1].get("id") or entry[1]["full_code"]))
+        page = entries[offset:offset + limit]
+        return {"categories": categories, "scenarios": [item for kind, item in page if kind == "scenario"],
+            "legacy_offerings": [item for kind, item in page if kind == "legacy"], "total": len(entries),
+            "offset": offset, "limit": limit, "services": await self.catalog.list_services(), "offerings": offerings}

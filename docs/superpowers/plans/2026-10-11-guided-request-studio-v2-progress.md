@@ -272,3 +272,68 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
   CODEMAP, GUIDED_REQUEST_SCENARIOS, SERVICE_CATALOG, REQUEST_FORM_BUILDER,
   PLANS and this ledger. Browser/typecheck are not repeated for this pure backend
   stage; P2 frontend receipts remain applicable. Browser/CI gates still pending.
+
+## P4 — catalog-first React wizard evidence (PASS)
+
+- P3 commit: `84dc6be2a6a4ec370868cad386296c5df84d3c45`
+  (`feat(studio): add audited scenario catalog and draft APIs`).
+- Initial catalog/component RED: **4 failed** against the former page (9.29s),
+  which lacked the default catalog/primary create/CAS wizard/readonly flow.
+  Category-before-pagination RED: **1 failed** (unsupported filter); legacy
+  offering inventory RED: **1 failed** (total zero). Deep-link compatibility RED:
+  **1 failed** (no offering-purpose editor). These regressions now pass.
+- `pnpm --dir webapp test src/pages/admin/request-template-studio-page.test.tsx
+  src/pages/admin/request-template-studio-catalog.test.tsx
+  src/features/request-template-studio`: **39 passed, 8 files**. Existing pure
+  legacy feature contracts remain tested. The former 9 page tests for the global
+  modes/giant policy workbench were replaced by the approved catalog/wizard
+  interaction checks rather than skipped/xfail. Publication UI is the P8 gate.
+- `python -m pytest server/tests/test_request_scenario_admin_contract.py
+  server/tests/test_request_scenario_contract.py server/tests/test_request_scenario_runtime.py
+  scripts/tests/test_reset_test_data_script.py -q -k 'not requester_session_read'`:
+  **94 passed, 3 deselected**. Original requester/auth RED remains P6 work.
+- Isolated PostgreSQL command: `python -m pytest
+  server/tests/test_request_scenario_admin_api.py -k
+  'scenario_draft_cas_simulation_archive_and_version_reads or catalog_read_auth_and_not_found'
+  -q -x --tb=short`: **2 passed, 7 deselected in 79.81s**. Actual HTTP checks
+  cover legacy offering before scenario creation, no duplicate afterward,
+  category filter with limit=1, auth/query bounds, reload/CAS, simulation and
+  archive. P3's other backend/legacy API receipts remain unchanged. Per-run DB
+  and tunnel closed; retained task templates still await final cleanup.
+- `pnpm --dir webapp build`: **PASS**, including TypeScript. Existing common
+  bundle >500 KiB warning remains; no new dependency or threshold change.
+- Real browser command: `PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm --dir webapp
+  test:e2e guided-studio.spec.ts`: **3 passed in 12.1s**. 1366×768 and 1920×1080
+  catalog/wizard, inline settings, current step only, primary visibility after
+  scroll, no horizontal document overflow and cancelled sidebar navigation.
+  Separate loading/empty/error/retry browser case intentionally returns catalog
+  500, verifies recovery and permits only those expected failures. Normal flows
+  have no console/page errors or failed network requests. Browser MCP returned
+  Transport closed; the documented project Playwright/fixture server was used.
+  Screenshots were inspected under `webapp/test-results/guided-studio-*`.
+  A retained local copy is in the ignored
+  `artifacts/browser_checks/guided-request-studio-v2/p4/` directory, outside
+  Playwright's replaceable test-results output. Owned browser/DB test ports have
+  zero remaining listeners after validation.
+  These are fixture UI receipts; actual staging pilot A–J remains P10.
+- Review corrected four concrete findings: legacy forms missing from catalog;
+  unsaved changes lost on router/unload; incomplete page mistaken for an absent
+  offering scenario; cancelled pending open left loading stuck. Final independent
+  read-only review found no remaining blockers in those corrections. Regression
+  tests retain local edits and ignore stale async responses. The wizard key stays
+  stable while editing its technical key; steps require a saved valid binding.
+- Visual inspection also found CSS sticky trapped by the shell overflow boundary.
+  The small action-bar portal keeps save available outside that boundary, with
+  browser verification. Context7 checked TanStack Query v5 cache mutation and
+  React 19 portal context/cleanup; pinned repository versions remain authoritative.
+- GitNexus query/impact used the committed baseline. Exact page-symbol impact
+  returned zero indexed dependents; source inspection still verified its lazy
+  route and Forms/Service Catalog/Policy Health deep links, preserving their
+  context. No cross-repository API contract or Endpoint behavior changed.
+- Test inventory: **2 files, zero issues**. Scoped workspace verifier and
+  `git diff --check`: **PASS** after docs updates. No schema/migration change.
+  Changed surface: page/tests, scenario API/catalog/purpose/category/wizard,
+  editor/context/dirty/action-bar components, Playwright spec, catalog query/repo
+  and admin tests, CODEMAP/domain/admin guide/PLANS/ledger. No deployment or live
+  publication. P5 block editing, P6/P7 requester/ticket flow and P8 publication
+  are next gates, with P9/P10 still required for the full goal.

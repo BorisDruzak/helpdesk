@@ -100,9 +100,23 @@ async def test_catalog_read_auth_and_not_found(test_client_light, monkeypatch):
 @pytest.mark.asyncio
 async def test_scenario_draft_cas_simulation_archive_and_version_reads(test_client_light, test_engine):
     definition = await seed(test_engine)
+    legacy_response = await test_client_light.get(BASE + "/catalog", headers=AUDITOR, params={"q": definition["offering_full_code"], "status": "form_only"})
+    assert legacy_response.status == 200
+    legacy_data = (await legacy_response.json())["data"]
+    assert legacy_data["total"] == 1 and legacy_data["legacy_offerings"][0]["full_code"] == definition["offering_full_code"]
+    category_response = await test_client_light.post(BASE + "/categories", headers=ADMIN, json={"service_code": definition["service_code"], "slug": "equipment", "title": "Equipment"})
+    category_id = (await category_response.json())["data"]["id"]
+    definition["category_id"] = category_id
     data = await create(test_client_light, definition)
     sid = data["scenario"]["id"]
     assert data["draft"]["revision"] == 1 and data["scenario"]["enabled"] is False
+    category_catalog = await test_client_light.get(BASE + "/catalog", headers=AUDITOR, params={"category_id": category_id, "limit": "1"})
+    assert category_catalog.status == 200
+    category_data = (await category_catalog.json())["data"]
+    assert category_data["total"] == 1 and category_data["scenarios"][0]["id"] == sid
+    assert category_data["legacy_offerings"] == []
+    bound_legacy = await test_client_light.get(BASE + "/catalog", headers=AUDITOR, params={"q": definition["offering_full_code"], "status": "form_only"})
+    assert (await bound_legacy.json())["data"]["total"] == 0
     url = BASE + "/scenarios/" + sid
     edit = dict(definition, title="Исправлено")
     response = await test_client_light.put(url + "/draft", headers=ADMIN, json={"definition": edit, "revision": 1})

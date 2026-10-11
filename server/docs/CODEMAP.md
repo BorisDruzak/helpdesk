@@ -37,6 +37,10 @@
   `app/db/request_scenario_models.py`, additive migration 147. See
   `GUIDED_REQUEST_SCENARIOS.md` for limits, immutable version/session pins,
   cleanup classification and the 147 → 146 rollback boundary.
+- React admin catalog/wizard: `webapp/src/pages/admin/request-template-studio-page.tsx`
+  orchestrates the scenario-api/catalog/purpose/category/wizard components and
+  editor/context/dirty-guard hooks under `features/request-template-studio`.
+  See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
 - `tickets/request_scenario_validation.py` validates reachable acyclic graphs,
   field dependencies, typed conditions, terminal/fallback safety and role mapping.
   `request_scenario_conditions.py` owns the canonical condition evaluator.

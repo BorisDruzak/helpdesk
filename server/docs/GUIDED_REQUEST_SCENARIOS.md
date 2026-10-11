@@ -103,7 +103,7 @@ a stable error_code without raw failed payloads or database exception parameters
 
 | Method/path | Access | Behavior |
 | --- | --- | --- |
-| GET `/catalog` | admin, auditor | Categories, existing services/offerings, scenario summaries; q/status/offset/limit |
+| GET `/catalog` | admin, auditor | Categories, existing services/offerings, scenario summaries and legacy form-only offerings; q/status/category_id/offset/limit |
 | POST `/categories` | admin | Create category from service_code/parent_id/slug/title/description/sort_order/visibility/lifecycle_status |
 | PUT `/categories/{identifier}` | admin | Full category update with expected revision |
 | DELETE `/categories/{identifier}?revision=N` | admin | Archive empty category; preserves referenced rows |
@@ -116,6 +116,11 @@ a stable error_code without raw failed payloads or database exception parameters
 
 Catalog query defaults are status=all, offset=0, limit=100 (maximum 500). Unknown
 parameters, invalid status, negative offsets and oversized limits return 400.
+The optional UUID category_id selects its entire descendant subtree before
+pagination. `form_only` selects offerings without a non-archived scenario.
+The response's scenarios and legacy_offerings share the same total/page limit;
+existing offerings stay visible without duplicating a bound non-archived scenario.
+Legacy offerings have no scenario category and appear at the catalog root.
 The errors filter includes an invalid new draft even when an older version is
 published; the draft filter includes all unpublished scenarios, including invalid
 drafts. Archived scenarios have their own filter.
@@ -141,3 +146,6 @@ records contain metadata/revision/definition hash rather than full answers or
 arbitrary content. A failed audit rolls back the configuration write. Simulation
 does not update drafts, sessions, tickets, policies or Endpoint state. Bodies are
 limited to 1 MiB before parsing, and simulation is limited to 256 steps.
+
+The catalog-first React wizard and editing behavior are documented in
+[`GUIDED_REQUEST_STUDIO_ADMIN.md`](../../docs/GUIDED_REQUEST_STUDIO_ADMIN.md).

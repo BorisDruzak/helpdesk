@@ -76,3 +76,46 @@ async def test_error_filter_includes_published_scenario_with_invalid_new_draft()
     result = await repo.catalog_view(status="errors")
     assert result["total"] == 1 and result["scenarios"][0]["id"] == row.id
     assert result["scenarios"][0]["status"] == "published"
+
+
+@pytest.mark.asyncio
+async def test_category_tree_filter_applies_before_pagination():
+    from app.db.request_scenario_models import RequestStudioDraft, RequestStudioScenario
+    from app.repos.request_scenario_repo import RequestScenarioRepo
+    rows = []
+    for identifier, category in [("outside", "other"), ("nested", "child"), ("root_item", "root")]:
+        row = RequestStudioScenario(id=identifier, scenario_key=identifier, service_code="it", offering_full_code="it.printer", title=identifier, description="", category_id=category, archived=False)
+        rows.append((row, RequestStudioDraft(scenario_id=identifier, definition={}, revision=1, updated_by="test")))
+    class Result:
+        def all(self): return rows
+    class Session:
+        async def execute(self, statement): return Result()
+    class Catalog:
+        async def list_services(self): return []
+        async def list_offerings(self): return []
+    repo = RequestScenarioRepo(Session(), None)
+    repo.catalog = Catalog()
+    async def categories(): return [{"id": "root", "parent_id": None, "title": "Root"}, {"id": "child", "parent_id": "root", "title": "Child"}]
+    repo.categories = categories
+    result = await repo.catalog_view(category_id="root", limit=1)
+    assert result["total"] == 2
+    assert result["scenarios"][0]["id"] == "nested"
+
+
+@pytest.mark.asyncio
+async def test_catalog_includes_legacy_offerings_without_duplicate_scenario_rows():
+    from app.repos.request_scenario_repo import RequestScenarioRepo
+    class Result:
+        def all(self): return []
+    class Session:
+        async def execute(self, statement): return Result()
+    class Catalog:
+        async def list_services(self): return []
+        async def list_offerings(self): return [{"full_code": "it.printer", "public_title": "Printer", "request_template_key": "printer", "service_code": "it"}]
+    repo = RequestScenarioRepo(Session(), None)
+    repo.catalog = Catalog()
+    async def categories(): return []
+    repo.categories = categories
+    result = await repo.catalog_view(status="form_only", query="print")
+    assert result["total"] == 1
+    assert result["legacy_offerings"][0]["full_code"] == "it.printer"

@@ -19,7 +19,8 @@ from web_api.dto.request_scenario_admin import CategoryInput, Identifier, Revisi
 
 class CatalogQuery(StrictModel):
     q: str = Field(default="", max_length=300)
-    status: Literal["all", "draft", "published", "errors", "archived"] = "all"
+    category_id: Identifier | None = None
+    status: Literal["all", "draft", "published", "errors", "archived", "form_only"] = "all"
     offset: int = Field(default=0, ge=0, le=100000)
     limit: int = Field(default=100, ge=1, le=500)
 
@@ -70,7 +71,7 @@ async def _run(request, operation, *, write=False):
 async def handle_scenario_catalog(request):
     async def operation(repo):
         query = CatalogQuery.model_validate_strings(dict(request.query))
-        return await repo.catalog_view(query=query.q, status=query.status, offset=query.offset, limit=query.limit)
+        return await repo.catalog_view(query=query.q, status=query.status, offset=query.offset, limit=query.limit, category_id=query.category_id)
     return await _run(request, operation)
 
 
