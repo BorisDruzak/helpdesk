@@ -248,3 +248,8 @@ Missing routing, SLA or closure opens the corresponding processing policy;
 focus waits for the registry to load. A general issue opens its relevant wizard
 stage rather than pretending to identify a more specific control. Save the
 correction and prepare publication again; the server remains authoritative.
+
+The routing check requires an existing active queue for every branch. A rule
+pointing at a missing or disabled queue blocks publication. If the queue becomes
+unavailable later, the employee's processing preview blocks ticket creation;
+an earlier successful preview does not grant permission to submit.

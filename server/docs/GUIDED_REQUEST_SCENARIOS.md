@@ -256,3 +256,18 @@ preview for an owned draft. Record only readiness issues, outcome count and
 whether confirmation was issued, never its token. Keep the scenario disabled
 until exact-candidate CI and the required installed pilot checks allow enablement.
 Deployment and production enablement remain separate approvals.
+
+Publication resolves every branch's routing ID against active queues in the
+locked source snapshot. A nonempty ID/code does not establish availability;
+missing or inactive targets produce `routing_unavailable` without confirmation.
+For a published scenario, canonical requester preview refreshes the current
+queue and takes a PostgreSQL share lock. An unavailable target returns a safe
+blocker; the submit handler repeats preview and refuses creation. Canonical
+creation also checks its actual routed queue before SLA/OLA, approvals and
+playbooks, covering a policy change between preview and create. A trusted
+scenario-only parameter enables this check; requester JSON cannot enable or
+disable it. `ScenarioQueueUnavailable` rolls back the ticket and create ledger
+with `409 PROCESSING_UNAVAILABLE`. The locks are held through that submit
+transaction and preview rolls them back. Ordinary legacy
+Service Catalog preview retains its existing behavior. No queue IDs or internal
+routing details are exposed to the requester.

@@ -1969,3 +1969,16 @@ the missing transition target, or open and focus the relevant processing policy
 after registry loading. Navigation leaves the draft unchanged. Four RED tests
 confirmed the missing actions; focused GREEN and installed acceptance are
 recorded in the progress ledger. Full P10 acceptance remains open.
+
+P10 routing availability correction: a policy's nonempty queue ID could pass
+readiness even when its target was absent/inactive. Match IDs against active
+queues in the locked publication snapshot; scenario preview refreshes and share
+locks the current queue, and submit repeats this guard. Actual scenario creation
+checks its routed queue before downstream initialization/playbooks, covering
+interleaved routing-policy changes. Four RED tests; focused 39 and full backend
+no-DB 1285 PASS for the initial guard; three PostgreSQL checks PASS. Additional
+boundary RED 2/GREEN 14 and interleaved PostgreSQL RED confirmed the remaining
+race. Final focused 54 and full no-DB 1287/1 skipped PASS; nine PostgreSQL
+scenario/publication/legacy-create regressions PASS (274.81s), scoped role absent
+and no residual owned DBs. Independent review, workspace and diff checks PASS.
+Latest exact-candidate CI and installed A–J remain required.

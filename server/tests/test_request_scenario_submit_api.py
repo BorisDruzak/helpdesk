@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import HelpdeskService, HelpdeskServiceOffering, RequestTemplate, RequesterTicketCreateRequest, Ticket, TicketQueue, TicketSlaPolicy, TicketSlaTarget, TicketQueueOlaTarget, ApprovalPolicy, ClosurePolicy
+from app.db.models import HelpdeskService, HelpdeskServiceOffering, RequestTemplate, RequesterTicketCreateRequest, Ticket, TicketQueue, TicketSlaPolicy, TicketSlaTarget, TicketQueueOlaTarget, ApprovalPolicy, ClosurePolicy, RoutingPolicy, TicketEvent, TicketApproval, TicketNotification
 from app.db.request_scenario_models import RequestStudioSession, RequestStudioScenario, RequestStudioScenarioVersion
 from app.repos import TicketFormPacksRepo
 from tests.test_request_scenario_session_api import BASE, OWNER, OTHER, seed
@@ -87,6 +87,58 @@ async def submit_step(client, definition, mapped=False):
     response = await client.post(url + "/advance", headers=OWNER, json={"expected_block_id": "review", "revision": 2})
     assert response.status == 200, await response.text()
     return identifier, url
+
+
+@pytest.mark.asyncio
+async def test_policy_change_between_preview_and_create_rejects_actual_inactive_queue(test_client_light, test_engine, monkeypatch):
+    from web_api import requester_handlers
+    from tickets import create_flow
+
+    definition = await setup(test_engine, mapped=True)
+    identifier, url = await submit_step(test_client_light, definition, mapped=True)
+    models = (Ticket, RequesterTicketCreateRequest, TicketEvent, TicketApproval, TicketNotification)
+    async with async_sessionmaker(test_engine)() as session:
+        before = [await session.scalar(select(func.count()).select_from(model)) for model in models]
+    create = requester_handlers.create_requester_ticket_in_session
+    actual_queues = []
+    routing = create_flow.TicketRoutingService.apply_routing
+    targets = []
+    playbooks = AsyncMock(return_value=[])
+    monkeypatch.setattr(create_flow, "start_ticket_created_playbooks", playbooks)
+
+    async def record_actual_routing(self, *args, **kwargs):
+        queue_id = await routing(self, *args, **kwargs)
+        actual_queues.append(queue_id)
+        assert queue_id == targets[-1]
+        return queue_id
+
+    monkeypatch.setattr(create_flow.TicketRoutingService, "apply_routing", record_actual_routing)
+
+    async def publish_other_route_then_create(request, data, session, **kwargs):
+        # This separate transaction commits after submit's successful preview,
+        # before canonical create reloads the effective registry policy.
+        async with async_sessionmaker(test_engine)() as publisher:
+            queue = TicketQueue(code=definition["scenario_key"] + "-inactive", name="Inactive route", is_active=False)
+            publisher.add(queue)
+            await publisher.flush()
+            target = queue.id
+            targets.append(target)
+            publisher.add(RoutingPolicy(code=definition["scenario_key"] + "_reroute", version="1", title="Changed route",
+                scope_level="request_template", scope_ref=definition["scenario_key"],
+                config_json={"rules": [], "fallback": {"queue_id": target}, "default_queue_id": target},
+                is_active=True, published_at=datetime.now(timezone.utc)))
+            await publisher.commit()
+        return await create(request, data, session, **kwargs)
+
+    monkeypatch.setattr(requester_handlers, "create_requester_ticket_in_session", publish_other_route_then_create)
+    response = await test_client_light.post(url + "/submit", headers=OWNER, json={"revision": 3, "confirm": True})
+    assert actual_queues, "The interleaved change must reach actual canonical creation"
+    assert response.status == 409 and (await response.json())["error_code"] == "PROCESSING_UNAVAILABLE"
+    playbooks.assert_not_awaited()
+    async with async_sessionmaker(test_engine)() as session:
+        assert [await session.scalar(select(func.count()).select_from(model)) for model in models] == before
+        row = await session.get(RequestStudioSession, identifier)
+        assert row.state == "active" and row.revision == 3 and row.linked_ticket_id is None
 
 
 @pytest.mark.asyncio
@@ -172,3 +224,32 @@ async def test_mapped_facts_drive_real_priority_routing_sla_ola_and_approval(tes
         assert (await resolve_effective_ticket_policy(session, ticket, "closure"))["require_resolution_code"] is True
         assert ticket.custom_fields["request_form_data"]["affected_scope"] == "team"
         assert ticket.custom_fields["request_scenario"]["field_roles"]["affected_scope"] == ["priority_impact", "routing_field"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unavailable", ["missing", "inactive"])
+async def test_published_scenario_rejects_queue_removed_after_preview(test_client_light, test_engine, unavailable):
+    definition = await setup(test_engine, mapped=True)
+    identifier, url = await submit_step(test_client_light, definition, mapped=True)
+    response = await test_client_light.post(url + "/ticket-preview", headers=OWNER, json={"revision": 3})
+    assert response.status == 200 and (await response.json())["data"]["ok"] is True
+    async with async_sessionmaker(test_engine)() as session:
+        queue = await session.scalar(select(TicketQueue).where(TicketQueue.code == definition["scenario_key"] + "-mapped"))
+        if unavailable == "missing":
+            await session.delete(queue)
+        else:
+            queue.is_active = False
+        await session.commit()
+        before = await session.scalar(select(func.count()).select_from(Ticket))
+        creates = await session.scalar(select(func.count()).select_from(RequesterTicketCreateRequest))
+    response = await test_client_light.post(url + "/ticket-preview", headers=OWNER, json={"revision": 3})
+    assert response.status == 200
+    preview = (await response.json())["data"]
+    assert preview["ok"] is False and preview["blockers"]
+    response = await test_client_light.post(url + "/submit", headers=OWNER, json={"revision": 3, "confirm": True})
+    assert response.status == 409 and (await response.json())["error_code"] == "PROCESSING_UNAVAILABLE"
+    async with async_sessionmaker(test_engine)() as session:
+        assert await session.scalar(select(func.count()).select_from(Ticket)) == before
+        assert await session.scalar(select(func.count()).select_from(RequesterTicketCreateRequest)) == creates
+        row = await session.get(RequestStudioSession, identifier)
+        assert row.state == "active" and row.revision == 3 and row.linked_ticket_id is None

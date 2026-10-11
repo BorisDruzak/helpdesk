@@ -89,6 +89,7 @@ class ScenarioPublicationService:
 
     async def _assess(self, row, draft, source):
         issues, checked, outcomes = [], 0, []
+        active_queue_ids = {queue["id"] for queue in source["queues"] if queue.get("is_active") is True}
         def add(code, message, path="process_binding"):
             issues.append({"code": code, "message": message, "path": path})
         for block in draft.definition.get("blocks", []):
@@ -167,7 +168,7 @@ class ScenarioPublicationService:
                 payload, snapshot = build_scenario_submission(definition, state, session_id="readiness", version_id="draft")
                 _, result = await simulate_service_catalog_processing(self.session, payload, scenario_snapshot=snapshot, **({"allow_draft_offering": True} if candidate_offering else {}))
                 routing, sla, approval = result["routing"], result["sla"], result["approval"]
-                if routing.get("queue_id") is None and not routing.get("queue_code"):
+                if routing.get("queue_id") not in active_queue_ids:
                     add("routing_unavailable", "Одна из ветвей не попадает в действующую очередь.")
                 if ("sla" in references or not (template.get("config") or {}).get("no_sla")) and not sla.get("resolution_min"):
                     add("sla_unavailable", "Одна из ветвей не имеет срока выполнения по действующей политике.")

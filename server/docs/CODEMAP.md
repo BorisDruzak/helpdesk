@@ -52,6 +52,8 @@
   creates an immutable version, changes the active pointer and consumes the
   actor/scope-bound token in one audited transaction. Business calendars are
   part of source binding. A rollback copies history into a new draft revision.
+  Every routed branch must reference an active queue in the canonical source
+  snapshot; nonempty routing IDs/codes alone cannot establish readiness.
 - `tickets/request_scenario_processing.py` applies admin-saved, server-loaded
   published policy references via `HelpdeskPolicyRepo.resolve_policy_ref` after
   inherited registry overlays. Canonical create and dry-run share this bridge;
@@ -61,6 +63,12 @@
   passes the already validated canonical submission to Policy Health via a
   trusted internal keyword. Request JSON cannot inject that context. Requester
   preview and admin scenario simulation share this path without ticket writes.
+  Scenario requester preview additionally refreshes/share-locks the current
+  queue; submit repeats preview and refuses a removed or inactive target.
+  `tickets/create_flow.py` additionally checks actual scenario routing before
+  SLA/OLA, approvals and playbooks through an internal `require_active_queue`
+  parameter. `web_api/requester_handlers.py` rolls back the typed queue failure
+  as `PROCESSING_UNAVAILABLE`; legacy creation keeps its default behavior.
   Frontend publication, simulation and version history live in the corresponding
   `webapp/src/features/request-template-studio/scenario-*.tsx` modules.
 - Guided scenario contracts/storage: `web_api/dto/request_scenario.py`,

@@ -57,6 +57,7 @@ from tickets.handlers import (
 from tickets.create_flow import (
     RequesterIdentityMismatch,
     TicketInitializationError,
+    ScenarioQueueUnavailable,
     VerifiedRequesterBinding,
     build_default_priority_payload,
     create_ticket_with_side_effects,
@@ -2187,6 +2188,7 @@ async def create_requester_ticket_in_session(request, data, session, *, request_
             ),
             ticket_context=on_behalf_context,
             state=request.app.get("state"),
+            **({"require_active_queue": True} if scenario_snapshot is not None else {}),
         )
     except RequesterIdentityMismatch:
         await session.rollback()
@@ -2194,6 +2196,9 @@ async def create_requester_ticket_in_session(request, data, session, *, request_
             "Заявитель не соответствует подтверждённой учётной записи.",
             status=403, error_code="REQUESTER_IDENTITY_FORBIDDEN",
         )
+    except ScenarioQueueUnavailable:
+        await session.rollback()
+        return _error("Маршрут обращения недоступен.", status=409, error_code="PROCESSING_UNAVAILABLE")
     except TicketInitializationError:
         await session.rollback()
         return _error(

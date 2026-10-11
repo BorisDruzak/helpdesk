@@ -47,6 +47,13 @@ class TicketInitializationError(RuntimeError):
         self.stage = stage
 
 
+class ScenarioQueueUnavailable(TicketInitializationError):
+    """Actual scenario routing cannot proceed to downstream initialization."""
+
+    def __init__(self) -> None:
+        super().__init__("scenario_queue")
+
+
 class RequesterIdentityMismatch(ValueError):
     """A claimed browser requester is not the actor's verified server identity."""
 
@@ -414,7 +421,7 @@ async def _enter_initial_approval_wait_if_required(session: Any, ticket_repo: Ti
     return await ticket_repo.get_ticket(ticket.ticket_id)
 
 
-async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
+async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo, ticket: Any, *, require_active_queue: bool = False) -> Any:
     devices_repo = DevicesRepo(session)
     routing = TicketRoutingService(session, ticket_repo, devices_repo)
     sla = TicketSlaService(session, ticket_repo)
@@ -435,6 +442,10 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
         logger.warning("[create] required initialization failed stage=routing")
         raise TicketInitializationError("routing") from exc
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+    if require_active_queue:
+        from tickets.service_catalog_preview import lock_active_scenario_queue
+        if ticket is None or not await lock_active_scenario_queue(session, ticket.queue_id):
+            raise ScenarioQueueUnavailable()
     try:
         await sla.start_sla(ticket)
     except Exception as exc:
@@ -503,6 +514,7 @@ class TicketCreateInput:
     requester_account: Optional[dict[str, Any]]
     ticket_context: Optional[dict[str, Any]]
     device_selection: str | None
+    require_active_queue: bool = False
 
 
 async def create_ticket_with_side_effects(
@@ -540,6 +552,7 @@ async def create_ticket_with_side_effects(
     state: Any | None = None,
     registry_port: RegistryPort | None = None,
     device_selection: str | None = None,
+    require_active_queue: bool = False,
 ) -> Dict[str, Any]:
     return await _create_ticket_from_input(
         session, submission=TicketCreateInput(
@@ -572,6 +585,7 @@ async def create_ticket_with_side_effects(
             requester_account=requester_account,
             ticket_context=ticket_context,
             device_selection=device_selection,
+            require_active_queue=require_active_queue,
         ), verified_requester_binding=verified_requester_binding, state=state, registry_port=registry_port,
     )
 
@@ -1022,7 +1036,7 @@ async def _persist_and_initialize_ticket(
             event_id=str(uuid.uuid4()),
         )
     ticket = await ticket_repo.get_ticket(ticket_id)
-    ticket = await apply_create_side_effects(session, ticket_repo, ticket)
+    ticket = await apply_create_side_effects(session, ticket_repo, ticket, require_active_queue=submission.require_active_queue)
     if ticket is not None:
         current_custom_fields = dict(getattr(ticket, "custom_fields", None) or {})
         queue = await ticket_repo.get_queue(getattr(ticket, "queue_id", None)) if getattr(ticket, "queue_id", None) is not None else None

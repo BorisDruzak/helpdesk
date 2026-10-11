@@ -945,3 +945,37 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   identified first-edge focus, now corrected to the first missing target.
   Actual installed J remains required. Previous candidate baeba8b0 full CI
   38161969186 PASS; final correction SHA needs its own exact CI.
+- P10 J routing availability: independent source review confirmed that a
+  missing/inactive queue could pass readiness solely through a nonempty rule
+  ID. Publication now checks active IDs in its locked source snapshot. Scenario
+  safe preview refreshes/share-locks the current queue; submit repeats preview
+  and refuses unavailable routing. Legacy preview behavior is preserved.
+  RED 4; focused GREEN 39 and full backend no-DB 1285/1 skipped PASS.
+  Isolated PostgreSQL preview/submit regression and positive publication test:
+  3 PASS (634.88s), temporary role absent with no residual test DBs.
+  Prior candidate c6beea6e CI 38163730441 PASS; this server fix
+  requires a fresh exact-SHA gate. Canonical coverage was stopped before source
+  changes; it is partial, not a PASS. Cleanup helper name collision was repaired
+  and both residual owned test DBs and the temporary role were removed.
+- Independent review found a remaining policy-change race between preview and
+  actual create. A post-create check would be too late for external playbooks.
+  Canonical scenario creation now checks and share-locks its actual routed queue
+  immediately after routing, before SLA/OLA/approval/playbooks. A trusted internal
+  flag defaults off for legacy creation; the typed failure rolls back as 409
+  PROCESSING_UNAVAILABLE. Boundary RED 2/GREEN 14; frozen Linux PostgreSQL
+  interleaved test RED (85.40s, submit returned 200 instead of 409), GREEN
+  1 PASS (75.88s) with actual inactive route, no playbook call, full DB rollback
+  and unchanged active session. Full backend no-DB 1287/1 skipped PASS;
+  scoped workspace/diff check PASS, independent review has no blockers.
+  Broader scenario submit/publication and legacy canonical-create PostgreSQL:
+  9 PASS (274.81s), including concurrency, audit rollback/retry, mapped
+  priority/routing/SLA/OLA/approval and legacy no-device creation. Temporary role
+  absent, no residual owned DBs. Focused readiness/runtime/initialization:
+  54 PASS. The committed correction still needs its own exact CI and installed
+  staging acceptance; no overall P10 PASS is claimed.
+  Linux validation uses a dedicated archive/venv, protected fresh scoped role,
+  loopback PostgreSQL and no staging application environment. Two initial harness
+  preflight failures (UID path access and isolated HOME) were corrected; no
+  application data was changed, and every created test role was removed.
+  Windows duplicate race run was stopped with its owned process tree and cleanup
+  removed the temporary role and one owned test DB. It is not a PASS receipt.

@@ -5,6 +5,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from sqlalchemy import select
+from app.db.models import TicketQueue
+
 from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.policy_health_service import PolicyHealthService
@@ -110,6 +113,15 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
     return selection, simulation
 
 
+async def lock_active_scenario_queue(session: Any, queue_id: int | None) -> bool:
+    """Refresh and retain the selected queue through the caller's transaction."""
+    if queue_id is None:
+        return False
+    queue = await session.scalar(select(TicketQueue).where(TicketQueue.id == queue_id)
+                                 .with_for_update(read=True).execution_options(populate_existing=True))
+    return queue is not None and queue.is_active
+
+
 async def build_requester_service_catalog_preview(session: Any, payload: dict[str, Any], *, scenario_snapshot=None) -> dict[str, Any]:
     selection, simulation = await simulate_service_catalog_processing(session, payload, scenario_snapshot=scenario_snapshot)
 
@@ -123,6 +135,8 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
     blockers: list[str] = []
     if not routing.get("queue_code") and routing.get("queue_id") is None:
         blockers.append("Не удалось определить маршрут обращения.")
+    if scenario_snapshot is not None and not await lock_active_scenario_queue(session, routing.get("queue_id")):
+        blockers.append("Маршрут обращения недоступен. Обратитесь в поддержку.")
 
     first_response = _minutes_label(sla.get("first_response_min"))
     resolution = _minutes_label(sla.get("resolution_min"))
