@@ -449,3 +449,8 @@ enriches validated requester identity with actor-scoped Registry profile contact
 `registry_adapter/local.py` supplies them without profile metadata.
 Frontend chat entrypoint: `webapp/src/pages/requester/ticket-chat-page.tsx`,
 with mutations in `use-ticket-chat.ts`; `tickets-page.tsx` owns the list only.
+
+The Studio purpose step (`scenario-purpose.tsx`) embeds `scenario-category-form.tsx`
+using the existing category CRUD. `scenario-wizard.tsx` and the admin page guard
+navigation/actions while this inline form is open and refresh the catalog after
+save; the unsaved scenario definition stays in its existing editor state.

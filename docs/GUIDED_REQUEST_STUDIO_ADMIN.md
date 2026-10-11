@@ -185,3 +185,10 @@ the calculated priority, first response/resolution, internal support deadlines,
 approval and closure requirements. The priority calculation reason is available
 in a local disclosure. Notification groups describe policy rules; no messages
 were sent and no provider delivery was checked by the simulator.
+
+Create a category directly in «Категория и назначение» with «Создать категорию
+здесь». The existing category form starts under the selected category and fixes
+the service to the scenario service. Saving selects the new category while
+preserving the scenario's unsaved title, description and graph. Close or save
+this form before navigating between wizard stages, saving, copying or archiving
+the scenario. Category settings keep their own local advanced disclosure.

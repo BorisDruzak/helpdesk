@@ -634,3 +634,30 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
   final field/readiness fidelity audit (finite significant domains are still
   conservative), actual staging A–J plus 30-question UI, canonical CI/security/
   coverage/Sonar, remaining catalog/form/runbook docs and full AC01–AC20 report.
+
+### P10 fidelity increment: inline category creation
+
+Reused category CRUD inside wizard purpose; selected service/parent are initial
+values, service is fixed to prevent cross-service placement. Save selects the
+new category and preserves local scenario edits. Wizard navigation and scenario
+save/copy/archive/leave are guarded while the inline form is open. Chromium's
+HTML pattern /v gate also exposed an unescaped hyphen in the existing category
+slug validation; category and scenario key patterns now escape it.
+
+- RED: purpose component lacked the inline creation action.
+- GREEN: deferred-response component confirms edits made during category save
+  survive. Studio component regression: 55 tests passed.
+- Typecheck and production build: PASS; existing bundle-size warning unchanged.
+- Browser: `PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm --dir webapp test:e2e
+  guided-category-inline.spec.ts` — 4 passed (10.1s), all four required viewports,
+  keyboard save, guarded actions, no overflow/console/network/unexpected API.
+  Initial stale-dist and selector runs were not counted; actual pattern error
+  was fixed before the final successful run.
+- Screenshots: ignored `artifacts/browser_checks/guided-request-studio-v2/p10/
+  category-inline/`; 1366 screenshot visually inspected.
+- Independent bounded review: no blocking findings. Reviewer suggested delayed
+  response coverage; that regression passed after adding it.
+- Scoped workspace verification and diff check: PASS. No schema/API change.
+- Remaining fidelity: inline new offering/profile, real field sections and
+  faithful selected-step preview, catalog metadata/collapse, publication result.
+- Full P10 still IN PROGRESS: actual isolated staging A–J and canonical CI open.

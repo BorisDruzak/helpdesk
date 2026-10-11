@@ -1902,3 +1902,13 @@ browser acceptance remain required. The synthetic orphan was denied through
 the browser and all three temporary accounts were disabled; staging was stopped.
 
 Admin cutover 2026-10-01: final 2cf828af full CI and actual Windows/browser staging accepted and restored. The user subsequently authorized merging all cutover and seven Sonar commits into main; PR 39 now targets main. Pre-merge review reproduced accepted Python-only conditional/comment regex groups and a bounded mirrored validation fix adds publication, saved-form and browser regressions. Fresh candidate full CI and main integration are the remaining gates. Production deployment/data deletion remain excluded.
+
+Guided Request Studio v2 P10 fidelity: inline category creation reuses existing
+category CRUD in the purpose step; category save selects the new node without
+losing scenario edits, including edits made while its API response is pending.
+Wizard navigation and scenario actions are disabled while the category form is
+open. Component RED/GREEN and typecheck pass; browser validation is in progress.
+Full P10 actual staging A–J and canonical CI remain open.
+Inline category final browser gate: 4 viewports PASS (10.1s), no console/network
+errors or body overflow. Independent review and deferred-response regression
+pass; Chromium /v HTML patterns fixed. Full P10 remains in progress.
