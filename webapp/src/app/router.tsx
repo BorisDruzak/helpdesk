@@ -178,6 +178,14 @@ function RequesterLegacyRedirect({ target }: { target: string }) {
   return <Navigate replace to={`${target}${location.search}${location.hash}`} />;
 }
 
+function ScenarioStudioAccessGate({ children }: { children: ReactNode }) {
+  const { session } = useSession();
+  // The canonical Studio API grants auditors read access, without assigning
+  // the admin workspace. All editing remains admin-only in UI and server RBAC.
+  if (session?.actor_role === "auditor") return <>{children}</>;
+  return <WorkspaceAccessGate workspace="admin">{children}</WorkspaceAccessGate>;
+}
+
 function RequesterNotFoundPage() {
   return (
     <section aria-labelledby="requester-not-found-title" className="mx-auto max-w-3xl px-4 py-10">
@@ -467,9 +475,9 @@ export const appRoutes: RouteObject[] = [
           {
             path: "admin/request-template-studio",
             element: (
-              <WorkspaceAccessGate workspace="admin">
+              <ScenarioStudioAccessGate>
                 <AdminRequestTemplateStudioPage />
-              </WorkspaceAccessGate>
+              </ScenarioStudioAccessGate>
             )
           },
           {

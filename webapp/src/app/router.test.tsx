@@ -315,6 +315,30 @@ afterEach(() => {
 });
 
 describe("appRoutes", () => {
+  it.each(["/app/admin/request-template-studio", "/app/admin/registry", "/app/tickets", "/app"])(
+    "opens only the read-only Studio for an auditor without workspace grants (%s)", async initialPath => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        expect(init?.method ?? "GET").toBe("GET");
+        if (url.endsWith("/api/web/session/me")) return jsonResponse({ status: "success", data: {
+          user_login: "auditor@example.test", actor_role: "auditor", auth_type: "web_session",
+          default_workspace: null, available_workspaces: [], permissions: [],
+        } });
+        if (url.includes("/api/web/admin/request-studio/catalog")) return jsonResponse({ status: "success", data: {
+          services: [], offerings: [], categories: [], scenarios: [], legacy_offerings: [], total: 0,
+        } });
+        if (url.endsWith("/api/web/notifications/unread_count")) return jsonResponse({ status: "ok", unread_count: 0 });
+        throw new Error(`Unexpected fetch: ${url}`);
+      });
+      const { router } = renderApp([initialPath], fetchMock as typeof fetch);
+      expect(await screen.findByRole("region", { name: "Каталог сценариев" })).toBeInTheDocument();
+      expect(router.state.location.pathname).toBe("/app/admin/request-template-studio");
+      expect(screen.queryByRole("button", { name: "Создать сценарий" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Создать категорию" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Реестр" })).not.toBeInTheDocument();
+    },
+  );
+
   it("keeps requester routes explicit without the legacy section wildcard", () => {
     const paths = collectRoutePaths(appRoutes);
 

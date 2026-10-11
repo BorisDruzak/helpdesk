@@ -1,7 +1,10 @@
 # Guided Request Studio administration
 
 The admin/auditor entry is `/app/admin/request-template-studio`. It opens the
-catalog by default. Search and status filters run on the server. Selecting a
+catalog by default. An auditor without an admin/support workspace opens Studio
+directly; other workspace routes still require their own grants. Auditor testing
+uses pure server simulation while editing and publication stay disabled.
+Search and status filters run on the server. Selecting a
 category includes all its descendants before pagination. The catalog shows
 the full human category path, description, active published version number and
 last scenario/draft modification time. Individual category branches can be

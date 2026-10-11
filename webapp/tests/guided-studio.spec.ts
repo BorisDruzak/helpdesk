@@ -1,6 +1,73 @@
 import { expect, type Page, test } from "playwright/test";
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
+  for (const interaction of ["tab", "direct"] as const) {
+  test(`guided studio dynamic simulation focus ${viewport.width} ${interaction}`, async ({ page }, info) => {
+    await page.setViewportSize(viewport);
+    const state = await fixture(page, true);
+    let submitted = false;
+    await page.route("**/api/web/admin/request-studio/scenarios/s1/simulate", async route => {
+      const body = route.request().postDataJSON();
+      if (body.preview) {
+        expect(body.preview.answers.team_note).toBe("Synthetic department print work");
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      if (body.steps.length) {
+        expect(body.steps[0].answers).toEqual({ team_note: "Synthetic department print work" });
+        submitted = true;
+      }
+      await route.fulfill({ json: { status: "success", data: {
+        state: { revision: body.steps.length + 1, results: {}, answers: {}, history: [] },
+        current_step: body.steps.length ? { id: "review", kind: "review", title: "Проверьте ответы" }
+          : { id: "details", kind: "form_page", title: "Подробности влияния", has_dynamic_fields: true,
+              fields: [{ key: "team_note", type: "text", label: "Какая работа остановилась?", value: body.preview?.answers.team_note }] },
+      } } });
+    });
+    await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("button", { name: "Не печатает", exact: true }).click();
+    await page.getByRole("button", { name: "4. Тестирование", exact: true }).click();
+    await page.getByRole("button", { name: "Начать проверку", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Подробности влияния", exact: true })).toBeFocused();
+    const input = page.getByRole("textbox", { name: "Какая работа остановилась?", exact: true });
+    await input.fill("Synthetic department print work");
+    if (interaction === "tab") {
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("button", { name: "Начать проверку", exact: true })).toBeEnabled();
+      await expect(input).toHaveValue("Synthetic department print work");
+    }
+    await page.getByRole("button", { name: "Продолжить проверку", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Проверьте ответы", exact: true })).toBeFocused();
+    expect(submitted).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`${viewport.width}-simulation-focus.png`) });
+    expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
+  });
+  }
+
+  test(`guided studio auditor route ${viewport.width}`, async ({ page }, info) => {
+    await page.setViewportSize(viewport);
+    const state = await fixture(page, true);
+    await page.route("**/api/web/session/me", route => route.fulfill({ json: { status: "success", data: {
+      user_login: "auditor@example.test", actor_role: "auditor", auth_type: "web_session",
+      default_workspace: null, available_workspaces: [], permissions: [],
+    } } }));
+    await page.goto("/app/admin/registry");
+    await expect(page.getByRole("region", { name: "Каталог сценариев", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/admin\/request-template-studio$/);
+    await expect(page.getByRole("button", { name: "Создать сценарий", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Не печатает", exact: true }).click();
+    await expect(page.getByLabel("Название сценария", { exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "4. Тестирование", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Начать проверку", exact: true })).toBeEnabled();
+    expect(state.mutations).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`${viewport.width}-auditor-studio.png`) });
+    expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
+  });
+}
+
+for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
   test(`guided studio inline offering ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);
     const state = await fixture(page);

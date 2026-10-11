@@ -11,8 +11,8 @@ import { ScenarioProcessing } from "./scenario-processing";
 import type { ScenarioIssueDestination } from "./scenario-issue-navigation";
 
 export const scenarioSteps = ["Категория и назначение", "Пользовательский сценарий", "Обработка обращения", "Тестирование", "Публикация"];
-type Props = { definition: ScenarioDraftDefinition; detail: ScenarioDetail | null; catalog: ScenarioCatalog; disabled: boolean; dirty: boolean; onChange: (value: ScenarioDraftDefinition) => void; onAccept?: (value: ScenarioDetail) => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryCreated?: () => Promise<void>; onCategoryOpen?: (open: boolean) => void };
-export function ScenarioWizard({ definition, detail, catalog, disabled, dirty, onChange, onAccept, onCategoryDirty, onCategoryCreated, onCategoryOpen }: Props) {
+type Props = { definition: ScenarioDraftDefinition; detail: ScenarioDetail | null; catalog: ScenarioCatalog; disabled: boolean; simulationDisabled?: boolean; dirty: boolean; onChange: (value: ScenarioDraftDefinition) => void; onAccept?: (value: ScenarioDetail) => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryCreated?: () => Promise<void>; onCategoryOpen?: (open: boolean) => void };
+export function ScenarioWizard({ definition, detail, catalog, disabled, simulationDisabled = disabled, dirty, onChange, onAccept, onCategoryDirty, onCategoryCreated, onCategoryOpen }: Props) {
   const [step, setStep] = useState(0);
   const [destination, setDestination] = useState<ScenarioIssueDestination | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
@@ -27,7 +27,7 @@ export function ScenarioWizard({ definition, detail, catalog, disabled, dirty, o
       {step === 0 && <ScenarioPurpose definition={definition} catalog={catalog} disabled={disabled} existing={!!detail} onChange={onChange} onCategoryDirty={onCategoryDirty} onCategoryOpen={open => { setCategoryOpen(open); onCategoryOpen?.(open); }} onCategoryCreated={onCategoryCreated} />}
       {step === 1 && <ScenarioBlockBuilder definition={definition} disabled={disabled} onChange={onChange} onSimulate={() => navigate(3)} issueBlockId={destination?.blockId} issueTransitions={destination?.transitions} />}
       {step === 2 && <ScenarioProcessing definition={definition} disabled={disabled} onChange={onChange} focusPolicy={destination?.policy} />}
-      {step === 3 && (detail ? <ScenarioSimulationPanel key={detail.scenario.id} id={detail.scenario.id} revision={detail.draft.revision} dirty={dirty} disabled={disabled} definition={definition} /> : <p>Сначала сохраните сценарий.</p>)}
+      {step === 3 && (detail ? <ScenarioSimulationPanel key={detail.scenario.id} id={detail.scenario.id} revision={detail.draft.revision} dirty={dirty} disabled={simulationDisabled} definition={definition} /> : <p>Сначала сохраните сценарий.</p>)}
       {step === 4 && (detail ? <><ScenarioPublication key={detail.scenario.id} id={detail.scenario.id} revision={detail.draft.revision} dirty={dirty} disabled={disabled} definition={definition} offeringTitle={offering?.public_title} onIssue={target => { setDestination(target); setStep(target.step); }} />{onAccept && <ScenarioVersionHistory id={detail.scenario.id} revision={detail.draft.revision} disabled={disabled || dirty} onAccept={onAccept} />}</> : <p>Сначала сохраните сценарий.</p>)}
     </section>
     {!purposeReady && <p className="text-sm text-slate-500">Выберите услугу и сохраните назначение сценария, прежде чем переходить к следующим этапам.</p>}

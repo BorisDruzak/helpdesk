@@ -989,3 +989,22 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   focused checks: 32 PASS; build/typecheck and scoped workspace PASS. Browser
   fixture Tab/direct-click and auditor route: 12 PASS at 1366/1440/1920/820.
   New installed candidate acceptance remains required; prior H is not a PASS.
+
+- P10 installed auditor testing found the global workspace gate blocking the
+  documented Studio read/simulation contract. Auditor now receives only the
+  Studio route fallback; admin/support workspace grants remain unchanged.
+  Simulation has a separate disabled state; editing/publication stay admin-only.
+  Router RED 4/GREEN 4 and auditor simulation RED/GREEN; combined 32 PASS,
+  build/typecheck, scoped workspace and 12 viewport browser cases PASS.
+  Independent review reports no remaining blockers. Full frontend coverage,
+  exact candidate CI and installed G/H are still pending.
+- Exact 08dfa34f CI 38167094031 completed successfully: all 18 merge-gate
+  steps and Endpoint contracts PASS. That revision was installed through the
+  canonical staging release script with identity verified and schema 147.
+  Actual UI/database A/B/C/E/F/I/J PASS, including duplicate submission with
+  exactly one ticket and immutable V1 sessions after publishing V2.
+  D priority comparison remains pending matching H simulation facts; G exposed
+  the auditor route defect, and H exposed the focus defect above. Neither is
+  accepted. Owned data remains four tickets, zero approvals/notifications/device
+  operations; global operation/link counts unchanged. Staging service stopped.
+  These receipts apply to 08dfa34f only and do not accept the new fixes.
