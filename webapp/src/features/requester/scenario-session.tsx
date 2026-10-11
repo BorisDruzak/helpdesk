@@ -7,6 +7,7 @@ type Step = {
   id: string;
   revision: number;
   state: string;
+  linked_ticket_id?: string | null;
   back_targets: { id: string; title: string }[];
   block: {
     id: string; kind: string; title: string;
@@ -19,12 +20,14 @@ type Step = {
   };
 };
 
+type TicketPreview = { ok: boolean; expected_first_response?: string; expected_resolution?: string; approval?: { text: string }; blockers: string[]; warnings: string[] };
+
 class SessionError extends Error {
   constructor(public code: string, public fields: Record<string, string> = {}) { super(code); }
 }
 
 const base = "/api/web/requester/request-scenarios/sessions";
-async function request(path: string, body?: unknown, signal?: AbortSignal): Promise<Step> {
+async function request<T = Step>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST", credentials: "same-origin", cache: "no-store", signal,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
@@ -35,13 +38,14 @@ async function request(path: string, body?: unknown, signal?: AbortSignal): Prom
   return result.data;
 }
 
-export function ScenarioSession({ offering, owner = "" }: { offering: string; owner?: string }) {
+export function ScenarioSession({ offering, owner = "", deviceId }: { offering: string; owner?: string; deviceId?: string }) {
   const [step, setStep] = useState<Step | null>(null);
   const [values, setValues] = useState<DynamicFormValues>({});
   const [error, setError] = useState<SessionError | null>(null);
   const [busy, setBusy] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [reload, setReload] = useState(0);
+  const [ticketPreview, setTicketPreview] = useState<TicketPreview | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const requestSequence = useRef(0);
   const lifecycle = useRef(0);
@@ -57,6 +61,7 @@ export function ScenarioSession({ offering, owner = "" }: { offering: string; ow
     setStep(data);
     setValues(Object.fromEntries((data.block.fields || []).map(field => [field.key, field.value])));
     setAcknowledged(false);
+    setTicketPreview(null);
     setError(null);
     remember(data);
   }
@@ -64,7 +69,7 @@ export function ScenarioSession({ offering, owner = "" }: { offering: string; ow
   useEffect(() => {
     lifecycle.current++;
     const controller = new AbortController();
-    setStep(null); setError(null); setBusy(true);
+    setStep(null); setError(null); setBusy(true); setTicketPreview(null);
     let saved: string | null = null;
     try { saved = storageKey ? sessionStorage.getItem(storageKey) : null; } catch { /* Optional opaque ID. */ }
     const path = saved ? `${base}/${encodeURIComponent(saved)}` : base;
@@ -77,7 +82,7 @@ export function ScenarioSession({ offering, owner = "" }: { offering: string; ow
       for (const pending of commandControllers.current) pending.abort();
       commandControllers.current.clear();
     };
-  }, [offering, storageKey, reload]); // A server response replaces local values only on explicit resume/advance.
+  }, [offering, storageKey, reload, deviceId]); // Context changes invalidate pending commands and previews.
 
   useEffect(() => { heading.current?.focus(); }, [step?.block.id]);
 
@@ -89,12 +94,17 @@ export function ScenarioSession({ offering, owner = "" }: { offering: string; ow
     const current = () => generation === lifecycle.current && !controller.signal.aborted;
     requestSequence.current++; setBusy(true); setError(null);
     try {
+      if (kind === "ticket-preview") {
+        const data = await request<TicketPreview>(`${base}/${step.id}/${kind}`, { ...(body as object), ...deviceContext }, controller.signal);
+        if (current()) setTicketPreview(data);
+        return;
+      }
       if (kind === "answer" && step.block.has_dynamic_fields) {
         const projected = await request(`${base}/${step.id}/step-preview`, body, controller.signal);
         if (!current()) return;
         setStep(current => current ? { ...current, block: projected.block } : current);
       }
-      const data = await request(`${base}/${step.id}/${kind}`, body, controller.signal);
+      const data = await request(`${base}/${step.id}/${kind}`, kind === "submit" ? { ...(body as object), ...deviceContext } : body, controller.signal);
       if (current()) accept(data);
     }
     catch (cause) { if (current()) setError(cause as SessionError); }
@@ -122,6 +132,7 @@ export function ScenarioSession({ offering, owner = "" }: { offering: string; ow
     ...(result ? { current_result: result } : {}),
   });
   const expired = ["SESSION_EXPIRED", "SESSION_REVOKED", "SESSION_NOT_FOUND"].includes(error?.code || "");
+  const deviceContext = deviceId === undefined ? {} : deviceId ? { device_id: deviceId } : { device_scope: "none" };
 
   return <section className="grid gap-4 rounded-panel border border-slate-200 bg-white p-5" aria-busy={busy}>
     {error ? <div role="alert" className="text-sm text-rose-700">
@@ -151,7 +162,17 @@ export function ScenarioSession({ offering, owner = "" }: { offering: string; ow
         {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}
         {["form_page", "instruction", "review"].includes(step.block.kind) ? <Button type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить</Button> : null}
         {step.block.kind === "finish" ? <Button type="button" onClick={() => void command("finish", { revision: step.revision })}>Завершить</Button> : null}
-        {step.block.kind === "submit_ticket" ? <p>Ответы собраны. Отправка обращения будет доступна после проверки обработки.</p> : null}
+        {step.state === "ticket_created" && step.linked_ticket_id ? <div className="grid gap-2"><p>Обращение создано.</p><a className="font-medium text-brand-700 underline" href={`/app/requester/tickets/${encodeURIComponent(step.linked_ticket_id)}`}>Открыть обращение</a></div> : step.block.kind === "submit_ticket" ? <div className="grid gap-3">
+          {ticketPreview ? <>
+            {ticketPreview.expected_first_response ? <p>Первый ответ: {ticketPreview.expected_first_response}</p> : null}
+            {ticketPreview.expected_resolution ? <p>{ticketPreview.expected_resolution}</p> : null}
+            {ticketPreview.approval ? <p>{ticketPreview.approval.text}</p> : null}
+            {ticketPreview.warnings.map((text, index) => <p key={`warning-${index}`}>{text}</p>)}
+            {ticketPreview.blockers.map((text, index) => <p role="alert" key={`blocker-${index}`}>{text}</p>)}
+            {ticketPreview.ok && !ticketPreview.blockers.length ? <Button type="button" onClick={() => void command("submit", { revision: step.revision, confirm: true })}>Создать обращение</Button> : null}
+          </> : null}
+          <Button type="button" variant={ticketPreview ? "outline" : undefined} onClick={() => void command("ticket-preview", { revision: step.revision })}>Проверить обработку</Button>
+        </div> : null}
         {step.back_targets.length ? <div className="flex flex-wrap gap-2">{step.back_targets.map(target => <Button key={target.id} type="button" variant="outline" onClick={() => void command("back", { revision: step.revision, target_block_id: target.id })}>Вернуться: {target.title}</Button>)}</div> : null}
       </fieldset>
     </> : null}

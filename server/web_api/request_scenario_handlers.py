@@ -10,7 +10,7 @@ from auth.middleware import require_auth
 from tickets.request_scenario_runtime import ScenarioConflict, ScenarioInputError
 from web_api.dto.request_scenario import ScenarioAnswerRequest
 from web_api.dto.request_scenario_admin import Identifier
-from web_api.dto.request_scenario_session import SessionBack, SessionRevision, SessionStart
+from web_api.dto.request_scenario_session import SessionBack, SessionRevision, SessionStart, SessionSubmit, SessionTicketContext
 from web_api.request_scenario_admin_handlers import _payload
 
 
@@ -22,7 +22,8 @@ async def _run(request, kind):
     try:
         model = {"start": SessionStart, "back": SessionBack, "finish": SessionRevision,
                  "answer": ScenarioAnswerRequest, "advance": ScenarioAnswerRequest,
-                 "preview": ScenarioAnswerRequest}.get(kind)
+                 "preview": ScenarioAnswerRequest, "ticket_preview": SessionTicketContext,
+                 "submit": SessionSubmit}.get(kind)
         payload = await _payload(request, model) if model else None
         identifier = None if kind == "start" else TypeAdapter(Identifier).validate_python(request.match_info["identifier"])
         async with get_session() as session:
@@ -33,6 +34,44 @@ async def _run(request, kind):
                 result = await repo.read(identifier)
             elif kind == "preview":
                 result = await repo.preview(identifier, payload)
+            elif kind in {"ticket_preview", "submit"}:
+                from requester.create_idempotency import CreateRequestKey
+                from web_api.requester_handlers import create_requester_ticket_in_session, preview_requester_ticket_in_session
+                import json
+                row, runtime, data, snapshot = await repo.prepare_submission(identifier, payload.revision)
+                if data is not None:
+                    if data.get("device_id") and (payload.device_scope or payload.device_id and payload.device_id != data["device_id"]):
+                        raise ScenarioInputError({"device": "Device selection differs from the scenario answer"})
+                    data.update(payload.model_dump(mode="json", include={"device_id", "device_scope"}, exclude_none=True))
+                if data is None:
+                    result = await repo._view(row, runtime)
+                elif kind == "ticket_preview":
+                    response = await preview_requester_ticket_in_session(request, data, session, scenario_snapshot=snapshot)
+                    # Preview may emit existing observer records; it must never
+                    # commit these or any scenario/ticket mutation.
+                    await session.rollback()
+                    response.headers["Cache-Control"] = "no-store"
+                    return response
+                else:
+                    checked = await preview_requester_ticket_in_session(request, data, session, scenario_snapshot=snapshot)
+                    if checked.status >= 400:
+                        await session.rollback()
+                        checked.headers["Cache-Control"] = "no-store"
+                        return checked
+                    if not json.loads(checked.body)["data"]["ok"]:
+                        await session.rollback()
+                        return _reply({"status": "error", "error_code": "PROCESSING_UNAVAILABLE"}, status=409)
+                    key = CreateRequestKey.parse(repo.owner, "scenario:" + identifier, data)
+                    response = await create_requester_ticket_in_session(
+                        request, data, session, request_key=key, scenario_snapshot=snapshot,
+                    )
+                    if response.status >= 400:
+                        await session.rollback()
+                        response.headers["Cache-Control"] = "no-store"
+                        return response
+                    ticket_id = json.loads(response.body)["data"]["ticket_id"]
+                    await repo.complete_submission(row, ticket_id)
+                    result = await repo._view(row, runtime)
             else:
                 result = await repo.command(identifier, kind, payload)
             await session.commit()
@@ -83,3 +122,13 @@ async def handle_web_requester_scenario_finish(request):
 @require_auth("user")
 async def handle_web_requester_scenario_step_preview(request):
     return await _run(request, "preview")
+
+
+@require_auth("user")
+async def handle_web_requester_scenario_ticket_preview(request):
+    return await _run(request, "ticket_preview")
+
+
+@require_auth("user")
+async def handle_web_requester_scenario_submit(request):
+    return await _run(request, "submit")

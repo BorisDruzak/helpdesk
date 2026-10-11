@@ -143,6 +143,37 @@ class RequestScenarioSessionRepo:
         await self._validate_pickers(runtime, state)
         return {"id": row.id, "revision": row.revision, **await self._projection(runtime, state)}
 
+    async def prepare_submission(self, identifier, revision):
+        from tickets.request_scenario_submission import build_scenario_submission
+        row, runtime = await self.load(identifier)
+        if row.state == "ticket_created" and row.linked_ticket_id:
+            return row, runtime, None, None
+        if row.revision != revision:
+            raise ScenarioConflict("Scenario revision changed")
+        state = self._state(row)
+        data, snapshot = build_scenario_submission(runtime.definition, state, session_id=row.id, version_id=row.version_id)
+        for key in state.history:
+            if runtime.blocks[key].kind == "form_page":
+                checked = deepcopy(state)
+                checked.current_block_id = key
+                checked.answers = snapshot["answers"]
+                await self._validate_pickers(runtime, checked)
+        snapshot["summary"] = (await self._projection(runtime, state))["block"]["answers"]
+        data["description"] = ("\n".join(f"{item['label']}: {item['display_value']}" for item in snapshot["summary"]) or runtime.definition.title)[:5000]
+        devices = [snapshot["answers"][item.key] for block in runtime.definition.blocks
+                   for item in getattr(block, "fields", ()) if item.type == "device_picker" and snapshot["answers"].get(item.key)]
+        if len(set(devices)) > 1:
+            raise ScenarioInputError({"device": "Choose one diagnostic device for this request"})
+        if devices:
+            data["device_id"] = devices[0]
+        return row, runtime, data, snapshot
+
+    async def complete_submission(self, row, ticket_id):
+        row.linked_ticket_id, row.state = ticket_id, "ticket_created"
+        row.revision += 1
+        await self.session.flush()
+        await self._audit(row, "ticket_created")
+
     async def _validate_pickers(self, runtime, state):
         block = runtime.blocks[state.current_block_id]
         fields = getattr(block, "fields", ())

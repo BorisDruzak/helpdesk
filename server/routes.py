@@ -363,6 +363,7 @@ from web_api.request_scenario_handlers import (
     handle_web_requester_scenario_answer, handle_web_requester_scenario_advance,
     handle_web_requester_scenario_back, handle_web_requester_scenario_finish,
     handle_web_requester_scenario_step_preview,
+    handle_web_requester_scenario_ticket_preview, handle_web_requester_scenario_submit,
 )
 from web_api.service_catalog_handlers import (
     handle_service_catalog_current,
@@ -760,6 +761,8 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/back', handle_web_requester_scenario_back),
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/step-preview', handle_web_requester_scenario_step_preview),
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/finish', handle_web_requester_scenario_finish),
+        web.post('/api/web/requester/request-scenarios/sessions/{identifier}/ticket-preview', handle_web_requester_scenario_ticket_preview),
+        web.post('/api/web/requester/request-scenarios/sessions/{identifier}/submit', handle_web_requester_scenario_submit),
         web.get('/api/web/requester/profile', handle_web_requester_profile),
         web.put('/api/web/requester/profile', handle_web_requester_profile_update),
         web.get('/api/web/requester/consents', handle_web_requester_consents),

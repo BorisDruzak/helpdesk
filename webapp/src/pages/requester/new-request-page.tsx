@@ -810,7 +810,7 @@ export function RequesterNewRequestPage() {
         {selectedOffering?.guided_scenario_enabled ? <>
           <CategorySelector options={categorySelectorOptions} selectedKey={selectedCategoryKey}
             recommendedKey={recommendedCategoryKey} onChange={selectCategoryKey} />
-          <ScenarioSession key={selectedOffering.full_code} offering={selectedOffering.full_code} owner={session?.user_login || ""} />
+          <ScenarioSession key={selectedOffering.full_code} offering={selectedOffering.full_code} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
         </> : <DetailsStepPanel
           categoryError={categoryError}
           categoryInputRef={(element) => {

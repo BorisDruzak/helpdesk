@@ -21,8 +21,12 @@ browser7, build/inventory/workspace and independent review pass.
 P6 PASS: owner-scoped pinned sessions, typed steps/Back/TTL/replay, safe picker
 choices and redacted audit; per-offering requester flow preserves legacy forms.
 Fast106, frontend24, PostgreSQL3 plus audit rollback1, browser4, build/inventory/
-workspace and independent review pass. P7–P10 remain gated, including canonical
-ticket/policy integration, safe publication and actual staging acceptance.
+workspace and independent review pass.
+P7 PASS: canonical ticket preview/create, trusted facts and human summary,
+owner/device gates, transactional session/ledger/audit and idempotent submit.
+Fast217, frontend28, PostgreSQL3 plus final legacy regression9, browser8,
+build/inventory/workspace and independent review pass. P8–P10 remain gated,
+including safe publication and actual staging acceptance.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI

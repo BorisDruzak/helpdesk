@@ -103,8 +103,8 @@ actor/policy authority. Sessions expire after 24 hours, pin an immutable version
 and allow retired versions to continue unless revoked/disabled. Back clears
 downstream answers/results. Repeating the latest identical command returns its
 saved result; a changed stale command returns 409. Start resumes an active session
-for the same owner/version. Ticket submit idempotency belongs to the existing
-create ledger integration in P7.
+for the same owner/version. Ticket submit uses the existing requester create
+ledger and a server-derived key scoped to the owner/session.
 
 `step-preview` uses the canonical runtime to reevaluate current-page conditions
 without advancing or saving. The safe projection contains only the current step,
@@ -117,5 +117,22 @@ occurs. Session audit entries contain version/block/revision/state, never answer
 The requester component stores only an opaque session ID per login/offering in
 sessionStorage. Late responses are canceled/ignored on owner/offering change;
 resume preserves explicit unknown answers. Instructions are rendered as text;
-resolution checks require explicit yes/no/unknown. Actual ticket creation and
-policy preview are the following P7 gate, not a P6 success claim.
+resolution checks require explicit yes/no/unknown.
+
+At the submit step, «Проверить обработку» calls `ticket-preview` with the revision.
+Only a successful safe preview exposes «Создать обращение». `submit` accepts just
+revision, `confirm: true` and optional selected computer (`device_id`) or
+explicit no-computer context (`device_scope: none`); the server repeats the preview and canonical
+profile/device/form checks. Priority, queue, SLA/OLA, approval and closure remain
+owned by the existing policy services. No actor, queue, priority or raw answers
+are accepted in this command. Retained visible answers, mapped facts, roles and
+human summary are stored in the ticket's `request_scenario` snapshot alongside
+the existing `request_form_data`, resolved form/template refs and catalog snapshot.
+One transaction owns ticket initialization, create ledger completion, session
+link/state and audit; failure rolls everything back. Concurrent/repeated submits
+return the same linked ticket. The result links to the existing requester ticket
+page. Canonical form constraints still apply: bind a compatible published form;
+new scenario publication/readiness is the separate P8 gate.
+The selected computer uses the existing ownership gate. Changing that selection
+invalidates the UI preview and pending responses; disagreement with a retained
+scenario device picker is rejected rather than silently replacing its target.

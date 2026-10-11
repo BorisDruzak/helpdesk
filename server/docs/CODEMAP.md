@@ -403,7 +403,8 @@ is absent from these current device-navigation descriptions.
 # Ticket UI and profile/SLA projections
 
 Guided requester runtime: `web_api/request_scenario_handlers.py` registers
-owner-only session start/read/answer/advance/back/finish/step-preview routes in
+owner-only session start/read/answer/advance/back/finish/step-preview and
+ticket-preview/submit routes in
 `routes.py`. `app/repos/request_scenario_session_repo.py` owns PostgreSQL locks,
 TTL, immutable version pinning, last-command replay and redacted catalog audit.
 `tickets/request_scenario_runtime.py` remains the only graph evaluator;
@@ -412,6 +413,13 @@ TTL, immutable version pinning, last-command replay and redacted catalog audit.
 `request_scenario_catalog.py` adds per-offering availability to the existing
 Service Catalog. Requester UI uses `features/requester/scenario-session.tsx`
 from `pages/requester/new-request-page.tsx`; legacy offering UI remains default.
+`tickets/request_scenario_submission.py` revalidates visited pages and maps typed
+facts/roles into the existing form submission, retaining a support snapshot.
+`web_api/requester_handlers.py` exposes caller-transaction create/preview helpers:
+the same profile/device/form checks and policy runtime serve legacy and guided
+requests. Scenario submit locks the owner session, rechecks processing preview,
+then completes the existing requester create ledger, ticket and session audit in
+one transaction; preview rolls back its observer writes and creates no ticket.
 
 See [ticket UI behavior](../../docs/HELPDESK_TICKET_UI.md).
 `web_api/support_handlers.py` projects completed and paused SLA timers and

@@ -4,6 +4,58 @@ import { ScenarioSession } from "./scenario-session";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); });
 
+it("previews processing before submitting only the session revision and confirmation", async () => {
+  const step = { id: "session", revision: 3, state: "active", back_targets: [], block: { id: "submit", kind: "submit_ticket", title: "Отправка" } };
+  const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/ticket-preview")) {
+      expect(JSON.parse(String(options?.body))).toEqual({ revision: 3 });
+      return response({ ok: true, approval: { text: "Согласование не требуется" }, expected_resolution: "до 4 ч", blockers: [], warnings: [] });
+    }
+    if (url.endsWith("/submit")) {
+      expect(JSON.parse(String(options?.body))).toEqual({ revision: 3, confirm: true });
+      return response({ ...step, revision: 4, state: "ticket_created", linked_ticket_id: "ticket-id" });
+    }
+    return response(step);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Проверить обработку" }));
+  await screen.findByText("до 4 ч");
+  fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+  expect(await screen.findByRole("link", { name: "Открыть обращение" })).toHaveAttribute("href", "/app/requester/tickets/ticket-id");
+  expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
+});
+
+it("keeps ticket creation blocked when canonical preview has blockers", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => response(url.endsWith("/ticket-preview")
+    ? { ok: false, blockers: ["Маршрут недоступен"], warnings: [] }
+    : { id: "session", revision: 3, state: "active", back_targets: [], block: { id: "submit", kind: "submit_ticket", title: "Отправка" } })));
+  render(<ScenarioSession offering="workplace.printer" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Проверить обработку" }));
+  await screen.findByText("Маршрут недоступен");
+  expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
+});
+
+it.each(["", "owned-computer"])("uses the selected computer context in preview and submit (%s)", async deviceId => {
+  const step = { id: "session", revision: 3, state: "active", back_targets: [], block: { id: "submit", kind: "submit_ticket", title: "Отправка" } };
+  const context = deviceId ? { device_id: deviceId } : { device_scope: "none" };
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/ticket-preview")) {
+      expect(JSON.parse(String(options?.body))).toEqual({ revision: 3, ...context });
+      return response({ ok: true, blockers: [], warnings: [] });
+    }
+    if (url.endsWith("/submit")) {
+      expect(JSON.parse(String(options?.body))).toEqual({ revision: 3, confirm: true, ...context });
+      return response({ ...step, state: "ticket_created", linked_ticket_id: "ticket" });
+    }
+    return response(step);
+  }));
+  render(<ScenarioSession offering="workplace.printer" deviceId={deviceId} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Проверить обработку" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+  await screen.findByRole("link", { name: "Открыть обращение" });
+});
+
 function response(data: unknown, status = 200) {
   return new Response(JSON.stringify({ status: "success", data }), { status, headers: { "Content-Type": "application/json" } });
 }

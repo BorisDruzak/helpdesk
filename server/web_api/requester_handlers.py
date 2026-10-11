@@ -1595,6 +1595,14 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
     if not isinstance(data, dict):
         return _error("JSON body must be an object", status=400)
 
+    async with get_session() as session:
+        response = await preview_requester_ticket_in_session(request, data, session)
+        return response
+
+
+async def preview_requester_ticket_in_session(request, data, session, *, scenario_snapshot=None):
+    """Canonical requester gates in the caller-owned transaction."""
+    auth_context = request["auth_context"]
     supplied_device_id = _clean(data.get("device_id"), max_length=80)
     pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
@@ -1602,208 +1610,180 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
     request_template_key = _clean(data.get("request_template_key"), max_length=120)
     form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
 
-    async with get_session() as session:
-        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
-        profile_schema = await RequesterProfileSchemaService(session).get_schema()
-        try:
-            person, binding, device_id, account_mode, _request_context, primary_device_resolution = await _resolve_requester_self_device_context(
-                resolver,
-                actor_id=auth_context.actor_id,
-                supplied_device_id=supplied_device_id,
-                without_device=data.get("device_scope") == "none",
-                state=request.app.get("state"),
-            )
-        except PermissionError as exc:
-            return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
-        completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
-        availability_policy = await _resolve_form_availability_policy(
-            session,
-            pack_key=pack_key,
-            pack_version=pack_version,
-            form_key=form_key,
-            request_template_key=request_template_key,
-        )
-        if _profile_completion_blocks_for_form(completion, "ticket_preview", availability_policy):
-            await _write_requester_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_profile",
-                event_type="profile_incomplete_blocked",
-                severity="warning",
-                result="blocked",
-                person_id=getattr(person, "person_id", None),
-                error_code="REQUESTER_PROFILE_INCOMPLETE",
-                payload={"action": "ticket_preview", "completion": completion},
-            )
-            return _profile_incomplete_error(completion)
-        if availability_policy.get("contact_required") and not _has_contact_for_emergency(person, form_payload, data):
-            return _error(
-                "Укажите телефон или другой контакт для связи.",
-                status=400,
-                error_code="REQUESTER_CONTACT_REQUIRED",
-            )
-        has_agent_binding = binding is not None
-        if (
-            form_key
-            and not supplied_device_id
-            and not has_agent_binding
-            and not availability_policy.get("available_without_agent_binding")
-            and not _raw_on_behalf_context(data).get("affected_person_id")
-        ):
-            await _write_requester_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_ticket_preview",
-                event_type="ticket_preview_blocked",
-                severity="warning",
-                result="blocked",
-                person_id=getattr(person, "person_id", None),
-                error_code="REQUESTER_DEVICE_REQUIRED",
-                payload={
-                    "action": "ticket_preview",
-                    "form_key": form_key,
-                    "request_template_key": request_template_key,
-                    "has_agent_binding": has_agent_binding,
-                    "available_without_agent_binding": bool(
-                        availability_policy.get("available_without_agent_binding")
-                    ),
-                },
-            )
-            return _error(
-                "Для этой формы нужен компьютер. Выберите привязанный компьютер или другую форму обращения.",
-                status=403,
-                error_code="REQUESTER_DEVICE_REQUIRED",
-            )
-
-        try:
-            on_behalf_context = await _authorize_on_behalf_context(
-                session,
-                auth_context=auth_context,
-                creator=_requester_ref_from_resolved_person(person),
-                policy=await _resolve_on_behalf_policy(
-                    session,
-                    pack_key=pack_key,
-                    pack_version=pack_version,
-                    form_key=form_key,
-                    request_template_key=request_template_key,
-                ),
-                data=data,
-            )
-        except _OnBehalfRequestError as exc:
-            await _write_requester_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_ticket_preview",
-                event_type="ticket_preview_blocked",
-                severity="warning",
-                result="blocked",
-                device_id=device_id or None,
-                person_id=getattr(person, "person_id", None),
-                error_code=exc.error_code,
-                payload={
-                    "action": "ticket_preview",
-                    "form_key": form_key,
-                    "request_template_key": request_template_key,
-                    "has_on_behalf_request": bool(_raw_on_behalf_context(data).get("affected_person_id")),
-                },
-            )
-            return _error(str(exc), status=exc.status, error_code=exc.error_code)
-
-        preview_payload = dict(data)
-        if on_behalf_context:
-            preview_payload["ticket_context"] = on_behalf_context
-        requester_context = await resolver.build_requester_context(
+    resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
+    profile_schema = await RequesterProfileSchemaService(session).get_schema()
+    try:
+        person, binding, device_id, account_mode, _request_context, primary_device_resolution = await _resolve_requester_self_device_context(
+            resolver,
             actor_id=auth_context.actor_id,
-            person=person,
-            binding=binding,
-            account_mode=account_mode,
-            profile_schema=profile_schema,
-        )
-        context_custom_fields = RequesterIdentityResolver.requester_context_custom_fields(requester_context)
-        context_custom_fields["primary_device_resolution"] = primary_device_resolution
-        if form_key:
-            context_custom_fields.update(
-                _manual_triage_custom_fields(
-                    availability_policy=availability_policy,
-                    no_valid_target=not has_agent_binding and not on_behalf_context,
-                )
-            )
-        client_custom_fields = (
-            preview_payload.get("custom_fields")
-            if isinstance(preview_payload.get("custom_fields"), dict)
-            else {}
-        )
-        preview_payload["custom_fields"] = {**client_custom_fields, **context_custom_fields}
-        preview_payload["requester_context"] = requester_context
-        if isinstance(requester_context.get("device"), dict):
-            preview_payload["device_metadata"] = dict(requester_context["device"])
-        ticket_context_preview = await _build_requester_ticket_context_preview(
-            session,
+            supplied_device_id=supplied_device_id,
+            without_device=data.get("device_scope") == "none",
             state=request.app.get("state"),
-            person=person,
-            actor_id=auth_context.actor_id,
-            device_selection="none" if data.get("device_scope") == "none" else (None if on_behalf_context else supplied_device_id or None),
-            requester_context=requester_context,
-            on_behalf_context=on_behalf_context,
-            form={
-                "key": form_key or request_template_key,
-                "title": form_key or request_template_key,
-            }
-            if (form_key or request_template_key)
-            else {},
-            policy_refs={},
         )
-        if not _has_catalog_selection(preview_payload):
-            response_payload = {
-                "ok": True,
-                "service": {"code": None, "title": None},
-                "offering": {"code": None, "full_code": None, "title": None},
-                "request_type_label": "Request",
-                "public_status_after_create": "Новое обращение",
-                "approval": {"required": False, "text": "Согласование не требуется"},
-                "diagnostics": {
-                    "required": False,
-                    "consent_required": False,
-                    "text": "Диагностика не требуется до отправки",
-                },
-                "next_action": "После отправки обращение попадет в поддержку.",
-                "warnings": [],
-                "blockers": [],
-                "would_create_ticket": False,
-                "requester_context": RequesterIdentityResolver.requester_context_preview(requester_context),
-            }
-            if ticket_context_preview is not None:
-                response_payload["ticket_context"] = ticket_context_preview
-            await _write_requester_web_observer_event(
+    except PermissionError as exc:
+        return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
+    completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
+    availability_policy = await _resolve_form_availability_policy(
+        session,
+        pack_key=pack_key,
+        pack_version=pack_version,
+        form_key=form_key,
+        request_template_key=request_template_key,
+    )
+    if _profile_completion_blocks_for_form(completion, "ticket_preview", availability_policy):
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_profile",
+            event_type="profile_incomplete_blocked",
+            severity="warning",
+            result="blocked",
+            person_id=getattr(person, "person_id", None),
+            error_code="REQUESTER_PROFILE_INCOMPLETE",
+            payload={"action": "ticket_preview", "completion": completion},
+        )
+        return _profile_incomplete_error(completion)
+    if availability_policy.get("contact_required") and not _has_contact_for_emergency(person, form_payload, data):
+        return _error(
+            "Укажите телефон или другой контакт для связи.",
+            status=400,
+            error_code="REQUESTER_CONTACT_REQUIRED",
+        )
+    has_agent_binding = binding is not None
+    if (
+        form_key
+        and not supplied_device_id
+        and not has_agent_binding
+        and not availability_policy.get("available_without_agent_binding")
+        and not _raw_on_behalf_context(data).get("affected_person_id")
+    ):
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_ticket_preview",
+            event_type="ticket_preview_blocked",
+            severity="warning",
+            result="blocked",
+            person_id=getattr(person, "person_id", None),
+            error_code="REQUESTER_DEVICE_REQUIRED",
+            payload={
+                "action": "ticket_preview",
+                "form_key": form_key,
+                "request_template_key": request_template_key,
+                "has_agent_binding": has_agent_binding,
+                "available_without_agent_binding": bool(
+                    availability_policy.get("available_without_agent_binding")
+                ),
+            },
+        )
+        return _error(
+            "Для этой формы нужен компьютер. Выберите привязанный компьютер или другую форму обращения.",
+            status=403,
+            error_code="REQUESTER_DEVICE_REQUIRED",
+        )
+
+    try:
+        on_behalf_context = await _authorize_on_behalf_context(
+            session,
+            auth_context=auth_context,
+            creator=_requester_ref_from_resolved_person(person),
+            policy=await _resolve_on_behalf_policy(
                 session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_ticket_preview",
-                event_type="ticket_preview_succeeded",
-                severity="info",
-                result="previewed",
-                device_id=device_id or None,
-                person_id=getattr(person, "person_id", None),
-                payload={
-                    "has_catalog_selection": False,
-                    "form_key": form_key,
-                    "request_template_key": request_template_key,
-                    "account_mode": account_mode,
-                },
+                pack_key=pack_key,
+                pack_version=pack_version,
+                form_key=form_key,
+                request_template_key=request_template_key,
+            ),
+            data=data,
+        )
+    except _OnBehalfRequestError as exc:
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_ticket_preview",
+            event_type="ticket_preview_blocked",
+            severity="warning",
+            result="blocked",
+            device_id=device_id or None,
+            person_id=getattr(person, "person_id", None),
+            error_code=exc.error_code,
+            payload={
+                "action": "ticket_preview",
+                "form_key": form_key,
+                "request_template_key": request_template_key,
+                "has_on_behalf_request": bool(_raw_on_behalf_context(data).get("affected_person_id")),
+            },
+        )
+        return _error(str(exc), status=exc.status, error_code=exc.error_code)
+
+    preview_payload = dict(data)
+    if on_behalf_context:
+        preview_payload["ticket_context"] = on_behalf_context
+    requester_context = await resolver.build_requester_context(
+        actor_id=auth_context.actor_id,
+        person=person,
+        binding=binding,
+        account_mode=account_mode,
+        profile_schema=profile_schema,
+    )
+    context_custom_fields = RequesterIdentityResolver.requester_context_custom_fields(requester_context)
+    context_custom_fields["primary_device_resolution"] = primary_device_resolution
+    if form_key:
+        context_custom_fields.update(
+            _manual_triage_custom_fields(
+                availability_policy=availability_policy,
+                no_valid_target=not has_agent_binding and not on_behalf_context,
             )
-            return _success(response_payload)
-        try:
-            preview = await build_requester_service_catalog_preview(session, preview_payload)
-        except ServiceCatalogPreviewError as exc:
-            return _validation_error(exc.details)
-        except ValueError as exc:
-            return _validation_error({"preview": str(exc)})
-        preview["requester_context"] = RequesterIdentityResolver.requester_context_preview(requester_context)
+        )
+    client_custom_fields = (
+        preview_payload.get("custom_fields")
+        if isinstance(preview_payload.get("custom_fields"), dict)
+        else {}
+    )
+    preview_payload["custom_fields"] = {**client_custom_fields, **context_custom_fields}
+    preview_payload["requester_context"] = requester_context
+    if isinstance(requester_context.get("device"), dict):
+        preview_payload["device_metadata"] = dict(requester_context["device"])
+    ticket_context_preview = await _build_requester_ticket_context_preview(
+        session,
+        state=request.app.get("state"),
+        person=person,
+        actor_id=auth_context.actor_id,
+        device_selection="none" if data.get("device_scope") == "none" else (None if on_behalf_context else supplied_device_id or None),
+        requester_context=requester_context,
+        on_behalf_context=on_behalf_context,
+        form={
+            "key": form_key or request_template_key,
+            "title": form_key or request_template_key,
+        }
+        if (form_key or request_template_key)
+        else {},
+        policy_refs={},
+    )
+    if not _has_catalog_selection(preview_payload):
+        response_payload = {
+            "ok": True,
+            "service": {"code": None, "title": None},
+            "offering": {"code": None, "full_code": None, "title": None},
+            "request_type_label": "Request",
+            "public_status_after_create": "Новое обращение",
+            "approval": {"required": False, "text": "Согласование не требуется"},
+            "diagnostics": {
+                "required": False,
+                "consent_required": False,
+                "text": "Диагностика не требуется до отправки",
+            },
+            "next_action": "После отправки обращение попадет в поддержку.",
+            "warnings": [],
+            "blockers": [],
+            "would_create_ticket": False,
+            "requester_context": RequesterIdentityResolver.requester_context_preview(requester_context),
+        }
         if ticket_context_preview is not None:
-            preview["ticket_context"] = ticket_context_preview
+            response_payload["ticket_context"] = ticket_context_preview
         await _write_requester_web_observer_event(
             session,
             request=request,
@@ -1815,30 +1795,57 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             device_id=device_id or None,
             person_id=getattr(person, "person_id", None),
             payload={
-                "has_catalog_selection": True,
+                "has_catalog_selection": False,
                 "form_key": form_key,
                 "request_template_key": request_template_key,
                 "account_mode": account_mode,
             },
         )
-        await _write_requester_web_observer_event(
-            session,
-            request=request,
-            auth_context=auth_context,
-            source="web_form_runtime",
-            event_type="form_runtime_preview_succeeded",
-            severity="info",
-            result="previewed",
-            device_id=device_id or None,
-            person_id=getattr(person, "person_id", None),
-            payload=_web_form_runtime_preview_payload(
-                preview_payload,
-                preview=preview,
-                form_key=form_key,
-                request_template_key=request_template_key,
-                account_mode=account_mode,
-            ),
-        )
+        return _success(response_payload)
+    try:
+        preview = await build_requester_service_catalog_preview(session, preview_payload, scenario_snapshot=scenario_snapshot)
+    except ServiceCatalogPreviewError as exc:
+        return _validation_error(exc.details)
+    except ValueError as exc:
+        return _validation_error({"preview": str(exc)})
+    preview["requester_context"] = RequesterIdentityResolver.requester_context_preview(requester_context)
+    if ticket_context_preview is not None:
+        preview["ticket_context"] = ticket_context_preview
+    await _write_requester_web_observer_event(
+        session,
+        request=request,
+        auth_context=auth_context,
+        source="requester_ticket_preview",
+        event_type="ticket_preview_succeeded",
+        severity="info",
+        result="previewed",
+        device_id=device_id or None,
+        person_id=getattr(person, "person_id", None),
+        payload={
+            "has_catalog_selection": True,
+            "form_key": form_key,
+            "request_template_key": request_template_key,
+            "account_mode": account_mode,
+        },
+    )
+    await _write_requester_web_observer_event(
+        session,
+        request=request,
+        auth_context=auth_context,
+        source="web_form_runtime",
+        event_type="form_runtime_preview_succeeded",
+        severity="info",
+        result="previewed",
+        device_id=device_id or None,
+        person_id=getattr(person, "person_id", None),
+        payload=_web_form_runtime_preview_payload(
+            preview_payload,
+            preview=preview,
+            form_key=form_key,
+            request_template_key=request_template_key,
+            account_mode=account_mode,
+        ),
+    )
 
     return _success(preview)
 
@@ -1859,6 +1866,16 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     except (ValueError, RecursionError):
         return _error("Некорректный ключ или данные повторного запроса.", status=400, error_code="VALIDATION_ERROR")
 
+    async with get_session() as session:
+        response = await create_requester_ticket_in_session(request, data, session, request_key=request_key)
+        if response.status < 400:
+            await session.commit()
+        return response
+
+
+async def create_requester_ticket_in_session(request, data, session, *, request_key, scenario_snapshot=None):
+    """Canonical requester gates in the caller-owned transaction."""
+    auth_context = request["auth_context"]
     supplied_device_id = _clean(data.get("device_id"), max_length=80)
     description = _clean(data.get("description"), max_length=5000)
     if not description:
@@ -1872,371 +1889,375 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
     form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
-    async with get_session() as session:
-        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
-        ledger = RequesterCreateLedger(session)
-        try:
-            completed = await ledger.lookup(request_key)
-            if completed is not None:
-                return _success(await replay_created_ticket(session, completed, resolver, actor_id=auth_context.actor_id))
-        except CreateRequestConflict as exc:
-            return _error(str(exc), status=409, error_code="CREATE_REQUEST_CONFLICT")
-        except PermissionError:
-            return _error("Обращение недоступно.", status=404, error_code="TICKET_NOT_FOUND")
-        profile_schema = await RequesterProfileSchemaService(session).get_schema()
-        try:
-            person, binding, device_id, account_mode, request_context, primary_device_resolution = await _resolve_requester_self_device_context(
-                resolver,
-                actor_id=auth_context.actor_id,
-                supplied_device_id=supplied_device_id,
-                without_device=data.get("device_scope") == "none",
-                state=request.app.get("state"),
+    # Only trusted scenario composition can add this support snapshot.
+    resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
+    ledger = RequesterCreateLedger(session)
+    try:
+        completed = await ledger.lookup(request_key)
+        if completed is not None:
+            return _success(await replay_created_ticket(session, completed, resolver, actor_id=auth_context.actor_id))
+    except CreateRequestConflict as exc:
+        return _error(str(exc), status=409, error_code="CREATE_REQUEST_CONFLICT")
+    except PermissionError:
+        return _error("Обращение недоступно.", status=404, error_code="TICKET_NOT_FOUND")
+    profile_schema = await RequesterProfileSchemaService(session).get_schema()
+    try:
+        person, binding, device_id, account_mode, request_context, primary_device_resolution = await _resolve_requester_self_device_context(
+            resolver,
+            actor_id=auth_context.actor_id,
+            supplied_device_id=supplied_device_id,
+            without_device=data.get("device_scope") == "none",
+            state=request.app.get("state"),
+        )
+    except PermissionError as exc:
+        return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
+    completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
+    availability_policy = await _resolve_form_availability_policy(
+        session,
+        pack_key=pack_key,
+        pack_version=pack_version,
+        form_key=form_key,
+        request_template_key=request_template_key,
+    )
+    if _profile_completion_blocks_for_form(completion, "ticket_create", availability_policy):
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_profile",
+            event_type="profile_incomplete_blocked",
+            severity="warning",
+            result="blocked",
+            person_id=getattr(person, "person_id", None),
+            error_code="REQUESTER_PROFILE_INCOMPLETE",
+            payload={"action": "ticket_create", "completion": completion},
+        )
+        return _profile_incomplete_error(completion)
+    if availability_policy.get("contact_required") and not _has_contact_for_emergency(person, form_payload, data):
+        return _error(
+            "Укажите телефон или другой контакт для связи.",
+            status=400,
+            error_code="REQUESTER_CONTACT_REQUIRED",
+        )
+    has_agent_binding = binding is not None
+    if (
+        form_key
+        and not supplied_device_id
+        and not has_agent_binding
+        and not availability_policy.get("available_without_agent_binding")
+        and not _raw_on_behalf_context(data).get("affected_person_id")
+    ):
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_ticket_create",
+            event_type="ticket_create_blocked",
+            severity="warning",
+            result="blocked",
+            person_id=getattr(person, "person_id", None),
+            error_code="REQUESTER_DEVICE_REQUIRED",
+            payload={
+                "action": "ticket_create",
+                "form_key": form_key,
+                "request_template_key": request_template_key,
+                "has_agent_binding": has_agent_binding,
+                "available_without_agent_binding": bool(
+                    availability_policy.get("available_without_agent_binding")
+                ),
+            },
+        )
+        return _error(
+            "Для этой формы нужен компьютер. Выберите привязанный компьютер или другую форму обращения.",
+            status=403,
+            error_code="REQUESTER_DEVICE_REQUIRED",
+        )
+
+    requester_profile = {
+        "full_name": getattr(person, "full_name", None) or getattr(person, "display_name", None) or auth_context.actor_id,
+        "email": getattr(person, "email", None) or auth_context.actor_id,
+        "phone": getattr(person, "phone", None),
+    }
+    requester_account = {
+        "account_mode": account_mode,
+        "person_id": person.person_id if person else None,
+        "binding_id": binding.binding_id if binding is not None else None,
+        "display_name": getattr(person, "display_name", None),
+        "full_name": getattr(person, "full_name", None),
+        "email": getattr(person, "email", None),
+        "validation": "web_requester_identity_resolved",
+    }
+    requester_context_snapshot = await resolver.build_requester_context(
+        actor_id=auth_context.actor_id,
+        person=person,
+        binding=binding,
+        account_mode=account_mode,
+        profile_schema=profile_schema,
+    )
+    snapshot_profile = (
+        requester_context_snapshot.get("profile")
+        if isinstance(requester_context_snapshot.get("profile"), dict)
+        else {}
+    )
+    requester_profile["building"] = snapshot_profile.get("building")
+    requester_profile["room"] = snapshot_profile.get("room")
+    extra_custom_fields: dict[str, Any] = {
+        "request_context": request_context,
+        "primary_device_resolution": primary_device_resolution,
+        **RequesterIdentityResolver.requester_context_custom_fields(requester_context_snapshot),
+    }
+    if scenario_snapshot is not None:
+        extra_custom_fields["request_scenario"] = scenario_snapshot
+    on_behalf_context: dict[str, str] | None = None
+    if form_key:
+        extra_custom_fields.update(
+            _manual_triage_custom_fields(
+                availability_policy=availability_policy,
+                no_valid_target=not has_agent_binding and not _raw_on_behalf_context(data).get("affected_person_id"),
             )
-        except PermissionError as exc:
-            return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
-        completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
-        availability_policy = await _resolve_form_availability_policy(
+        )
+    if account_mode == "browser_no_device":
+        extra_custom_fields["no_device"] = {
+            "created_from": "requester_portal",
+            "device_scope": "none",
+            "primary_device_resolution": primary_device_resolution,
+        }
+    template_context: dict[str, Any] = {}
+    catalog_process_fields: dict[str, Any] = {}
+    ticket_type = _clean(data.get("ticket_type"), max_length=64) or "request"
+    normalized_priority = build_default_priority_payload(data)
+    catalog_selection = None
+    catalog_template_key = request_template_key or form_key
+    if service_code or offering_code or offering_full_code or catalog_template_key:
+        try:
+            catalog_selection = await ServiceCatalogRuntimeResolver(session).resolve_selection(
+                service_code=service_code or None,
+                offering_code=offering_code or None,
+                offering_full_code=offering_full_code or None,
+                request_template_key=catalog_template_key or None,
+                actor_role="requester",
+            )
+            if catalog_selection.request_template_key:
+                request_template_key = catalog_selection.request_template_key
+                form_key = form_key or request_template_key
+        except ServiceCatalogResolutionError as exc:
+            return _validation_error(exc.details)
+    if form_key:
+        try:
+            validated_submission = await resolve_create_form_submission(
+                session,
+                pack_key=pack_key,
+                pack_version=pack_version,
+                form_key=form_key,
+                request_template_key=request_template_key,
+                raw_values=form_payload,
+                include_setup_assistance=True,
+            )
+            if scenario_snapshot is not None:
+                from tickets.request_scenario_submission import augment_scenario_submission
+                validated_submission = augment_scenario_submission(validated_submission, scenario_snapshot)
+            if catalog_selection is not None:
+                validated_submission = await ServiceCatalogRuntimeResolver(session).apply_to_validated_submission(
+                    validated_submission,
+                    catalog_selection,
+                )
+            validated_submission = await apply_effective_registry_policies(session, validated_submission)
+            extra_custom_fields.update(build_form_custom_fields(validated_submission))
+            catalog_process_fields = (
+                validated_submission.get("catalog_fields")
+                if isinstance(validated_submission.get("catalog_fields"), dict)
+                else {}
+            )
+            diagnostic_consent = normalize_diagnostic_consent_payload(data.get("diagnostic_consent"))
+            if diagnostic_consent:
+                extra_custom_fields["diagnostic_consent"] = diagnostic_consent
+            ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
+            template_context = (
+                validated_submission.get("template_context")
+                if isinstance(validated_submission.get("template_context"), dict)
+                else {}
+            )
+            if isinstance(template_context.get("service_catalog"), dict):
+                extra_custom_fields["service_catalog"] = template_context["service_catalog"]
+            priority_policy = (
+                template_context.get("priority_policy")
+                if isinstance(template_context.get("priority_policy"), dict)
+                else {}
+            )
+            if priority_policy:
+                normalized_priority = compute_priority_from_policy(
+                    priority_policy=priority_policy,
+                    submitted_values=validated_submission.get("submitted_values") or {},
+                    fallback=_priority_policy_fallback(data),
+                )
+        except ValueError as exc:
+            details = exc.args[0] if exc.args else "invalid form payload"
+            return _validation_error({"form_payload": details})
+    policy = template_context.get("on_behalf_policy") if isinstance(template_context.get("on_behalf_policy"), dict) else {}
+    if not policy and _raw_on_behalf_context(data).get("affected_person_id"):
+        policy = await _resolve_on_behalf_policy(
             session,
             pack_key=pack_key,
             pack_version=pack_version,
             form_key=form_key,
             request_template_key=request_template_key,
         )
-        if _profile_completion_blocks_for_form(completion, "ticket_create", availability_policy):
-            await _write_requester_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_profile",
-                event_type="profile_incomplete_blocked",
-                severity="warning",
-                result="blocked",
-                person_id=getattr(person, "person_id", None),
-                error_code="REQUESTER_PROFILE_INCOMPLETE",
-                payload={"action": "ticket_create", "completion": completion},
-            )
-            return _profile_incomplete_error(completion)
-        if availability_policy.get("contact_required") and not _has_contact_for_emergency(person, form_payload, data):
-            return _error(
-                "Укажите телефон или другой контакт для связи.",
-                status=400,
-                error_code="REQUESTER_CONTACT_REQUIRED",
-            )
-        has_agent_binding = binding is not None
-        if (
-            form_key
-            and not supplied_device_id
-            and not has_agent_binding
-            and not availability_policy.get("available_without_agent_binding")
-            and not _raw_on_behalf_context(data).get("affected_person_id")
-        ):
-            await _write_requester_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_ticket_create",
-                event_type="ticket_create_blocked",
-                severity="warning",
-                result="blocked",
-                person_id=getattr(person, "person_id", None),
-                error_code="REQUESTER_DEVICE_REQUIRED",
-                payload={
-                    "action": "ticket_create",
-                    "form_key": form_key,
-                    "request_template_key": request_template_key,
-                    "has_agent_binding": has_agent_binding,
-                    "available_without_agent_binding": bool(
-                        availability_policy.get("available_without_agent_binding")
-                    ),
-                },
-            )
-            return _error(
-                "Для этой формы нужен компьютер. Выберите привязанный компьютер или другую форму обращения.",
-                status=403,
-                error_code="REQUESTER_DEVICE_REQUIRED",
-            )
-
-        requester_profile = {
-            "full_name": getattr(person, "full_name", None) or getattr(person, "display_name", None) or auth_context.actor_id,
-            "email": getattr(person, "email", None) or auth_context.actor_id,
-            "phone": getattr(person, "phone", None),
-        }
-        requester_account = {
-            "account_mode": account_mode,
-            "person_id": person.person_id if person else None,
-            "binding_id": binding.binding_id if binding is not None else None,
-            "display_name": getattr(person, "display_name", None),
-            "full_name": getattr(person, "full_name", None),
-            "email": getattr(person, "email", None),
-            "validation": "web_requester_identity_resolved",
-        }
-        requester_context_snapshot = await resolver.build_requester_context(
-            actor_id=auth_context.actor_id,
-            person=person,
-            binding=binding,
-            account_mode=account_mode,
-            profile_schema=profile_schema,
+    try:
+        on_behalf_context = await _authorize_on_behalf_context(
+            session,
+            auth_context=auth_context,
+            creator=_requester_ref_from_resolved_person(person),
+            policy=policy,
+            data=data,
         )
-        snapshot_profile = (
-            requester_context_snapshot.get("profile")
-            if isinstance(requester_context_snapshot.get("profile"), dict)
-            else {}
-        )
-        requester_profile["building"] = snapshot_profile.get("building")
-        requester_profile["room"] = snapshot_profile.get("room")
-        extra_custom_fields: dict[str, Any] = {
-            "request_context": request_context,
-            "primary_device_resolution": primary_device_resolution,
-            **RequesterIdentityResolver.requester_context_custom_fields(requester_context_snapshot),
-        }
-        on_behalf_context: dict[str, str] | None = None
-        if form_key:
-            extra_custom_fields.update(
-                _manual_triage_custom_fields(
-                    availability_policy=availability_policy,
-                    no_valid_target=not has_agent_binding and not _raw_on_behalf_context(data).get("affected_person_id"),
-                )
-            )
-        if account_mode == "browser_no_device":
-            extra_custom_fields["no_device"] = {
-                "created_from": "requester_portal",
-                "device_scope": "none",
-                "primary_device_resolution": primary_device_resolution,
-            }
-        template_context: dict[str, Any] = {}
-        catalog_process_fields: dict[str, Any] = {}
-        ticket_type = _clean(data.get("ticket_type"), max_length=64) or "request"
-        normalized_priority = build_default_priority_payload(data)
-        catalog_selection = None
-        catalog_template_key = request_template_key or form_key
-        if service_code or offering_code or offering_full_code or catalog_template_key:
-            try:
-                catalog_selection = await ServiceCatalogRuntimeResolver(session).resolve_selection(
-                    service_code=service_code or None,
-                    offering_code=offering_code or None,
-                    offering_full_code=offering_full_code or None,
-                    request_template_key=catalog_template_key or None,
-                    actor_role="requester",
-                )
-                if catalog_selection.request_template_key:
-                    request_template_key = catalog_selection.request_template_key
-                    form_key = form_key or request_template_key
-            except ServiceCatalogResolutionError as exc:
-                return _validation_error(exc.details)
-        if form_key:
-            try:
-                validated_submission = await resolve_create_form_submission(
-                    session,
-                    pack_key=pack_key,
-                    pack_version=pack_version,
-                    form_key=form_key,
-                    request_template_key=request_template_key,
-                    raw_values=form_payload,
-                    include_setup_assistance=True,
-                )
-                if catalog_selection is not None:
-                    validated_submission = await ServiceCatalogRuntimeResolver(session).apply_to_validated_submission(
-                        validated_submission,
-                        catalog_selection,
-                    )
-                validated_submission = await apply_effective_registry_policies(session, validated_submission)
-                extra_custom_fields.update(build_form_custom_fields(validated_submission))
-                catalog_process_fields = (
-                    validated_submission.get("catalog_fields")
-                    if isinstance(validated_submission.get("catalog_fields"), dict)
-                    else {}
-                )
-                diagnostic_consent = normalize_diagnostic_consent_payload(data.get("diagnostic_consent"))
-                if diagnostic_consent:
-                    extra_custom_fields["diagnostic_consent"] = diagnostic_consent
-                ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
-                template_context = (
-                    validated_submission.get("template_context")
-                    if isinstance(validated_submission.get("template_context"), dict)
-                    else {}
-                )
-                if isinstance(template_context.get("service_catalog"), dict):
-                    extra_custom_fields["service_catalog"] = template_context["service_catalog"]
-                priority_policy = (
-                    template_context.get("priority_policy")
-                    if isinstance(template_context.get("priority_policy"), dict)
-                    else {}
-                )
-                if priority_policy:
-                    normalized_priority = compute_priority_from_policy(
-                        priority_policy=priority_policy,
-                        submitted_values=validated_submission.get("submitted_values") or {},
-                        fallback=_priority_policy_fallback(data),
-                    )
-            except ValueError as exc:
-                details = exc.args[0] if exc.args else "invalid form payload"
-                return _validation_error({"form_payload": details})
-        policy = template_context.get("on_behalf_policy") if isinstance(template_context.get("on_behalf_policy"), dict) else {}
-        if not policy and _raw_on_behalf_context(data).get("affected_person_id"):
-            policy = await _resolve_on_behalf_policy(
-                session,
-                pack_key=pack_key,
-                pack_version=pack_version,
-                form_key=form_key,
-                request_template_key=request_template_key,
-            )
-        try:
-            on_behalf_context = await _authorize_on_behalf_context(
-                session,
-                auth_context=auth_context,
-                creator=_requester_ref_from_resolved_person(person),
-                policy=policy,
-                data=data,
-            )
-        except _OnBehalfRequestError as exc:
-            await _write_requester_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_ticket_create",
-                event_type="ticket_create_blocked",
-                severity="warning",
-                result="blocked",
-                device_id=device_id or None,
-                person_id=getattr(person, "person_id", None),
-                error_code=exc.error_code,
-                payload={
-                    "action": "ticket_create",
-                    "form_key": form_key,
-                    "request_template_key": request_template_key,
-                    "has_on_behalf_request": bool(_raw_on_behalf_context(data).get("affected_person_id")),
-                },
-            )
-            return _error(str(exc), status=exc.status, error_code=exc.error_code)
-        try:
-            completed = await ledger.reserve(request_key)
-            if completed is not None:
-                return _success(await replay_created_ticket(session, completed, resolver, actor_id=auth_context.actor_id))
-        except CreateRequestConflict as exc:
-            await session.rollback()
-            return _error(str(exc), status=409, error_code="CREATE_REQUEST_CONFLICT")
-        except PermissionError:
-            await session.rollback()
-            return _error("Обращение недоступно.", status=404, error_code="TICKET_NOT_FOUND")
-        try:
-            created = await create_ticket_with_side_effects(
-                session,
-                device_id=device_id,
-                device_selection="none" if data.get("device_scope") == "none" else (None if on_behalf_context else supplied_device_id or None),
-                requester_id=auth_context.actor_id,
-                title=title,
-                description=description,
-                user_display_name=_clean(data.get("user_display_name"), max_length=300)
-                or getattr(person, "display_name", None)
-                or auth_context.actor_id,
-                requester_profile=requester_profile,
-                normalized_priority=normalized_priority,
-                initial_message_text=description,
-                initial_message_sender_role="user",
-                initial_message_from="user",
-                include_public_access=True,
-                ticket_type=ticket_type,
-                category_id=template_context.get("category_id"),
-                service_id=template_context.get("service_id"),
-                subcategory_id=template_context.get("subcategory_id"),
-                sla_policy_id=template_context.get("sla_policy_id"),
-                catalog_service_id=catalog_process_fields.get("catalog_service_id"),
-                catalog_offering_id=catalog_process_fields.get("catalog_offering_id"),
-                service_code=catalog_process_fields.get("service_code"),
-                offering_code=catalog_process_fields.get("offering_code"),
-                request_type=catalog_process_fields.get("request_type"),
-                business_criticality=catalog_process_fields.get("business_criticality"),
-                reporting_category=catalog_process_fields.get("reporting_category"),
-                service_owner_actor_id=catalog_process_fields.get("service_owner_actor_id"),
-                support_group_code=catalog_process_fields.get("support_group_code"),
-                extra_custom_fields=extra_custom_fields,
-                requester_account=requester_account,
-                verified_requester_binding=(
-                    VerifiedRequesterBinding(
-                        device_id=str(binding.device_id),
-                        person_id=str(person.person_id),
-                        binding_id=str(binding.binding_id),
-                    )
-                    if account_mode == "confirmed_binding" and person is not None and binding is not None
-                    else None
-                ),
-                ticket_context=on_behalf_context,
-                state=request.app.get("state"),
-            )
-        except RequesterIdentityMismatch:
-            await session.rollback()
-            return _error(
-                "Заявитель не соответствует подтверждённой учётной записи.",
-                status=403, error_code="REQUESTER_IDENTITY_FORBIDDEN",
-            )
-        except TicketInitializationError:
-            await session.rollback()
-            return _error(
-                "Не удалось подготовить обращение. Повторите попытку позже.",
-                status=503, error_code="TICKET_INITIALIZATION_UNAVAILABLE",
-            )
-        ticket_row = created["ticket"]
-        if ticket_row.device_id:
-            await _attach_registry_endpoint_mapping(ticket_row, DomainPortContainer.from_config(registry_session=session))
-        ticket_custom_fields = ticket_row.custom_fields if isinstance(ticket_row.custom_fields, dict) else {}
+    except _OnBehalfRequestError as exc:
         await _write_requester_web_observer_event(
             session,
             request=request,
             auth_context=auth_context,
             source="requester_ticket_create",
-            event_type="ticket_create_succeeded",
-            severity="info",
-            result="created",
-            ticket_id=created["ticket_id"],
-            device_id=getattr(ticket_row, "device_id", None) or device_id,
+            event_type="ticket_create_blocked",
+            severity="warning",
+            result="blocked",
+            device_id=device_id or None,
             person_id=getattr(person, "person_id", None),
+            error_code=exc.error_code,
             payload={
-                "request_context": request_context,
-                "account_mode": account_mode,
+                "action": "ticket_create",
                 "form_key": form_key,
                 "request_template_key": request_template_key,
-                "has_ticket_context": isinstance(ticket_custom_fields.get("ticket_context"), dict),
-                "diagnostic_target_source": ticket_custom_fields.get("diagnostic_target_source"),
+                "has_on_behalf_request": bool(_raw_on_behalf_context(data).get("affected_person_id")),
             },
         )
-        target_observer = _diagnostic_target_observer_payload(ticket_row, ticket_custom_fields)
-        if target_observer is not None:
-            await _write_requester_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_ticket_create",
-                event_type=target_observer["event_type"],
-                severity="warning",
-                result="skipped",
-                ticket_id=created["ticket_id"],
-                device_id=target_observer["device_id"],
-                person_id=getattr(person, "person_id", None),
-                error_code=target_observer["error_code"],
-                payload=target_observer["payload"],
-            )
+        return _error(str(exc), status=exc.status, error_code=exc.error_code)
+    try:
+        completed = await ledger.reserve(request_key)
+        if completed is not None:
+            return _success(await replay_created_ticket(session, completed, resolver, actor_id=auth_context.actor_id))
+    except CreateRequestConflict as exc:
+        await session.rollback()
+        return _error(str(exc), status=409, error_code="CREATE_REQUEST_CONFLICT")
+    except PermissionError:
+        await session.rollback()
+        return _error("Обращение недоступно.", status=404, error_code="TICKET_NOT_FOUND")
+    try:
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            device_selection="none" if data.get("device_scope") == "none" else (None if on_behalf_context else supplied_device_id or None),
+            requester_id=auth_context.actor_id,
+            title=title,
+            description=description,
+            user_display_name=_clean(data.get("user_display_name"), max_length=300)
+            or getattr(person, "display_name", None)
+            or auth_context.actor_id,
+            requester_profile=requester_profile,
+            normalized_priority=normalized_priority,
+            initial_message_text=description,
+            initial_message_sender_role="user",
+            initial_message_from="user",
+            include_public_access=True,
+            ticket_type=ticket_type,
+            category_id=template_context.get("category_id"),
+            service_id=template_context.get("service_id"),
+            subcategory_id=template_context.get("subcategory_id"),
+            sla_policy_id=template_context.get("sla_policy_id"),
+            catalog_service_id=catalog_process_fields.get("catalog_service_id"),
+            catalog_offering_id=catalog_process_fields.get("catalog_offering_id"),
+            service_code=catalog_process_fields.get("service_code"),
+            offering_code=catalog_process_fields.get("offering_code"),
+            request_type=catalog_process_fields.get("request_type"),
+            business_criticality=catalog_process_fields.get("business_criticality"),
+            reporting_category=catalog_process_fields.get("reporting_category"),
+            service_owner_actor_id=catalog_process_fields.get("service_owner_actor_id"),
+            support_group_code=catalog_process_fields.get("support_group_code"),
+            extra_custom_fields=extra_custom_fields,
+            requester_account=requester_account,
+            verified_requester_binding=(
+                VerifiedRequesterBinding(
+                    device_id=str(binding.device_id),
+                    person_id=str(person.person_id),
+                    binding_id=str(binding.binding_id),
+                )
+                if account_mode == "confirmed_binding" and person is not None and binding is not None
+                else None
+            ),
+            ticket_context=on_behalf_context,
+            state=request.app.get("state"),
+        )
+    except RequesterIdentityMismatch:
+        await session.rollback()
+        return _error(
+            "Заявитель не соответствует подтверждённой учётной записи.",
+            status=403, error_code="REQUESTER_IDENTITY_FORBIDDEN",
+        )
+    except TicketInitializationError:
+        await session.rollback()
+        return _error(
+            "Не удалось подготовить обращение. Повторите попытку позже.",
+            status=503, error_code="TICKET_INITIALIZATION_UNAVAILABLE",
+        )
+    ticket_row = created["ticket"]
+    if ticket_row.device_id:
+        await _attach_registry_endpoint_mapping(ticket_row, DomainPortContainer.from_config(registry_session=session))
+    ticket_custom_fields = ticket_row.custom_fields if isinstance(ticket_row.custom_fields, dict) else {}
+    await _write_requester_web_observer_event(
+        session,
+        request=request,
+        auth_context=auth_context,
+        source="requester_ticket_create",
+        event_type="ticket_create_succeeded",
+        severity="info",
+        result="created",
+        ticket_id=created["ticket_id"],
+        device_id=getattr(ticket_row, "device_id", None) or device_id,
+        person_id=getattr(person, "person_id", None),
+        payload={
+            "request_context": request_context,
+            "account_mode": account_mode,
+            "form_key": form_key,
+            "request_template_key": request_template_key,
+            "has_ticket_context": isinstance(ticket_custom_fields.get("ticket_context"), dict),
+            "diagnostic_target_source": ticket_custom_fields.get("diagnostic_target_source"),
+        },
+    )
+    target_observer = _diagnostic_target_observer_payload(ticket_row, ticket_custom_fields)
+    if target_observer is not None:
         await _write_requester_web_observer_event(
             session,
             request=request,
             auth_context=auth_context,
-            source="web_form_runtime",
-            event_type="form_runtime_create_succeeded",
-            severity="info",
-            result="created",
+            source="requester_ticket_create",
+            event_type=target_observer["event_type"],
+            severity="warning",
+            result="skipped",
             ticket_id=created["ticket_id"],
-            device_id=getattr(ticket_row, "device_id", None) or device_id,
+            device_id=target_observer["device_id"],
             person_id=getattr(person, "person_id", None),
-            payload=_web_form_runtime_create_payload(
-                data,
-                ticket=ticket_row,
-                ticket_custom_fields=ticket_custom_fields,
-                form_key=form_key,
-                request_template_key=request_template_key,
-                account_mode=account_mode,
-            ),
+            error_code=target_observer["error_code"],
+            payload=target_observer["payload"],
         )
-        await ledger.complete(request_key, created["ticket_id"])
-        response = _success(created_ticket_response(created["ticket"], created.get("public_access_code")))
-        await session.commit()
+    await _write_requester_web_observer_event(
+        session,
+        request=request,
+        auth_context=auth_context,
+        source="web_form_runtime",
+        event_type="form_runtime_create_succeeded",
+        severity="info",
+        result="created",
+        ticket_id=created["ticket_id"],
+        device_id=getattr(ticket_row, "device_id", None) or device_id,
+        person_id=getattr(person, "person_id", None),
+        payload=_web_form_runtime_create_payload(
+            data,
+            ticket=ticket_row,
+            ticket_custom_fields=ticket_custom_fields,
+            form_key=form_key,
+            request_template_key=request_template_key,
+            account_mode=account_mode,
+        ),
+    )
+    await ledger.complete(request_key, created["ticket_id"])
+    response = _success(created_ticket_response(created["ticket"], created.get("public_access_code")))
 
     return response

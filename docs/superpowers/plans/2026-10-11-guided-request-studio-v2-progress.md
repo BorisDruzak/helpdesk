@@ -444,3 +444,44 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
   were dropped by the harness. Screenshots are preserved under ignored
   `artifacts/browser_checks/guided-request-studio-v2/p6/`. No live publication,
   deployment, ticket creation or Endpoint execution. P7–P10 remain required.
+
+## P7 PASS — canonical ticket submission
+
+- Revalidated visited visible answers become trusted mapped facts/roles and a
+  human support snapshot. Existing requester preview/create helpers retain
+  canonical profile/device/form, priority/routing/SLA/OLA/approval/closure gates.
+  Session lock, ticket initialization, requester create ledger and redacted audit
+  share one transaction. Repeated/concurrent submit returns one linked ticket.
+- Genuine RED covered missing trusted submission/DTO, numeric confirmation
+  coercion, missing selected-device context and missing UI preview/submit.
+  Each passed after its implementation. Initial PostgreSQL failures were test
+  fixture defects: catalog snapshot shape, invalid standard continuity enum and
+  inline approval configuration instead of a published policy reference. They
+  were corrected without weakening the canonical processing services.
+- Final fast backend run across submission/session/admin/graph/runtime and
+  requester create/identity/atomicity/form regressions: **217 passed in 1.92s**.
+  Frontend `pnpm --dir webapp test src/features/requester/scenario-session.test.tsx
+  src/pages/requester/new-request-page.test.tsx`: **28 passed in 4.31s**.
+  `pnpm --dir webapp build`: **PASS**; existing common chunk warning remains.
+- `python -m pytest server/tests/test_request_scenario_submit_api.py -q`:
+  **3 passed in 148.71s**. Actual mapped facts select P2 and a conditional queue,
+  initialize SLA/OLA deadlines, require approval and retain the closure policy.
+  Forced audit failure rolls back ticket, ledger and session; retry succeeds.
+- Final PostgreSQL regression: concurrent submit/snapshot/owner/device case,
+  requester catalog form create/preview, no-device create/preview, actor-scoped
+  HTTP replay, initialization rollback/retry, old form payload, standalone
+  registry public creation and default catalog fallback:
+  **9 passed in 291.08s**. No skips or expected failures added.
+- After rebuilding the served bundle, `PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm
+  --dir webapp test:e2e guided-requester.spec.ts`: **8 passed in 21.0s**.
+  Both self-service and ticket flows pass at 1366, 1440, 1920 and 820 widths,
+  including preview, confirmation, created-ticket link, reload/resume, full
+  primary action visibility, no body overflow and no normal console/network
+  errors. These fixture checks do not replace P10 actual staging acceptance.
+- Bounded independent review has no blockers. Two new test files have zero
+  inventory issues. CODEMAP/admin guide document both routes and transaction
+  ownership. Screenshots retained under ignored
+  `artifacts/browser_checks/guided-request-studio-v2/p7/` (1366 inspected).
+  No listeners remain on 4188/55438; owned temporary databases are harness-cleaned.
+  Publication readiness/source pinning remain P8; no deployment, live offering
+  publication or Endpoint execution. P8–P10 remain required.

@@ -44,7 +44,7 @@ def _safe_text(value: Any) -> str | None:
     return text or None
 
 
-async def build_requester_service_catalog_preview(session: Any, payload: dict[str, Any]) -> dict[str, Any]:
+async def build_requester_service_catalog_preview(session: Any, payload: dict[str, Any], *, scenario_snapshot=None) -> dict[str, Any]:
     resolver = ServiceCatalogRuntimeResolver(session)
     try:
         selection = await resolver.resolve_selection(
@@ -72,6 +72,9 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
             request_template_key=template_key,
             raw_values=form_payload,
         )
+        if scenario_snapshot is not None:
+            from tickets.request_scenario_submission import augment_scenario_submission
+            validated = augment_scenario_submission(validated, scenario_snapshot)
         validated = await resolver.apply_to_validated_submission(validated, selection)
         await apply_effective_registry_policies(session, validated)
     except ValueError as exc:
