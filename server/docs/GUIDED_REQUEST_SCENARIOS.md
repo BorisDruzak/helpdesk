@@ -93,3 +93,51 @@ and derived results. Revision/current-block checks reject stale input. Ticket
 creation, authorization, immutable version pinning and persistent compare-and-swap
 are caller responsibilities in later stages. This engine cannot create tickets,
 execute policies or dispatch Endpoint operations.
+
+## Admin API (P3)
+
+New routes are under `/api/web/admin/request-studio`; existing capabilities,
+validate-draft, publish-preview and publish endpoints keep their legacy contracts.
+All new success responses are `{status: "success", data: ...}`; failures include
+a stable error_code without raw failed payloads or database exception parameters.
+
+| Method/path | Access | Behavior |
+| --- | --- | --- |
+| GET `/catalog` | admin, auditor | Categories, existing services/offerings, scenario summaries; q/status/offset/limit |
+| POST `/categories` | admin | Create category from service_code/parent_id/slug/title/description/sort_order/visibility/lifecycle_status |
+| PUT `/categories/{identifier}` | admin | Full category update with expected revision |
+| DELETE `/categories/{identifier}?revision=N` | admin | Archive empty category; preserves referenced rows |
+| POST `/scenarios` | admin | `{definition}` creates disabled scenario and draft revision 1 |
+| GET `/scenarios/{identifier}` | admin, auditor | Scenario metadata and editable draft |
+| PUT `/scenarios/{identifier}/draft` | admin | `{definition, revision}` saves by optimistic revision |
+| POST `/scenarios/{identifier}/archive` | admin | `{revision}` archives/disables without mutating immutable versions |
+| GET `/scenarios/{identifier}/versions` | admin, auditor | Immutable version history, newest first |
+| POST `/scenarios/{identifier}/simulate` | admin, auditor | `{revision, steps}` executes canonical pure graph from its initial state |
+
+Catalog query defaults are status=all, offset=0, limit=100 (maximum 500). Unknown
+parameters, invalid status, negative offsets and oversized limits return 400.
+The errors filter includes an invalid new draft even when an older version is
+published; the draft filter includes all unpublished scenarios, including invalid
+drafts. Archived scenarios have their own filter.
+Category entries report effective_visibility as the intersection of the service
+and all ancestor/category restrictions; setting a category public cannot widen a
+restricted service. Existing offering visibility remains authoritative as well.
+
+Draft save can preserve an incomplete graph; simulation/publication require a
+valid executable graph. Scenario key, service and offering remain immutable;
+template binding must match the existing offering and a real RequestTemplate.
+To copy a scenario, create a new scenario_key with the same offering or another
+verified offering/template binding. No Service/Offering/Template row is created
+or rewritten. Published-version creation, rollback-as-new-version and enablement
+use the separate P8 confirmation/publication protocol; no generic version mutation
+or enable flag is accepted in these draft APIs.
+
+Mutations return 409 for stale revision/duplicates/non-empty category/archive
+conflicts, 404 for missing records, and 400 for unsafe bindings/tree constraints.
+Category service is immutable. Tree changes and scenario moves/archive serialize
+with the SQL service advisory lock; locked draft reads refresh the identity map
+before checking revision. Audit actor comes only from AuthContext. Draft audit
+records contain metadata/revision/definition hash rather than full answers or
+arbitrary content. A failed audit rolls back the configuration write. Simulation
+does not update drafts, sessions, tickets, policies or Endpoint state. Bodies are
+limited to 1 MiB before parsing, and simulation is limited to 256 steps.

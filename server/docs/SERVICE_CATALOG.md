@@ -15,6 +15,14 @@ This is not the CMDB registry service layer. `registry_services` remains invento
 
 Tickets also store `custom_fields.service_catalog` with the selected service/offering, template version, effective policy refs/sources, reporting category, criticality and selection source.
 
+Guided Request Studio adds navigation categories and versioned scenario drafts
+over these existing records; it does not create a second service/offering catalog.
+Its admin CRUD/search/simulation routes, revision/audit rules and migration 147
+boundary are documented in [GUIDED_REQUEST_SCENARIOS.md](GUIDED_REQUEST_SCENARIOS.md).
+Category visibility intersects service/ancestor/offering restrictions. Draft save
+does not publish or enable a requester scenario; requester/publication stages are
+separate gates. Existing catalog and form-only clients retain their contracts.
+
 ## Runtime
 
 `server/tickets/service_catalog_runtime.py` resolves create/preview input by:

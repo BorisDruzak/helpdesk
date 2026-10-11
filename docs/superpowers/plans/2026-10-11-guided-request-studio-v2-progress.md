@@ -226,3 +226,49 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
 - Changed: three pure `tickets/request_scenario_*` modules, runtime test,
   DTO/TS transition priority, domain docs, CODEMAP, PLANS and ledger. No HTTP
   route, actual ticket/Endpoint operation, deployment or publication.
+
+## P3 evidence (PASS)
+
+- P2 commit: `8733dccb0409e1b0a58ddaf2d09be42a7485514a`
+  (`feat(studio): validate and execute deterministic scenario graphs`).
+- Initial PostgreSQL HTTP RED: **12 failed in 312.61s**; absent routes returned
+  404 for CRUD, RBAC and catalog operations. Six auditor mutation probes initially
+  used separate cases; the final suite batches the same six probes in one test
+  to avoid repeated full cleanup/app setup without reducing coverage.
+- First implementation run: **3 failed, 11 passed in 411.11s**. Category UPDATE,
+  draft UPDATE and the concurrent-save test returned 500. Independent review
+  confirmed SQLAlchemy 2.0.51 `onupdate=func.now()` expires updated_at after UPDATE
+  with eager_defaults=auto; synchronous audit/JSON projection then performs
+  implicit IO. Explicit awaited refresh now resolves both scenario/draft and
+  category timestamps before projection. Corrected PostgreSQL rerun passed.
+- Independent review also found string query offset/limit rejected by strict
+  DTO parsing. Fast handler-boundary regression RED **1 failed, 9 passed**;
+  `model_validate_strings` fixes HTTP query conversion while retaining bounds.
+  Admin boundary suite before final filter regression: **11 passed**, including unknown/bounded query
+  inputs, strict revisions, streamed/chunked valid body and 1 MiB rejection.
+- Error-filter regression RED **1 failed, 11 deselected**: a published scenario's
+  invalid new draft was excluded. Filter now includes all non-archived drafts with
+  issues, preserving published status. Final combined boundary suite:
+  **92 passed, 3 deselected** (admin boundary 12);
+  requester HTTP auth remains P6 RED. Test inventory **2 files, zero issues**.
+- Cleanup classification audit: all nine risk counters zero; profiles audit:
+  **272 files, zero missing profiles**. Scoped workspace and diff checks pass.
+- `python -m pytest server/tests/test_request_scenario_admin_api.py
+  server/tests/test_request_studio_api.py -q -x --tb=short`: **14 passed in 418.56s**
+  (9 new API acceptance tests + 5 existing Studio regression tests). Covers actual
+  category updates/tree conflicts/audit, copy/move/reload, auth/RBAC, query bounds,
+  immutable binding/authority rejection, simulator no draft mutation, optimistic
+  edits, exactly one concurrent-save winner and rollback on audit failure.
+- Independent final source review: no remaining concrete blockers, including
+  the filter correction. Reviewer did not rerun PostgreSQL; the command above is
+  the runtime receipt. Own per-run database/tunnel closed on successful exit;
+  retained task templates remain for subsequent stages and final cleanup.
+- New API/docs impact: admin/auditor read and pure simulation, admin-only
+  category/scenario mutations, immutable catalog binding, draft revision and
+  same-transaction catalog audit. Existing Studio endpoints remain unchanged.
+  No publication/enablement/requester route, migration, running deployment or
+  Endpoint dispatch is added. Version history is read-only until P8 publication.
+- Changed files: scenario repo, admin handlers/DTO, routes, two admin test files,
+  CODEMAP, GUIDED_REQUEST_SCENARIOS, SERVICE_CATALOG, REQUEST_FORM_BUILDER,
+  PLANS and this ledger. Browser/typecheck are not repeated for this pure backend
+  stage; P2 frontend receipts remain applicable. Browser/CI gates still pending.

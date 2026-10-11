@@ -9,7 +9,9 @@ P1 PASS: typed DTO/TS + migration147/storage; PostgreSQL10 and corrected FK/conc
 DTO/reset42 and frontendwire1 pass; tsc, cleanup/inventory/workspace gates pass.
 P2 PASS: canonical graph runtime, 80 domain/runtime/reset and 18 legacy form/preview
 tests; frontend21, tsc and inventory pass. Independent review has no blockers.
-P3 admin APIs are next; P4–P10 remain gated.
+P3 PASS: admin CRUD/RBAC/CAS/audit + pure simulation; PostgreSQL14 (9new+5legacy),
+fast92, inventory/cleanup/workspace and independent review pass. P4 React catalog
+and five-step wizard are next; P5–P10 remain gated.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI

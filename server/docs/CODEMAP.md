@@ -43,7 +43,12 @@
   `request_scenario_runtime.py` executes that graph for simulation and sessions,
   normalizes visible answers through existing codecs and clears downstream state
   on Back. It has no DB, ticket creation or Endpoint dispatch side effects.
-  New authenticated APIs and persistent sessions are later stages.
+  `web_api/request_scenario_admin_handlers.py` exposes authenticated admin CRUD,
+  catalog/search/version reads and simulation; `dto/request_scenario_admin.py`
+  defines strict bodies and bounded inputs. `app/repos/request_scenario_repo.py`
+  binds existing catalog/template records, serializes edits by service/draft
+  revision and writes the existing catalog audit in the same transaction.
+  Persistent requester sessions and safe publication remain later stages.
 
 - `server/tickets/form_catalog.py` is the compatibility facade and catalog
   persistence/augmentation boundary. Existing import names and callable

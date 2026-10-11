@@ -353,6 +353,11 @@ from web_api.request_studio_handlers import (
     handle_web_admin_request_studio_publish_preview,
     handle_web_admin_request_studio_validate_draft,
 )
+from web_api.request_scenario_admin_handlers import (
+    handle_scenario_catalog, handle_scenario_category_create, handle_scenario_category_update,
+    handle_scenario_category_archive, handle_scenario_create, handle_scenario_detail,
+    handle_scenario_draft_save, handle_scenario_archive, handle_scenario_versions, handle_scenario_simulate,
+)
 from web_api.service_catalog_handlers import (
     handle_service_catalog_current,
     handle_service_catalog_offering,
@@ -700,6 +705,16 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/helpdesk/policy-health/{template_code}', handle_web_admin_policy_health_detail),
         web.post('/api/web/admin/helpdesk/policy-health/simulate', handle_web_admin_policy_health_simulate),
         web.get('/api/web/admin/request-studio/capabilities', handle_web_admin_request_studio_capabilities),
+        web.get('/api/web/admin/request-studio/catalog', handle_scenario_catalog),
+        web.post('/api/web/admin/request-studio/categories', handle_scenario_category_create),
+        web.put('/api/web/admin/request-studio/categories/{identifier}', handle_scenario_category_update),
+        web.delete('/api/web/admin/request-studio/categories/{identifier}', handle_scenario_category_archive),
+        web.post('/api/web/admin/request-studio/scenarios', handle_scenario_create),
+        web.get('/api/web/admin/request-studio/scenarios/{identifier}', handle_scenario_detail),
+        web.put('/api/web/admin/request-studio/scenarios/{identifier}/draft', handle_scenario_draft_save),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/archive', handle_scenario_archive),
+        web.get('/api/web/admin/request-studio/scenarios/{identifier}/versions', handle_scenario_versions),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/simulate', handle_scenario_simulate),
         web.post('/api/web/admin/request-studio/validate-draft', handle_web_admin_request_studio_validate_draft),
         web.post('/api/web/admin/request-studio/publish-preview', handle_web_admin_request_studio_publish_preview),
         web.post('/api/web/admin/request-studio/publish', handle_web_admin_request_studio_publish),
