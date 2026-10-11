@@ -237,3 +237,22 @@ this route, and preview/submission retain canonical mandatory facts, authorizati
 routing and policy checks. Other block kinds reject this result. Existing graphs
 without the explicit edge retain the acknowledgment flow. No migration or route
 is added; the typed instruction result extends the existing advance contract.
+
+## Strict publication runtime setup
+
+Before a staging or production operator opens publication preview, provision
+`REQUEST_STUDIO_CONFIRMATION_SECRET` through the approved secret channel into
+the protected runtime environment. Use a strong random value, shared across
+server processes. In pilot/prod with insecure defaults disabled, an absent
+value makes confirmation issuance fail; Health=ok alone does not prove this
+prerequisite. Do not depend on the development fallback, print the value, or
+include it in evidence or Git. Rotation invalidates outstanding confirmations;
+preserve an existing value during routine release deployment.
+
+Back up the protected configuration before an approved change, preserve its
+owner/mode, validate the resulting production configuration and use the reviewed
+service lifecycle script to load it. Then request a fresh source-bound publication
+preview for an owned draft. Record only readiness issues, outcome count and
+whether confirmation was issued, never its token. Keep the scenario disabled
+until exact-candidate CI and the required installed pilot checks allow enablement.
+Deployment and production enablement remain separate approvals.
