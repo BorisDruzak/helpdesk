@@ -7,6 +7,7 @@ from itertools import product
 
 from tickets.request_scenario_conditions import leaves
 from tickets.request_scenario_runtime import ScenarioRuntime, ScenarioInputError
+from tickets.request_scenario_validation import DIAGNOSTIC_FAILURE_STATUSES
 from web_api.dto.request_scenario import ScenarioAnswerRequest
 
 
@@ -15,7 +16,24 @@ class ReadinessCoverageError(ValueError):
 
 
 def submission_variants(definition, *, limit=512, process_fields=()):
-    runtime = ScenarioRuntime(definition)
+    diagnostics = [block.id for block in definition.blocks if block.kind == "diagnostic"]
+    if not diagnostics:
+        return _submission_variants(definition, limit=limit, process_fields=process_fields)
+    if len(DIAGNOSTIC_FAILURE_STATUSES) ** len(diagnostics) > limit:
+        raise ReadinessCoverageError("Слишком много сочетаний диагностических исходов. Разделите сценарий для полной проверки.")
+    terminals = []
+    for values in product(DIAGNOSTIC_FAILURE_STATUSES, repeat=len(diagnostics)):
+        states = _submission_variants(definition, limit=limit, process_fields=process_fields, diagnostic_outcomes=dict(zip(diagnostics, values)))
+        for state in states:
+            if state not in terminals:
+                terminals.append(state)
+            if len(terminals) > limit:
+                raise ReadinessCoverageError("Слишком много сочетаний ответов и диагностических исходов. Разделите сценарий для полной проверки.")
+    return terminals
+
+
+def _submission_variants(definition, *, limit, process_fields, diagnostic_outcomes=None):
+    runtime = ScenarioRuntime(definition, diagnostic_outcomes=diagnostic_outcomes)
     referenced = set()
     for block in definition.blocks:
         conditions = [edge.when for edge in block.transitions]

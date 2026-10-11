@@ -2,6 +2,7 @@ import type { AdminServiceCatalogOffering, AdminServiceCatalogService } from "..
 import { RequestStudioApiError } from "./api";
 import type { ScenarioAnswerRequest, ScenarioBlock, ScenarioDraftDefinition } from "./scenario-contract";
 import type { RequestFormField } from "../requester/types";
+import type { DiagnosticFailureStatus } from "./scenario-diagnostics";
 
 export type ScenarioStatus = "draft" | "published" | "errors" | "archived";
 export type ScenarioCategory = {
@@ -57,8 +58,8 @@ export function saveScenario(id: string, definition: ScenarioDraftDefinition, re
 export function archiveScenario(id: string, revision: number) { return request<ScenarioDetail>(`/scenarios/${encodeURIComponent(id)}/archive`, "POST", { revision }); }
 export function saveCategory(input: CategoryInput, id?: string) { return request<ScenarioCategory>(id ? `/categories/${encodeURIComponent(id)}` : "/categories", id ? "PUT" : "POST", input); }
 export function archiveCategory(id: string, revision: number) { return request<ScenarioCategory>(`/categories/${encodeURIComponent(id)}?revision=${revision}`, "DELETE"); }
-export function simulateScenario(id: string, revision: number, steps: ScenarioAnswerRequest[] = [], preview?: ScenarioAnswerRequest) {
-  return request<ScenarioSimulation>(`/scenarios/${encodeURIComponent(id)}/simulate`, "POST", { revision, steps, ...(preview ? { preview } : {}) });
+export function simulateScenario(id: string, revision: number, steps: ScenarioAnswerRequest[] = [], preview?: ScenarioAnswerRequest, diagnosticOutcomes?: Record<string, DiagnosticFailureStatus>) {
+  return request<ScenarioSimulation>(`/scenarios/${encodeURIComponent(id)}/simulate`, "POST", { revision, steps, ...(preview ? { preview } : {}), ...(diagnosticOutcomes && Object.keys(diagnosticOutcomes).length ? { diagnostic_outcomes: diagnosticOutcomes } : {}) });
 }
 export function previewScenarioPublication(id: string, revision: number) {
   return request<ScenarioPublicationPreview>(`/scenarios/${encodeURIComponent(id)}/publish-preview`, "POST", { revision });

@@ -31,7 +31,12 @@ publication and rollback into a new draft; canonical dry-run parity fixes.
 Fast122, frontend61, PostgreSQL14 plus latest parity/calendar3, browser11,
 build/inventory/workspace and independent review pass. Finite coverage limits
 and remaining processing/UI acceptance gaps are explicit in the ledger.
-P9/P10 remain gated, including safe diagnostics/attachments and actual staging acceptance.
+P9 PASS: admin-only typed diagnostic failure simulation and full failure-branch
+readiness; readable consent/fallback inspector and truthful result labels.
+Unsupported pre-ticket attachments stay fail-closed. Backend78, frontend51,
+PostgreSQL1 plus expanded side-effect repeat1, browser4 at all four viewports,
+build/inventory/workspace and independent review pass. P10 remains required,
+including actual A–J staging/CI and processing-selection/presentation gaps.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI

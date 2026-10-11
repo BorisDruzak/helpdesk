@@ -147,5 +147,26 @@ arbitrary content. A failed audit rolls back the configuration write. Simulation
 does not update drafts, sessions, tickets, policies or Endpoint state. Bodies are
 limited to 1 MiB before parsing, and simulation is limited to 256 steps.
 
+## Diagnostic and attachment boundary (P9)
+
+Only the admin/auditor simulator accepts optional `diagnostic_outcomes`, mapping
+existing diagnostic block IDs to `unavailable`, `denied`, `timeout` or
+`capability_absent`. Other statuses and non-diagnostic/unknown IDs return 400.
+Simulated results carry `simulated=true`, `operation_created=false`, a simulated
+reason and configured `consent_required` metadata. This metadata grants no
+consent or device authority. Requester commands reject outcome/consent injection;
+their diagnostics remain unavailable with the normal safe fallback.
+
+Readiness checks all four failure outcomes through the same evaluator, including
+explicit outcome-dependent branches. Diagnostic outcome combinations and combined
+answer variants are limited to 512; excessive coverage blocks publication.
+There is no pre-ticket network dispatch, operation or success outcome. The existing
+capability allowlist and required diagnostic fallback remain authoritative.
+
+Pre-ticket attachment staging is unavailable. The field DTO rejects `file`, the
+editor disables it, and readiness reports `attachments_unsupported` for an
+imported/stored malformed file field. No temporary upload, retention or download
+endpoint is introduced. Existing ticket-scoped attachments are unaffected.
+
 The catalog-first React wizard and editing behavior are documented in
 [`GUIDED_REQUEST_STUDIO_ADMIN.md`](../../docs/GUIDED_REQUEST_STUDIO_ADMIN.md).

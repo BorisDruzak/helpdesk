@@ -533,3 +533,55 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
   step, complete simulated-result presentation and actual A–J staging acceptance.
   These remain explicit P10 acceptance gaps; P8 only accepts its publication
   contract. P9/P10 remain required. No production deployment or live publication.
+
+### P9 — PASS (local/staging test gate)
+
+- P8 committed as `b0e508508d7825734e47d71d9599731f73c5818f`
+  (`feat(studio): publish validated scenario versions atomically`, 30 files).
+- GitNexus query was used before P9 source exploration. The committed index
+  points to the existing ticket-scoped diagnostic support boundary; no missing
+  path is interpreted as permission for pre-ticket execution.
+- Genuine RED: four missing runtime simulated outcome cases and the missing
+  admin simulator DTO. Implemented caller-only diagnostic failure outcomes:
+  unavailable/denied/timeout/capability_absent. Admin repo passes the validated
+  map to the canonical side-effect-free evaluator. Simulated results explicitly
+  carry simulated=true/operation_created=false and configured consent metadata.
+  Requester answer DTO rejects diagnostic outcome/consent/success injection.
+- The capability allowlist already exists in graph validation. An initial P9
+  test incorrectly expected that rejection in the DTO; moving the test to the
+  actual pre-runtime graph boundary preserves the existing regression contract.
+  No capability or safety check was relaxed. File fields remain DTO-rejected.
+- `python -m pytest server/tests/test_request_scenario_diagnostic_boundary.py
+  server/tests/test_request_scenario_runtime.py
+  server/tests/test_request_scenario_admin_contract.py -q`: **58 passed in 0.99s**.
+- Readiness now traverses all four failure statuses, including explicit diagnostic
+  outcome branches. Requester defaults remain unchanged. Imported malformed file
+  fields carry the explicit attachments_unsupported publication blocker; safe
+  pre-ticket upload is intentionally unavailable under the P9 allowed boundary.
+- Frontend inspector displays configured consent, required fallback and execution
+  boundary. Simulator lets the administrator choose a typed failure outcome and
+  marks results as simulation/no operation. Changing the outcome resets the run.
+- Independent review found blank names for new outcomes in the branch-condition
+  editor. Genuine regression RED then shared label lookup fixes scalar and
+  membership choices. No safety controls or legacy tests were relaxed.
+- Latest fast backend command (boundary/runtime/admin_contract/readiness):
+  **78 passed in 1.31s**. Studio vitest: **51 passed in 7.17s**. Owned staging
+  PostgreSQL API test: **1 passed in 46.71s**, checking four outcomes, requester
+  403, invalid success/unknown/non-diagnostic ID 400, file draft 400 and no ticket,
+  event, approval, operation or session writes. Final expanded count regression:
+  **1 passed in 46.65s**, also proving no TicketNotification, ConsentDecision or
+  UserConsentRequest records. Both runs used owned isolated staging databases
+  and runtime SSH profile; no credentials or database URLs were printed.
+- `PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm --dir webapp test:e2e
+  guided-diagnostics.spec.ts`: **4 passed in 12.9s** at 1366x768, 1440x900,
+  1920x1080 and tablet 820x1180. Keyboard start/focus, outcome reset, no overflow,
+  no console/network errors or unexpected API dispatch. The initial browser
+  fixture used an incorrect step label; corrected to the existing «Тестирование».
+  Fixture evidence does not replace P10 actual staging acceptance. Screenshots
+  copied to `artifacts/browser_checks/guided-request-studio-v2/p9/`; 1366 inspected.
+- Strict inventory for both new backend tests: **2 files, 0 issues**. Scoped
+  workspace verification and diff checks passed. Final `pnpm --dir webapp build`
+  passed (existing common-chunk size warning only). Independent P9 review and
+  bounded finding closure found no remaining blockers. No migration/new route.
+  No production changes or pre-ticket Endpoint execution. P10 remains required,
+  including the full processing-selection/simulator gaps recorded under P8.

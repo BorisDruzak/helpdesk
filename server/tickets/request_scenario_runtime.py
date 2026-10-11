@@ -10,7 +10,7 @@ import json
 
 from tickets.form_field_values import _field_constraint_error, _normalize_field_value
 from tickets.request_scenario_conditions import evaluate_condition, finite_number, leaves
-from tickets.request_scenario_validation import require_valid_scenario
+from tickets.request_scenario_validation import DIAGNOSTIC_FAILURE_STATUSES, require_valid_scenario
 
 
 class ScenarioInputError(ValueError):
@@ -34,11 +34,15 @@ class RuntimeState:
 
 
 class ScenarioRuntime:
-    def __init__(self, definition):
+    def __init__(self, definition, *, diagnostic_outcomes=None):
         require_valid_scenario(definition)
         # The caller cannot mutate a graph after the safety check.
         self.definition = definition.model_copy(deep=True)
         self.blocks = {block.id: block for block in self.definition.blocks}
+        self.diagnostic_outcomes = deepcopy(diagnostic_outcomes)
+        for key, status in (self.diagnostic_outcomes or {}).items():
+            if key not in self.blocks or self.blocks[key].kind != "diagnostic" or status not in DIAGNOSTIC_FAILURE_STATUSES:
+                raise ScenarioInputError({"diagnostic_outcomes": "Only approved diagnostic blocks and failure statuses can be simulated"})
 
     def initial_state(self):
         return self._settle(RuntimeState(self.definition.entry_block_id))
@@ -64,8 +68,10 @@ class ScenarioRuntime:
                 return state
             result = None
             if block.kind == "diagnostic":
-                result = "unavailable"
+                result = (self.diagnostic_outcomes or {}).get(block.id, "unavailable")
                 state.results[block.id] = {"status": result, "reason": "pre_ticket_contract_unavailable"}
+                if self.diagnostic_outcomes is not None:
+                    state.results[block.id].update(reason="simulated_" + result, simulated=True, operation_created=False, consent_required=block.require_consent)
             state.history.append(block.id)
             state.current_block_id = self._next(block, state.answers, result)
         raise ScenarioInputError({"graph": "Execution limit exceeded"})

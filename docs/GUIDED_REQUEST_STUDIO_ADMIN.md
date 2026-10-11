@@ -159,3 +159,15 @@ The simulation step accepts typed test answers and shows actual server priority,
 queue, deadline and approval requirement without creating a ticket or running
 device operations. P8 acceptance and full staging signoff are tracked in the
 implementation progress ledger.
+
+For diagnostic blocks, the inspector shows consent as a configuration setting,
+the fallback step and the unavailable pre-ticket execution boundary. In testing,
+choose one of four failure outcomes: unavailable, consent not received, timeout,
+or capability absent. Changing the outcome restarts the simulation. Results are
+explicitly marked «Симуляция — реальная операция не выполнялась»; configured
+consent is not a real authorization. Branch conditions use the same readable
+outcome labels. Actual requester diagnostics continue to use the safe fallback.
+
+The attachment field stays disabled until a reviewed secure pre-ticket storage
+contract exists. Imported unsupported attachment fields block publication with
+an explanation; the Studio does not stage or upload files.

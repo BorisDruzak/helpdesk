@@ -7,6 +7,7 @@ import type { ScenarioBlock, ScenarioDraftDefinition } from "./scenario-contract
 import { ScenarioFormPageEditor } from "./scenario-form-page-editor";
 import { ScenarioConditionEditor } from "./scenario-condition-editor";
 import { conditionFields } from "./scenario-builder-model";
+import { diagnosticFailureLabels } from "./scenario-diagnostics";
 
 type Props = { block: ScenarioBlock; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioBlock) => void; focusTitle: boolean };
 export function ScenarioBlockEditor({ block, definition, disabled, onChange, focusTitle }: Props) {
@@ -16,7 +17,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
   const targets = (definition.blocks ?? []).filter(item => item.id !== block.id);
   const transitions = block.transitions ?? [];
   const terminal = block.kind === "finish" || block.kind === "submit_ticket";
-  const resultValues = ({ resolution_check: ["yes", "no", "unknown"], instruction: ["acknowledged"], diagnostic: ["unavailable"] } as Partial<Record<ScenarioBlock["kind"], string[]>>)[block.kind] ?? [];
+  const resultValues = ({ resolution_check: ["yes", "no", "unknown"], instruction: ["acknowledged"], diagnostic: Object.keys(diagnosticFailureLabels) } as Partial<Record<ScenarioBlock["kind"], string[]>>)[block.kind] ?? [];
   return <div className="min-w-0 space-y-4">
     <label className="block">Название блока<Input ref={titleRef} disabled={disabled} maxLength={300} value={block.title} onChange={event => onChange({ ...block, title: event.target.value })} /></label>
     {block.kind === "form_page" && <ScenarioFormPageEditor block={block} definition={definition} disabled={disabled} onChange={onChange} />}
@@ -30,6 +31,9 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
     {block.kind === "diagnostic" && <div className="space-y-3">
       <p role="status">Диагностика до создания обращения недоступна. Сервер вернёт «Недоступно» и продолжит по настроенному запасному пути.</p>
       <label><input disabled={disabled} type="checkbox" checked={block.require_consent ?? true} onChange={event => onChange({ ...block, require_consent: event.target.checked })} /> Запрашивать согласие</label>
+      <p>Согласие хранится как настройка. В симуляции реального разрешения нет.</p>
+      <p>{transitions.some(edge => !edge.when && targets.some(item => item.id === edge.to)) ? `Запасной шаг: ${targets.find(item => item.id === transitions.find(edge => !edge.when)?.to)?.title}` : "Запасной шаг не выбран. Публикация будет заблокирована."}</p>
+      <p>Симулятор позволяет проверить недоступность, отказ в согласии, тайм-аут и отсутствие возможности проверки.</p>
     </div>}
     {block.kind === "review" && <p>Перед продолжением сотрудник увидит собранные ответы и сможет вернуться к вопросам.</p>}
     {block.kind === "submit_ticket" && <p>Обращение создаёт сервер с применением политик услуги. Этот блок завершает сценарий.</p>}

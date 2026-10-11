@@ -222,7 +222,7 @@ class RequestScenarioRepo:
         row, draft = await self.detail(identifier)
         if row.archived or draft.revision != payload.revision:
             raise ScenarioAdminError("REVISION_CONFLICT", 409)
-        engine = ScenarioRuntime(ScenarioDefinition.model_validate(draft.definition))
+        engine = ScenarioRuntime(ScenarioDefinition.model_validate(draft.definition), diagnostic_outcomes=payload.diagnostic_outcomes)
         state = engine.initial_state()
         for step in payload.steps:
             state = engine.advance(state, step)

@@ -90,6 +90,10 @@ class ScenarioPublicationService:
         issues, checked, outcomes = [], 0, []
         def add(code, message, path="process_binding"):
             issues.append({"code": code, "message": message, "path": path})
+        for block in draft.definition.get("blocks", []):
+            for field in block.get("fields", []):
+                if field.get("type") == "file":
+                    add("attachments_unsupported", "Вложения до создания обращения недоступны: безопасное временное хранение и проверка файлов не настроены.", "blocks." + block.get("id", "") + ".fields." + field.get("key", ""))
         effective = source["effective_template"]
         template = effective.get("request_template") or {}
         policies = effective.get("resolved_policies") or {}

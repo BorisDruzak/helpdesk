@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, StrictInt, model_validator
 
-from web_api.dto.request_scenario import CatalogCode, ScenarioAnswerRequest, ScenarioDraftDefinition, StrictModel
+from web_api.dto.request_scenario import CatalogCode, Key, ScenarioAnswerRequest, ScenarioDraftDefinition, StrictModel
 
 Identifier = Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")]
 
@@ -35,6 +35,7 @@ class RevisionInput(StrictModel):
 class SimulationInput(RevisionInput):
     steps: Annotated[list[ScenarioAnswerRequest], Field(max_length=256)] = Field(default_factory=list)
     preview: ScenarioAnswerRequest | None = None
+    diagnostic_outcomes: Annotated[dict[Key, Literal["unavailable", "denied", "timeout", "capability_absent"]], Field(max_length=256)] = Field(default_factory=dict)
 
 
 class ScenarioPublish(RevisionInput):

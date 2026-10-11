@@ -8,6 +8,14 @@ function Harness() {
   const [definition, setDefinition] = useState<ScenarioDraftDefinition>({ scenario_key: "test", title: "Тест", service_code: "it", offering_full_code: "it.test", process_binding: { request_template_key: "test" }, blocks: [] });
   return <ScenarioBlockBuilder definition={definition} disabled={false} onChange={setDefinition} />;
 }
+it("shows diagnostic consent, execution boundary and missing mandatory fallback", () => {
+  render(<Harness />);
+  fireEvent.change(screen.getByLabelText("Тип нового блока"), { target: { value: "diagnostic" } });
+  fireEvent.click(screen.getByRole("button", { name: "Добавить блок" }));
+  expect(screen.getByText("Запасной шаг не выбран. Публикация будет заблокирована.")).toBeInTheDocument();
+  expect(screen.getByText("Согласие хранится как настройка. В симуляции реального разрешения нет.")).toBeInTheDocument();
+  expect(screen.getByLabelText("Запрашивать согласие")).toBeChecked();
+});
 it("adds blocks, focuses the selected editor, adds a field and supports undo/redo", () => {
   render(<Harness />);
   fireEvent.click(screen.getByRole("button", { name: "Добавить блок" }));

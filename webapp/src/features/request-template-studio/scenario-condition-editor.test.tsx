@@ -31,6 +31,14 @@ function ConditionHarness({ fields, results = [] }: { fields: ScenarioField[]; r
   const [value, setValue] = useState<ScenarioCondition | null>(null);
   return <ScenarioConditionEditor label="Test condition" fields={fields} resultValues={results} disabled={false} value={value} onChange={setValue} />;
 }
+it("labels all diagnostic failures in equality and membership branches", () => {
+  render(<ConditionHarness fields={[]} results={["unavailable", "denied", "timeout", "capability_absent"]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Добавить условие" }));
+  const labels = ["Недоступно", "Согласие не получено", "Истёк срок ожидания", "Возможность проверки отсутствует"];
+  for (const label of labels) expect(screen.getByRole("option", { name: label })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Правило"), { target: { value: "in" } });
+  for (const label of labels) expect(screen.getByRole("checkbox", { name: label })).toBeInTheDocument();
+});
 it("offers numeric ordering only for numbers and no result source on a form", () => {
   render(<ConditionHarness fields={[{ key: "a", type: "text", label: "A" }]} />);
   fireEvent.click(screen.getByRole("button", { name: "Добавить условие" }));

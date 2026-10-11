@@ -3,6 +3,25 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSimulationPanel } from "./scenario-simulation";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it("labels a configured failure outcome as simulation without an operation", async () => {
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    expect(JSON.parse(String(init?.body)).diagnostic_outcomes).toEqual({ diagnostic: "timeout" });
+    return new Response(JSON.stringify({ status: "success", data: { revision: 1,
+      state: { revision: 1, results: { diagnostic: { status: "timeout", simulated: true, operation_created: false, consent_required: true } }, answers: {}, history: [] },
+      current_step: { id: "review", kind: "review", title: "Проверка ответов", answers: [] },
+    } }), { headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSimulationPanel id="scenario" revision={1} dirty={false} disabled={false} definition={{ scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Принтер", process_binding: { request_template_key: "printer" }, blocks: [
+    { id: "diagnostic", kind: "diagnostic", title: "Проверка устройства", require_consent: true, transitions: [{ to: "review" }] }, { id: "review", kind: "review", title: "Проверка ответов" },
+  ] }} />);
+  fireEvent.change(screen.getByRole("combobox", { name: "Исход симуляции: Проверка устройства" }), { target: { value: "timeout" } });
+  fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
+  await screen.findByText("Проверка устройства: Истёк срок ожидания");
+  expect(screen.getByText("Симуляция — реальная операция не выполнялась.")).toBeInTheDocument();
+  expect(screen.queryByText(/успешно/i)).not.toBeInTheDocument();
+});
+
 it("can acknowledge an optional instruction before a conditional transition", async () => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));

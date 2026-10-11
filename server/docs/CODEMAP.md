@@ -35,7 +35,9 @@
 
 - Scenario publication/readiness: `tickets/request_scenario_publication.py`
   and `tickets/request_scenario_readiness.py` reuse the canonical evaluator,
-  form/catalog processing dry-run and existing signed confirmation storage.
+  form/catalog processing dry-run and existing signed confirmation storage,
+  including all four simulation-only diagnostic failure outcomes (bounded
+  coverage); imported unsupported pre-ticket attachments block publication.
   Admin `readiness`, `publish-preview`, `publish` and `rollback-draft` routes
   require revision checks; publication validates locked canonical sources,
   creates an immutable version, changes the active pointer and consumes the

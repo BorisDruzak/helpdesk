@@ -7,6 +7,7 @@ from web_api.dto.request_scenario import Comparison, Membership, Exists
 from tickets.request_scenario_conditions import evaluate_condition, finite_number, guarantees_yes, leaves, mutually_exclusive
 
 DIAGNOSTIC_CAPABILITIES = frozenset({"endpoint.context.diagnostic.collect"})
+DIAGNOSTIC_FAILURE_STATUSES = ("unavailable", "denied", "timeout", "capability_absent")
 AUTHORITY_KEYS = frozenset({"actor_id", "actor_role", "owner_actor_id", "requester_id", "queue_id", "priority", "priority_class", "sla_policy_code", "sla_policy_id", "ola_policy_code", "deadline", "consent_token", "auth_token"})
 PRIORITY_TYPES = frozenset({"select", "radio", "number", "checkbox"})
 
@@ -160,7 +161,7 @@ def validate_scenario(definition):
                     elif kind in {"select", "radio", "multi_select"} and any(value is not None and value not in {opt.value for opt in field.options} for value in values):
                         add("incompatible_condition", path, "Condition uses an undeclared option")
             else:
-                allowed = {"resolution_check": ("yes", "no", "unknown"), "instruction": ("acknowledged",), "diagnostic": ("unavailable",)}.get(block.kind, ())
+                allowed = {"resolution_check": ("yes", "no", "unknown"), "instruction": ("acknowledged",), "diagnostic": DIAGNOSTIC_FAILURE_STATUSES}.get(block.kind, ())
                 if field_key or not allowed or isinstance(leaf, Comparison) and leaf.op not in {"eq", "neq"}:
                     add("incompatible_condition", path, "Current result is not available at this condition")
                 elif not isinstance(leaf, Exists):
