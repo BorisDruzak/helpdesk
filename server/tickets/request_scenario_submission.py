@@ -38,6 +38,7 @@ def build_scenario_submission(definition, state, *, session_id, version_id):
         "session_id": session_id, "version_id": version_id, "scenario_key": definition.scenario_key,
         "answers": answers, "facts": facts, "field_roles": roles, "summary": summary,
         "history": list(state.history),
+        "policy_refs": dict(definition.process_binding.policy_refs),
         "diagnostics": {key: value for key, value in state.results.items() if key in runtime.blocks and runtime.blocks[key].kind == "diagnostic"},
     }
     return payload, snapshot

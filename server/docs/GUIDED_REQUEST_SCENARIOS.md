@@ -168,5 +168,29 @@ editor disables it, and readiness reports `attachments_unsupported` for an
 imported/stored malformed file field. No temporary upload, retention or download
 endpoint is introduced. Existing ticket-scoped attachments are unaffected.
 
+## Selected processing policies (P10 acceptance work)
+
+`process_binding.policy_refs` optionally maps priority/routing/sla/ola/approval/
+notification/closure/visibility to canonical published policy codes. Empty keys
+inherit the existing catalog/template configuration. Admin save validates active
+published references; readiness repeats validation against its locked source
+snapshot. Unavailable references block publication and actual creation. Explicit
+SLA selection requires effective deadlines even if the template permits no SLA;
+legacy SLA references must point to active rows.
+
+Server-loaded version references enter the trusted scenario submission snapshot;
+requester commands cannot supply or override them. `request_scenario_processing`
+resolves them through the existing registry after its inherited overlay, on the
+same dry-run and actual creation paths. Config, sources and refs are stored in
+the canonical template context; lifecycle actions keep using the existing policy
+resolver. These are references to current published policies, not a new policy
+engine or frozen policy-version contract. No template/catalog row is rewritten.
+
+The simulator additionally projects normalized facts, canonical priority reason,
+SLA/OLA, closure requirements and configured notification groups/channels. Group
+rules are not delivery receipts; provider availability and actual recipients
+remain runtime concerns. No notification provider is called. Requester-safe
+preview continues to return only its existing public projection.
+
 The catalog-first React wizard and editing behavior are documented in
 [`GUIDED_REQUEST_STUDIO_ADMIN.md`](../../docs/GUIDED_REQUEST_STUDIO_ADMIN.md).

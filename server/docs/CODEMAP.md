@@ -43,6 +43,11 @@
   creates an immutable version, changes the active pointer and consumes the
   actor/scope-bound token in one audited transaction. Business calendars are
   part of source binding. A rollback copies history into a new draft revision.
+- `tickets/request_scenario_processing.py` applies admin-saved, server-loaded
+  published policy references via `HelpdeskPolicyRepo.resolve_policy_ref` after
+  inherited registry overlays. Canonical create and dry-run share this bridge;
+  requester commands cannot inject references. SLA row activity and explicit
+  deadline readiness are fail-closed. No separate processing engine is added.
 - `tickets/service_catalog_preview.py::simulate_service_catalog_processing`
   passes the already validated canonical submission to Policy Health via a
   trusted internal keyword. Request JSON cannot inject that context. Requester

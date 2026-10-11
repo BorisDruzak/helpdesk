@@ -120,7 +120,7 @@ async def test_admin_simulator_projects_current_conditions_without_advancing():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("missing", ["routing", "sla", "approval", "closure", "visibility"])
+@pytest.mark.parametrize("missing", ["routing", "sla", "approval", "closure", "visibility", "selected_sla"])
 async def test_policy_health_ok_does_not_hide_processing_blocker(monkeypatch, missing):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
@@ -130,7 +130,7 @@ async def test_policy_health_ok_does_not_hide_processing_blocker(monkeypatch, mi
         def evaluate(self, **kwargs): return {"templates": [{"health_status": "ok"}]}
         async def simulate(self, payload):
             return {"routing": {"queue_id": None if missing == "routing" and payload["request_form_data"].get("is_urgent") else 1},
-                    "sla": {} if missing == "sla" else {"resolution_min": 30},
+                    "sla": {} if missing in {"sla", "selected_sla"} else {"resolution_min": 30},
                     "approval": {"required": missing == "approval", "approvers": []}, "priority": {"priority_class": "P2"}}
     monkeypatch.setattr(module, "PolicyHealthService", Health)
     async def simulate(session, payload, *, scenario_snapshot):
@@ -142,9 +142,14 @@ async def test_policy_health_ok_does_not_hide_processing_blocker(monkeypatch, mi
         "offering": {"lifecycle_status": "published", "visibility": "public", "request_template_key": "printer"}, "taxonomy": []}
     row = SimpleNamespace(archived=False, category_id=None, offering_full_code="workplace.printer")
     draft = SimpleNamespace(definition=definition().model_dump(mode="json"))
+    if missing == "selected_sla":
+        from tickets import request_scenario_processing
+        monkeypatch.setattr(request_scenario_processing, "apply_scenario_policy_refs", AsyncMock(return_value={"template_context": {"sla_policy": {"targets": []}}}))
+        draft.definition["process_binding"]["policy_refs"] = {"sla": "selected"}
+        source["effective_template"]["request_template"]["config"] = {"no_sla": True}
     result = await module.ScenarioPublicationService(SimpleNamespace(session=None))._assess(row, draft, source)
     assert result["health"]["health_status"] == "ok" and not result["readiness"]["can_publish"]
-    assert any(issue["code"].startswith(missing) for issue in result["readiness"]["issues"])
+    assert any(issue["code"].startswith("sla" if missing == "selected_sla" else missing) for issue in result["readiness"]["issues"])
 
 
 @pytest.mark.asyncio

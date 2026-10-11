@@ -77,6 +77,9 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
             validated = augment_scenario_submission(validated, scenario_snapshot)
         validated = await resolver.apply_to_validated_submission(validated, selection)
         validated = await apply_effective_registry_policies(session, validated)
+        if scenario_snapshot is not None:
+            from tickets.request_scenario_processing import apply_scenario_policy_refs
+            validated = await apply_scenario_policy_refs(session, validated, scenario_snapshot.get("policy_refs"))
     except ValueError as exc:
         details = exc.args[0] if exc.args else "invalid form payload"
         raise ServiceCatalogPreviewError({"form_payload": details}) from exc

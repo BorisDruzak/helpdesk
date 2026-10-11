@@ -2062,6 +2062,9 @@ async def create_requester_ticket_in_session(request, data, session, *, request_
                     catalog_selection,
                 )
             validated_submission = await apply_effective_registry_policies(session, validated_submission)
+            if scenario_snapshot is not None:
+                from tickets.request_scenario_processing import apply_scenario_policy_refs
+                validated_submission = await apply_scenario_policy_refs(session, validated_submission, scenario_snapshot.get("policy_refs"))
             extra_custom_fields.update(build_form_custom_fields(validated_submission))
             catalog_process_fields = (
                 validated_submission.get("catalog_fields")

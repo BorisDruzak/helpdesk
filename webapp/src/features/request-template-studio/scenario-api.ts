@@ -28,8 +28,11 @@ export type ScenarioSimulation = { revision: number; current_block: ScenarioBloc
   current_step?: { id: string; kind: string; title: string; fields?: (RequestFormField & { value?: unknown })[];
     has_dynamic_fields?: boolean; content?: { body: string }; acknowledgment_required?: boolean; message?: string;
     answers?: { key: string; label: string; display_value: string }[] };
-  processing?: { priority: { priority_class: string }; routing: { queue_code?: string; queue_id?: number };
-    sla: { resolution_min?: number }; approval: { required: boolean }; would_create_ticket: false } | null;
+  processing?: { priority: { priority_class: string; reason?: string | null }; routing: { queue_title?: string | null; queue_code?: string; queue_id?: number };
+    sla: { first_response_min?: number; resolution_min?: number }; ola?: { policy_code?: string | null; ack_min?: number; processing_min?: number };
+    approval: { required: boolean }; closure?: { requires_public_summary: boolean; requires_resolution_code: boolean };
+    validated_facts?: Record<string, unknown>; notification?: { would_send: false; recipient_groups: string[]; channels: { channel: string; enabled: boolean; available: boolean }[] };
+    would_create_ticket: false } | null;
 };
 export type ScenarioPublicationPreview = {
   revision: number; source_hash: string; health: { health_status: string };

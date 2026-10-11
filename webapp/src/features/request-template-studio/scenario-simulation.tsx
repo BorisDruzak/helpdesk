@@ -4,6 +4,7 @@ import { RequestFormFieldControl, type DynamicFormValues } from "../requester/dy
 import { simulateScenario, type ScenarioSimulation } from "./scenario-api";
 import type { ScenarioAnswerRequest, ScenarioDraftDefinition } from "./scenario-contract";
 import { diagnosticFailureLabels, type DiagnosticFailureStatus } from "./scenario-diagnostics";
+import { ScenarioProcessingResult } from "./scenario-processing-result";
 
 export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition }) {
   const [result, setResult] = useState<ScenarioSimulation | null>(null);
@@ -74,12 +75,7 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       {block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{(["yes", "no", "unknown"] as const).map(value => <Button key={value} onClick={() => answer(value)}>{value === "yes" ? "Да, решено" : value === "no" ? "Нет, нужна помощь" : "Не знаю"}</Button>)}</div> : null}
       {["form_page", "instruction", "review"].includes(block.kind) && <Button disabled={block.acknowledgment_required && !acknowledged} onClick={() => answer(block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить проверку</Button>}
       {block.kind === "finish" && <p role="status">{block.message || "Решено без обращения"}</p>}
-      {result?.processing && <div role="status" className="space-y-2 rounded border p-3">
-        <p>Результат серверной проверки обработки</p><p>Приоритет: {result.processing.priority.priority_class}</p>
-        <p>Очередь: {result.processing.routing.queue_code || result.processing.routing.queue_id || "Не определена"}</p>
-        <p>Срок выполнения: {result.processing.sla.resolution_min ? `${result.processing.sla.resolution_min} мин.` : "Не определён"}</p>
-        <p>{result.processing.approval.required ? "Потребуется согласование" : "Согласование не требуется"}</p>
-      </div>}
+      {result?.processing && <ScenarioProcessingResult result={result} definition={definition} />}
       {!!Object.keys(result?.state.results || {}).length && <p>Результаты инструкций и проверок сохранены только в этой симуляции.</p>}
       {!!steps.length && <Button variant="outline" onClick={() => void run(steps.slice(0, -1))}>Назад в проверке</Button>}
     </fieldset>}

@@ -37,6 +37,12 @@ Unsupported pre-ticket attachments stay fail-closed. Backend78, frontend51,
 PostgreSQL1 plus expanded side-effect repeat1, browser4 at all four viewports,
 build/inventory/workspace and independent review pass. P10 remains required,
 including actual A–J staging/CI and processing-selection/presentation gaps.
+P10 processing increment verified: existing published policy choices now apply
+through canonical registry references in dry-run and actual creation; complete
+processing results use canonical OLA shape and truthful notification rules.
+Fast142, frontend54, PostgreSQL legacy/new8 plus selected SLA parity1, browser4,
+build/inventory/workspace and bounded independent review pass. Full P10 still
+requires actual staging A–J, field/readiness fidelity audit and canonical CI/AC matrix.
 No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI

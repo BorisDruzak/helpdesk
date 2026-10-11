@@ -350,6 +350,7 @@ class PolicyHealthService:
             routing_payload = {
                 "queue_id": queue_id,
                 "queue_code": getattr(queue, "code", None),
+                "queue_title": getattr(queue, "name", None),
                 "source": routing_decision.get("source"),
                 "matched_rule": routing_decision.get("matched_rule"),
                 "assignee_strategy": actions.get("assignee_strategy"),
@@ -422,6 +423,19 @@ class PolicyHealthService:
             state=None,
         )
 
+        # Project the existing notification rules without recipient writes,
+        # provider calls or delivery. Groups are configured rules, not receipts.
+        from tickets.notification_service import _event_policy, _recipient_enabled, _external_channel_actions
+        notification_policy = await resolve_effective_ticket_policy(self.session, ticket, "notification")
+        event_policy = _event_policy(notification_policy, "ticket_created")
+        notification_payload = {
+            "policy_code": _policy_code(notification_policy, template_context, "notification"),
+            "event": "ticket_created", "would_send": False,
+            "recipient_groups": [group for group in ("queue", "assignee", "watchers") if _recipient_enabled(event_policy, group, legacy_default=True)],
+            "channels": [{"channel": action.channel, "enabled": action.enabled, "available": action.available, "reason": action.reason}
+                         for action in _external_channel_actions(notification_policy, event_policy, channel_provider=None)],
+        }
+
         return {
             "template_code": template_code,
             "service_catalog": template_context.get("service_catalog") if isinstance(template_context.get("service_catalog"), dict) else None,
@@ -431,11 +445,14 @@ class PolicyHealthService:
                 "priority_class": priority_class,
                 "legacy_priority": legacy_priority,
                 "priority_source": priority_decision.get("priority_source"),
+                "reason": priority_decision.get("priority_reason"),
             },
             "sla": sla_payload,
             "ola": ola_payload,
             "approval": approval_payload,
             "closure": closure_payload,
+            "notification": notification_payload,
+            "validated_facts": deepcopy(request_form_data),
             "visibility": {
                 "policy_code": _policy_ref_code(template_context, "visibility"),
                 "public_status": visibility_payload.get("public_status"),

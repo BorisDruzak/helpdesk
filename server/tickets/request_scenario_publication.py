@@ -95,8 +95,19 @@ class ScenarioPublicationService:
                 if field.get("type") == "file":
                     add("attachments_unsupported", "Вложения до создания обращения недоступны: безопасное временное хранение и проверка файлов не настроены.", "blocks." + block.get("id", "") + ".fields." + field.get("key", ""))
         effective = source["effective_template"]
-        template = effective.get("request_template") or {}
-        policies = effective.get("resolved_policies") or {}
+        template = deepcopy(effective.get("request_template") or {})
+        policies = deepcopy(effective.get("resolved_policies") or {})
+        references = draft.definition.get("process_binding", {}).get("policy_refs", {})
+        if references:
+            from tickets.request_scenario_processing import apply_scenario_policy_refs
+            try:
+                selected = await apply_scenario_policy_refs(self.session, {"template_context": {}}, references)
+                context = selected["template_context"]
+                for kind, code in references.items():
+                    policies[kind] = context[kind + "_policy"]
+                    template[kind + "_policy_code"] = code
+            except ValueError:
+                add("policy_reference_unavailable", "Выбранная политика обработки недоступна или не опубликована. Выберите действующую политику.", "process_binding.policy_refs")
         health = PolicyHealthService().evaluate(templates=[template] if template else [], policies=source["policies"], queues=source["queues"])
         health = next(iter(health["templates"]), {"health_status": "unavailable"})
         if row.archived:
@@ -151,7 +162,7 @@ class ScenarioPublicationService:
                 routing, sla, approval = result["routing"], result["sla"], result["approval"]
                 if routing.get("queue_id") is None and not routing.get("queue_code"):
                     add("routing_unavailable", "Одна из ветвей не попадает в действующую очередь.")
-                if not (template.get("config") or {}).get("no_sla") and not sla.get("resolution_min"):
+                if ("sla" in references or not (template.get("config") or {}).get("no_sla")) and not sla.get("resolution_min"):
                     add("sla_unavailable", "Одна из ветвей не имеет срока выполнения по действующей политике.")
                 if approval.get("required") and not approval.get("approvers"):
                     add("approval_unavailable", "Согласование требуется, но действующий источник не определил согласующих.")

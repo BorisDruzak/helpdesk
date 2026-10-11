@@ -171,3 +171,17 @@ outcome labels. Actual requester diagnostics continue to use the safe fallback.
 The attachment field stays disabled until a reviewed secure pre-ticket storage
 contract exists. Imported unsupported attachment fields block publication with
 an explanation; the Studio does not stage or upload files.
+
+In «Обработка обращения», select published policies for priority, routing,
+SLA/OLA, approval, notifications, closure and visibility. Each choice has its
+own inline advanced disclosure for the reference. «Наследовать» preserves the
+current service/template behavior. Only the scenario draft changes; the wizard
+does not republish policies or modify the live offering. Unavailable selections
+require a replacement before publication. Selected policies remain governed by
+the existing Helpdesk lifecycle resolver.
+
+Testing shows the traversed branch and normalized facts with human option labels,
+the calculated priority, first response/resolution, internal support deadlines,
+approval and closure requirements. The priority calculation reason is available
+in a local disclosure. Notification groups describe policy rules; no messages
+were sent and no provider delivery was checked by the simulator.

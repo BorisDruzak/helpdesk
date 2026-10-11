@@ -3,6 +3,27 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSimulationPanel } from "./scenario-simulation";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it.each([false, true])("shows canonical facts and processing with canonical OLA object (configured=%s)", async configured => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: {
+    state: { revision: 3, results: {}, answers: { scope: "team" }, history: ["questions", "review"] },
+    current_step: { id: "submit", kind: "submit_ticket", title: "Отправка" },
+    processing: { priority: { priority_class: "P2", reason: "impact=team" }, routing: { queue_code: "print" },
+      sla: { first_response_min: 30, resolution_min: 120 }, ola: configured ? { ack_min: 15, processing_min: 60 } : {},
+      approval: { required: false }, closure: { requires_public_summary: true, requires_resolution_code: true },
+      validated_facts: { affected_scope: "team" }, notification: { would_send: false, recipient_groups: ["queue"], channels: [] }, would_create_ticket: false },
+  } }), { headers: { "Content-Type": "application/json" } })));
+  render(<ScenarioSimulationPanel id="printer" revision={1} dirty={false} disabled={false} definition={{ scenario_key: "printer", title: "Печать", service_code: "it", offering_full_code: "it.printer", process_binding: { request_template_key: "printer" }, blocks: [
+    { id: "questions", title: "Кого затронуло?", kind: "form_page", fields: [{ key: "scope", label: "Влияние", type: "radio", options: [{ value: "team", label: "Весь отдел" }], process_mapping: { fact_key: "affected_scope", roles: ["priority_impact"] } }] },
+    { id: "review", title: "Проверка ответов", kind: "review" }, { id: "submit", title: "Отправка", kind: "submit_ticket" },
+  ] }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
+  await screen.findByText("Весь отдел");
+  expect(screen.getByText("Кого затронуло? → Проверка ответов → Отправка")).toBeInTheDocument();
+  expect(screen.getByText(configured ? "Подтверждение поддержки: 15 мин.; обработка: 60 мин." : "Внутренние сроки поддержки не настроены.")).toBeInTheDocument();
+  expect(screen.getByText("При закрытии обязательны итог для сотрудника и код решения.")).toBeInTheDocument();
+  expect(screen.getByText("Уведомления не отправлялись. Правила для групп: участники очереди.")).toBeInTheDocument();
+});
+
 it("labels a configured failure outcome as simulation without an operation", async () => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
     expect(JSON.parse(String(init?.body)).diagnostic_outcomes).toEqual({ diagnostic: "timeout" });

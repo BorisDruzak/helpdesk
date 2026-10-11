@@ -197,6 +197,7 @@ Block = Annotated[FormPage | Instruction | Decision | ResolutionCheck | Diagnost
 class ProcessBinding(StrictModel):
     request_template_key: CatalogCode
     priority_source: Literal["existing_server_policy_runtime"] = "existing_server_policy_runtime"
+    policy_refs: Annotated[dict[Literal["priority", "routing", "sla", "ola", "approval", "notification", "closure", "visibility"], CatalogCode], Field(max_length=8)] = Field(default_factory=dict)
 
 
 class ScenarioDraftDefinition(StrictModel):

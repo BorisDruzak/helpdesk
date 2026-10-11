@@ -40,6 +40,7 @@ export type ScenarioBlock = BlockBase & (
   | { kind: "submit_ticket" }
   | { kind: "finish"; message?: string }
 );
+export type ScenarioPolicyKind = "priority" | "routing" | "sla" | "ola" | "approval" | "notification" | "closure" | "visibility";
 export type ScenarioDraftDefinition = {
   schema_version?: 1;
   scenario_key: string;
@@ -50,7 +51,7 @@ export type ScenarioDraftDefinition = {
   description?: string;
   entry_block_id?: string | null;
   blocks?: ScenarioBlock[];
-  process_binding: { request_template_key: string; priority_source?: "existing_server_policy_runtime" };
+  process_binding: { request_template_key: string; priority_source?: "existing_server_policy_runtime"; policy_refs?: Partial<Record<ScenarioPolicyKind, string>> };
 };
 export type ScenarioDefinition = Omit<ScenarioDraftDefinition, "entry_block_id" | "blocks"> & {
   entry_block_id: string;

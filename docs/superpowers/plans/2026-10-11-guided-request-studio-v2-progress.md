@@ -585,3 +585,52 @@ wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
   bounded finding closure found no remaining blockers. No migration/new route.
   No production changes or pre-ticket Endpoint execution. P10 remains required,
   including the full processing-selection/simulator gaps recorded under P8.
+
+### P10 — IN PROGRESS (not accepted)
+
+- P9 committed as `1802ba24c6e9ce2cf280270e11ad1674495788aa`.
+- Before actual A–J acceptance, complete the original wizard processing and
+  simulation requirements. Reuse existing Helpdesk policy registry selectors
+  and `resolve_policy_ref`; no policy engine, SLA implementation or live catalog
+  mutation is introduced. Admin-saved scenario bindings are server-validated
+  references to published policies, applied through the same trusted internal
+  path for readiness, dry-run and actual ticket creation. Empty selection keeps
+  existing template/catalog inheritance. Requester commands cannot supply refs.
+- GitNexus query completed before P10 source exploration; existing canonical
+  source confirms policy_refs already control ticket lifecycle resolution.
+- P10 A–J staging browser, exact CI/security/coverage/Sonar and final AC matrix
+  remain outstanding. No production deployment or Endpoint dispatch.
+- Processing increment implemented: typed eight-kind published policy refs,
+  same canonical resolver bridge for save/readiness/simulation/actual creation,
+  editor choices and mapped-fact explanation with local advanced disclosures.
+  Full result displays normalized facts, traversed branch, priority reason,
+  SLA/OLA, approval, notification rules and closure. Notification projection uses
+  existing rule helpers, no provider calls or delivery claims.
+- RED/GREEN: backend binding tests initially **4 failed**; missing UI component
+  was RED, then choice test GREEN. Missing normalized-facts result was RED via
+  actual PostgreSQL API. Independent review found inactive legacy SLA and a
+  frontend OLA array assumption; both reproduced RED and corrected. Explicit SLA
+  no longer inherits a no_sla waiver. Exact OLA object/empty object fixtures now
+  cover the frontend boundary. Final review closures have no remaining blockers.
+- Latest fast scenario regression: **142 passed, 32 DB tests deselected in
+  2.35s**; separate focused policy/runtime/readiness **72 passed in 1.30s**.
+  Studio frontend **54 passed in 6.38s**; typecheck/build passed with the existing
+  common-chunk warning only. Strict new-test inventory: 2 files, zero issues;
+  scoped workspace verifier and diff checks passed.
+- Owned staging DB regression: selected-route actual creation parity + existing
+  Service Catalog preview and legacy Studio APIs **8 passed in 281.15s**.
+  Final expanded selected-route/SLA parity **1 passed in 66.02s**, proving chosen
+  standalone 240-minute SLA replaces inherited 120-minute legacy SLA in dry-run
+  and actual ticket snapshot/deadline. Simulator leaves ticket/operation/approval/
+  notification counts unchanged. Test databases and tunnel cleaned by harness.
+- Corrected canonical-shape browser run: `PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm
+  --dir webapp test:e2e guided-processing.spec.ts`: **4 passed in 10.4s** at
+  1366x768, 1440x900, 1920x1080 and 820x1180; keyboard, draft-only selection,
+  full result and overflow/error checks. Screenshots in
+  `artifacts/browser_checks/guided-request-studio-v2/p10/`, 1366 inspected.
+  This remains fixture UI evidence, not the required actual staging A–J browser.
+- Approved staging SSH read-only inspection confirmed dedicated staging root,
+  state directory and units. No deployment or service mutation yet. Remaining:
+  final field/readiness fidelity audit (finite significant domains are still
+  conservative), actual staging A–J plus 30-question UI, canonical CI/security/
+  coverage/Sonar, remaining catalog/form/runbook docs and full AC01–AC20 report.

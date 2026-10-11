@@ -143,6 +143,8 @@ class RequestScenarioRepo:
         template = await self.session.scalar(select(RequestTemplate.template_code).where(RequestTemplate.template_code == definition.process_binding.request_template_key).limit(1))
         if not template:
             raise ScenarioAdminError("TEMPLATE_NOT_FOUND", 404)
+        from tickets.request_scenario_processing import apply_scenario_policy_refs
+        await apply_scenario_policy_refs(self.session, {"template_context": {}}, definition.process_binding.policy_refs)
         await self._category(definition.category_id, definition.service_code)
 
     async def detail(self, identifier, *, lock=False):
