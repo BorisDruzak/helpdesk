@@ -1,11 +1,11 @@
 import { expect, type Page, test } from "playwright/test";
 
-async function fixture(page: Page) {
+async function fixture(page: Page, publication = false) {
   const errors: string[] = [];
   const failures: string[] = [];
   const mutations: unknown[] = [];
   let revision = 3;
-  let definition = { schema_version: 1, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", description: "Сценарий помощи с печатью", category_id: "c1", blocks: [], process_binding: { request_template_key: "printer" } };
+  let definition = { schema_version: 1, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", description: "Сценарий помощи с печатью", category_id: "c1", blocks: publication ? [{ id: "instruction", kind: "instruction", title: "Проверьте бумагу", content: { body: "Добавьте бумагу в лоток" } }] : [], process_binding: { request_template_key: "printer" } };
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
   page.on("requestfailed", request => failures.push(request.url()));
@@ -27,7 +27,7 @@ async function fixture(page: Page) {
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
   test(`guided studio publication confirmation ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);
-    const state = await fixture(page);
+    const state = await fixture(page, true);
     await page.route("**/api/web/admin/request-studio/scenarios/s1/versions", route => route.fulfill({ json: { status: "success", data: [{ id: "v1", version: 1, state: "retired" }] } }));
     await page.route("**/api/web/admin/request-studio/scenarios/s1/rollback-draft", async route => {
       expect(route.request().postDataJSON()).toEqual({ revision: 3, version_id: "v1" });
@@ -63,6 +63,12 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.screenshot({ path: info.outputPath(`${viewport.width}-publication-confirmation.png`) });
     await publish.click();
     await expect(page.getByText("Опубликована версия 1.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Что увидит сотрудник", exact: true })).toBeVisible();
+    await expect(page.getByText("Услуга: Принтер", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Открыть сценарий сотрудника", exact: true })).toHaveAttribute("href", "/app/requester/new?offering=it.printer");
+    await page.getByText("1. Проверьте бумагу", { exact: true }).click();
+    await expect(page.getByText("Добавьте бумагу в лоток", { exact: true })).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`${viewport.width}-publication-result.png`) });
     await expect(publish).toHaveCount(0);
     await page.getByRole("button", { name: "История версий", exact: true }).click();
     await page.getByRole("combobox", { name: "Версия для черновика", exact: true }).selectOption("v1");

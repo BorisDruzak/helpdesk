@@ -729,3 +729,36 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
 - Remaining: inline new offering/profile, publication result, readiness coverage
   fidelity audit, actual isolated staging A–J, exact canonical CI/security/coverage/
   Sonar and final P0–P10/AC matrix. P10 remains IN PROGRESS.
+
+### P10 fidelity increment: publication summary, result and requester link
+
+- Publication stage shows title/description, human target offering and all steps
+  in collapsible previews using the existing requester controls. Transition
+  destinations use human titles; actual branch evaluation stays on the server.
+  Successful result prefers the returned immutable version definition, shows
+  version, links to the requester flow and retains the existing version history.
+- `/app/requester/new?offering=...` selects only a matching offering from the
+  authenticated requester catalog. Existing availability and owner-scoped
+  scenario runtime remain authoritative. A link does not grant access.
+- Offering-link drafts use separate keys from normal drafts. Same-router
+  intent/offering changes remount content to restore the correct draft before
+  persistence; normal drafts and both offering drafts survive navigation.
+- RED: requester direct-link test failed to select the offering; publication
+  result test failed on absent requester link. GREEN after implementation.
+- Independent review found same-router draft overwrite risk. Regression RED
+  reproduced the retained old category; keyed-content fix GREEN restores normal,
+  printer and laptop answers individually. Reviewer closed the finding and found
+  no further issues; immutable-result preference has a component assertion.
+- Studio + requester page + catalog page: 82 passed (9.87s). Build/typecheck PASS
+  (existing common chunk warning); scoped workspace and diff check PASS.
+- Browser `guided-studio.spec.ts guided-requester.spec.ts --grep
+  'publication confirmation|guided requester'`: 12 passed (27.9s), all four
+  viewports. Publication confirmation/result/expanded instruction, deep-linked
+  ticket flow, normal self-service, reload/resume, no horizontal overflow or
+  console/network errors. This is fixture browser evidence, not live A–J.
+- Screenshots copied to ignored
+  `artifacts/browser_checks/guided-request-studio-v2/p10/publication-result/`;
+  1366 visually inspected. Browser fixture stopped after validation.
+- No backend/schema/policy/dependency change. Remaining: inline new offering/
+  profile, readiness coverage fidelity, actual staging A–J and canonical CI/
+  security/coverage/Sonar/final acceptance matrix. P10 remains IN PROGRESS.

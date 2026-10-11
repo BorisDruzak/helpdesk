@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/button";
 import { RequestStudioApiError } from "./api";
 import { previewScenarioPublication, publishScenario, type ScenarioPublicationPreview } from "./scenario-api";
+import type { ScenarioDraftDefinition } from "./scenario-contract";
+import { ScenarioPublicationSummary } from "./scenario-publication-summary";
 
 function humanValue(value: unknown): string {
   if (value === null || value === undefined) return "Не задано";
@@ -16,22 +18,23 @@ function humanValue(value: unknown): string {
 }
 const labels: Record<string, string> = { title: "Название", description: "Описание", blocks: "Шаги и вопросы", entry_block_id: "Первый шаг", category_id: "Категория", process_binding: "Обработка обращения", service_code: "Раздел", offering_full_code: "Услуга", scenario_key: "Сценарий", schema_version: "Формат" };
 
-export function ScenarioPublication({ id, revision, dirty, disabled }: { id: string; revision: number; dirty: boolean; disabled: boolean }) {
+export function ScenarioPublication({ id, revision, dirty, disabled, definition, offeringTitle }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; offeringTitle?: string }) {
   const cache = useQueryClient();
   const [preview, setPreview] = useState<ScenarioPublicationPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [published, setPublished] = useState<ScenarioDraftDefinition | null>(null);
   const sequence = useRef(0);
   useEffect(() => {
     sequence.current++;
-    setPreview(null); setConfirmed(false); setError(""); setMessage(""); setBusy(false);
+    setPreview(null); setConfirmed(false); setError(""); setMessage(""); setPublished(null); setBusy(false);
     return () => { sequence.current++; };
   }, [id, revision, dirty, disabled]);
   async function prepare() {
     const current = ++sequence.current;
-    setBusy(true); setError(""); setPreview(null); setConfirmed(false); setMessage("");
+    setBusy(true); setError(""); setPreview(null); setConfirmed(false); setMessage(""); setPublished(null);
     try { const value = await previewScenarioPublication(id, revision); if (current === sequence.current) setPreview(value); }
     catch { if (current === sequence.current) setError("Не удалось проверить публикацию. Повторите проверку."); }
     finally { if (current === sequence.current) setBusy(false); }
@@ -44,6 +47,7 @@ export function ScenarioPublication({ id, revision, dirty, disabled }: { id: str
       const result = await publishScenario(id, revision, preview.confirmation_token);
       if (current !== sequence.current) return;
       setPreview(null); setConfirmed(false); setMessage(`Опубликована версия ${result.version.version}.`);
+      setPublished(result.version.definition ?? result.draft?.definition ?? definition ?? null);
       await cache.invalidateQueries({ queryKey: ["scenario-catalog"] });
       await cache.invalidateQueries({ queryKey: ["scenario-detail", id] });
     } catch (cause) {
@@ -60,6 +64,8 @@ export function ScenarioPublication({ id, revision, dirty, disabled }: { id: str
     <Button disabled={dirty || disabled || busy} onClick={() => void prepare()}>Подготовить публикацию</Button>
     {dirty && <p>Сначала сохраните изменения.</p>}
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
+    {published && <a className="inline-block text-brand-700 underline" target="_blank" rel="noopener noreferrer" href={`/app/requester/new?${new URLSearchParams({ offering: published.offering_full_code })}`}>Открыть сценарий сотрудника</a>}
+    {(published || definition) && <ScenarioPublicationSummary definition={(published || definition)!} offeringTitle={offeringTitle} />}
     {preview && <>
       <p>Policy Health: {preview.health.health_status}. Готовность: {preview.readiness.can_publish ? "проверена" : "есть препятствия"}.</p>
       <p>Проверено исходов: {preview.readiness.variants_checked}.</p>

@@ -64,6 +64,10 @@
   See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
   Catalog metadata uses the immutable version referenced by the active pointer
   (not the greatest historical version), and the latest scenario/draft timestamp.
+  `scenario-publication-summary` reuses requester block preview controls and
+  links the immutable publication result to `/app/requester/new?offering=...`.
+  Requester selection is validated against its existing public catalog; keyed
+  request-page content keeps draft restoration isolated per intent/offering.
 - The wizard's user-scenario step uses `scenario-block-builder` for selection,
   bounded undo and graph edits; `scenario-builder-model` preserves explicit
   routes and checks removal dependencies. Block/form-page/field/condition editors
@@ -80,7 +84,8 @@
   defines strict bodies and bounded inputs. `app/repos/request_scenario_repo.py`
   binds existing catalog/template records, serializes edits by service/draft
   revision and writes the existing catalog audit in the same transaction.
-  Persistent requester sessions and safe publication remain later stages.
+  Persistent requester sessions and safe publication are documented above and
+  in `GUIDED_REQUEST_SCENARIOS.md`.
 
 - `server/tickets/form_catalog.py` is the compatibility facade and catalog
   persistence/augmentation boundary. Existing import names and callable

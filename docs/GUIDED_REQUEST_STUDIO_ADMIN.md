@@ -98,6 +98,17 @@ Published, enabled scenarios add `guided_scenario_enabled` to their public
 offering. Public category ancestors must also be published/public. Other
 offerings retain the existing form UI at `/app/requester/new`.
 
+Publication shows the target offering, scenario title/description and a
+collapsible overview of every step using the existing requester preview controls.
+The result prefers the immutable definition returned by publication and links to
+`/app/requester/new?offering=<full_code>` in a separate browser tab; version
+history remains available in the publication stage. The link chooses only an
+offering present in the authenticated requester catalog. It grants no additional
+access and still starts/resumes through the owner-scoped server runtime.
+Normal requester drafts and drafts entered through individual offering links
+have separate storage keys. Changing intent/offering in the same router remounts
+the restoration lifecycle so answers cannot be written into another draft.
+
 Requester-only endpoints under `/api/web/requester/request-scenarios/sessions`
 start/resume a session (POST), read its current step (GET `/{identifier}`),
 and accept `answer`, `advance`, `back`, `finish` and `step-preview` POST commands.

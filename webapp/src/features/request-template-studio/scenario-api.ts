@@ -69,7 +69,7 @@ export function previewScenarioPublication(id: string, revision: number) {
   return request<ScenarioPublicationPreview>(`/scenarios/${encodeURIComponent(id)}/publish-preview`, "POST", { revision });
 }
 export function publishScenario(id: string, revision: number, confirmationToken: string) {
-  return request<ScenarioDetail & { version: { version: number; id: string } }>(`/scenarios/${encodeURIComponent(id)}/publish`, "POST", { revision, confirm: true, confirmation_token: confirmationToken });
+  return request<ScenarioDetail & { version: { version: number; id: string; definition?: ScenarioDraftDefinition } }>(`/scenarios/${encodeURIComponent(id)}/publish`, "POST", { revision, confirm: true, confirmation_token: confirmationToken });
 }
 export function fetchScenarioVersions(id: string) {
   return request<{ id: string; version: number; state: string }[]>(`/scenarios/${encodeURIComponent(id)}/versions`);

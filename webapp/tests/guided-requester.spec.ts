@@ -42,8 +42,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.route("**/api/registry/options", route => route.fulfill({ json: { status: "success", data: { departments: [], locations: [] } } }));
     await page.route("**/public_api/ticket_forms/current**", route => route.fulfill({ json: { status: "ok", pack: { key: "request_forms", version: "test", forms: [{ key: "printer", title: "Не печатает", fields: [{ key: "legacy", label: "Старое поле", type: "text" }], availability_policy: { available_without_agent_binding: true } }] } } }));
     await page.route("**/api/service-catalog/current", route => route.fulfill({ json: { status: "ok", catalog_version: "test", services: [{ service_code: "workplace", title: "Рабочее место", offerings: [{ offering_code: "printer", full_code: "workplace.printer", title: "Не печатает", request_template_key: "printer", guided_scenario_enabled: true }] }] } }));
-    await page.goto("/app/requester/new");
-    await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
+    await page.goto(mode === "ticket" ? "/app/requester/new?offering=workplace.printer" : "/app/requester/new");
+    if (mode === "self-service") await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
     await expect(page.getByRole("heading", { name: "Что происходит с принтером?" })).toBeVisible();
     await expect(page.getByText("Старое поле")).toHaveCount(0);
     await page.getByRole("textbox", { name: /Опишите проблему/ }).fill("Задание остаётся в очереди");

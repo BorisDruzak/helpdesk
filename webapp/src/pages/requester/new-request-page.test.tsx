@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RequesterNewRequestPage } from "./new-request-page";
@@ -19,7 +19,11 @@ function jsonResponse(payload: unknown, status = 200) {
 
 function LocationProbe() {
   const location = useLocation();
-  return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
+  const navigate = useNavigate();
+  return <><span data-testid="location">{`${location.pathname}${location.search}`}</span>
+    <button onClick={() => navigate("/app/requester/new?offering=workplace.printer_issue")}>Test printer link</button>
+    <button onClick={() => navigate("/app/requester/new?offering=workplace.laptop_broken")}>Test laptop link</button>
+    <button onClick={() => navigate("/app/requester/new")}>Test normal link</button></>;
 }
 
 function renderPage(initialEntry = "/app/requester/new") {
@@ -57,6 +61,39 @@ afterEach(() => {
 });
 
 describe("RequesterNewRequestPage", () => {
+  it("isolates and restores each draft on same-router offering and normal URL navigation", async () => {
+    installNewRequestMock({ withPrinterOffering: true });
+    renderPage();
+    await fillLaptopForm("Обычный черновик");
+    fireEvent.click(screen.getByRole("button", { name: "Test printer link" }));
+    await waitFor(() => expect((screen.getByLabelText("Категория обращения") as HTMLSelectElement).selectedOptions[0].textContent).toContain("Проблема с принтером"));
+    fireEvent.change(screen.getByLabelText("Кратко"), { target: { value: "Черновик принтера" } });
+    fireEvent.click(screen.getByRole("button", { name: "Test laptop link" }));
+    await waitFor(() => expect((screen.getByLabelText("Категория обращения") as HTMLSelectElement).selectedOptions[0].textContent).toContain("Сломался ноутбук"));
+    fireEvent.change(screen.getByLabelText("Кратко"), { target: { value: "Ссылочный ноутбук" } });
+    fireEvent.click(screen.getByRole("button", { name: "Test normal link" }));
+    await waitFor(() => expect(screen.getByLabelText("Кратко")).toHaveValue("Обычный черновик"));
+    fireEvent.click(screen.getByRole("button", { name: "Test printer link" }));
+    await waitFor(() => expect(screen.getByLabelText("Кратко")).toHaveValue("Черновик принтера"));
+    fireEvent.click(screen.getByRole("button", { name: "Test laptop link" }));
+    await waitFor(() => expect(screen.getByLabelText("Кратко")).toHaveValue("Ссылочный ноутбук"));
+  });
+  it("opens the catalog-validated offering from a direct link without overwriting an unrelated draft", async () => {
+    installNewRequestMock({ withPrinterOffering: true });
+    const draftKey = "pc_client.requester.new_request.draft.v1:person-1:default";
+    const draft = JSON.stringify({ status: "draft", intent: "", selectedCategoryKey: "workplace.laptop_broken", fieldValues: { summary: "Сохранённый ноутбук" } });
+    window.sessionStorage.setItem(draftKey, draft);
+    renderPage("/app/requester/new?offering=workplace.printer_issue");
+    expect(await screen.findByLabelText("Кратко")).toBeVisible();
+    expect((screen.getByLabelText("Категория обращения") as HTMLSelectElement).selectedOptions[0].textContent).toContain("Проблема с принтером");
+    expect(window.sessionStorage.getItem(draftKey)).toBe(draft);
+  });
+  it("does not auto-select an offering absent from the requester catalog", async () => {
+    installNewRequestMock();
+    renderPage("/app/requester/new?offering=private.hidden");
+    expect(await screen.findByLabelText("Категория обращения")).toHaveValue("");
+    expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument();
+  });
   function draftEntries() {
     return Array.from({ length: window.sessionStorage.length }, (_, index) => window.sessionStorage.key(index))
       .filter((key): key is string => Boolean(key?.startsWith("pc_client.requester.new_request.draft.v1")))

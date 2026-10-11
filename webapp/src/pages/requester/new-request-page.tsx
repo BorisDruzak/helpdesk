@@ -320,12 +320,20 @@ function uniqueMessages(messages: string[]): string[] {
 }
 
 export function RequesterNewRequestPage() {
+  const location = useLocation();
+  const parameters = new URLSearchParams(location.search);
+  // Each URL selection owns its restoration lifecycle and persistence key.
+  return <RequesterNewRequestContent key={JSON.stringify([parameters.get("intent") || "", parameters.get("offering") || ""])} />;
+}
+
+function RequesterNewRequestContent() {
   const { session } = useSession();
   const [createConflict, setCreateConflict] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const requestIntent = useMemo(() => new URLSearchParams(location.search).get("intent") || "", [location.search]);
+  const linkedOffering = useMemo(() => new URLSearchParams(location.search).get("offering") || "", [location.search]);
   const bootstrapQuery = useRequesterBootstrapQuery();
   const formPackQuery = useRequesterFormPackQuery();
   const catalogQuery = useRequesterServiceCatalogQuery();
@@ -340,7 +348,7 @@ export function RequesterNewRequestPage() {
   const selectedDeviceId = deviceChoice ?? defaultDeviceId;
   const primaryDevice = devices.find((device) => device.device_id === selectedDeviceId) ?? null;
   const hasAgentContext = Boolean(primaryDevice);
-  const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, requestIntent) : null;
+  const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, linkedOffering ? `${requestIntent}:offering:${linkedOffering}` : requestIntent) : null;
   const [requestSeed, setRequestSeed] = useState(() => (requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : ""));
   const [fieldValues, setFieldValues] = useState<DynamicFormValues>({});
   const [fieldServerErrors, setFieldServerErrors] = useState<Record<string, string>>({});
@@ -377,7 +385,8 @@ export function RequesterNewRequestPage() {
   );
   const shouldAutoSelectRecommendedCategory = Boolean(recommendedCategoryKey && recommendation?.confident);
   const autoSelectCategoryKey =
-    requestIntent === OWNER_CHANGE_INTENT ? recommendedCategoryKey : shouldAutoSelectRecommendedCategory ? recommendedCategoryKey : null;
+    categoryOptions.find(option => linkedOffering && option.offering?.full_code === linkedOffering)?.key ??
+    (requestIntent === OWNER_CHANGE_INTENT ? recommendedCategoryKey : shouldAutoSelectRecommendedCategory ? recommendedCategoryKey : null);
   const selectedCategory = useMemo(
     () => categoryOptions.find((option) => option.key === selectedCategoryKey) ?? null,
     [categoryOptions, selectedCategoryKey],
