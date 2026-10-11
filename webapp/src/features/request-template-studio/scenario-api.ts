@@ -15,6 +15,7 @@ export type ScenarioItem = {
   id: string; scenario_key: string; service_code: string; offering_full_code: string;
   category_id: string | null; title: string; description: string; archived: boolean; enabled: boolean;
   published_version_id: string | null; status?: ScenarioStatus; revision?: number;
+  published_version?: number | null; updated_at?: string;
   issues?: { code: string; path: string; message: string }[];
 };
 export type ScenarioDetail = { scenario: ScenarioItem; draft: { revision: number; definition: ScenarioDraftDefinition } };

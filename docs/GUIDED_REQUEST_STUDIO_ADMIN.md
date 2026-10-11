@@ -2,7 +2,11 @@
 
 The admin/auditor entry is `/app/admin/request-template-studio`. It opens the
 catalog by default. Search and status filters run on the server. Selecting a
-category includes all its descendants before pagination. The catalog also shows
+category includes all its descendants before pagination. The catalog shows
+the full human category path, description, active published version number and
+last scenario/draft modification time. Individual category branches can be
+collapsed with keyboard-accessible buttons independently of service branches.
+The catalog also shows
 existing offerings without a scenario as **Обычная форма / нет сценария**, with a
 link to the existing Forms editor and an admin action to create a scenario for
 that offering. Existing form-only consumers continue using their canonical forms.

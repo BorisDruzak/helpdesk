@@ -2,6 +2,11 @@
 
 Canonical plan: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2.md`.
 Execution ledger: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2-progress.md`.
+P10 catalog fidelity: human category paths, description, active version number,
+latest scenario/draft timestamp and independent category collapse verified by
+63 frontend tests, 2 owned PostgreSQL tests and 4 browser viewport checks.
+Inline new offering/profile, publication result, actual staging A–J and exact CI
+remain open; P10 is IN PROGRESS.
 Branch: `codex/guided-request-studio-v2`, specification baseline `507ee7154b947391d51148d3a8929b77983eb77e`.
 P0 PASS: new domain/auth RED 13 failures + 2 legacy passes; existing PostgreSQL API 5,
 no-DB server 22 and frontend 74 passes. Independent review and owned DB/tunnel cleanup complete.

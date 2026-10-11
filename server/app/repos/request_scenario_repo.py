@@ -250,10 +250,11 @@ class RequestScenarioRepo:
                     break
                 selected.update(additions)
         category_names = {item["id"]: item["title"] for item in categories}
-        rows = (await self.session.execute(select(RequestStudioScenario, RequestStudioDraft).join(RequestStudioDraft, RequestStudioDraft.scenario_id == RequestStudioScenario.id).order_by(RequestStudioScenario.title, RequestStudioScenario.id))).all()
+        rows = (await self.session.execute(select(RequestStudioScenario, RequestStudioDraft, RequestStudioScenarioVersion.version).join(RequestStudioDraft, RequestStudioDraft.scenario_id == RequestStudioScenario.id).outerjoin(RequestStudioScenarioVersion, RequestStudioScenarioVersion.id == RequestStudioScenario.published_version_id).order_by(RequestStudioScenario.title, RequestStudioScenario.id))).all()
         scenarios = []
-        for row, draft in rows:
+        for row, draft, published_version in rows:
             item = serialize(row)
+            item["updated_at"] = max(row.updated_at, draft.updated_at).isoformat()
             issues = []
             try:
                 definition = ScenarioDefinition.model_validate(draft.definition)
@@ -261,7 +262,7 @@ class RequestScenarioRepo:
             except ValueError:
                 issues = [{"code": "incomplete_draft", "path": "blocks", "message": "Добавьте вопросы и переходы"}]
             item["status"] = "archived" if row.archived else "published" if row.published_version_id else "errors" if issues else "draft"
-            item.update(revision=draft.revision, issues=issues, category_title=category_names.get(row.category_id, ""))
+            item.update(revision=draft.revision, published_version=published_version, issues=issues, category_title=category_names.get(row.category_id, ""))
             text_value = " ".join(str(item.get(key) or "") for key in ("title", "description", "category_title", "offering_full_code")).casefold()
             matches_status = (status == "all" or item["status"] == status
                 or status == "errors" and bool(issues) and not row.archived
@@ -269,7 +270,7 @@ class RequestScenarioRepo:
             if (not query or query.casefold() in text_value) and matches_status and (selected is None or row.category_id in selected):
                 scenarios.append(item)
         offerings = await self.catalog.list_offerings()
-        bound = {row.offering_full_code for row, _ in rows if not row.archived}
+        bound = {row.offering_full_code for row, _, _ in rows if not row.archived}
         legacy = [item for item in offerings if item["full_code"] not in bound
             and status in {"all", "form_only"} and selected is None
             and (not query or query.casefold() in " ".join(str(item.get(key) or "") for key in ("public_title", "short_description", "full_code", "service_code")).casefold())]

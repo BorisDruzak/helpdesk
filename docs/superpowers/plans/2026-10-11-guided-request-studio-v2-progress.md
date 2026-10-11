@@ -696,3 +696,36 @@ Final focused browser regression for the section increment:
  guided-requester.spec.ts guided-sections.spec.ts guided-category-inline.spec.ts`
 — 27 passed (1.1m), including requester self-service/ticket flows and Studio
 loading/empty/error/retry. Scoped workspace verification and diff check PASS.
+
+### P10 fidelity increment: catalog metadata and category collapse
+
+- Catalog shows full human service/category ancestry, description, active
+  published version number and last scenario/draft modification time. Individual
+  category branches are independently collapsible with keyboard-accessible
+  buttons; category selection and existing service collapse remain available.
+- Server adds nullable `published_version` by joining the active immutable
+  pointer, preserving unpublished and legacy form-only entries. No migration,
+  new endpoint or dependency; requester execution/publication controls unchanged.
+- RED: component test failed on missing human path. Owned PostgreSQL publication
+  regression failed with missing `published_version`; GREEN after projection.
+- Independent review found stale timestamp on same-actor block-only edits.
+  Dedicated owned PostgreSQL regression confirmed RED (scenario remained 2020,
+  draft changed to 2026), then GREEN after selecting the maximum timestamp.
+  Reviewer rechecked fix and reported no new findings.
+- Frontend Studio + catalog page: 63 passed (9.39s); production build/typecheck
+  PASS (existing common chunk warning). Scoped workspace and diff check PASS.
+- Owned PostgreSQL timestamp + atomic publication/replay/rollback tests:
+  2 passed (90.33s). First publication metadata GREEN independently 1 passed
+  (62.52s). Harness dropped owned runtime databases and closed its tunnel.
+- Browser `guided-studio.spec.ts --grep 'catalog and wizard'`: 4 passed (14.0s),
+  1366/1440/1920/tablet820, keyboard collapse, category metadata, visible primary
+  action, no horizontal overflow, console/network errors or draft loss. Initial
+  tablet check used hidden desktop navigation; corrected to visible catalog
+  action and verified unsaved-change cancellation. This is fixture browser
+  evidence, not the actual staging A–J pilot.
+- Screenshots copied to ignored
+  `artifacts/browser_checks/guided-request-studio-v2/p10/catalog/`; 1366 visually
+  inspected. Browser fixture stopped after validation.
+- Remaining: inline new offering/profile, publication result, readiness coverage
+  fidelity audit, actual isolated staging A–J, exact canonical CI/security/coverage/
+  Sonar and final P0–P10/AC matrix. P10 remains IN PROGRESS.

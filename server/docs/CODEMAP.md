@@ -62,6 +62,8 @@
   orchestrates the scenario-api/catalog/purpose/category/wizard components and
   editor/context/dirty-guard hooks under `features/request-template-studio`.
   See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
+  Catalog metadata uses the immutable version referenced by the active pointer
+  (not the greatest historical version), and the latest scenario/draft timestamp.
 - The wizard's user-scenario step uses `scenario-block-builder` for selection,
   bounded undo and graph edits; `scenario-builder-model` preserves explicit
   routes and checks removal dependencies. Block/form-page/field/condition editors

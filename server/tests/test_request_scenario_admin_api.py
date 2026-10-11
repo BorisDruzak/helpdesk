@@ -1,13 +1,14 @@
 """P3 isolated PostgreSQL HTTP/RBAC/CAS/catalog acceptance."""
 import asyncio
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import HelpdeskService, HelpdeskServiceOffering, HelpdeskServiceCatalogAudit, RequestTemplate
-from app.db.request_scenario_models import RequestStudioCategory, RequestStudioDraft
+from app.db.request_scenario_models import RequestStudioCategory, RequestStudioDraft, RequestStudioScenario
 
 pytestmark = [pytest.mark.db_cleanup("full"), pytest.mark.light_app]
 BASE = "/api/web/admin/request-studio"
@@ -35,6 +36,28 @@ async def create(client, definition):
     response = await client.post(BASE + "/scenarios", headers=ADMIN, json={"definition": definition})
     assert response.status == 200, await response.text()
     return (await response.json())["data"]
+
+
+@pytest.mark.asyncio
+async def test_catalog_timestamp_tracks_block_only_edit_by_same_actor(test_client_light, test_engine):
+    definition = await seed(test_engine)
+    created = await create(test_client_light, definition)
+    identifier = created["scenario"]["id"]
+    old = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    async with async_sessionmaker(test_engine)() as session:
+        (await session.get(RequestStudioScenario, identifier)).updated_at = old
+        (await session.get(RequestStudioDraft, identifier)).updated_at = old
+        await session.commit()
+    definition["blocks"][0]["fields"][0]["label"] = "Подробное описание"
+    response = await test_client_light.put(BASE + "/scenarios/" + identifier + "/draft", headers=ADMIN, json={"definition": definition, "revision": 1})
+    assert response.status == 200, await response.text()
+    saved = (await response.json())["data"]
+    assert datetime.fromisoformat(saved["scenario"]["updated_at"]) == old
+    response = await test_client_light.get(BASE + "/catalog", headers=ADMIN)
+    assert response.status == 200, await response.text()
+    item = next(item for item in (await response.json())["data"]["scenarios"] if item["id"] == identifier)
+    assert item["updated_at"] == saved["draft"]["updated_at"]
+    assert item["published_version"] is None
 
 
 @pytest.mark.asyncio

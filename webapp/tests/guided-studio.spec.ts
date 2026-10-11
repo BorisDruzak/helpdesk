@@ -14,7 +14,7 @@ async function fixture(page: Page) {
     const path = new URL(route.request().url()).pathname;
     let data: unknown = {};
     if (path === "/api/web/session/me") data = { user_login: "studio-test@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view"] };
-    else if (path.includes("/request-studio/catalog")) data = { categories: [{ id: "c1", parent_id: null, service_code: "it", title: "Оборудование", slug: "hardware", revision: 1, visibility: "internal", lifecycle_status: "draft" }], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [{ id: "s1", title: definition.title, status: "draft", offering_full_code: "it.printer", category_id: "c1", issues: [] }], total: 1, offset: 0, limit: 100 };
+    else if (path.includes("/request-studio/catalog")) data = { categories: [{ id: "c1", parent_id: null, service_code: "it", title: "Оборудование", slug: "hardware", revision: 1, visibility: "internal", lifecycle_status: "draft" }, { id: "c2", parent_id: "c1", service_code: "it", title: "Принтеры", slug: "printers", lifecycle_status: "draft" }], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [{ id: "s1", title: definition.title, description: definition.description, service_code: "it", status: "draft", published_version: 7, updated_at: "2026-10-11T10:00:00Z", offering_full_code: "it.printer", category_id: "c2", issues: [] }], total: 1, offset: 0, limit: 100 };
     else if (path.includes("/request-studio/scenarios/s1")) {
       if (route.request().method() === "PUT") { const body = route.request().postDataJSON(); mutations.push(body); definition = body.definition; revision += 1; }
       data = { scenario: { id: "s1", archived: false }, draft: { revision, definition } };
@@ -74,7 +74,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
   });
 }
-for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
+for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
   test(`guided studio catalog and wizard ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);
     const state = await fixture(page);
@@ -82,6 +82,15 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     const create = page.getByRole("button", { name: "Создать сценарий", exact: true });
     await expect(create).toBeInViewport(); await expect(create).toBeEnabled();
     await expect(page.getByRole("button", { name: "Оборудование", exact: true })).toBeVisible();
+    await expect(page.getByText("ИТ → Оборудование → Принтеры", { exact: true })).toBeVisible();
+    await expect(page.getByText("Сценарий помощи с печатью", { exact: true })).toBeVisible();
+    await expect(page.getByText("Версия 7", { exact: true })).toBeVisible();
+    await expect(page.locator("time")).toHaveAttribute("datetime", "2026-10-11T10:00:00Z");
+    const collapse = page.getByRole("button", { name: "Свернуть категорию Оборудование", exact: true });
+    await collapse.focus(); await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Принтеры", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Развернуть категорию Оборудование", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Принтеры", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath("catalog.png") });
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
@@ -102,7 +111,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await page.getByRole("button", { name: "Предыдущий этап", exact: true }).click();
     await page.getByLabel("Название сценария").fill("Несохранённая правка");
     page.once("dialog", dialog => dialog.dismiss());
-    await page.getByRole("link", { name: /Центр администрирования/ }).click();
+    if (viewport.width < 1024) await page.getByRole("button", { name: "Вернуться в каталог", exact: true }).click();
+    else await page.getByRole("link", { name: /Центр администрирования/ }).click();
     await expect(page).toHaveURL(/admin\/request-template-studio$/);
     await expect(page.getByLabel("Название сценария")).toHaveValue("Несохранённая правка");
     expect(state.mutations).toHaveLength(1);

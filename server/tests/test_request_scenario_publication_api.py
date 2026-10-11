@@ -111,6 +111,11 @@ async def test_atomic_publish_replay_actor_scope_and_rollback_as_new_version(tes
     response = next(response for response in responses if response.status == 200)
     result = (await response.json())["data"]
     published_id = result["version"]["id"]
+    catalog_response = await test_client_light.get(BASE + "/catalog", headers=ADMIN)
+    assert catalog_response.status == 200, await catalog_response.text()
+    catalog_item = next(item for item in (await catalog_response.json())["data"]["scenarios"] if item["id"] == identifier)
+    assert catalog_item["published_version"] == 3
+    assert catalog_item["updated_at"]
     async with async_sessionmaker(test_engine)() as session:
         version = await session.get(RequestStudioScenarioVersion, published_id)
         assert version.version == 3 and version.source_snapshot["effective_template"]
