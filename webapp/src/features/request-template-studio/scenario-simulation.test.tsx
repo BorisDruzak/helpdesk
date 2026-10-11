@@ -3,6 +3,22 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSimulationPanel } from "./scenario-simulation";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it("simulates an explicit unknown answer as null rather than omitting the field", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    if (body.steps.length) {
+      expect(body.steps[0].answers).toEqual({ printer: null });
+      return new Response(JSON.stringify({ status: "success", data: { state: { revision: 2, results: {}, history: ["questions"] }, current_step: { id: "review", kind: "review", title: "Проверка ответов" } } }), { headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ status: "success", data: { state: { revision: 1, results: {}, history: [] }, current_step: { id: "questions", kind: "form_page", title: "Принтер", fields: [{ key: "printer", label: "Модель", type: "text", allow_unknown: true }] } } }), { headers: { "Content-Type": "application/json" } });
+  }));
+  render(<ScenarioSimulationPanel id="scenario" revision={1} dirty={false} disabled={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Не знаю" }));
+  fireEvent.click(screen.getByRole("button", { name: "Продолжить проверку" }));
+  await screen.findByRole("heading", { name: "Проверка ответов" });
+});
+
 it.each([false, true])("shows canonical facts and processing with canonical OLA object (configured=%s)", async configured => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: {
     state: { revision: 3, results: {}, answers: { scope: "team" }, history: ["questions", "review"] },

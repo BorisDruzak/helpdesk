@@ -54,7 +54,7 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
         </fieldset>
         <p className="text-sm text-slate-500">При смене типа несовместимые назначения снимаются. Приоритет и полномочия вычисляет сервер. Выбранные сущности должны быть проверены по серверному контексту.</p>
         <label className="block">Ключ факта<Input maxLength={100} pattern="[a-z0-9][a-z0-9_]*" value={field.process_mapping?.fact_key ?? ""} placeholder={field.key} onChange={event => onChange({ ...field, process_mapping: { ...field.process_mapping, fact_key: event.target.value || null } })} /></label>
-        <label className="block">Группа вопросов<Input maxLength={100} pattern="[a-z0-9][a-z0-9_]*" value={field.group ?? ""} onChange={event => onChange({ ...field, group: event.target.value || null })} /></label>
+        {field.group && <p className="break-all">Ключ раздела: {field.group}</p>}
         <ScenarioSeparatedInput label="Прежние ключи (через запятую)" values={field.aliases ?? []} separator="," disabled={disabled} limit={8} onChange={aliases => onChange({ ...field, aliases })} />
         <p className="break-all text-sm">Стабильный ключ: {field.key}</p>
         <div><p className="font-medium">Используется в условиях</p>{uses.length ? <ul>{uses.map((use, index) => <li key={index}>{use}</li>)}</ul> : <p className="text-sm">Зависимостей нет</p>}</div>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { RequestFormFieldControl, type DynamicFormValues } from "./dynamic-form";
-import type { RequestFormField } from "./types";
+import { ScenarioFields, type ScenarioProjectedField } from "./scenario-fields";
 import { Button } from "./ui/form-controls";
 
 type Step = {
@@ -11,7 +11,8 @@ type Step = {
   back_targets: { id: string; title: string }[];
   block: {
     id: string; kind: string; title: string;
-    fields?: (RequestFormField & { value?: DynamicFormValues[string]; allow_unknown?: boolean })[];
+    fields?: (ScenarioProjectedField & { value?: DynamicFormValues[string]; allow_unknown?: boolean })[];
+    layout?: "single" | "group" | "section";
     has_dynamic_fields?: boolean;
     content?: { body: string; format: string };
     acknowledgment_required?: boolean;
@@ -146,7 +147,7 @@ export function ScenarioSession({ offering, owner = "", deviceId }: { offering: 
     {step ? <>
       <h2 ref={heading} tabIndex={-1} className="text-xl font-semibold text-slate-950">{step.block.title}</h2>
       <fieldset disabled={busy} className="grid min-w-0 gap-4" onBlur={() => void preview()}>
-        {(step.block.fields || []).map(field => <div key={field.key}>
+        <ScenarioFields fields={step.block.fields || []} layout={step.block.layout} renderField={field => <>
           <RequestFormFieldControl field={field} value={values[field.key]} error={error?.fields[field.key]} onChange={value => {
             requestSequence.current++; setValues(current => ({ ...current, [field.key]: value })); setError(null);
           }} />
@@ -154,7 +155,7 @@ export function ScenarioSession({ offering, owner = "", deviceId }: { offering: 
             requestSequence.current++; setError(null);
             setValues(current => ({ ...current, [field.key]: event.target.checked ? null : undefined }));
           }} />Не знаю</label> : null}
-        </div>)}
+        </>} />
         {step.block.content ? <p className="whitespace-pre-wrap break-words">{step.block.content.body}</p> : null}
         {step.block.kind === "instruction" ? <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />Инструкция выполнена</label> : null}
         {step.block.answers ? <dl className="grid gap-3">{step.block.answers.map(item => <div key={item.key}><dt className="font-medium">{item.label}</dt><dd className="break-words text-sm">{item.display_value}</dd></div>)}</dl> : null}

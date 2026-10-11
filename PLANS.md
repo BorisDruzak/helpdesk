@@ -1912,3 +1912,13 @@ Full P10 actual staging A–J and canonical CI remain open.
 Inline category final browser gate: 4 viewports PASS (10.1s), no console/network
 errors or body overflow. Independent review and deferred-response regression
 pass; Chromium /v HTML patterns fixed. Full P10 remains in progress.
+
+Guided Studio P10 sections/preview fidelity: named sections are now rendered in
+requester/simulator/selected-step preview through a shared display-only renderer.
+Group titles use additive bounded DTO metadata, preserve old keys and validate
+consistency; the builder assigns/renames groups by title. Preview uses existing
+requester controls; full-branch preview opens server simulation. Reviewer found
+missing simulator unknown-answer controls; RED/GREEN and browser now verify
+explicit null. Server 146 PASS; frontend 72 PASS; owned PostgreSQL selected-policy
+publication/session/ticket creation 1 PASS (67.70s); 32-question browser all four
+viewports PASS (10.9s); build/typecheck PASS. Full P10 remains in progress.

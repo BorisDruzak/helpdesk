@@ -7,6 +7,7 @@ from app.db.models import RoutingPolicy, SlaPolicy, TicketQueue, Ticket, TicketN
 from tests.test_request_scenario_publication_api import ready, preview
 from tests.test_request_scenario_admin_api import ADMIN, BASE
 from tests.test_request_scenario_submit_api import submit_step, OWNER
+from tests.test_request_scenario_session_api import BASE as SESSION_BASE
 
 pytestmark = [pytest.mark.db_cleanup("full"), pytest.mark.light_app]
 
@@ -27,6 +28,9 @@ async def test_saved_policy_selection_has_real_creation_parity(test_client_light
     definition["process_binding"]["policy_refs"] = {"routing": "missing"}
     assert (await test_client_light.put(url + "/draft", headers=ADMIN, json={"revision": 1, "definition": definition})).status == 400
     definition["process_binding"]["policy_refs"] = {"routing": code, "sla": code + "_sla"}
+    definition["blocks"][0]["layout"] = "section"
+    for field in definition["blocks"][0]["fields"]:
+        field.update(group="printer", group_title="Printer details")
     saved = await test_client_light.put(url + "/draft", headers=ADMIN, json={"revision": 1, "definition": definition})
     assert saved.status == 200, await saved.text()
     models = [Ticket, TicketNotification, Operation, TicketApproval]
@@ -49,6 +53,11 @@ async def test_saved_policy_selection_has_real_creation_parity(test_client_light
     body = await preview(test_client_light, identifier, 2)
     published = await test_client_light.post(url + "/publish", headers=ADMIN, json=body)
     assert published.status == 200, await published.text()
+    started = await test_client_light.post(SESSION_BASE, headers=OWNER, json={"offering_full_code": definition["offering_full_code"]})
+    assert started.status == 200, await started.text()
+    projected = (await started.json())["data"]["block"]
+    assert projected["layout"] == "section"
+    assert all(field["group_title"] == "Printer details" for field in projected["fields"])
     _, requester_url = await submit_step(test_client_light, definition, mapped=True)
     result = await test_client_light.post(requester_url + "/submit", headers=OWNER, json={"revision": 3, "confirm": True})
     assert result.status == 200, await result.text()

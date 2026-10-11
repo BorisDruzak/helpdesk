@@ -36,6 +36,17 @@ def test_current_step_hides_graph_process_and_mapping_authority():
         assert secret not in str(result)
 
 
+def test_sections_project_human_group_titles_without_changing_answers():
+    project = import_module("tickets.request_scenario_session").project_step
+    raw = _definition()
+    raw["blocks"][0]["layout"] = "section"
+    raw["blocks"][0]["fields"][0].update(group="printer", group_title="Устройство")
+    result = project(ScenarioDefinition.model_validate(raw), RuntimeState("questions", answers={"summary": "Printer"}))
+    assert result["block"]["layout"] == "section"
+    assert result["block"]["fields"][0]["group_title"] == "Устройство"
+    assert result["block"]["fields"][0]["value"] == "Printer"
+
+
 @pytest.mark.parametrize("key", ["actor_id", "version_id", "priority", "expires_at"])
 def test_start_cannot_supply_owner_version_policy_or_ttl(key):
     dto = import_module("web_api.dto.request_scenario_session").SessionStart

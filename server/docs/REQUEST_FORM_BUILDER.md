@@ -186,3 +186,10 @@ scenario by ordinary draft save. Legacy form builder endpoints remain compatible
 - `/app/admin/forms` can add the standard priority question set to any request template, after which every label, option, required flag and role remains editable in the server UI.
 - The local agent reads the same server form pack. If a template defines priority fields, the agent renders those fields in the priority step and sends their values in `form_payload`. Fixed local priority controls are only a fallback for old packs without priority fields.
 - SLA shown to the requester/agent is not local text. It is read from the created/refreshed ticket payload (`first_response_due_at`, `resolution_due_at`) after the server computes effective priority and SLA targets.
+
+Guided scenario pages add optional human section titles (`group_title`) to their
+existing group key. The Studio assigns sections by title and preserves the key
+when renaming. Requester, simulator and selected-step preview share a display-only
+section renderer, using existing dynamic-form controls. Legacy form packs and
+form-only API payloads keep their current behavior. Unknown-answer toggles in
+scenario simulation use explicit null, never fabricated entity context.

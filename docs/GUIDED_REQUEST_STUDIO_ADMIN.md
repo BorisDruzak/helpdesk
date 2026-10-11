@@ -192,3 +192,15 @@ the service to the scenario service. Saving selects the new category while
 preserving the scenario's unsaved title, description and graph. Close or save
 this form before navigating between wizard stages, saving, copying or archiving
 the scenario. Category settings keep their own local advanced disclosure.
+
+For a long page choose «Разделы», select a question, then choose or create its
+section by human title. Renaming a section updates all questions using that
+section without changing their stable group keys. The requester and test run
+render the same named sections; hidden fields are removed by the server first.
+«Один вопрос» and «Группа вопросов» keep their existing layouts. Older groups
+without a title use a readable fallback instead of exposing the machine key.
+
+Selected-step preview renders the existing requester controls in a disabled
+view; it does not evaluate conditions or execute the branch. «Предпросмотр всей
+ветки» opens the server testing stage. Its «Не знаю» control sends explicit null
+for fields allowing an unknown answer, matching the requester contract.

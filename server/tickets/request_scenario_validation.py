@@ -40,10 +40,18 @@ def validate_scenario(definition):
             add("duplicate_block", path, "Block identifier is duplicated")
         blocks[block.id] = block
         if block.kind == "form_page":
+            group_titles = {}
             if block.layout == "single" and len(block.fields) != 1:
                 add("invalid_layout", path, "Single-question layout requires one field")
             for field in block.fields:
                 fp = f"{path}.fields.{field.key}"
+                if field.group_title is not None:
+                    if not field.group or not field.group_title.strip():
+                        add("invalid_group", fp, "Named section requires a group and nonblank title")
+                    elif field.group in group_titles and group_titles[field.group] != field.group_title:
+                        add("invalid_group", fp, "Fields in one section must use the same title")
+                    else:
+                        group_titles[field.group] = field.group_title
                 if field.key in fields:
                     add("duplicate_field", fp, "Field identifier is duplicated")
                 fields[field.key] = field

@@ -4,6 +4,7 @@ import { Select } from "../../components/ui/select";
 import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioField } from "./scenario-contract";
 import { fieldUses, mapCondition, newField, newKey } from "./scenario-builder-model";
 import { ScenarioFieldEditor } from "./scenario-field-editor";
+import { ScenarioFieldGroup } from "./scenario-field-group";
 
 type FormPage = Extract<ScenarioBlock, { kind: "form_page" }>;
 type Props = { block: FormPage; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: FormPage) => void };
@@ -44,6 +45,7 @@ export function ScenarioFormPageEditor({ block, definition, disabled, onChange }
       }}>Удалить вопрос</Button>
     </div>
     {message && <p role="alert">{message}</p>}
+    {field && block.layout === "section" && <ScenarioFieldGroup key={field.key} field={field} fields={block.fields} disabled={disabled} onChange={update} />}
     {field && <ScenarioFieldEditor key={field.key} field={field} definition={definition} disabled={disabled} onChange={next => update(block.fields.map(old => old.key === field.key ? next : old))} />}
   </div>;
 }

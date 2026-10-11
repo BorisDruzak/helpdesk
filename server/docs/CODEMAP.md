@@ -454,3 +454,9 @@ The Studio purpose step (`scenario-purpose.tsx`) embeds `scenario-category-form.
 using the existing category CRUD. `scenario-wizard.tsx` and the admin page guard
 navigation/actions while this inline form is open and refresh the catalog after
 save; the unsaved scenario definition stays in its existing editor state.
+
+`webapp/src/features/requester/scenario-fields.tsx` renders already-projected
+scenario fields in named sections without evaluating conditions. It is shared
+by requester sessions, admin simulation and disabled block preview. The Studio
+`scenario-field-group.tsx` assigns/renames section titles in the draft; server
+scenario DTO/graph validation bound and validate `group_title` alongside `group`.

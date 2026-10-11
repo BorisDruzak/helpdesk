@@ -60,6 +60,20 @@ function response(data: unknown, status = 200) {
   return new Response(JSON.stringify({ status: "success", data }), { status, headers: { "Content-Type": "application/json" } });
 }
 
+it("renders server-projected sections with human group names and unchanged fields", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => response({ id: "session", revision: 1, state: "active", back_targets: [], block: {
+    id: "questions", kind: "form_page", title: "Что происходит", layout: "section", fields: [
+      { key: "printer", type: "text", label: "Модель принтера", group: "printer_details", group_title: "Устройство" },
+      { key: "issue", type: "textarea", label: "Описание проблемы", group: "problem_details", group_title: "Проблема" },
+    ],
+  } })));
+  render(<ScenarioSession offering="workplace.printer" />);
+  await screen.findByRole("group", { name: "Устройство" });
+  expect(screen.getByRole("group", { name: "Проблема" })).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: /Модель принтера/ })).toBeInTheDocument();
+  expect(screen.queryByText("printer_details")).not.toBeInTheDocument();
+});
+
 it("renders only the server step and sends typed answer with revision", async () => {
   const step = { id: "session", revision: 1, state: "active", back_targets: [],
     block: { id: "question", kind: "form_page", title: "Проблема", fields: [

@@ -26,6 +26,7 @@ export type ScenarioField = {
   process_mapping?: { roles?: ScenarioRole[]; fact_key?: string | null };
   allow_unknown?: boolean;
   group?: string | null;
+  group_title?: string | null;
   aliases?: string[];
 };
 export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null };

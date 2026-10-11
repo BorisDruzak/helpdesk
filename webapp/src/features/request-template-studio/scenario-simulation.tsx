@@ -5,6 +5,7 @@ import { simulateScenario, type ScenarioSimulation } from "./scenario-api";
 import type { ScenarioAnswerRequest, ScenarioDraftDefinition } from "./scenario-contract";
 import { diagnosticFailureLabels, type DiagnosticFailureStatus } from "./scenario-diagnostics";
 import { ScenarioProcessingResult } from "./scenario-processing-result";
+import { ScenarioFields } from "../requester/scenario-fields";
 
 export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition }) {
   const [result, setResult] = useState<ScenarioSimulation | null>(null);
@@ -66,9 +67,11 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
     })}
     {block && <fieldset className="min-w-0 space-y-4" disabled={dirty || disabled || busy} onBlur={preview}>
       <h3 tabIndex={-1} ref={heading} className="font-semibold">{block.title}</h3>
-      {(block.fields || []).map(field => <RequestFormFieldControl key={field.key} field={field} value={values[field.key]} onChange={value => {
+      <ScenarioFields fields={block.fields || []} layout={block.layout} renderField={field => <><RequestFormFieldControl field={field} value={values[field.key]} onChange={value => {
         sequence.current++; setValues(previous => ({ ...previous, [field.key]: value })); setError("");
-      }} />)}
+      }} />{field.allow_unknown && <label className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={values[field.key] === null} onChange={event => {
+        sequence.current++; setError(""); setValues(previous => ({ ...previous, [field.key]: event.target.checked ? null : undefined }));
+      }} />Не знаю</label>}</>} />
       {block.content && <p className="whitespace-pre-wrap">{block.content.body}</p>}
       {block.kind === "instruction" && <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />Инструкция выполнена</label>}
       {block.answers && <dl className="space-y-2">{block.answers.map(item => <div key={item.key}><dt className="font-medium">{item.label}</dt><dd>{item.display_value}</dd></div>)}</dl>}

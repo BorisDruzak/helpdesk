@@ -661,3 +661,38 @@ slug validation; category and scenario key patterns now escape it.
 - Remaining fidelity: inline new offering/profile, real field sections and
   faithful selected-step preview, catalog metadata/collapse, publication result.
 - Full P10 still IN PROGRESS: actual isolated staging A–J and canonical CI open.
+
+### P10 fidelity increment: named sections and requester preview
+
+Added optional bounded `group_title` beside existing group key; rejected blank,
+ownerless or inconsistent titles within one page. Legacy groups remain valid.
+Requester, server simulator UI and selected-step preview share display-only
+section rendering. Builder assigns/renames sections by human title, retaining
+stable keys. Selected preview now uses existing requester dynamic controls,
+disabled, with conditional visibility explicitly delegated to server testing.
+A full-branch preview action opens that testing stage.
+
+- RED: group title rejected by DTO; requester lacked section group; preview lacked
+  real controls. GREEN: projection, section requester, disabled controls regressions.
+- Reviewer found simulator lacked allow_unknown; RED checkbox regression then
+  GREEN explicit `{printer:null}` command, sequence invalidation, browser assertion.
+- Scenario server no_db suite: 146 passed, 32 deselected (2.39s).
+- Studio plus requester session component suite: 72 passed (7.84s).
+- Owned PostgreSQL processing API: 1 passed (67.70s); saved/published section
+  metadata reaches the requester while actual queue/SLA/ticket parity remains PASS.
+- Typecheck/build: PASS, existing common chunk warning only.
+- Browser `guided-sections.spec.ts`: 4 passed (10.9s), 32 questions, exactly one
+  selected field editor, keyboard selection/drawer Escape, human section controls,
+  full server-simulator stage and explicit unknown null, no overflow/errors/unsafe API.
+- Screenshots copied to ignored `artifacts/browser_checks/guided-request-studio-v2/
+  p10/sections/`; 1366 screenshot visually inspected. Fixture E2E is not actual staging.
+- Independent review found no remaining blocker in this bounded increment.
+- No migration/new endpoint/dependency or changes to the legacy form contracts.
+- Remaining fidelity: inline new offering/profile, catalog metadata/collapse and
+  publication result. Actual staging A–J and canonical CI still open. P10 IN PROGRESS.
+
+Final focused browser regression for the section increment:
+`PC_CLIENT_WEBAPP_E2E_PORT=4188 pnpm --dir webapp test:e2e guided-studio.spec.ts
+ guided-requester.spec.ts guided-sections.spec.ts guided-category-inline.spec.ts`
+— 27 passed (1.1m), including requester self-service/ticket flows and Studio
+loading/empty/error/retry. Scoped workspace verification and diff check PASS.

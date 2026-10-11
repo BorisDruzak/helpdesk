@@ -194,3 +194,10 @@ preview continues to return only its existing public projection.
 
 The catalog-first React wizard and editing behavior are documented in
 [`GUIDED_REQUEST_STUDIO_ADMIN.md`](../../docs/GUIDED_REQUEST_STUDIO_ADMIN.md).
+
+Named sections add optional `ScenarioField.group_title` (1–300 chars) beside the
+existing stable `group`. Validation rejects a title without a group, blank titles,
+and conflicting titles within a page's group. Old definitions without titles
+remain valid. The existing safe projection includes only the current visible
+fields and their group/title; conditions still run on the server. This adds no
+migration or endpoint and preserves field keys, typed answers and policy facts.

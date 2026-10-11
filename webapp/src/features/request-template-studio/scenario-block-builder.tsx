@@ -7,8 +7,8 @@ import { addBlock, blockLabels, duplicateBlock, moveBlock, removeBlock } from ".
 import { ScenarioBlockEditor } from "./scenario-block-editor";
 import { ScenarioPreviewPanel } from "./scenario-preview-panel";
 
-type Props = { definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioDraftDefinition) => void };
-export function ScenarioBlockBuilder({ definition, disabled, onChange }: Props) {
+type Props = { definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioDraftDefinition) => void; onSimulate?: () => void };
+export function ScenarioBlockBuilder({ definition, disabled, onChange, onSimulate }: Props) {
   const [selected, setSelected] = useState(definition.entry_block_id);
   const [kind, setKind] = useState<ScenarioBlock["kind"]>("form_page");
   const [past, setPast] = useState<ScenarioDraftDefinition[]>([]);
@@ -43,6 +43,7 @@ export function ScenarioBlockBuilder({ definition, disabled, onChange }: Props) 
   }
   return <div className="min-w-0 space-y-4">
     <h2 className="text-lg font-semibold">Блоки сценария</h2>
+    {onSimulate && <Button variant="secondary" onClick={onSimulate}>Предпросмотр всей ветки</Button>}
     <div className="flex flex-wrap items-end gap-2">
       <label className="min-w-0 flex-1">Тип нового блока<Select disabled={disabled} value={kind} onChange={event => setKind(event.target.value as ScenarioBlock["kind"])}>{Object.entries(blockLabels).map(([type, title]) => <option key={type} value={type}>{title}</option>)}</Select></label>
       <Button disabled={disabled || blocks.length >= 256} onClick={() => {

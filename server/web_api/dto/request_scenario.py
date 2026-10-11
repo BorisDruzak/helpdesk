@@ -126,6 +126,7 @@ class ScenarioField(StrictModel):
     process_mapping: ProcessMapping = Field(default_factory=ProcessMapping)
     allow_unknown: bool = False
     group: Key | None = None
+    group_title: Annotated[str, Field(min_length=1, max_length=300)] | None = None
     aliases: Annotated[list[Key], Field(max_length=8)] = Field(default_factory=list)
 
     @model_validator(mode="after")

@@ -15,6 +15,22 @@ def _modules():
     return import_module("tickets.request_scenario_validation"), import_module("tickets.request_scenario_runtime")
 
 
+@pytest.mark.parametrize("group,title", [(None, "Section"), ("details", " ")])
+def test_named_section_requires_safe_group_and_human_title(group, title):
+    raw = pilot()
+    raw["blocks"][0]["fields"][0].update(group=group, group_title=title)
+    issues = _modules()[0].validate_scenario(ScenarioDefinition.model_validate(raw))
+    assert any(issue.code == "invalid_group" for issue in issues)
+
+
+def test_one_section_cannot_present_conflicting_titles():
+    raw = pilot()
+    raw["blocks"][0]["fields"][0].update(group="details", group_title="First")
+    raw["blocks"][0]["fields"][1].update(group="details", group_title="Second")
+    issues = _modules()[0].validate_scenario(ScenarioDefinition.model_validate(raw))
+    assert any(issue.code == "invalid_group" for issue in issues)
+
+
 def pilot():
     return {
         "schema_version": 1, "scenario_key": "printer_no_print", "service_code": "workplace",
