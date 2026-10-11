@@ -71,3 +71,8 @@ def test_delete_order_places_children_before_parents() -> None:
     assert order.index("ticket_events") < order.index("tickets")
     assert order.index("operations") < order.index("tickets")
     assert order.index("consent_decisions") < order.index("operations")
+
+
+def test_scenario_reset_clears_sessions_and_preserves_configuration():
+    config = {"request_studio_categories", "request_studio_scenarios", "request_studio_scenario_versions", "request_studio_drafts"}
+    assert reset_test_data.build_clear_tables(config | {"request_studio_sessions"}) == {"request_studio_sessions"}

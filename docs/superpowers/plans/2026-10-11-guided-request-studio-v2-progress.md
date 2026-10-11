@@ -112,7 +112,7 @@ are recorded here. Frontend toolchain bootstrapped with the existing project scr
 | Stage | State |
 |---|---|
 | P0 | PASS: architecture/source matrix, intended RED, existing PostgreSQL/no-DB/frontend baseline, independent review, cleanup |
-| P1 | Next: typed domain/TS contract + additive persistence after migration 146 |
+| P1 | PASS: typed domain/TS contract, additive persistence, PostgreSQL/rollback, independent review; commit below in Git history |
 | P2–P10 | Not started; gated by predecessor |
 
 ## Acceptance matrix
@@ -130,6 +130,67 @@ are recorded here. Frontend toolchain bootstrapped with the existing project scr
 | AC19 | Pending migrations, frontend/backend/E2E and canonical CI/security gates |
 | AC20 | Respected so far: no production deployment/publication |
 
-No new routes or migrations exist yet. CODEMAP runtime entries need no change
-at P0; add entries when implementation lands. Browser and canonical CI signoff
+No new routes exist yet. Migration 147 and domain/storage CODEMAP entries are
+implemented in P1; PostgreSQL storage acceptance has passed. Browser and canonical CI signoff
 are pending, not replaced by source review or unit tests.
+
+## P1 evidence (PASS)
+
+- P0 commit: `ef5b1db21e0693b8d5edacd8997f127704b7fbf6`
+  (`test(studio): record P0 baseline and scenario contract gaps`).
+- Extended DTO contract tests: RED **35 failed, 2 passed, 3 deselected** before
+  implementation; GREEN **37 passed, 3 deselected** with
+  `python -m pytest server/tests/test_request_scenario_contract.py -k "not requester_session_read" -q --tb=short`.
+  Three requester handler tests remain intentionally RED until P6; no release
+  readiness claim or skip/xfail is added.
+- Metadata registration test: RED **1 failed, 4 deselected** before models;
+  GREEN **1 passed, 4 deselected** after registration. Additional DB constraints
+  and bounded 147 → 146 → 147 rollback tests have been added.
+- `pnpm --dir webapp exec tsc --noEmit`: **PASS**.
+- `python scripts/audit_test_inventory.py --workspace . --paths server/tests/test_request_scenario_contract.py server/tests/test_request_scenario_persistence.py --strict`: **PASS**, zero issues.
+- Initial PostgreSQL migration/persistence: **5 passed in 627.87s**, fresh migration
+  through 147. Expanded persistence (9) and actual migrated cleanup schema (1):
+  **10 passed in 792.70s**. Uses the existing scoped harness
+  and approved staging target, with a retained test template for later stage
+  tests. The task-owned template must be cleaned at final acceptance.
+- Existing catalog audit schema supports scenario/category object types without
+  a schema change; atomic application audit writes are required in P3/P8.
+- Final DTO/metadata selection after separating no-DB and persistence files:
+  **38 passed, 3 deselected**. Inventory now owns persistence in the canonical
+  DB/API catch-all suite and contract tests in the no-DB suite.
+- Independent P1 review found reset omitted sessions. Regression RED:
+  **1 failed, 2 deselected**; added sessions to `EXPLICIT_CLEAR_TABLES`, reset
+  regression suite GREEN: **3 passed**. Configuration remains preserved.
+- Model-based cleanup schema audit: **PASS**, all nine risk counters zero.
+  Cleanup profile audit: **PASS**, 269 files, zero missing profiles.
+  Scoped workspace verification and diff whitespace check: **PASS**.
+- Independent review also identified nullable condition-source wire drift.
+  Frontend `satisfies ScenarioCondition` regression reproduced **TS2322 RED**;
+  aligned TS `field?: null` with standard Pydantic JSON projection. Backend
+  roundtrip/contract + reset selection: **42 passed, 3 deselected**; frontend
+  typecheck **PASS**, wire regression **1 passed**.
+- Concurrency test no longer introduces artificial row locks or treats a
+  deadlock/timeout as validation success; only SQLSTATE 23514 is accepted.
+  Wrong scenario/offering version uses retired state to avoid masking a missing
+  FK with the active-version unique index; all three composite FK cases require
+  SQLSTATE 23503. Separate rerun of these corrected tests:
+  **2 passed in 65.28s**. This receipt supersedes their original expanded-run
+  variants for the relevant concurrency/FK acceptance claims.
+- Actual 147 → 146 → 147 rollback retained the synthetic legacy service row and
+  removed/recreated exactly the five additive tables. Fresh migration reached
+  147; actual schema/model/cleanup classification audit passed.
+- Owned run databases and tunnels were dropped/closed on test exit; templates
+  are intentionally retained until final stage cleanup. No staging application
+  database, service, production runtime or Endpoint operation was changed.
+- Independent final P1 review: no remaining blocking findings after correcting
+  all four reported issues. Reviewer inspected source/claims; it did not rerun
+  PostgreSQL or frontend tests itself. P2 graph/runtime, P3 audit APIs, P6 auth,
+  P8 publication, browser/CI/security gates remain mandatory and unverified.
+
+P1 changed files: `server/web_api/dto/request_scenario.py`,
+`server/app/db/request_scenario_models.py`, `server/app/db/models.py`, migration
+`20261011_147_guided_request_scenarios.py`, server contract/persistence tests,
+`server/tests/conftest.py`, `scripts/reset_test_data.py` and its regression test,
+`quality/db_table_classification.toml`, frontend `scenario-contract.ts` and its
+wire test, `server/docs/GUIDED_REQUEST_SCENARIOS.md`, `server/docs/CODEMAP.md`,
+`PLANS.md` and this ledger. No HTTP route or running application was added.

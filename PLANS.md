@@ -5,7 +5,10 @@ Execution ledger: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2-pr
 Branch: `codex/guided-request-studio-v2`, specification baseline `507ee7154b947391d51148d3a8929b77983eb77e`.
 P0 PASS: new domain/auth RED 13 failures + 2 legacy passes; existing PostgreSQL API 5,
 no-DB server 22 and frontend 74 passes. Independent review and owned DB/tunnel cleanup complete.
-P1 is next; P2–P10 remain gated. No production deployment, live publication or Endpoint execution.
+P1 PASS: typed DTO/TS + migration147/storage; PostgreSQL10 and corrected FK/concurrency2,
+DTO/reset42 and frontendwire1 pass; tsc, cleanup/inventory/workspace gates pass.
+Independent review has no remaining findings. P2 is next; P3–P10 remain gated.
+No production deployment, live publication or Endpoint execution.
 
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI
 

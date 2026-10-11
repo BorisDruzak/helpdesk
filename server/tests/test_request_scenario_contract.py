@@ -17,6 +17,13 @@ from web_api.dto.request_studio import RequestStudioDraftRequest
 pytestmark = pytest.mark.no_db
 
 
+def test_scenario_tables_are_registered_with_existing_metadata():
+    import_module("app.db.models")
+    base = import_module("app.db.base").Base
+    required = {"request_studio_categories", "request_studio_scenarios", "request_studio_scenario_versions", "request_studio_drafts", "request_studio_sessions"}
+    assert required <= set(base.metadata.tables)
+
+
 def _definition():
     return {
         "schema_version": 1,
@@ -114,3 +121,65 @@ def test_new_scenario_is_not_silently_accepted_by_legacy_studio():
     raw["scenario"] = _definition()
     with pytest.raises(ValidationError):
         RequestStudioDraftRequest.model_validate(raw)
+
+
+@pytest.mark.parametrize("path,value", [
+    ("schema_version", 2), ("schema_version", "1"), ("scenario_key", "bad/key"),
+    ("offering_full_code", "other.printer_issue"),
+])
+def test_domain_rejects_schema_and_binding_mismatch(path, value):
+    raw = _definition()
+    raw[path] = value
+    with pytest.raises(ValidationError):
+        _dto().ScenarioDefinition.model_validate(raw)
+
+
+@pytest.mark.parametrize("type_name", ["text", "textarea", "select", "multi_select", "radio", "checkbox", "number", "date", "datetime", "phone", "email", "url", "user_picker", "department_picker", "location_picker", "device_picker", "service_picker"])
+def test_domain_uses_supported_legacy_field_types(type_name):
+    raw = _definition()
+    field = raw["blocks"][0]["fields"][0]
+    field["type"] = type_name
+    if type_name in {"select", "multi_select", "radio"}:
+        field["options"] = [{"value": "unknown", "label": "Не знаю"}]
+    assert _dto().ScenarioDefinition.model_validate(raw).blocks[0].fields[0].type == type_name
+
+
+def test_unsupported_attachment_is_not_accepted_as_working_field():
+    raw = _definition()
+    raw["blocks"][0]["fields"][0]["type"] = "file"
+    with pytest.raises(ValidationError):
+        _dto().ScenarioDefinition.model_validate(raw)
+
+
+def test_draft_can_be_saved_before_adding_pages():
+    raw = _definition()
+    raw["blocks"] = []
+    raw["entry_block_id"] = None
+    assert _dto().ScenarioDraftDefinition.model_validate(raw).blocks == []
+    with pytest.raises(ValidationError):
+        _dto().ScenarioDefinition.model_validate(raw)
+
+
+def test_condition_cannot_use_arbitrary_context_reference():
+    raw = _definition()
+    raw["blocks"][0]["transitions"][0]["when"] = {"op": "eq", "source": "actor_role", "value": "admin"}
+    with pytest.raises(ValidationError):
+        _dto().ScenarioDefinition.model_validate(raw)
+
+
+def test_condition_depth_is_bounded_before_recursive_validation():
+    condition = {"op": "exists", "source": "answer", "field": "summary"}
+    for _ in range(40):
+        condition = {"op": "not", "condition": condition}
+    raw = _definition()
+    raw["blocks"][0]["transitions"][0]["when"] = condition
+    with pytest.raises(ValidationError):
+        _dto().ScenarioDefinition.model_validate(raw)
+
+
+def test_result_condition_standard_json_roundtrip_uses_nullable_field():
+    raw = _definition()
+    raw["blocks"][0]["transitions"][0]["when"] = {"op": "eq", "source": "current_result", "value": "yes"}
+    exported = _dto().ScenarioDefinition.model_validate(raw).model_dump(mode="json")
+    assert exported["blocks"][0]["transitions"][0]["when"] == {"source": "current_result", "field": None, "op": "eq", "value": "yes"}
+    assert _dto().ScenarioDefinition.model_validate(exported).model_dump(mode="json") == exported

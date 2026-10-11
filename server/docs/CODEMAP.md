@@ -33,6 +33,12 @@
 
 ## Dynamic request forms
 
+- Guided scenario contracts/storage: `web_api/dto/request_scenario.py`,
+  `app/db/request_scenario_models.py`, additive migration 147. See
+  `GUIDED_REQUEST_SCENARIOS.md` for limits, immutable version/session pins,
+  cleanup classification and the 147 → 146 rollback boundary. Graph execution
+  and new APIs are not introduced by the storage layer.
+
 - `server/tickets/form_catalog.py` is the compatibility facade and catalog
   persistence/augmentation boundary. Existing import names and callable
   signatures are retained.
