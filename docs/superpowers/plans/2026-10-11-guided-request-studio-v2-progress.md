@@ -979,3 +979,13 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   application data was changed, and every created test role was removed.
   Windows duplicate race run was stopped with its owned process tree and cleanup
   removed the temporary role and one owned test DB. It is not a PASS receipt.
+
+- P10 installed simulation exposed a focus defect: leaving an automatically
+  focused heading triggered an empty preview and disabled the answer before
+  typing. Control-only blur fixes this. Independent review also found that
+  input blur before a direct Continue click swallowed the action; transitions
+  to buttons inside the fieldset now skip preview and submit current answers.
+  Unit RED/GREEN and native direct-click RED reproduced both paths. Final
+  focused checks: 32 PASS; build/typecheck and scoped workspace PASS. Browser
+  fixture Tab/direct-click and auditor route: 12 PASS at 1366/1440/1920/820.
+  New installed candidate acceptance remains required; prior H is not a PASS.

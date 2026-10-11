@@ -1,7 +1,37 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSimulationPanel } from "./scenario-simulation";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it("keeps a dynamic page editable when focus moves from its heading to an answer", async () => {
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ status: "success", data: {
+      state: { revision: body.steps.length + 1, results: {}, answers: {}, history: [] },
+      current_step: body.steps.length ? { id: "review", kind: "review", title: "Проверьте ответы" }
+        : { id: "details", kind: "form_page", title: "Подробности влияния", has_dynamic_fields: true,
+            fields: [{ key: "team_note", type: "text", label: "Какая работа остановилась?" }] },
+    } }), { headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSimulationPanel id="scenario" revision={1} dirty={false} disabled={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
+  const heading = await screen.findByRole("heading", { name: "Подробности влияния" });
+  expect(heading).toHaveFocus();
+  const input = screen.getByRole("textbox", { name: "Какая работа остановилась?" });
+  act(() => input.focus());
+  expect(input).toBeEnabled();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  fireEvent.change(input, { target: { value: "Synthetic department print work" } });
+  const advance = screen.getByRole("button", { name: "Продолжить проверку" });
+  fireEvent.blur(input, { relatedTarget: advance });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(advance).toBeEnabled();
+  fireEvent.click(advance);
+  await screen.findByRole("heading", { name: "Проверьте ответы" });
+  expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body)).steps[0].answers)
+    .toEqual({ team_note: "Synthetic department print work" });
+});
 
 it.each([true, false])("preserves explicit unknown versus unchecked omission (unknown=%s)", async unknownSelected => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {

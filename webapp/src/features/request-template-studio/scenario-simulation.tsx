@@ -65,7 +65,13 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       const label = status && Object.hasOwn(diagnosticFailureLabels, status) ? diagnosticFailureLabels[status as DiagnosticFailureStatus] : "Недоступно";
       return <div className="rounded border p-3" key={key} role="status"><p>Симуляция — реальная операция не выполнялась.</p><p>{diagnostics.find(item => item.id === key)?.title || "Проверка"}: {label}</p></div>;
     })}
-    {block && <fieldset className="min-w-0 space-y-4" disabled={dirty || disabled || busy} onBlur={preview}>
+    {block && <fieldset className="min-w-0 space-y-4" disabled={dirty || disabled || busy} onBlur={event => {
+      // Heading/button focus also bubbles here; preview only edited controls.
+      // Actions send these answers themselves; preview must not swallow their click.
+      const next = event.relatedTarget;
+      if (next instanceof Element && next.closest("button") && event.currentTarget.contains(next)) return;
+      if (event.target.matches("input, textarea, select")) preview();
+    }}>
       <h3 tabIndex={-1} ref={heading} className="font-semibold">{block.title}</h3>
       <ScenarioFields fields={block.fields || []} layout={block.layout} renderField={field => <><RequestFormFieldControl field={field} value={values[field.key]} onChange={value => {
         sequence.current++; setValues(previous => ({ ...previous, [field.key]: value })); setError("");
