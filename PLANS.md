@@ -1956,3 +1956,10 @@ and canonical submit checks remain enforced; old graphs retain their behavior.
 RED 8 / GREEN 8, focused backend 107, full no-DB 1279 and frontend 25 pass;
 full frontend 654, build/typecheck and 12 requester fixture browser cases pass. Independent review
 has no blockers. Actual installed acceptance and final quality gates remain open.
+
+P10 raw-SQL concurrency regression: accept only PostgreSQL cycle constraint or
+deadlock abort, preserve exactly one commit and exact tree shape, then retry the
+losing edge after winner commit and require 23514. Independent review PASS;
+canonical isolated PostgreSQL persistence suite 9 PASS (773.26s), including
+147→146→147 legacy sentinel preservation. Temporary DB/role cleanup confirmed.
+Final exact-SHA CI remains required before candidate installation/publication.

@@ -246,11 +246,25 @@ async def test_concurrent_category_reparent_cannot_commit_cycle(test_engine):
                 return True
             except DBAPIError as error:
                 await session.rollback()
-                assert error.orig.sqlstate == "23514"
+                # Raw UPDATE locks its row before the trigger's service lock.
+                # PostgreSQL may abort the opposing transaction as a deadlock;
+                # the admin API instead acquires the service lock first.
+                assert error.orig.sqlstate in {"23514", "40P01"}
                 return False
 
     committed = await asyncio.gather(reparent(left, right), reparent(right, left))
     assert sum(committed) == 1
     async with factory() as session:
         rows = dict((await session.execute(sa.select(m.RequestStudioCategory.id, m.RequestStudioCategory.parent_id).where(m.RequestStudioCategory.id.in_([left, right])))).all())
+        assert set(rows) == {left, right}
         assert rows[left] is None or rows[right] is None
+        winning_child, winning_parent = (left, right) if committed[0] else (right, left)
+        assert rows[winning_child] == winning_parent
+        assert rows[winning_parent] is None
+        # After the winner commits, the rejected edge must deterministically
+        # fail the cycle constraint, without a competing transaction.
+        with pytest.raises(DBAPIError) as cycle:
+            await session.execute(sa.update(m.RequestStudioCategory).where(
+                m.RequestStudioCategory.id == winning_parent).values(parent_id=winning_child))
+        await session.rollback()
+        assert cycle.value.orig.sqlstate == "23514"

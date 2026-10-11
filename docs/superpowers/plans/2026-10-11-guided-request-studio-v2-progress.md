@@ -922,3 +922,13 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   row-before-advisory lock ordering can deadlock opposing UPDATEs; Admin API
   obtains the service lock first. The original teardown timeout RCA remains
   unproven. CI remains red, and latest candidate is not installed or published.
+- Raw-SQL race assertion corrected without weakening the tree invariant: accept
+  only 23514/40P01 for the losing transaction, require exactly one commit, both
+  rows and the exact winning edge/root; retry the losing edge after commit and
+  require 23514. Production API concurrency assertions remain unchanged.
+  Independent review: no blockers. Canonical harness-owned PostgreSQL suite:
+  9 persistence tests PASS (773.26s), including additive 147→146→147 rollback
+  retaining the legacy sentinel. Temporary role absent and owned DBs removed.
+  Staging synthetic requester profile is now complete via browser form, with
+  zero devices and canonical owned department/location records. No pilot
+  publication or tickets yet; staging service stopped. Full P10 remains open.
