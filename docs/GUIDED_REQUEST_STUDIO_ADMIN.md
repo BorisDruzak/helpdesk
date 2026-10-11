@@ -73,7 +73,9 @@ elsewhere cannot be removed until its dependencies are edited. Local undo/redo
 is bounded to 100 snapshots and resets on an externally replaced definition.
 
 Question pages have single/group/section layout, a question list and exactly one
-field editor. Labels, types, required/help/placeholder and option labels are
+field editor. The question list scrolls within a bounded height, so pages with
+30 or more questions do not push the selected editor below the entire list.
+Labels, types, required/help/placeholder and option labels are
 primary controls. Each field/option/block/instruction has its own inline advanced
 settings: stable identifiers, typed conditions, length/numeric bounds, aliases,
 fact key, dependency uses and compatible multiple process roles. Changing a

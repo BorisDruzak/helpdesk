@@ -29,6 +29,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.goto("/app/admin/request-template-studio");
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "2. Пользовательский сценарий", exact: true }).click();
+    const questions = page.getByRole("list", { name: "Вопросы страницы", exact: true });
+    const questionListSize = await questions.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }));
+    expect(questionListSize.height).toBeLessThanOrEqual(200);
+    expect(questionListSize.content).toBeGreaterThan(questionListSize.height);
     const last = page.getByRole("button", { name: "Вопрос 32", exact: true });
     await last.focus(); await page.keyboard.press("Enter");
     await expect(page.getByRole("group", { name: "Редактор вопроса", exact: true })).toHaveCount(1);

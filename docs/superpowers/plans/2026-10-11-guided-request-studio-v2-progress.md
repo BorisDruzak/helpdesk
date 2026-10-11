@@ -1008,3 +1008,20 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   accepted. Owned data remains four tickets, zero approvals/notifications/device
   operations; global operation/link counts unchanged. Staging service stopped.
   These receipts apply to 08dfa34f only and do not accept the new fixes.
+
+- AC05 visual review of the 32-question page found navigation height 1532px,
+  pushing its single field editor below all question rows. Navigation now has
+  a bounded height with native vertical scrolling. Browser RED confirmed1532px;
+  GREEN 4 at 1366/1440/1920/820 verifies bounded height, overflowing content,
+  keyboard selection of question32 and one editor. Editor unit5, build/typecheck,
+  scoped workspace and independent review PASS. Admin guidance updated.
+- Candidate3b86fdc6 full frontend coverage executed112 files/663 tests PASS
+  (299.87s): line66.90%, branch57.36%; baseline line67.78% preserved.
+  Studio/browser33 and requester/32-question browser16 PASS before the bounded
+  list correction. Canonical Semgrep1.178.0:17 legacy findings outside changed
+  task files, zero task-file findings, zero secrets/errors. Exact CI38170784757
+  initially failed one unchanged FormsBuilder required-field unit; same-SHA
+  focused retry and local full frontend PASS, one CI rerun pending. No CI or
+  installed acceptance is inferred from local results. The list correction
+  requires its own exact candidate gate. Backend coverage continues on frozen08
+  with byte-identical server/shared/scripts trees; candidate Sonar remains open.

@@ -32,7 +32,7 @@ export function ScenarioFormPageEditor({ block, definition, disabled, onChange }
     <label className="block">Расположение вопросов<Select disabled={disabled} value={block.layout ?? "group"} onChange={event => onChange({ ...block, layout: event.target.value as FormPage["layout"] })}>
       <option value="single" disabled={block.fields.length !== 1}>Один вопрос</option><option value="group">Группа вопросов</option><option value="section">Разделы</option>
     </Select></label>
-    <ul aria-label="Вопросы страницы" className="space-y-1">{block.fields.map(item => <li key={item.key}><Button className="max-w-full whitespace-normal text-left" variant={item.key === field?.key ? "secondary" : "ghost"} aria-pressed={item.key === field?.key} onClick={() => setSelected(item.key)}>{item.label}</Button></li>)}</ul>
+    <ul aria-label="Вопросы страницы" className="max-h-48 space-y-1 overflow-y-auto">{block.fields.map(item => <li key={item.key}><Button className="max-w-full whitespace-normal text-left" variant={item.key === field?.key ? "secondary" : "ghost"} aria-pressed={item.key === field?.key} onClick={() => setSelected(item.key)}>{item.label}</Button></li>)}</ul>
     <div className="flex flex-wrap gap-2">
       <Button disabled={disabled || block.fields.length >= 100 || block.layout === "single"} onClick={() => insert()}>Добавить вопрос</Button>
       <Button variant="ghost" disabled={disabled || block.fields.length >= 100 || block.layout === "single"} onClick={() => insert(true)}>Копировать вопрос</Button>
