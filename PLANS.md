@@ -1963,3 +1963,9 @@ losing edge after winner commit and require 23514. Independent review PASS;
 canonical isolated PostgreSQL persistence suite 9 PASS (773.26s), including
 147→146→147 legacy sentinel preservation. Temporary DB/role cleanup confirmed.
 Final exact-SHA CI remains required before candidate installation/publication.
+
+P10 J publication correction: blocker actions select the source block and focus
+the missing transition target, or open and focus the relevant processing policy
+after registry loading. Navigation leaves the draft unchanged. Four RED tests
+confirmed the missing actions; focused GREEN and installed acceptance are
+recorded in the progress ledger. Full P10 acceptance remains open.

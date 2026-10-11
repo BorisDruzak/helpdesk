@@ -66,6 +66,38 @@ async function fixture(page: Page, publication = false) {
   return { errors, failures, mutations };
 }
 
+for (const width of [1366, 1440, 1920, 820]) {
+  test(`guided studio publication issue focus ${width}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1080 });
+    const state = await fixture(page, true);
+    await page.route("**/api/web/admin/request-studio/scenarios/s1", route => route.fulfill({ json: { status: "success", data: { scenario: { id: "s1", archived: false }, draft: { revision: 3, definition: {
+      schema_version: 1, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", process_binding: { request_template_key: "printer" }, entry_block_id: "first",
+      blocks: [{ id: "first", kind: "finish", title: "Начало", message: "Готово" }, { id: "instruction", kind: "instruction", title: "Проверьте бумагу", content: { body: "Добавьте бумагу" }, transitions: [{ to: "first", when: null }, { to: "missing", when: null }] }],
+    } } } } }));
+    let issue = { code: "unknown_target", path: "blocks.instruction.transitions", message: "Целевой блок не найден" };
+    await page.route("**/api/web/admin/request-studio/scenarios/s1/publish-preview", route => route.fulfill({ json: { status: "success", data: { health: { health_status: "ok" }, readiness: { can_publish: false, issues: [issue], variants_checked: 0 }, diff: [], confirmation_token: null } } }));
+    await page.route("**/api/web/admin/request-studio/scenarios/s1/versions", route => route.fulfill({ json: { status: "success", data: [] } }));
+    await page.route("**/api/web/admin/helpdesk-model/policies", route => route.fulfill({ json: { status: "success", data: { policies: {} } } }));
+    await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("button", { name: "Не печатает", exact: true }).click();
+    for (const [code, label] of [["unknown_target", "Проверьте бумагу"], ["routing_unavailable", "Маршрут и очередь"], ["sla_unavailable", "Сроки обслуживания"], ["closure_missing", "Закрытие обращения"]]) {
+      issue = { code, path: code === "unknown_target" ? "blocks.instruction.transitions" : "process_binding", message: "Исправьте настройку" };
+      await page.getByRole("button", { name: "5. Публикация", exact: true }).click();
+      await page.getByRole("button", { name: "Подготовить публикацию", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Опубликовать сценарий", exact: true })).toHaveCount(0);
+      const fix = page.getByRole("button", { name: `Исправить: ${label}`, exact: true });
+      await fix.focus(); await page.keyboard.press("Enter");
+      if (code === "unknown_target") {
+        await expect(page.getByLabel("Название блока", { exact: true })).toHaveValue("Проверьте бумагу");
+        await expect(page.getByRole("combobox", { name: "Следующий блок", exact: true }).nth(1)).toBeFocused();
+      } else await expect(page.getByRole("combobox", { name: label, exact: true })).toBeFocused();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+    await page.screenshot({ path: info.outputPath(`${width}-issue-focus.png`) });
+    expect(state.errors).toEqual([]); expect(state.failures).toEqual([]); expect(state.mutations).toEqual([]);
+  });
+}
+
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
   test(`guided studio publication confirmation ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);

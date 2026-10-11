@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchHelpdeskModelRegistry, type AdminHelpdeskPolicyItem } from "../forms-builder/api";
 import { AdvancedDisclosure } from "../../components/ui-page/advanced-disclosure";
 import { Button } from "../../components/ui/button";
@@ -6,10 +6,12 @@ import { Select } from "../../components/ui/select";
 import type { ScenarioDraftDefinition, ScenarioPolicyKind } from "./scenario-contract";
 
 const labels: Record<ScenarioPolicyKind, string> = { priority: "Приоритет по ответам", routing: "Маршрут и очередь", sla: "Сроки обслуживания", ola: "Внутренние сроки поддержки", approval: "Согласование", notification: "Уведомления", closure: "Закрытие обращения", visibility: "Видимость обращения" };
-export function ScenarioProcessing({ definition, disabled, onChange }: { definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioDraftDefinition) => void }) {
+export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy }: { definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioDraftDefinition) => void; focusPolicy?: ScenarioPolicyKind }) {
+  const policyRef = useRef<HTMLSelectElement>(null);
   const [policies, setPolicies] = useState<Record<string, AdminHelpdeskPolicyItem[]> | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  useEffect(() => { if (policies && focusPolicy) policyRef.current?.focus(); }, [policies, focusPolicy]);
   useEffect(() => {
     let active = true;
     setError(false); setPolicies(null);
@@ -24,7 +26,7 @@ export function ScenarioProcessing({ definition, disabled, onChange }: { definit
         const choices = (policies[kind] || []).filter((item, index, items) => item.is_active && !!item.published_at && items.findIndex(other => other.code === item.code && other.is_active && !!other.published_at) === index);
         const code = definition.process_binding.policy_refs?.[kind] || "";
         return <div key={kind} className="min-w-0 rounded border p-3">
-          <label>{labels[kind]}<Select disabled={disabled} value={code} onChange={event => {
+          <label>{labels[kind]}<Select ref={kind === focusPolicy ? policyRef : undefined} disabled={disabled} value={code} onChange={event => {
             const refs = { ...definition.process_binding.policy_refs };
             if (event.target.value) refs[kind] = event.target.value; else delete refs[kind];
             onChange({ ...definition, process_binding: { ...definition.process_binding, policy_refs: refs } });

@@ -9,13 +9,22 @@ import { ScenarioConditionEditor } from "./scenario-condition-editor";
 import { conditionFields } from "./scenario-builder-model";
 import { diagnosticFailureLabels } from "./scenario-diagnostics";
 
-type Props = { block: ScenarioBlock; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioBlock) => void; focusTitle: boolean };
-export function ScenarioBlockEditor({ block, definition, disabled, onChange, focusTitle }: Props) {
+type Props = { block: ScenarioBlock; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioBlock) => void; focusTitle: boolean; focusTransitions?: boolean };
+export function ScenarioBlockEditor({ block, definition, disabled, onChange, focusTitle, focusTransitions }: Props) {
   const titleRef = useRef<HTMLInputElement>(null);
+  const transitionRef = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    if (!focusTransitions) return;
+    const target = transitionRef.current;
+    const disclosure = target?.closest("details");
+    if (disclosure) disclosure.open = true;
+    if (target) target.focus(); else titleRef.current?.focus();
+  }, [block.id, focusTransitions]);
   useEffect(() => { if (focusTitle) titleRef.current?.focus(); }, [block.id, focusTitle]);
   const fields = conditionFields(definition, block.id);
   const targets = (definition.blocks ?? []).filter(item => item.id !== block.id);
   const transitions = block.transitions ?? [];
+  const issueTransitionIndex = Math.max(0, transitions.findIndex(edge => !targets.some(item => item.id === edge.to)));
   const terminal = block.kind === "finish" || block.kind === "submit_ticket";
   const resultValues = ({ resolution_check: ["yes", "no", "unknown"], instruction: ["acknowledged", "request_ticket"], diagnostic: Object.keys(diagnosticFailureLabels) } as Partial<Record<ScenarioBlock["kind"], string[]>>)[block.kind] ?? [];
   return <div className="min-w-0 space-y-4">
@@ -50,7 +59,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
         {!transitions.length && <p className="text-sm">{terminal ? "Конечный блок не имеет переходов." : "Добавьте переходы. Перестановка блоков не изменяет маршруты автоматически."}</p>}
         {transitions.map((edge, index) => <fieldset disabled={disabled} key={index} className="min-w-0 space-y-3 rounded-lg border p-3">
           <legend>Переход {index + 1}</legend>
-          <label className="block">Следующий блок<Select value={edge.to} onChange={event => onChange({ ...block, transitions: transitions.map((old, i) => i === index ? { ...old, to: event.target.value } : old) })}>
+          <label className="block">Следующий блок<Select ref={index === issueTransitionIndex ? transitionRef : undefined} value={edge.to} onChange={event => onChange({ ...block, transitions: transitions.map((old, i) => i === index ? { ...old, to: event.target.value } : old) })}>
             {!targets.some(item => item.id === edge.to) && <option value={edge.to}>Целевой блок не найден</option>}
             {targets.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
           </Select></label>

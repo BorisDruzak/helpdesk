@@ -240,3 +240,11 @@ requester and simulator can take this branch without checking «Инструкц
 выполнена». Answers already collected remain available for review; mandatory
 ticket facts and processing checks still apply. Ordinary «Продолжить» retains
 the configured acknowledgment requirement.
+
+Publication blockers include an «Исправить» action. It opens the source block
+of a graph error without changing the draft. For a broken transition, its local
+advanced settings open and the first missing target receives keyboard focus.
+Missing routing, SLA or closure opens the corresponding processing policy;
+focus waits for the registry to load. A general issue opens its relevant wizard
+stage rather than pretending to identify a more specific control. Save the
+correction and prepare publication again; the server remains authoritative.

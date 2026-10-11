@@ -932,3 +932,16 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   Staging synthetic requester profile is now complete via browser form, with
   zero devices and canonical owned department/location records. No pilot
   publication or tickets yet; staging service stopped. Full P10 remains open.
+- P10 J gap found during acceptance preparation: readiness text did not lead
+  to the faulty block or processing control. Publication now provides human
+  correction actions using server issue paths/codes. A broken target selects
+  its source block, opens local transitions and focuses the first missing
+  target; routing/SLA/closure focus their policy after registry loading.
+  General errors focus the relevant stage. Navigation does not mutate the
+  draft or bypass server publication checks. RED 4; focused GREEN 8 and Studio
+  regression 67 PASS; build/typecheck and scoped workspace PASS. Browser
+  fixture keyboard navigation PASS at 1366/1440/1920/820, including a broken
+  second transition and all three processing controls. Independent review
+  identified first-edge focus, now corrected to the first missing target.
+  Actual installed J remains required. Previous candidate baeba8b0 full CI
+  38161969186 PASS; final correction SHA needs its own exact CI.

@@ -5,6 +5,7 @@ import { RequestStudioApiError } from "./api";
 import { previewScenarioPublication, publishScenario, type ScenarioPublicationPreview } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 import { ScenarioPublicationSummary } from "./scenario-publication-summary";
+import { scenarioIssueDestination, type ScenarioIssueDestination } from "./scenario-issue-navigation";
 
 function humanValue(value: unknown): string {
   if (value === null || value === undefined) return "Не задано";
@@ -18,7 +19,7 @@ function humanValue(value: unknown): string {
 }
 const labels: Record<string, string> = { title: "Название", description: "Описание", blocks: "Шаги и вопросы", entry_block_id: "Первый шаг", category_id: "Категория", process_binding: "Обработка обращения", service_code: "Раздел", offering_full_code: "Услуга", scenario_key: "Сценарий", schema_version: "Формат", publish_offering: "Опубликовать новую услугу со сценарием", "offering.lifecycle_status": "Публикация новой услуги" };
 
-export function ScenarioPublication({ id, revision, dirty, disabled, definition, offeringTitle }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; offeringTitle?: string }) {
+export function ScenarioPublication({ id, revision, dirty, disabled, definition, offeringTitle, onIssue }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; offeringTitle?: string; onIssue?: (destination: ScenarioIssueDestination) => void }) {
   const cache = useQueryClient();
   const [preview, setPreview] = useState<ScenarioPublicationPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -69,7 +70,10 @@ export function ScenarioPublication({ id, revision, dirty, disabled, definition,
     {preview && <>
       <p>Policy Health: {preview.health.health_status}. Готовность: {preview.readiness.can_publish ? "проверена" : "есть препятствия"}.</p>
       <p>Проверено исходов: {preview.readiness.variants_checked}.</p>
-      {preview.readiness.issues.map((issue, index) => <p role="alert" key={`${issue.code}-${index}`}>{issue.message}</p>)}
+      {preview.readiness.issues.map((issue, index) => {
+        const destination = definition ? scenarioIssueDestination(issue, definition) : null;
+        return <div key={`${issue.code}-${index}`} className="space-y-2"><p role="alert">{issue.message}</p>{destination && onIssue && <Button variant="outline" onClick={() => onIssue(destination)}>Исправить: {destination.label}</Button>}</div>;
+      })}
       <h3 className="font-semibold">Изменения относительно опубликованной версии</h3>
       {preview.diff.length ? <dl className="min-w-0 space-y-3">{preview.diff.map(change => <div key={change.path} className="min-w-0 break-words rounded border p-3">
         <dt className="font-medium">{labels[change.path] || change.path}</dt><dd className="grid gap-1"><span>{humanValue(change.before)}</span><span>{humanValue(change.after)}</span></dd>

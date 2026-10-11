@@ -7,9 +7,9 @@ import { addBlock, blockLabels, duplicateBlock, moveBlock, removeBlock } from ".
 import { ScenarioBlockEditor } from "./scenario-block-editor";
 import { ScenarioPreviewPanel } from "./scenario-preview-panel";
 
-type Props = { definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioDraftDefinition) => void; onSimulate?: () => void };
-export function ScenarioBlockBuilder({ definition, disabled, onChange, onSimulate }: Props) {
-  const [selected, setSelected] = useState(definition.entry_block_id);
+type Props = { definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioDraftDefinition) => void; onSimulate?: () => void; issueBlockId?: string; issueTransitions?: boolean };
+export function ScenarioBlockBuilder({ definition, disabled, onChange, onSimulate, issueBlockId, issueTransitions }: Props) {
+  const [selected, setSelected] = useState(issueBlockId ?? definition.entry_block_id);
   const [kind, setKind] = useState<ScenarioBlock["kind"]>("form_page");
   const [past, setPast] = useState<ScenarioDraftDefinition[]>([]);
   const [future, setFuture] = useState<ScenarioDraftDefinition[]>([]);
@@ -17,7 +17,7 @@ export function ScenarioBlockBuilder({ definition, disabled, onChange, onSimulat
   const [removing, setRemoving] = useState(false);
   const [replacement, setReplacement] = useState("");
   const [error, setError] = useState("");
-  const [focusTitle, setFocusTitle] = useState(false);
+  const [focusTitle, setFocusTitle] = useState(!!issueBlockId && !issueTransitions);
   const emitted = useRef(definition);
   const blocks = definition.blocks ?? [];
   const block = blocks.find(item => item.id === selected) ?? blocks[0];
@@ -87,7 +87,7 @@ export function ScenarioBlockBuilder({ definition, disabled, onChange, onSimulat
           <div className="flex flex-wrap gap-2"><Button onClick={() => perform(() => { const next = removeBlock(definition, block.id, replacement || null); setRemoving(false); return next; })}>Подтвердить удаление блока</Button><Button variant="ghost" onClick={() => setRemoving(false)}>Отмена удаления</Button></div>
         </fieldset>}
         {error && <p role="alert">{error}</p>}
-        <ScenarioBlockEditor key={block.id} block={block} definition={definition} disabled={disabled} focusTitle={focusTitle} onChange={next => change({ ...definition, blocks: blocks.map(old => old.id === block.id ? next : old) })} />
+        <ScenarioBlockEditor key={block.id} block={block} definition={definition} disabled={disabled} focusTitle={focusTitle} focusTransitions={issueTransitions && block.id === issueBlockId} onChange={next => change({ ...definition, blocks: blocks.map(old => old.id === block.id ? next : old) })} />
       </section>
       {preview && <ScenarioPreviewPanel block={block} onClose={() => setPreview(false)} />}
     </div>}
