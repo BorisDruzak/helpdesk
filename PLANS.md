@@ -1,3 +1,12 @@
+# In progress: 2026-10-11 Guided Request Studio v2
+
+Canonical plan: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2.md`.
+Execution ledger: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2-progress.md`.
+Branch: `codex/guided-request-studio-v2`, specification baseline `507ee7154b947391d51148d3a8929b77983eb77e`.
+P0 PASS: new domain/auth RED 13 failures + 2 legacy passes; existing PostgreSQL API 5,
+no-DB server 22 and frontend 74 passes. Independent review and owned DB/tunnel cleanup complete.
+P1 is next; P2–P10 remain gated. No production deployment, live publication or Endpoint execution.
+
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI
 
 Goal: restore readable SLA/profile data and use the shared support shell for tickets;
