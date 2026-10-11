@@ -9,6 +9,7 @@ from sqlalchemy import select, text
 from app.db.models import RequestTemplate
 from app.db.request_scenario_models import RequestStudioCategory, RequestStudioDraft, RequestStudioScenario, RequestStudioScenarioVersion
 from app.repos.service_catalog_repo import ServiceCatalogRepo
+from tickets.service_catalog_contract import REQUEST_TYPE_LABELS_RU
 from tickets.request_scenario_runtime import ScenarioRuntime
 from tickets.request_scenario_validation import validate_scenario
 from web_api.dto.request_scenario import ScenarioDefinition
@@ -30,6 +31,18 @@ def serialize(row):
 
 def definition_hash(definition):
     return hashlib.sha256(json.dumps(definition, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def offering_type_search_text(offering):
+    metadata = offering.get("metadata") or {}
+    profile = metadata.get("studio_profile") if isinstance(metadata, dict) else None
+    profile = profile if isinstance(profile, str) else ""
+    request_type = offering.get("request_type") or ""
+    # The purpose editor uses these labels in addition to canonical catalog labels.
+    purpose_labels = {"request": "Общий запрос", "access": "Запрос доступа", "software_install": "Установка ПО"}
+    return " ".join(str(value or "") for value in (
+        request_type, REQUEST_TYPE_LABELS_RU.get(request_type), purpose_labels.get(request_type),
+        profile, REQUEST_TYPE_LABELS_RU.get(profile), purpose_labels.get(profile)))
 
 
 class RequestScenarioRepo:
@@ -251,6 +264,8 @@ class RequestScenarioRepo:
                     break
                 selected.update(additions)
         category_names = {item["id"]: item["title"] for item in categories}
+        offerings = await self.catalog.list_offerings()
+        offerings_by_code = {item["full_code"]: item for item in offerings}
         rows = (await self.session.execute(select(RequestStudioScenario, RequestStudioDraft, RequestStudioScenarioVersion.version).join(RequestStudioDraft, RequestStudioDraft.scenario_id == RequestStudioScenario.id).outerjoin(RequestStudioScenarioVersion, RequestStudioScenarioVersion.id == RequestStudioScenario.published_version_id).order_by(RequestStudioScenario.title, RequestStudioScenario.id))).all()
         scenarios = []
         for row, draft, published_version in rows:
@@ -264,17 +279,18 @@ class RequestScenarioRepo:
                 issues = [{"code": "incomplete_draft", "path": "blocks", "message": "Добавьте вопросы и переходы"}]
             item["status"] = "archived" if row.archived else "published" if row.published_version_id else "errors" if issues else "draft"
             item.update(revision=draft.revision, published_version=published_version, issues=issues, category_title=category_names.get(row.category_id, ""))
-            text_value = " ".join(str(item.get(key) or "") for key in ("title", "description", "category_title", "offering_full_code")).casefold()
+            text_value = (" ".join(str(item.get(key) or "") for key in ("title", "description", "category_title", "offering_full_code"))
+                + " " + offering_type_search_text(offerings_by_code.get(row.offering_full_code, {}))).casefold()
             matches_status = (status == "all" or item["status"] == status
                 or status == "errors" and bool(issues) and not row.archived
                 or status == "draft" and not row.archived and not row.published_version_id)
             if (not query or query.casefold() in text_value) and matches_status and (selected is None or row.category_id in selected):
                 scenarios.append(item)
-        offerings = await self.catalog.list_offerings()
         bound = {row.offering_full_code for row, _, _ in rows if not row.archived}
         legacy = [item for item in offerings if item["full_code"] not in bound
             and status in {"all", "form_only"} and selected is None
-            and (not query or query.casefold() in " ".join(str(item.get(key) or "") for key in ("public_title", "short_description", "full_code", "service_code")).casefold())]
+            and (not query or query.casefold() in (" ".join(str(item.get(key) or "") for key in ("public_title", "short_description", "full_code", "service_code"))
+                + " " + offering_type_search_text(item)).casefold())]
         entries = [("scenario", item) for item in scenarios] + [("legacy", item) for item in legacy]
         entries.sort(key=lambda entry: (str(entry[1].get("title") or entry[1].get("public_title") or "").casefold(), entry[0], entry[1].get("id") or entry[1]["full_code"]))
         page = entries[offset:offset + limit]

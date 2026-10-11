@@ -3,7 +3,42 @@
 Plan: [canonical specification and P0–P10](2026-10-11-guided-request-studio-v2.md).
 Specification commit: `507ee7154b947391d51148d3a8929b77983eb77e`.
 Implementation branch: `codex/guided-request-studio-v2`.
-Production deployment, live scenario publication and Endpoint execution are excluded.
+Production deployment/publication and real Endpoint execution are excluded.
+Isolated staging scenario publication is authorized for the acceptance pilot.
+
+## Current acceptance state (2026-10-12)
+
+P0–P9 are committed; P10 remains incomplete. Earlier entries below are historical
+receipts, not acceptance of subsequent corrections.
+
+- Exact `6a2d9ff6068024879772498e297851c88aa084ab` CI 38173068210 passed all
+  18 canonical layers and Endpoint contract acceptance. Downloaded report audit
+  confirms 663 frontend unit tests and 106 fixture browser cases passed. Fixture
+  results do not accept the installed staging candidate.
+- Frozen `08dfa34f` seven-layer backend coverage timed out after 7200 seconds.
+  Its incomplete coverage is rejected. Final inspection found no owned checkout
+  processes or scoped DB sessions; three owned databases were removed and the
+  temporary role is absent.
+- Final assertion-level independent audit found AC01 search omitted offering
+  request types and Studio profiles. The bounded correction adds machine codes
+  and Russian labels for scenarios and legacy offerings before merged pagination.
+  RED: seven cases returned zero instead of two matches. GREEN: 113 focused
+  tests and scoped workspace verification passed, including malformed profile
+  object/list/null regressions. Admin instructions and CODEMAP were synchronized.
+  Isolated staging PostgreSQL HTTP/catalog checks: 21 PASS (353.64s), including
+  type/profile search for bound scenarios and legacy offerings. Working-copy
+  overlay archive digest: `b16de177c183acd8ba083064db34ca57440a016e05d7bd8410470d22ce853e7b`.
+  Temporary role removed; no owned databases remained for final cleanup.
+- Quality run 38173066095 for `6a2d9ff6` was deliberately cancelled because this
+  application correction requires a new exact candidate. Canonical PostgreSQL
+  stop and evidence upload succeeded; Sonar analysis was skipped. It is not a
+  quality PASS. No threshold, scanner token rights or PR parameters were weakened.
+- The existing application binds sessions to authenticated actors inside isolated
+  per-instance deployment/database resources. No separate multi-tenant contract
+  exists in AuthContext; no independent multi-tenant acceptance is claimed.
+- Pending: corrected-candidate exact CI/security/coverage
+  and PR Sonar gate, canonical staging installation, actual A–J plus four viewport
+  checks, owned pilot cleanup/service stop and the final AC01–20 matrix.
 
 ## P0 dependency matrix (source-verified)
 

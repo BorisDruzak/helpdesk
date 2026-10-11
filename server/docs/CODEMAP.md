@@ -81,6 +81,9 @@
   See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
   Catalog metadata uses the immutable version referenced by the active pointer
   (not the greatest historical version), and the latest scenario/draft timestamp.
+  `app/repos/request_scenario_repo.py` searches offering request types and Studio
+  profiles by machine codes and Russian labels for scenarios and legacy forms
+  before sorting and paginating their combined catalog.
   `scenario-publication-summary` reuses requester block preview controls and
   links the immutable publication result to `/app/requester/new?offering=...`.
   Requester selection is validated against its existing public catalog; keyed

@@ -39,6 +39,27 @@ async def create(client, definition):
 
 
 @pytest.mark.asyncio
+async def test_catalog_searches_offering_type_and_profile_for_scenario_and_legacy(test_client_light, test_engine):
+    definition = await seed(test_engine)
+    async with async_sessionmaker(test_engine)() as session:
+        offering = await session.scalar(select(HelpdeskServiceOffering).where(HelpdeskServiceOffering.full_code == definition["offering_full_code"]))
+        offering.request_type = "service_request"
+        offering.metadata_json = {"studio_profile": "software_install"}
+        session.add(HelpdeskServiceOffering(offering_id=str(uuid.uuid4()), service_id=offering.service_id,
+            code="other", full_code=definition["service_code"] + ".other", name="Other", public_title="Другая форма",
+            request_type="service_request", metadata_json={"studio_profile": "software_install"}, visibility="public"))
+        await session.commit()
+    created = await create(test_client_light, definition)
+    for query in ("service_request", "Запрос услуги", "software_install", "Установка ПО"):
+        response = await test_client_light.get(BASE + "/catalog", headers=AUDITOR, params={"q": query})
+        assert response.status == 200, await response.text()
+        data = (await response.json())["data"]
+        assert created["scenario"]["id"] in {item["id"] for item in data["scenarios"]}
+        assert definition["service_code"] + ".other" in {item["full_code"] for item in data["legacy_offerings"]}
+        assert definition["offering_full_code"] not in {item["full_code"] for item in data["legacy_offerings"]}
+
+
+@pytest.mark.asyncio
 async def test_catalog_timestamp_tracks_block_only_edit_by_same_actor(test_client_light, test_engine):
     definition = await seed(test_engine)
     created = await create(test_client_light, definition)
