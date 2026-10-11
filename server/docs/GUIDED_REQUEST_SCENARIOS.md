@@ -175,6 +175,16 @@ their diagnostics remain unavailable with the normal safe fallback.
 Readiness checks all four failure outcomes through the same evaluator, including
 explicit outcome-dependent branches. Diagnostic outcome combinations and combined
 answer variants are limited to 512; excessive coverage blocks publication.
+Graph-only number conditions partition the valid range at comparison literals
+and sample each representable open interval and boundary. Text/textarea equality,
+membership and presence conditions cover literals, another valid nonempty value,
+explicit unknown and omitted optional input separately. Arbitrary unbounded
+numeric/text policy inputs still block publication with `coverage_unproven`.
+Multi-select graph predicates enumerate subsets; policy inputs enumerate ordered
+subsets because canonical policies can compare stringified lists. The same
+coverage bound applies before materialization. Ordinary representative values
+respect numeric/text bounds and URL syntax. All variants use canonical runtime
+normalization, required/visibility checks and hidden-answer pruning.
 There is no pre-ticket network dispatch, operation or success outcome. The existing
 capability allowlist and required diagnostic fallback remain authoritative.
 

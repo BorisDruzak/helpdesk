@@ -5,8 +5,10 @@ Execution ledger: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2-pr
 P10 catalog fidelity: human category paths, description, active version number,
 latest scenario/draft timestamp and independent category collapse verified by
 63 frontend tests, 2 owned PostgreSQL tests and 4 browser viewport checks.
-Actual staging A–J, readiness fidelity audit and exact CI
+Actual staging A–J and exact CI
 remain open; P10 is IN PROGRESS.
+P10 readiness covers finite multi-select policy combinations, graph-only numeric/
+text predicates, and distinct omitted/unknown optional answers.
 P10 publication result now includes target offering, immutable definition summary
 and a catalog-validated requester deep link with isolated draft restoration.
 P10 new-offering creation is inline with canonical profiles/templates and explicit

@@ -44,6 +44,9 @@
   with existing offering metadata, leaving canonical ticket/policy runtime intact.
   Readiness includes all four simulation-only diagnostic failure outcomes
   (bounded coverage); imported unsupported pre-ticket attachments block publication.
+  Graph-only numeric/text predicates use truth-equivalent representatives;
+  multi-select policy inputs enumerate ordered subsets. Explicit unknown and
+  omitted optional answers are distinct; unbounded policy inputs fail closed.
   Admin `readiness`, `publish-preview`, `publish` and `rollback-draft` routes
   require revision checks; publication validates locked canonical sources,
   creates an immutable version, changes the active pointer and consumes the

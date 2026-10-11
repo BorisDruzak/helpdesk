@@ -8,6 +8,74 @@ from tests.test_request_scenario_submission import definition
 pytestmark = pytest.mark.no_db
 
 
+def _branch_definition(field, transitions):
+    raw = definition().model_dump(mode="json")
+    raw["blocks"][0]["fields"] = [field]
+    raw["blocks"][0]["transitions"] = transitions
+    raw["blocks"] = [raw["blocks"][0], *[{"id": key, "kind": "submit_ticket", "title": key} for key in dict.fromkeys(edge["to"] for edge in transitions)]]
+    return ScenarioDefinition.model_validate(raw)
+
+
+def test_readiness_covers_every_multiselect_subset_including_combined_answers():
+    from tickets.request_scenario_readiness import submission_variants
+    graph = _branch_definition({"key": "choices", "type": "multi_select", "label": "Choices", "options": [{"value": key, "label": key} for key in ("a", "b")], "process_mapping": {"roles": ["routing_field"]}}, [{"to": "submit"}])
+    states = submission_variants(graph)
+    assert {tuple(state.answers.get("choices", [])) for state in states} == {(), ("a",), ("b",), ("a", "b"), ("b", "a")}
+
+
+def test_readiness_numeric_graph_conditions_cover_boundary_and_both_intervals():
+    from tickets.request_scenario_readiness import submission_variants
+    graph = _branch_definition({"key": "amount", "type": "number", "label": "Amount", "required": True, "validation": {"min_value": 2, "max_value": 4}}, [
+        {"to": target, "when": {"source": "answer", "field": "amount", "op": op, "value": 3}, "priority": index + 1} for index, (target, op) in enumerate((("low", "lt"), ("equal", "eq"), ("high", "gt")))
+    ] + [{"to": "equal"}])
+    states = submission_variants(graph)
+    assert {state.current_block_id for state in states} == {"low", "equal", "high"}
+    assert all(2 <= state.answers["amount"] <= 4 for state in states)
+
+
+def test_readiness_text_graph_conditions_cover_literal_other_and_missing():
+    from tickets.request_scenario_readiness import submission_variants
+    graph = _branch_definition({"key": "text", "type": "text", "label": "Text", "validation": {"min_length": 2, "max_length": 4}}, [
+        {"to": "special", "when": {"source": "answer", "field": "text", "op": "eq", "value": "VIP"}}, {"to": "other"}])
+    states = submission_variants(graph)
+    assert {state.current_block_id for state in states} == {"special", "other"}
+    assert any("text" not in state.answers for state in states)
+    assert any(state.answers.get("text") not in (None, "VIP") for state in states)
+
+
+@pytest.mark.parametrize("kind", ["text", "number", "select", "radio"])
+def test_readiness_distinguishes_explicit_unknown_from_omitted_optional_answer(kind):
+    from tickets.request_scenario_readiness import submission_variants
+    field = {"key": "text", "type": kind, "label": "Text", "allow_unknown": True}
+    if kind in {"select", "radio"}:
+        field["options"] = [{"value": "a", "label": "A"}]
+    graph = _branch_definition(field, [
+        {"to": "unknown", "when": {"source": "answer", "field": "text", "op": "eq", "value": None}, "priority": 1},
+        {"to": "known", "when": {"source": "answer", "field": "text", "op": "neq", "value": None}, "priority": 2}, {"to": "omitted"}])
+    states = submission_variants(graph)
+    assert {state.current_block_id for state in states} == {"unknown", "known", "omitted"}
+    assert any(state.current_block_id == "unknown" and state.answers["text"] is None for state in states)
+    assert any(state.current_block_id == "omitted" and "text" not in state.answers for state in states)
+
+
+def test_readiness_ordinary_representatives_obey_constraints_and_url_type():
+    from tickets.request_scenario_readiness import submission_variants
+    raw = definition().model_dump(mode="json")
+    raw["blocks"][0]["fields"] = [
+        {"key": "amount", "type": "number", "label": "Amount", "required": True, "validation": {"min_value": 30, "max_value": 40}},
+        {"key": "text", "type": "text", "label": "Text", "required": True, "validation": {"min_length": 1, "max_length": 2}},
+        {"key": "url", "type": "url", "label": "URL", "required": True}]
+    assert submission_variants(ScenarioDefinition.model_validate(raw))
+
+
+def test_readiness_still_rejects_unbounded_numeric_policy_and_large_multiselect():
+    from tickets.request_scenario_readiness import submission_variants, ReadinessCoverageError
+    graph = _branch_definition({"key": "amount", "type": "number", "label": "Amount"}, [{"to": "submit"}])
+    with pytest.raises(ReadinessCoverageError): submission_variants(graph, process_fields={"amount"})
+    graph = _branch_definition({"key": "choices", "type": "multi_select", "label": "Choices", "options": [{"value": str(n), "label": str(n)} for n in range(10)], "process_mapping": {"roles": ["routing_field"]}}, [{"to": "submit"}])
+    with pytest.raises(ReadinessCoverageError): submission_variants(graph)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("trusted", [False, True])
 async def test_policy_simulation_uses_canonical_type_and_taxonomy_only_for_trusted_context(monkeypatch, trusted):

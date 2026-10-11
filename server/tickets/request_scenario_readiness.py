@@ -3,9 +3,10 @@
 Readiness fails closed when process inputs have an unbounded domain. Ordinary
 description fields use one validated representative; they cannot affect policy.
 """
-from itertools import product
+from itertools import product, combinations, permutations
+from math import perm, nextafter
 
-from tickets.request_scenario_conditions import leaves
+from tickets.request_scenario_conditions import leaves, finite_number
 from tickets.request_scenario_runtime import ScenarioRuntime, ScenarioInputError
 from tickets.request_scenario_validation import DIAGNOSTIC_FAILURE_STATUSES
 from web_api.dto.request_scenario import ScenarioAnswerRequest
@@ -13,6 +14,55 @@ from web_api.dto.request_scenario import ScenarioAnswerRequest
 
 class ReadinessCoverageError(ValueError):
     pass
+
+
+_OMITTED = object()
+
+
+def _representative(field):
+    if field.type == "number":
+        lower = field.validation.min_value
+        upper = field.validation.max_value
+        return max(lower if lower is not None else -9007199254740991, min(1, upper if upper is not None else 9007199254740991))
+    defaults = {"multi_select": [field.options[0].value] if field.options else [], "email": "test@example.invalid",
+                "phone": "+70000000000", "url": "https://example.invalid", "date": "2026-01-01", "datetime": "2026-01-01T12:00:00"}
+    value = defaults.get(field.type, "Проверка сценария")
+    if field.type in {"text", "textarea"}:
+        length = max(field.validation.min_length or 1, min(len(value), field.validation.max_length or 10000))
+        value = (value * (length // len(value) + 1))[:length]
+    return value
+
+
+def _condition_domain(field, conditions):
+    """Truth-equivalent representatives for graph-only scalar comparisons.
+
+    This partition proves graph conditions, never arbitrary policy behavior.
+    Numeric cuts include boundaries and each representable open interval;
+    string predicates are equality/membership/exists, so one other nonempty
+    string covers the complement of their finite literals.
+    """
+    literals = [value for condition in conditions for value in (condition.value if condition.op == "in" else [getattr(condition, "value", None)])]
+    if field.type == "number":
+        lower = max(-9007199254740991, field.validation.min_value if field.validation.min_value is not None else -9007199254740991)
+        upper = min(9007199254740991, field.validation.max_value if field.validation.max_value is not None else 9007199254740991)
+        if lower > upper:
+            return []
+        cuts = sorted({lower, upper, *[value for value in literals if finite_number(value) and lower <= value <= upper]})
+        values = list(cuts)
+        for left, right in zip(cuts, cuts[1:]):
+            middle = left + (right - left) / 2
+            if not left < middle < right:
+                middle = nextafter(left, right)
+            if left < middle < right:
+                values.append(middle)
+        return values
+    if field.type in {"text", "textarea"}:
+        values = [value for value in literals if isinstance(value, str)]
+        length = max(1, field.validation.min_length or 1)
+        # More distinct candidates than literals ensures a non-literal value.
+        other = next(chr(0x4E00 + index) * length for index in range(len(values) + 1) if chr(0x4E00 + index) * length not in values)
+        return [*dict.fromkeys(values), other]
+    raise ReadinessCoverageError(f"Поле «{field.label}»: для проверки условий нужен доказуемый набор вариантов.")
 
 
 def submission_variants(definition, *, limit=512, process_fields=()):
@@ -34,30 +84,44 @@ def submission_variants(definition, *, limit=512, process_fields=()):
 
 def _submission_variants(definition, *, limit, process_fields, diagnostic_outcomes=None):
     runtime = ScenarioRuntime(definition, diagnostic_outcomes=diagnostic_outcomes)
-    referenced = set()
+    referenced = {}
     for block in definition.blocks:
         conditions = [edge.when for edge in block.transitions]
         for field in getattr(block, "fields", ()):
             conditions.extend([field.visible_when, field.required_when])
-        referenced.update(leaf.field for condition in conditions for leaf in leaves(condition) if leaf.source == "answer")
+        for condition in conditions:
+            for leaf in leaves(condition):
+                if leaf.source == "answer":
+                    referenced.setdefault(leaf.field, []).append(leaf)
     domains = {}
     for block in definition.blocks:
         for field in getattr(block, "fields", ()):
-            significant = field.key in referenced or field.key in process_fields or any(role in {"priority_impact", "priority_urgency", "priority_importance", "routing_field", "approval_subject"} for role in field.process_mapping.roles)
+            policy_input = field.key in process_fields or any(role in {"priority_impact", "priority_urgency", "priority_importance", "routing_field", "approval_subject"} for role in field.process_mapping.roles)
+            significant = field.key in referenced or policy_input
             if field.type in {"select", "radio"}:
                 values = [option.value for option in field.options]
             elif field.type == "checkbox":
                 values = [False, True]
+            elif field.type == "multi_select" and significant:
+                size_count = len(field.options)
+                count = sum(perm(size_count, size) for size in range(size_count + 1)) if policy_input else 2 ** size_count
+                if count > limit:
+                    raise ReadinessCoverageError("Слишком много сочетаний множественного выбора. Разделите варианты.")
+                choices = [option.value for option in field.options]
+                enumerate_choices = permutations if policy_input else combinations
+                values = [list(subset) for size in range(len(choices) + 1) for subset in enumerate_choices(choices, size)]
+            elif field.key in referenced and not policy_input:
+                values = _condition_domain(field, referenced[field.key])
             elif significant:
                 raise ReadinessCoverageError(f"Поле «{field.label}»: для проверки всех исходов обработки нужен конечный набор вариантов.")
             else:
-                defaults = {"number": 1, "multi_select": [field.options[0].value] if field.options else [], "email": "test@example.invalid",
-                            "phone": "+70000000000", "date": "2026-01-01", "datetime": "2026-01-01T12:00:00"}
-                values = [defaults.get(field.type, "Проверка сценария")]
+                values = [_representative(field)]
             if not significant:
                 values = values[:1]
             if significant and (field.allow_unknown or not field.required):
                 values = [*values, None]
+            if significant and not field.required:
+                values = [*values, _OMITTED]
             domains[field.key] = values
     pending, terminals, traversed = [runtime.initial_state()], [], 0
     while pending:
@@ -77,7 +141,7 @@ def _submission_variants(definition, *, limit, process_fields, diagnostic_outcom
                 count *= len(domains[field.key])
                 if count > limit:
                     raise ReadinessCoverageError("Слишком много сочетаний на странице. Разделите вопросы.")
-            variants = [(dict(zip([f.key for f in fields], values)), None) for values in product(*(domains[f.key] for f in fields))]
+            variants = [({field.key: value for field, value in zip(fields, values) if value is not _OMITTED}, None) for values in product(*(domains[field.key] for field in fields))]
         elif block.kind == "resolution_check":
             variants = [({}, value) for value in ("yes", "no", "unknown")]
         elif block.kind == "instruction":

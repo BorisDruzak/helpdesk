@@ -822,3 +822,33 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
 - This is fixture browser evidence. Actual staging A–J, readiness fidelity audit,
   full exact CI/security/coverage/Sonar and final acceptance matrix remain open.
   P10 remains IN PROGRESS.
+
+### P10 fidelity increment: provable readiness domains and omitted answers
+
+- Multi-select now covers all subsets for graph predicates and ordered subsets
+  for policy inputs. Order is preserved by the canonical form normalizer and can
+  affect existing string-comparison policy rules; no unordered-policy assumption
+  is made. Materialization remains bounded by the existing 512-variant gate.
+- Graph-only number predicates partition the valid wire-safe range at literals
+  and validation boundaries, with representatives for open intervals. Graph-only
+  text/textarea equality/membership/presence predicates cover literals and a
+  distinct valid nonempty representative. Ordinary numeric/text representative
+  values obey configured bounds; URLs use valid syntax. Arbitrary unbounded
+  numeric/text policy domains remain fail-closed, not claimed exhaustive.
+- Independent review found explicit unknown versus omitted optional input was
+  conflated, allowing an omitted-only fallback to escape readiness. Regression
+  RED reproduced that missing terminal. Distinct internal omission sentinel
+  removes the key before canonical runtime evaluation; text/number/select/radio
+  regressions cover null, known and absent destinations. Reviewer closed P1.
+  Checkbox absence remains canonical false; multi-select scalar comparison is
+  rejected by the existing graph validator. Neither contract is weakened.
+- Initial RED: 4 domain/constraint failures; ordered-policy subset RED; omission
+  RED. Final owned PostgreSQL publication regression: 4 passed (242.87s), including
+  atomic offering success/audit rollback, negative catalog boundaries and existing
+  source-bound publication/replay/rollback. No runtime/schema/frontend changes.
+  Scenario no-DB regression: 161 passed, 1 skipped, 1956 deselected (2.49s).
+  Scoped workspace and diff check PASS after documentation update.
+- SSH staging key and protected local DPAPI sudo credential verified successfully;
+  service remains inactive on its previous release. No secret output, production
+  changes, or deployment occurred during this increment. Actual staging A–J,
+  canonical exact-SHA full CI/security/coverage/Sonar and final matrix remain open.
