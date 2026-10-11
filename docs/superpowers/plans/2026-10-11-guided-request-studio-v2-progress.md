@@ -879,3 +879,31 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
 - Actual printer A-J, exact final-candidate CI/security/coverage/Sonar, restore
   acceptance and final AC matrix remain open. No production changes or real
   Endpoint operations occurred.
+
+### P10 canonical cleanup expectation and owned pilot draft
+
+- Commit `470127130f2d2446bea8faf577ebc77881da0b71`, exact CI run 38157172667:
+  all 650 frontend tests and Endpoint contract acceptance passed. Server no-DB
+  layer failed only the stale full-cleanup expectation (1270 others passed,
+  1 skipped). Local RED reproduces expected 171 versus actual 173 tables.
+  Update the exact count/prefix for Studio sessions and publication tokens;
+  preserve existing cleanup entries and assertions. Focused harness GREEN: 42 passed.
+  Full server no-DB regression GREEN: 1271 passed, 1 skipped, 846 deselected (45.95s).
+- Original SHA diagnostic CI attempt 2 passed all 649 frontend tests before
+  concurrency cancellation by the newer dispatch. Original simulator failure is
+  intermittent; synchronous checkbox snapshots are reviewed hardening, not a
+  proven RCA claim. No flaky registry, retries, coverage or security gates changed.
+- Installed staging browser created only owned pilot offering/category/scenario
+  drafts. Seven blocks and canonical printer questions configured through the
+  wizard, without JSON/expert editors. Pilot retains required room/impact/
+  continuity plus optional model/number. Existing printer template/form unchanged.
+- First readiness preview blocked excessive combinations; removing optional
+  importance/critical/public questions from the owned pilot keeps canonical
+  defaults and permits 192 outcome checks. Current preview: HTTP 200, Health=ok,
+  can_publish=false, closure_missing/visibility_missing/category_unavailable.
+  The staging registry has no published closure or visibility choices. Prepare
+  isolated scoped policies through the existing registry before publication;
+  do not bypass readiness or mutate the existing printer processing template.
+- No scenario published and no pilot ticket created. Staging service stopped
+  through the canonical lifecycle command; inactive confirmed. Synthetic accounts
+  and owned draft receipt retained for continuation. Full P10 remains in progress.

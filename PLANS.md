@@ -1942,3 +1942,10 @@ unknown checkbox snapshots prevent reading mutable DOM in deferred updates;
 null/omission tests and focused 21/full 650 frontend checks pass, build and scoped
 workspace pass, review has no blocking findings. Original CI RCA remains unproven.
 Actual printer A-J, final exact-SHA CI/security/Sonar and full acceptance remain open.
+
+P10 exact CI 47012713 passes 650 frontend tests and Endpoint contracts; the full
+gate exposed a stale cleanup count/prefix. RED reproduced 171 versus 173;
+focused harness GREEN 42 passed after preserving exact Studio runtime entries.
+Owned staging pilot draft configured through the wizard; readiness checks 192
+outcomes and correctly blocks missing closure/visibility registry policies and
+draft categories despite Health=ok. No publication/tickets; staging stopped.
