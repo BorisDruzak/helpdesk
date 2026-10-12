@@ -163,6 +163,8 @@ export function ScenarioSession({ offering, owner = "", deviceId }: { offering: 
         {step.block.kind === "instruction" && step.block.can_request_ticket ? <Button type="button" variant="outline" onClick={() => void answer("request_ticket")}>Нужна помощь поддержки</Button> : null}
         {step.block.answers ? <dl className="grid gap-3">{step.block.answers.map(item => <div key={item.key}><dt className="font-medium">{item.label}</dt><dd className="break-words text-sm">{item.display_value}</dd></div>)}</dl> : null}
         {step.block.message ? <p>{step.block.message}</p> : null}
+      </fieldset>
+      <fieldset disabled={busy} className="sticky bottom-0 z-10 grid min-w-0 gap-3 border-t border-slate-200 bg-white py-3" aria-label="Действия шага">
         {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}
         {["form_page", "instruction", "review"].includes(step.block.kind) ? <Button type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить</Button> : null}
         {step.block.kind === "finish" ? <Button type="button" onClick={() => void command("finish", { revision: step.revision })}>Завершить</Button> : null}

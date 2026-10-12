@@ -18,6 +18,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       return { id: "guided-session", revision, state: created ? "ticket_created" : current === "finish" ? "completed_self_service" : "active", linked_ticket_id: created ? "test-ticket" : null, back_targets: [],
         block: current === "questions" ? { id: current, kind: "form_page", title: "Что происходит с принтером?", fields: [
           { key: "summary", type: "text", label: "Опишите проблему", required: true, value: answer },
+          ...Array.from({ length: 8 }, (_, index) => ({ key: `detail_${index}`, type: "text", label: `Уточнение ${index + 1}`, required: false })),
         ] } : current === "instruction" ? { id: current, kind: "instruction", title: "Проверьте питание", acknowledgment_required: true, can_request_ticket: mode === "escape-ticket",
           content: { format: "plain", body: "Убедитесь, что кабель питания подключён." } }
           : current === "resolved" ? { id: current, kind: "resolution_check", title: "Удалось восстановить печать?" }
@@ -42,7 +43,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.route("**/api/registry/options", route => route.fulfill({ json: { status: "success", data: { departments: [], locations: [] } } }));
     await page.route("**/public_api/ticket_forms/current**", route => route.fulfill({ json: { status: "ok", pack: { key: "request_forms", version: "test", forms: [{ key: "printer", title: "Не печатает", fields: [{ key: "legacy", label: "Старое поле", type: "text" }], availability_policy: { available_without_agent_binding: true } }] } } }));
     await page.route("**/api/service-catalog/current", route => route.fulfill({ json: { status: "ok", catalog_version: "test", services: [{ service_code: "workplace", title: "Рабочее место", offerings: [{ offering_code: "printer", full_code: "workplace.printer", title: "Не печатает", request_template_key: "printer", guided_scenario_enabled: true }] }] } }));
-    await page.goto(mode !== "self-service" ? "/app/requester/new?offering=workplace.printer" : "/app/requester/new");
+    await page.goto(mode === "escape-ticket" ? "/app/requester/new/?offering=workplace.printer" : mode === "ticket" ? "/app/requester/new?offering=workplace.printer" : "/app/requester/new");
     if (mode === "self-service") await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
     await expect(page.getByRole("heading", { name: "Что происходит с принтером?" })).toBeVisible();
     await expect(page.getByText("Старое поле")).toHaveCount(0);

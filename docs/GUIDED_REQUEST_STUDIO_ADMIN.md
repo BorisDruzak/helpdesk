@@ -271,3 +271,9 @@ The routing check requires an existing active queue for every branch. A rule
 pointing at a missing or disabled queue blocks publication. If the queue becomes
 unavailable later, the employee's processing preview blocks ticket creation;
 an earlier successful preview does not grant permission to submit.
+
+Requester step actions stay visible at the bottom of the viewport on long
+question pages. The new-request shell clips horizontal overflow without creating
+an intermediate scroll container, so the action bar follows the document scroll.
+Questions remain in normal document flow and keyboard order; busy steps disable
+both their fields and actions.

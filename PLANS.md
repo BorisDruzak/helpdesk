@@ -1982,3 +1982,12 @@ race. Final focused 54 and full no-DB 1287/1 skipped PASS; nine PostgreSQL
 scenario/publication/legacy-create regressions PASS (274.81s), scoped role absent
 and no residual owned DBs. Independent review, workspace and diff checks PASS.
 Latest exact-candidate CI and installed A–J remain required.
+
+P10 long requester page: actual eacd57c5 tablet D exposed Continue below the
+viewport; A/B/C UI and DB passed but do not accept D or a later candidate.
+Separate native disabled fieldsets keep actions sticky while questions remain
+in document flow. The new-request shell uses horizontal clip for both canonical
+and trailing-slash URLs, avoiding an intermediate vertical scroll ancestor.
+Longform browser RED reproduced the missing primary action. Exact candidate CI,
+fresh installed pilot and final cleanup remain required. Sonar is deferred by
+the user's explicit instruction; no Sonar PASS or production admission is inferred.

@@ -1080,3 +1080,18 @@ loading/empty/error/retry. Scoped workspace verification and diff check PASS.
   supported Sonar edition and exact candidate gate remain unverified. An
   unsupported PR-analysis response must block, without widening token rights.
   This workflow change requires a new exact-SHA CI and staging acceptance.
+
+- User explicitly deferred Sonar on 2026-10-12. Exact eacd57c5 full CI18 PASS;
+  seven backend coverage layers PASS, Semgrep zero task findings/secrets/errors.
+  Sonar Community Build rejected PR analysis; Quality Gate remains NOT_COMPUTED.
+  A separate human admission allowed only isolated staging, with no production
+  permission or fabricated quality receipt. Canonical installation verified eacd.
+  Actual A/B/C UI/database PASS; D820 failed primary Continue visibility on a
+  long question page. Staging was stopped; D and full P10 are not accepted.
+- Long requester pages now separate disabled action and question fieldsets and
+  keep step actions sticky. New-request shell horizontal clip avoids the scroll
+  ancestor introduced by overflow-x-hidden, for canonical and trailing-slash URLs.
+  Longform browser RED reproduced ratio0; fresh build/typecheck and browser12
+  at1366/1440/1920/820 PASS, unit18 PASS, scoped workspace PASS. Review found
+  and closed the trailing-slash case; no remaining diff findings. New exact CI,
+  frontend/security evidence and actual installed A-J/V remain required.

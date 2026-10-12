@@ -206,7 +206,7 @@ export function AppShell({ children }: AppShellProps) {
             />
           ) : null}
 
-          <main className={isFullHeightWorkspace ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : "min-w-0 flex-1 overflow-x-hidden px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6"}>
+          <main className={isFullHeightWorkspace ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : `min-w-0 flex-1 ${/^\/app\/requester\/new\/?$/.test(location.pathname) ? "overflow-x-clip" : "overflow-x-hidden"} px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6`}>
             {!isFullHeightWorkspace ? <DomainTabs permissions={session?.permissions ?? []} /> : null}
             {children}
           </main>
