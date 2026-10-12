@@ -1,17 +1,24 @@
-# In progress: 2026-10-12 Independent service creation and authoring clarity
+# Complete: 2026-10-12 Independent service creation and authoring clarity
 
-Approved follow-up: create a service on its own page, independently publish its
-ordinary form, then optionally author a scenario. Stage only; production excluded.
-Runtime reproduction of the user's test failure: SCENARIO_INVALID/missing_fallback
-on an instruction without an outgoing transition. Preserve server validation;
-show a specific explanation and route to the affected block instead of blaming answers.
-Frontend RED cases reproduced missing independent creation and hidden error details.
-GREEN focused authoring tests passed; added independent-creation, dirty-navigation,
-canonical-publication confirmation/failure and template-retry coverage. Local full
-unit677, selected block controls6, full fixture browser106 and fresh build/typecheck
-passed. Independent review: no blockers. Exact-head CI and actual staging
-creation/publication/requester acceptance remain pending.
-No dependency, schema, backend, security, processing or Endpoint contract changes.
+Approved staging follow-up: standalone service creation/publication, optional
+scenario authoring, clearer visible transitions and actionable simulation errors.
+Implemented at 1f022cbd; corrected the stale advanced-disclosure test at 519cc296.
+Frozen local verification: 678 unit tests, 106 fixture browser cases, fresh
+build/typecheck, scoped workspace and diff checks passed. Independent source review
+found no blockers. Exact 519cc296 CI run 38251065696 passed all 18 canonical layers
+and Endpoint contract job. Exact security scan: zero task-file findings/secrets.
+Installed 519cc296 staging identity and active service verified after acceptance.
+Actual strict-TLS browser: created one service independently, published ordinary
+form, created a scenario, reproduced/explained missing transition, repaired its
+graph through UI, completed simulation, configured mandatory published policies,
+published, completed self-resolution and created/viewed one synthetic support
+request. Publication checked 161 outcomes. Final requester path: no browser or
+unexpected HTTP errors. Interrupted helper stages resumed using the same owned
+records; historical failed harness logs are retained, not relabeled as green.
+See docs/INDEPENDENT_SERVICE_STAGING_ACCEPTANCE.md for identities and evidence.
+Production untouched. Staging remains running by user request; synthetic demo
+service/scenario and one test ticket retained for inspection. Sonar remains
+explicitly deferred by user. No backend/schema/dependency/Endpoint changes.
 
 # Complete: 2026-10-12 Unified request catalog follow-up
 
