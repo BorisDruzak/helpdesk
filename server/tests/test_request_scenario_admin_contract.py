@@ -71,7 +71,7 @@ async def test_error_filter_includes_published_scenario_with_invalid_new_draft()
         async def execute(self, statement): return Result()
     class Catalog:
         async def list_services(self): return []
-        async def list_offerings(self): return []
+        async def list_offerings(self): return [{"full_code": "workplace.printer", "service_code": "workplace", "public_title": "Printer"}]
     repo = RequestScenarioRepo(Session(), None)
     repo.catalog = Catalog()
     async def categories(): return []
@@ -88,7 +88,7 @@ async def test_category_tree_filter_applies_before_pagination():
     from app.repos.request_scenario_repo import RequestScenarioRepo
     rows = []
     for identifier, category in [("outside", "other"), ("nested", "child"), ("root_item", "root")]:
-        row = RequestStudioScenario(id=identifier, scenario_key=identifier, service_code="it", offering_full_code="it.printer", title=identifier, description="", category_id=category, archived=False)
+        row = RequestStudioScenario(id=identifier, scenario_key=identifier, service_code="it", offering_full_code="it." + identifier, title=identifier, description="", category_id=category, archived=False)
         from datetime import datetime, timezone
         row.updated_at = datetime.now(timezone.utc)
         rows.append((row, RequestStudioDraft(scenario_id=identifier, definition={}, revision=1, updated_by="test", updated_at=row.updated_at), None))
@@ -98,7 +98,7 @@ async def test_category_tree_filter_applies_before_pagination():
         async def execute(self, statement): return Result()
     class Catalog:
         async def list_services(self): return []
-        async def list_offerings(self): return []
+        async def list_offerings(self): return [{"full_code": row.offering_full_code, "service_code": "it", "public_title": row.title} for row, _, _ in rows]
     repo = RequestScenarioRepo(Session(), None)
     repo.catalog = Catalog()
     async def categories(): return [{"id": "root", "parent_id": None, "title": "Root"}, {"id": "child", "parent_id": "root", "title": "Child"}]
@@ -116,8 +116,8 @@ async def test_catalog_includes_legacy_offerings_without_duplicate_scenario_rows
     class Session:
         async def execute(self, statement): return Result()
     class Catalog:
-        async def list_services(self): return []
-        async def list_offerings(self): return [{"full_code": "it.printer", "public_title": "Printer", "request_template_key": "printer", "service_code": "it"}]
+        async def list_services(self): return [{"code": "it", "visibility": "public", "lifecycle_status": "published"}]
+        async def list_offerings(self): return [{"full_code": "it.printer", "public_title": "Printer", "request_template_key": "printer", "service_code": "it", "visibility": "public", "lifecycle_status": "published"}]
     repo = RequestScenarioRepo(Session(), None)
     repo.catalog = Catalog()
     async def categories(): return []

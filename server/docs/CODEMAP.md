@@ -83,7 +83,12 @@
   (not the greatest historical version), and the latest scenario/draft timestamp.
   `app/repos/request_scenario_repo.py` searches offering request types and Studio
   profiles by machine codes and Russian labels for scenarios and legacy forms
-  before sorting and paginating their combined catalog.
+  before sorting and paginating offering cards. `tickets/request_studio_catalog_projection.py`
+  groups scenarios/history into one card per offering and separates requester mode
+  from editing status using the shared public-ancestor guard. Admin catalog query
+  adds bounded `service_code` and exact `offering_code` selectors. `offering-card`
+  and `offering-details` render the unified list and dedicated offering route;
+  expert settings have a separate offering route with collapsed groups.
   `scenario-publication-summary` reuses requester block preview controls and
   links the immutable publication result to `/app/requester/new?offering=...`.
   Requester selection is validated against its existing public catalog; keyed

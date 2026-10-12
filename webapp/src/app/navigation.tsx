@@ -347,17 +347,6 @@ export const appNavigation: AppNavItem[] = [
     order: 10,
   },
   {
-    label: "Каталог услуг",
-    description: "Экспертный раздел",
-    icon: FolderKanban,
-    section: "admin",
-    workspace: "admin",
-    domainId: "catalog-intake",
-    to: "/app/admin/service-catalog",
-    permission: "admin.forms.view",
-    order: 20,
-  },
-  {
     label: "Конструктор форм",
     description: "Экспертный раздел",
     icon: Workflow,

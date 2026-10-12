@@ -1,3 +1,17 @@
+# In progress: 2026-10-12 Unified request catalog follow-up
+
+Approved bounded change: one offering card; requester mode separate from draft
+status; selectable service categories including plain forms; dedicated offering
+and settings pages; explanatory subcategory selection. Production excluded.
+Backend RED reproduced duplicate total (3 instead of 2), missing root-category
+filter and missing mode projection. GREEN: 31 catalog tests; 194 focused no-DB tests.
+Frontend RED reproduced missing offering link and empty category explanation.
+Focused components, settings navigation/pending-save and URL-context regressions
+pass. Fixture browser: 33 passed across 1366, 1440, 1920 and tablet 820 widths.
+Independent review findings corrected; no remaining blockers. Exact-SHA PostgreSQL,
+canonical CI and installed staging browser gates pending.
+No schema migration, publication, enablement or user-data rewrite is introduced.
+
 # In progress: 2026-10-11 Guided Request Studio v2
 
 Canonical plan: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2.md`.

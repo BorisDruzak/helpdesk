@@ -23,7 +23,10 @@ export type ScenarioCatalog = {
   categories: ScenarioCategory[]; services: AdminServiceCatalogService[]; offerings: AdminServiceCatalogOffering[];
   scenarios: ScenarioItem[]; total: number; offset: number; limit: number;
   legacy_offerings?: AdminServiceCatalogOffering[];
+  entries?: OfferingCard[];
 };
+export type OfferingCard = { offering: AdminServiceCatalogOffering; scenarios: ScenarioItem[];
+  active_mode: "form" | "scenario"; requester_available?: boolean; active_scenario_id?: string | null; category_ids: string[] };
 export type SimulationState = { current_block_id: string; revision: number; state: string; answers: Record<string, unknown>; history: string[]; results: Record<string, unknown> };
 export type ScenarioSimulation = { revision: number; current_block: ScenarioBlock; state: SimulationState;
   current_step?: { id: string; kind: string; title: string; fields?: (RequestFormField & { value?: unknown; allow_unknown?: boolean; group?: string | null; group_title?: string | null })[]; layout?: "single" | "group" | "section";
@@ -51,8 +54,8 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
   }
   return payload.data as T;
 }
-export function fetchScenarioCatalog(q = "", status = "all", offset = 0, categoryId: string | null = null) {
-  return request<ScenarioCatalog>(`/catalog?${new URLSearchParams({ q, status, offset: String(offset), limit: "100", ...(categoryId ? { category_id: categoryId } : {}) })}`);
+export function fetchScenarioCatalog(q = "", status = "all", offset = 0, categoryId: string | null = null, offeringCode?: string) {
+  return request<ScenarioCatalog>(`/catalog?${new URLSearchParams({ q, status, offset: String(offset), limit: "100", ...(categoryId ? categoryId.startsWith("service:") ? { service_code: categoryId.slice(8) } : { category_id: categoryId } : {}), ...(offeringCode ? { offering_code: offeringCode } : {}) })}`);
 }
 export function fetchScenarioDetail(id: string) { return request<ScenarioDetail>(`/scenarios/${encodeURIComponent(id)}`); }
 export function createScenario(definition: ScenarioDraftDefinition) { return request<ScenarioDetail>("/scenarios", "POST", { definition }); }

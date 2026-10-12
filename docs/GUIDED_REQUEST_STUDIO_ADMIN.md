@@ -11,10 +11,28 @@ Selecting a category includes all its descendants before pagination. The catalog
 the full human category path, description, active published version number and
 last scenario/draft modification time. Individual category branches can be
 collapsed with keyboard-accessible buttons independently of service branches.
-The catalog also shows
-existing offerings without a scenario as **Обычная форма / нет сценария**, with a
-link to the existing Forms editor and an admin action to create a scenario for
-that offering. Existing form-only consumers continue using their canonical forms.
+The catalog has one card per offering, including offerings with only a canonical
+form. Requester mode (**Для сотрудника: обычная форма** or **Для сотрудника:
+пошаговый сценарий**) is separate from draft validation/publication status.
+Archived/disabled scenarios never imply that requesters use them. Mode uses the
+same published-version and public category-ancestor guard as requester runtime.
+Separate requester availability also checks the offering and service publication,
+public visibility and form binding; unavailable offerings are labeled explicitly.
+
+Service headings are selectable root categories containing all their offerings,
+including plain forms without a subcategory. Subcategory filters include all
+descendants and retain disabled-scenario offerings; archive history supplies
+location only when no current scenario exists. Unassigned offerings remain in
+their main section. Search/status/category/pagination operate on offering cards.
+
+`/app/admin/request-template-studio/services/:offeringCode` opens one offering,
+with form/scenario actions and collapsed archive history.
+`/app/admin/service-catalog/offerings/:offeringCode` opens settings for one
+offering; configuration groups start collapsed. The old `/app/admin/service-catalog`
+list redirects to the unified catalog, preserving link context. Navigation has
+one catalog entry. Settings guard unsaved changes on navigation/unload; mutation
+requests disable editing until their response updates the saved baseline. Existing
+plain-form consumers keep their canonical forms.
 
 **Создать сценарий** opens a five-step wizard: category/purpose, user scenario,
 ticket processing, testing, publication. Only the selected step is rendered.
@@ -23,8 +41,10 @@ request template binding are set together. Technical keys live in the local
 **Расширенные настройки** disclosure, rather than a global mode or another tab.
 The service/offering/template binding cannot be replaced on a saved scenario.
 Later steps become available after saving a valid purpose/offering binding;
-navigation between them preserves local changes. The category tree is grouped
-into collapsible service branches.
+navigation between them preserves local changes. Selecting an offering displays
+its service section and available subcategories. Before selection, the disabled
+subcategory picker explains the prerequisite. A service without subcategories
+explicitly offers its main section and inline category creation.
 
 **Создать услугу здесь** creates a public draft inside the purpose step, under
 an already published/public service. Choose a human profile and an active

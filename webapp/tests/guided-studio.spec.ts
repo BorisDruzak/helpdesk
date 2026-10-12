@@ -24,6 +24,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       } } });
     });
     await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "4. Тестирование", exact: true }).click();
     await page.getByRole("button", { name: "Начать проверку", exact: true }).click();
@@ -52,9 +53,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       default_workspace: null, available_workspaces: [], permissions: [],
     } } }));
     await page.goto("/app/admin/registry");
-    await expect(page.getByRole("region", { name: "Каталог сценариев", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Каталог услуг", exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/app\/admin\/request-template-studio$/);
     await expect(page.getByRole("button", { name: "Создать сценарий", exact: true })).toHaveCount(0);
+    await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await expect(page.getByLabel("Название сценария", { exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toHaveCount(0);
@@ -146,6 +148,7 @@ for (const width of [1366, 1440, 1920, 820]) {
     await page.route("**/api/web/admin/request-studio/scenarios/s1/versions", route => route.fulfill({ json: { status: "success", data: [] } }));
     await page.route("**/api/web/admin/helpdesk-model/policies", route => route.fulfill({ json: { status: "success", data: { policies: {} } } }));
     await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     for (const [code, label] of [["unknown_target", "Проверьте бумагу"], ["routing_unavailable", "Маршрут и очередь"], ["sla_unavailable", "Сроки обслуживания"], ["closure_missing", "Закрытие обращения"]]) {
       issue = { code, path: code === "unknown_target" ? "blocks.instruction.transitions" : "process_binding", message: "Исправьте настройку" };
@@ -190,6 +193,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "5. Публикация", exact: true }).click();
     await page.getByRole("button", { name: "Подготовить публикацию", exact: true }).click();
@@ -240,6 +244,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await expect(page.getByRole("button", { name: "Принтеры", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath("catalog.png") });
+    await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await expect(page.getByLabel("Название сценария")).toHaveValue("Не печатает");
     await page.getByLabel("Название сценария").fill("Помощь с печатью");
@@ -258,9 +263,9 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.getByRole("button", { name: "Предыдущий этап", exact: true }).click();
     await page.getByLabel("Название сценария").fill("Несохранённая правка");
     page.once("dialog", dialog => dialog.dismiss());
-    if (viewport.width < 1024) await page.getByRole("button", { name: "Вернуться в каталог", exact: true }).click();
+    if (viewport.width < 1024) { await page.getByRole("button", { name: "Вернуться к услуге", exact: true }).click(); await page.getByRole("button", { name: "Отмена", exact: true }).click(); }
     else await page.getByRole("link", { name: /Центр администрирования/ }).click();
-    await expect(page).toHaveURL(/admin\/request-template-studio$/);
+    await expect(page).toHaveURL(/admin\/request-template-studio\/services\/it.printer$/);
     await expect(page.getByLabel("Название сценария")).toHaveValue("Несохранённая правка");
     expect(state.mutations).toHaveLength(1);
     expect(state.mutations[0]).toMatchObject({ revision: 3 });
@@ -273,6 +278,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.setViewportSize(viewport);
     const state = await fixture(page);
     await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "2. Пользовательский сценарий", exact: true }).click();
     await page.getByRole("button", { name: "Добавить блок", exact: true }).click();
@@ -356,14 +362,14 @@ test("guided studio loading empty error and retry states", async ({ page }) => {
   await page.goto("/app/admin/request-template-studio");
   await expect(page.getByText("Загрузка Студии", { exact: true })).toBeVisible();
   release();
-  await expect(page.getByText("Сценарии не найдены", { exact: true })).toBeVisible();
+  await expect(page.getByText("Услуги не найдены", { exact: true })).toBeVisible();
   await page.unroute(pattern);
   await page.route(pattern, route => route.fulfill({ status: 500, json: { status: "error", error_code: "FIXTURE_EXPECTED_FAILURE" } }));
   await page.reload();
   await expect(page.getByText("Каталог недоступен", { exact: true })).toBeVisible({ timeout: 15000 });
   await page.unroute(pattern);
   await page.getByRole("button", { name: /Повторить/ }).click();
-  await expect(page.getByRole("button", { name: "Не печатает", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Принтер", exact: true })).toBeVisible();
   expect(state.errors.filter(error => !error.includes("Failed to load resource"))).toEqual([]);
   expect(state.failures.every(failure => failure.startsWith("500 ") && failure.includes("/request-studio/catalog"))).toBe(true);
 });

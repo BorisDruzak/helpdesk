@@ -19,10 +19,10 @@ AUDITOR = {"Authorization": "Bearer test-ui-auditor-token"}
 async def seed(engine, visibility="public"):
     code = "scenario_api_" + uuid.uuid4().hex[:8]
     async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-        service = HelpdeskService(service_id=str(uuid.uuid4()), code=code, name="Studio test", public_title="Studio test", visibility=visibility)
+        service = HelpdeskService(service_id=str(uuid.uuid4()), code=code, name="Studio test", public_title="Studio test", visibility=visibility, lifecycle_status="published")
         session.add(service)
         await session.flush()
-        session.add(HelpdeskServiceOffering(offering_id=str(uuid.uuid4()), service_id=service.service_id, code="printer", full_code=code + ".printer", name="Printer", public_title="Не печатает", request_template_key=code, visibility="public"))
+        session.add(HelpdeskServiceOffering(offering_id=str(uuid.uuid4()), service_id=service.service_id, code="printer", full_code=code + ".printer", name="Printer", public_title="Не печатает", request_template_key=code, visibility="public", lifecycle_status="published"))
         session.add(RequestTemplate(template_code=code, version="1", public_title="Printer", ticket_type="incident"))
         await session.commit()
     return {"scenario_key": code, "service_code": code, "offering_full_code": code + ".printer", "title": "Не печатает", "process_binding": {"request_template_key": code}, "entry_block_id": "questions", "blocks": [
@@ -160,7 +160,9 @@ async def test_scenario_draft_cas_simulation_archive_and_version_reads(test_clie
     assert category_data["total"] == 1 and category_data["scenarios"][0]["id"] == sid
     assert category_data["legacy_offerings"] == []
     bound_legacy = await test_client_light.get(BASE + "/catalog", headers=AUDITOR, params={"q": definition["offering_full_code"], "status": "form_only"})
-    assert (await bound_legacy.json())["data"]["total"] == 0
+    bound_data = (await bound_legacy.json())["data"]
+    assert bound_data["total"] == 1
+    assert bound_data["entries"][0]["active_mode"] == "form"
     url = BASE + "/scenarios/" + sid
     edit = dict(definition, title="Исправлено")
     response = await test_client_light.put(url + "/draft", headers=ADMIN, json={"definition": edit, "revision": 1})
@@ -256,3 +258,28 @@ async def test_failed_audit_rolls_back_draft_write(test_client_light, test_engin
     async with async_sessionmaker(test_engine)() as session:
         draft = await session.get(RequestStudioDraft, sid)
         assert draft.revision == 1 and draft.definition["title"] == definition["title"]
+
+
+@pytest.mark.asyncio
+async def test_unified_catalog_counts_offering_once_and_keeps_archived_copies_in_detail(test_client_light, test_engine):
+    definition = await seed(test_engine)
+    primary = await create(test_client_light, definition)
+    copy = await create(test_client_light, dict(definition, scenario_key=definition["scenario_key"] + "_copy"))
+    response = await test_client_light.post(BASE + "/scenarios/" + copy["scenario"]["id"] + "/archive",
+        headers=ADMIN, json={"revision": 1})
+    assert response.status == 200
+    response = await test_client_light.get(BASE + "/catalog", headers=AUDITOR,
+        params={"offering_code": definition["offering_full_code"]})
+    data = (await response.json())["data"]
+    assert data["total"] == 1 and len(data["entries"]) == 1
+    card = data["entries"][0]
+    assert card["requester_available"] is True and card["active_mode"] == "form"
+    assert {item["id"] for item in card["scenarios"]} == {primary["scenario"]["id"], copy["scenario"]["id"]}
+    root = await test_client_light.get(BASE + "/catalog", headers=AUDITOR, params={"service_code": definition["service_code"]})
+    assert (await root.json())["data"]["total"] == 1
+    async with async_sessionmaker(test_engine)() as session:
+        offering = await session.scalar(select(HelpdeskServiceOffering).where(HelpdeskServiceOffering.full_code == definition["offering_full_code"]))
+        offering.lifecycle_status = "retired"
+        await session.commit()
+    response = await test_client_light.get(BASE + "/catalog", headers=AUDITOR, params={"offering_code": definition["offering_full_code"]})
+    assert (await response.json())["data"]["entries"][0]["requester_available"] is False

@@ -23,6 +23,8 @@ export function ScenarioPurpose({ definition, catalog, disabled, existing, onCha
   const allOfferings = [...catalog.offerings, ...createdOfferings.filter(item => !catalog.offerings.some(saved => saved.full_code === item.full_code))];
   const offerings = allOfferings.filter(item => item.request_template_key && (item.public_title + item.full_code).toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const selected = allOfferings.find(item => item.full_code === definition.offering_full_code);
+  const service = catalog.services.find(item => item.code === definition.service_code);
+  const serviceCategories = categories.filter(item => item.service_code === definition.service_code && item.lifecycle_status !== "archived");
   const choices = selected && !offerings.includes(selected) ? [selected, ...offerings] : offerings;
   return <fieldset disabled={disabled} className="min-w-0 space-y-4">
     <legend className="mb-4 text-lg font-semibold">Категория и назначение</legend>
@@ -33,7 +35,9 @@ export function ScenarioPurpose({ definition, catalog, disabled, existing, onCha
       const offering = allOfferings.find(item => item.full_code === event.target.value);
       if (offering?.request_template_key && offering.service_code) onChange({ ...definition, service_code: offering.service_code, offering_full_code: offering.full_code, category_id: null, publish_offering: createdOfferings.some(item => item.full_code === offering.full_code), process_binding: { request_template_key: offering.request_template_key } });
     }}><option value="">Выберите услугу</option>{choices.map(item => <option key={item.full_code} value={item.full_code}>{item.public_title}</option>)}</Select></label>
-    <label className="block">Категория<Select disabled={creatingCategory || creatingOffering} value={definition.category_id ?? ""} onChange={event => onChange({ ...definition, category_id: event.target.value || null })}><option value="">Без категории</option>{categories.filter(item => item.service_code === definition.service_code && item.lifecycle_status !== "archived").map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
+    <p className="text-sm">Раздел: <strong>{service?.public_title ?? "определится после выбора услуги"}</strong></p>
+    <label className="block">Подкатегория<Select disabled={!definition.service_code || creatingCategory || creatingOffering} value={definition.category_id ?? ""} onChange={event => onChange({ ...definition, category_id: event.target.value || null })}><option value="">В основном разделе</option>{serviceCategories.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
+    {!definition.service_code ? <p className="text-sm text-slate-500">Сначала выберите услугу — её раздел и подкатегории появятся здесь.</p> : !serviceCategories.length && <p className="text-sm text-slate-500">В разделе «{service?.public_title}» пока нет подкатегорий. Услуга уже видна в этом разделе; при необходимости создайте подкатегорию ниже.</p>}
     {!disabled && !existing && !creatingCategory && !creatingOffering && <Button variant="secondary" onClick={() => { setCreatingOffering(true); onCategoryOpen?.(true); }}>Создать услугу здесь</Button>}
     {creatingOffering && <ScenarioOfferingForm catalog={catalog} initialServiceCode={definition.service_code} onDirty={onCategoryDirty} onCancel={() => { setCreatingOffering(false); onCategoryOpen?.(false); }} onDone={async saved => {
       setCreatedOfferings(items => [...items, saved]);

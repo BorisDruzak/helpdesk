@@ -12,7 +12,7 @@ export function useScenarioContext(catalog: ScenarioCatalog | undefined, editor:
     if (!catalog || applied.current) return;
     applied.current = true;
     const offeringCode = params.get("offering"), template = params.get("template"), service = params.get("service");
-    if (!offeringCode && !template && !service) return;
+    if (!offeringCode && !template) return;
     if (catalog.offset > 0 || catalog.total > catalog.limit) {
       setNotice("Каталог содержит несколько страниц. Найдите услугу через поиск и откройте её сценарий; автоматическое создание по неполному каталогу отключено.");
       return;

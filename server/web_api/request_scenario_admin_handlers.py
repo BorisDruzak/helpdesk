@@ -13,7 +13,7 @@ from app.repos.request_scenario_repo import RequestScenarioRepo, ScenarioAdminEr
 from auth.middleware import require_auth
 from tickets.request_scenario_runtime import ScenarioConflict, ScenarioInputError
 from tickets.request_scenario_validation import ScenarioValidationError
-from web_api.dto.request_scenario import StrictModel
+from web_api.dto.request_scenario import CatalogCode, StrictModel
 from web_api.dto.request_scenario_admin import CategoryInput, Identifier, RevisionInput, ScenarioCreate, ScenarioSave, SimulationInput, ScenarioPublish, ScenarioRollback
 from tickets.request_scenario_publication import ScenarioPublicationService
 from tickets.request_studio_publication import RequestStudioConfirmationError
@@ -22,7 +22,9 @@ from tickets.request_studio_publication import RequestStudioConfirmationError
 class CatalogQuery(StrictModel):
     q: str = Field(default="", max_length=300)
     category_id: Identifier | None = None
-    status: Literal["all", "draft", "published", "errors", "archived", "form_only"] = "all"
+    service_code: CatalogCode | None = None
+    offering_code: str | None = Field(default=None, min_length=3, max_length=220, pattern=r"^[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9_-]*$")
+    status: Literal["all", "draft", "published", "errors", "archived", "form_only", "guided"] = "all"
     offset: int = Field(default=0, ge=0, le=100000)
     limit: int = Field(default=100, ge=1, le=500)
 
@@ -75,7 +77,7 @@ async def _run(request, operation, *, write=False):
 async def handle_scenario_catalog(request):
     async def operation(repo):
         query = CatalogQuery.model_validate_strings(dict(request.query))
-        return await repo.catalog_view(query=query.q, status=query.status, offset=query.offset, limit=query.limit, category_id=query.category_id)
+        return await repo.catalog_view(query=query.q, status=query.status, offset=query.offset, limit=query.limit, category_id=query.category_id, service_code=query.service_code, offering_code=query.offering_code)
     return await _run(request, operation)
 
 

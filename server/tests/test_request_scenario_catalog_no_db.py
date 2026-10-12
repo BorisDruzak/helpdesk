@@ -33,9 +33,9 @@ async def test_catalog_type_search_includes_scenarios_and_legacy_before_paginati
     repo = RequestScenarioRepo(session, None)
     repo.categories = AsyncMock(return_value=[])
     offerings = [{"full_code": "svc." + code, "public_title": title,
-        "request_type": request_type, "metadata": {"studio_profile": profile, "private_note": "excluded_signal"}}
+        "service_code": "svc", "lifecycle_status": "published", "visibility": "public", "request_template_key": "printer", "request_type": request_type, "metadata": {"studio_profile": profile, "private_note": "excluded_signal"}}
         for code, title in [("one", "Alpha"), ("two", "Bravo")]]
-    repo.catalog = SimpleNamespace(list_offerings=AsyncMock(return_value=offerings), list_services=AsyncMock(return_value=[]))
+    repo.catalog = SimpleNamespace(list_offerings=AsyncMock(return_value=offerings), list_services=AsyncMock(return_value=[{"code": "svc", "lifecycle_status": "published", "visibility": "public"}]))
     assert (await repo.catalog_view())["total"] == 2
     for query in queries:
         result = await repo.catalog_view(query=query)
@@ -46,5 +46,6 @@ async def test_catalog_type_search_includes_scenarios_and_legacy_before_paginati
         assert page["total"] == 2 and page["scenarios"] == []
         assert [item["full_code"] for item in page["legacy_offerings"]] == ["svc.two"]
         legacy = await repo.catalog_view(query=query, status="form_only")
-        assert legacy["total"] == 1 and legacy["scenarios"] == []
+        assert legacy["total"] == 2
+        assert all(item["active_mode"] == "form" for item in legacy["entries"])
     assert (await repo.catalog_view(query="excluded_signal"))["total"] == 0

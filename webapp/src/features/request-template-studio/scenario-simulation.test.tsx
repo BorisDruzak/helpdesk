@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSimulationPanel } from "./scenario-simulation";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -17,7 +17,7 @@ it("keeps a dynamic page editable when focus moves from its heading to an answer
   render(<ScenarioSimulationPanel id="scenario" revision={1} dirty={false} disabled={false} />);
   fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
   const heading = await screen.findByRole("heading", { name: "Подробности влияния" });
-  expect(heading).toHaveFocus();
+  await waitFor(() => expect(heading).toHaveFocus());
   const input = screen.getByRole("textbox", { name: "Какая работа остановилась?" });
   act(() => input.focus());
   expect(input).toBeEnabled();

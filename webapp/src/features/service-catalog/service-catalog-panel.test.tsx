@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ServiceCatalogPanel } from "./service-catalog-panel";
+import { ServiceCatalogPanel, ServiceCatalogOfferingSettings } from "./service-catalog-panel";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -138,6 +138,62 @@ function mockServiceCatalogFetch() {
 describe("ServiceCatalogPanel", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("opens settings for exactly one offering without a service table or expanded editor wall", async () => {
+    mockServiceCatalogFetch();
+    const { container } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <RouterProvider router={createMemoryRouter([{ path: "*", element: <ServiceCatalogOfferingSettings code="mail.new_box" /> }])} />
+    </QueryClientProvider>);
+    expect(await screen.findByRole("heading", { name: "Mail box: настройки" })).toBeVisible();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("details[open]")).toHaveLength(0);
+    expect(screen.getByRole("link", { name: "Вернуться к услуге" })).toHaveAttribute("href", "/app/admin/request-template-studio/services/mail.new_box");
+  });
+
+  it("guards navigation and unload while an offering settings draft is unsaved", async () => {
+    mockServiceCatalogFetch();
+    const router = createMemoryRouter([{ path: "/settings", element: <ServiceCatalogOfferingSettings code="mail.new_box" /> },
+      { path: "/done", element: <p>Done</p> }], { initialEntries: ["/settings"] });
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>);
+    await screen.findByRole("heading", { name: "Mail box: настройки" });
+    fireEvent.change(screen.getAllByLabelText("Видимость")[1], { target: { value: "internal" } });
+    expect(screen.getAllByLabelText("Видимость")[1]).toHaveValue("internal");
+    fireEvent.change(screen.getAllByLabelText("Жизненный цикл")[1], { target: { value: "draft" } });
+    fireEvent.change(screen.getAllByLabelText("Название для пользователей")[1], { target: { value: "Несохранённое имя" } });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await act(() => router.navigate("/done"));
+    expect(confirm).toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/settings");
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    confirm.mockReturnValue(true);
+    await act(() => router.navigate("/done"));
+    expect(router.state.location.pathname).toBe("/done");
+  });
+
+  it("disables editing until a deferred save completes and then releases the dirty guard", async () => {
+    const fetcher = mockServiceCatalogFetch();
+    const original = fetcher.getMockImplementation()!;
+    let complete!: (response: Response) => void;
+    const pending = new Promise<Response>(resolve => { complete = resolve; });
+    fetcher.mockImplementation(async (input, init) => String(input).endsWith("offerings/save-draft") ? pending : original(input, init));
+    const router = createMemoryRouter([{ path: "/settings", element: <ServiceCatalogOfferingSettings code="mail.new_box" /> }, { path: "/done", element: <p>Done</p> }], { initialEntries: ["/settings"] });
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>);
+    await screen.findByRole("heading", { name: "Mail box: настройки" });
+    const input = screen.getAllByLabelText("Название для пользователей")[1];
+    fireEvent.change(input, { target: { value: "Сохранённое имя" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик варианта", hidden: true }));
+    await waitFor(() => expect(input).toBeDisabled());
+    const offering = catalogPayload().offerings.find(item => item.full_code === "mail.new_box")!;
+    complete(jsonResponse({ status: "ok", offering: { ...offering, public_title: "Сохранённое имя" } }));
+    await waitFor(() => expect(input).toBeEnabled());
+    expect(input).toHaveValue("Сохранённое имя");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await act(() => router.navigate("/done"));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/done");
   });
 
   it("opens the service and offering requested by query params", async () => {

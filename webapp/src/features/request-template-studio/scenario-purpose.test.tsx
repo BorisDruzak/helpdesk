@@ -84,7 +84,7 @@ it("creates a category inside the purpose step and preserves the unsaved scenari
   fireEvent.change(screen.getByLabelText("Название сценария"), { target: { value: "Последнее название" } });
   fireEvent.change(screen.getByLabelText("Описание"), { target: { value: "Последнее описание" } });
   complete(new Response(JSON.stringify({ status: "success", data: { ...categoryInput, id: "printing", revision: 1 } }), { headers: { "Content-Type": "application/json" } }));
-  await waitFor(() => expect(screen.getByLabelText("Категория")).toHaveValue("printing"));
+  await waitFor(() => expect(screen.getByLabelText("Подкатегория")).toHaveValue("printing"));
   expect(screen.getByLabelText("Название сценария")).toHaveValue("Последнее название");
   expect(screen.getByLabelText("Описание")).toHaveValue("Последнее описание");
   expect(request).toHaveBeenCalledTimes(1);

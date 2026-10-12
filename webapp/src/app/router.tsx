@@ -481,6 +481,14 @@ export const appRoutes: RouteObject[] = [
             )
           },
           {
+            path: "admin/request-template-studio/services/:offeringCode",
+            element: <ScenarioStudioAccessGate><AdminRequestTemplateStudioPage /></ScenarioStudioAccessGate>
+          },
+          {
+            path: "admin/service-catalog/offerings/:offeringCode",
+            element: <WorkspaceAccessGate workspace="admin"><AdminServiceCatalogPage /></WorkspaceAccessGate>
+          },
+          {
             path: "admin/service-catalog",
             element: (
               <WorkspaceAccessGate workspace="admin">
