@@ -1,14 +1,21 @@
-# In progress: 2026-10-12 Independent processing template creation
+# Complete: 2026-10-12 Independent processing template creation
 
-Browser confirmed: new offering requires an existing published template while
-active FormsBuilderWorkspace exposes editing only, with no creation action.
-Bounded fix: dedicated /app/admin/forms/new, canonical single-template publication,
-explicit confirmation, existing published policy refs, no shared-pack rewrite;
-new-tab creation link and template-list refresh preserve the unsaved service.
-Frozen unit682, fixture browser110 (four new creation viewports), fresh build/
-typecheck, scoped workspace and diff checks passed. Independent contract review:
-no blockers. Exact-candidate CI and actual staging template/offering/requester
-acceptance pending. Production excluded. Preserve current user draft/browser tabs.
+Fixed missing new-template creation from service authoring. Dedicated
+/app/admin/forms/new reuses single-template canonical publication, explicit
+confirmation and existing published rules; separate-tab creation and list refresh
+preserve service values. Generated own keys and no shared-pack rewrite.
+Frozen checks: 682 unit, 110 fixture browser, build/typecheck, scoped workspace,
+diff and exact Semgrep passed; zero task findings/secrets. Independent review
+findings closed. Exact 2f2a2ec9 CI38260933737 passed all18 canonical layers and
+Endpoint contract job; installed identity/active staging verified.
+Actual strict-TLS browser created/published one template, refreshed the preserved
+service draft, created/published its bound service, rendered the new requester
+form, answered existing common priority facts, and created/opened ticket T-000057.
+Final requester path has zero browser/unexpected HTTP errors. Failed helper local
+validation (omitted common facts) remains separate; resumed same owned records.
+See docs/INDEPENDENT_TEMPLATE_STAGING_ACCEPTANCE.md for hashes/identities/limits.
+User's service/scenarios/tabs preserved. Staging active; production excluded;
+Sonar deferred. No backend/schema/dependency/Endpoint changes.
 
 # Complete: 2026-10-12 Independent service creation and authoring clarity
 
