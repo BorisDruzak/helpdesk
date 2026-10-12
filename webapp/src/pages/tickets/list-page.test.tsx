@@ -34,6 +34,7 @@ import {
 } from "../../features/queues/api";
 import { fetchTicketProblemLinks } from "../../features/problems/api";
 import { TicketListPage } from "./list-page";
+import {savePanelPreferences} from "../../shared/ui/workspace-panel-preferences";
 
 const logoutMock = vi.hoisted(() => vi.fn<() => Promise<void>>(() => Promise.resolve()));
 const ticketRealtimeListeners = vi.hoisted(
@@ -2147,6 +2148,29 @@ describe("TicketListPage", () => {
     expect(within(focusCard).getByText("Приложить evidence")).toBeInTheDocument();
   });
 
+  it("hides ticket-list focus targets while preserving selection and search",async()=>{
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    renderTicketListPage("/app/tickets/ticket-1");
+    const collapse=await screen.findByRole("button",{name:"Скрыть список заявок"});
+    const search=screen.getByPlaceholderText("Поиск по моим тикетам...");
+    fireEvent.change(search,{target:{value:"OLA"}});
+    fireEvent.click(collapse);
+    expect(screen.queryByPlaceholderText("Поиск по моим тикетам...")).not.toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"Показать список заявок"})).toHaveAttribute("aria-expanded","false");
+    expect(screen.getAllByText(/Проверить OLA очередь/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button",{name:"Показать список заявок"}));
+    expect(screen.getByPlaceholderText("Поиск по моим тикетам...")).toHaveValue("OLA");
+  });
+
+  it("keeps list visible when no ticket is selected even with a saved collapsed preference",async()=>{
+    savePanelPreferences("support-test","support",{navigationCollapsed:true,ticketListCollapsed:true});
+    fetchSupportQueueMock.mockResolvedValue(queuePayload({tickets:[]}));
+    renderTicketListPage("/app/tickets");
+    await screen.findByTestId("support-workspace-root");
+    expect(screen.getByPlaceholderText("Поиск по моим тикетам...")).toBeInTheDocument();
+    expect(screen.queryByRole("button",{name:"Показать список заявок"})).not.toBeInTheDocument();
+  });
+
   it("renders requester contact enrichment in the context sidebar", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
@@ -2220,6 +2244,9 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
+    const observerSummary=await screen.findByText("Observer · подробности");
+    expect(screen.queryByTestId("observer-diagnostic-card")).not.toBeInTheDocument();
+    fireEvent.click(observerSummary);
     const card = await screen.findByTestId("observer-diagnostic-card");
     expect(within(card).getByText("Диагностика тикета")).toBeInTheDocument();
     expect(within(card).getByText("Есть ошибки")).toBeInTheDocument();

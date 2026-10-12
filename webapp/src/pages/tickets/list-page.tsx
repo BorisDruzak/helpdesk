@@ -111,6 +111,8 @@ import type {
   SupportWorkspaceToolItem,
 } from "../../features/queues/support-workspace-model";
 import { useSession } from "../../features/auth/session-provider";
+import {TicketContextPanel,EndpointAgentContext} from "../../features/endpoint-tools/ticket-context-panel";
+import {loadPanelPreferences,savePanelPreferences} from "../../shared/ui/workspace-panel-preferences";
 import { fetchTicketProblemLinks } from "../../features/problems/api";
 import { ExpandedWorkspaceHeader } from "./components/expanded-workspace-header";
 import { OperationsTable } from "./components/operations-table";
@@ -1243,6 +1245,9 @@ export function TicketListPage() {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { session } = useSession();
+  const panelAccount=session?.user_login??"";
+  const [ticketListCollapsed,setTicketListCollapsed]=useState(()=>loadPanelPreferences(panelAccount,"support").ticketListCollapsed);
+  useEffect(()=>setTicketListCollapsed(loadPanelPreferences(panelAccount,"support").ticketListCollapsed),[panelAccount]);
   const initialUrlStateRef = useRef(getTicketsWorkspaceUrlState(searchParams));
   const shouldKeepQueueRouteRef = useRef(initialUrlStateRef.current.shouldOpenQueue);
   const [scope, setScope] = useState<SupportQueueScope>("all");
@@ -2130,6 +2135,13 @@ export function TicketListPage() {
   }
 
   const selectedTicket = viewModel.selectedTicket;
+  const effectiveListCollapsed=Boolean(selectedTicket && ticketListCollapsed && workspaceMode!=="queue");
+  function toggleTicketList() {
+    const collapsed=!ticketListCollapsed;
+    setTicketListCollapsed(collapsed);
+    savePanelPreferences(panelAccount,"support",{...loadPanelPreferences(panelAccount,"support"),ticketListCollapsed:collapsed});
+    resizeStateRef.current=null;setResizingPane(null);
+  }
   const selectedTicketIsUnassigned = Boolean(selectedTicket?.assigneeLabel.toLowerCase().includes("не назнач"));
   const getCompactTicketSlaLabel = (ticket: (typeof visibleTickets)[number]) => {
     if (selectedTicket?.id === ticket.id && selectedTicket.nextAction.timerType !== "none") {
@@ -2259,6 +2271,7 @@ export function TicketListPage() {
       ref={workspaceRootRef}
       data-testid="support-workspace-root"
       data-compact-layout={isCompactWorkspace ? "true" : "false"}
+      data-has-ticket={selectedTicket ? "true" : "false"}
       data-mode={workspaceMode}
       data-theme={workspaceTheme}
     >
@@ -2272,7 +2285,7 @@ export function TicketListPage() {
       <div
         className="relative grid min-h-0 flex-1 overflow-hidden support-workspace__mode-grid"
         data-overlay-right={rightPanelInDrawer ? "true" : "false"}
-        style={getWorkspaceGridStyle(workspaceMode, workspaceColumns, workspaceViewportWidth)}
+        style={{...getWorkspaceGridStyle(workspaceMode, workspaceColumns, workspaceViewportWidth),...(effectiveListCollapsed?{"--support-left":"52px","--support-center":"minmax(0, 1fr)"}: {})} as CSSProperties}
       >
         <section
           aria-label="Operator command console"
@@ -2332,7 +2345,7 @@ export function TicketListPage() {
             </button>
           </div>
         </section>
-        {canResizeWorkspace ? <button
+        {canResizeWorkspace && !effectiveListCollapsed ? <button
           aria-label="Изменить ширину левой колонки"
           className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-6 -translate-x-1/2 cursor-col-resize ${
             resizingPane === "left" ? "support-workspace__column-resizer--active" : ""
@@ -2362,7 +2375,9 @@ export function TicketListPage() {
             <GripVertical className="h-4 w-4" />
           </span>
         </button> : null}
-        <aside className="flex min-h-0 flex-col border-r border-white/10 bg-[#0b1624]">
+        <aside aria-label="Список заявок" data-collapsed={effectiveListCollapsed?"true":"false"} className="support-workspace__ticket-list flex min-h-0 flex-col border-r border-white/10 bg-[#0b1624]">
+          {selectedTicket && workspaceMode!=="queue" ? <button aria-label={effectiveListCollapsed?"Показать список заявок":"Скрыть список заявок"} aria-expanded={!effectiveListCollapsed} className="m-2 rounded-lg border border-white/10 p-2 text-xs font-semibold" onClick={toggleTicketList} type="button">{effectiveListCollapsed?<><ClipboardList className="mx-auto h-4 w-4"/><span className="sr-only">Заявки</span></>:"Скрыть список заявок"}</button>:null}
+          {effectiveListCollapsed?<span className="text-center text-xs text-slate-500">{visibleTickets.length}</span>:<>
           {workspaceMode === "queue" ? (
             <QueueExplorer
               activeQueueId={activeQueueId}
@@ -2517,9 +2532,10 @@ export function TicketListPage() {
           </div>
           </>
           )}
+          </>}
         </aside>
 
-        <main className="flex min-h-0 flex-col border-r border-white/10 bg-[#07111f]">
+        <main className="flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#07111f]">
           {workspaceMode === "queue" ? (
             <TicketPreviewPanel
               canTakeTicket={selectedTicketIsUnassigned}
@@ -3408,57 +3424,8 @@ export function TicketListPage() {
             ) : null}
 
             {selectedTicket && sidebarTab === "context" && viewModel.right.context ? (
-              <div className="space-y-3">
-                <ObserverDiagnosticCard isLightTheme={isLightTheme} observer={viewModel.right.observer} />
-
-                <TicketDeviceAgentPanel
-                  deviceContext={viewModel.right.context.device}
-                  inventoryContext={viewModel.right.inventoryContext}
-                />
-
-                {approvalSummary?.pending_count || waitingConsentOperations.length ? (
-                  <section className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">Согласования и согласия</p>
-                        <h3 className="mt-1 break-words font-semibold text-white">
-                          Есть ожидания, которые могут блокировать работу
-                        </h3>
-                      </div>
-                      <Link
-                        className="inline-flex h-9 shrink-0 items-center rounded-md border border-amber-200/30 bg-amber-100/10 px-3 text-xs font-semibold text-amber-50 hover:bg-amber-100/20"
-                        to={`/app/support/approvals?kind=${waitingConsentOperations.length ? "pending_consent" : "pending_approval"}`}
-                      >
-                        Открыть в Центре
-                      </Link>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {approvalSummary?.pending_count ? (
-                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
-                          Ждёт согласования: {approvalSummary.pending_count}
-                        </span>
-                      ) : null}
-                      {waitingConsentOperations.length ? (
-                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
-                          Ждёт согласия пользователя: {waitingConsentOperations.length}
-                        </span>
-                      ) : null}
-                      {approvalSummary?.current_action_owner ? (
-                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
-                          Владелец действия: {approvalSummary.current_action_owner}
-                        </span>
-                      ) : null}
-                    </div>
-                    {approvalSummary?.items?.length ? (
-                      <p className="mt-3 break-words text-xs leading-5 text-amber-50/90">
-                        {approvalSummary.items.find((item) => item.status === "requested" || item.status === "pending")?.reason ??
-                          "Откройте центр согласований для общего списка pending approvals и consent-запросов."}
-                      </p>
-                    ) : null}
-                  </section>
-                ) : null}
-
-                <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+              <TicketContextPanel
+                requester={<>                <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Заявитель</p>
                   <div className="mt-3 flex items-center gap-3">
                     <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-700">
@@ -3521,22 +3488,54 @@ export function TicketListPage() {
                   </dl>
                 </section>
 
-                <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Устройство</p>
-                    <span className={viewModel.right.context.device.online ? "text-xs font-semibold text-emerald-300" : "text-xs font-semibold text-red-300"}>
-                      {viewModel.right.context.device.onlineLabel}
-                    </span>
-                  </div>
-                  <p className="mt-3 font-semibold text-white">{viewModel.right.context.device.hostname}</p>
-                  <p className="mt-1 text-sm text-slate-400">{viewModel.right.context.device.os}</p>
-                  <dl className="mt-4 grid gap-2">
-                    <ContextInfoRow icon={Cpu} label="Тип актива" value={viewModel.right.context.device.assetTypeLabel} />
-                    <ContextInfoRow icon={Fingerprint} label="Asset ID" value={viewModel.right.context.device.assetId} />
-                    <ContextInfoRow icon={Monitor} label="Device ID" value={viewModel.right.context.device.id} />
-                    <ContextInfoRow icon={Clock3} label="Последний вход" value={viewModel.right.context.device.lastSeenLabel} />
-                  </dl>
-                </section>
+</>}
+                device={<TicketDeviceAgentPanel deviceContext={viewModel.right.context.device} inventoryContext={viewModel.right.inventoryContext} />}
+                agent={<EndpointAgentContext inventoryContext={viewModel.right.inventoryContext} />}
+                observer={<ObserverDiagnosticCard isLightTheme={isLightTheme} observer={viewModel.right.observer} />}
+                criticalSummary={<p className={viewModel.right.observer.errorTraceCount ? "text-sm font-semibold text-rose-600" : "text-sm text-slate-500"}>Observer: {viewModel.right.observer.healthLabel} · Ошибки: {viewModel.right.observer.errorTraceCount}</p>}
+              >
+                {approvalSummary?.pending_count || waitingConsentOperations.length ? (
+                  <section className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">Согласования и согласия</p>
+                        <h3 className="mt-1 break-words font-semibold text-white">
+                          Есть ожидания, которые могут блокировать работу
+                        </h3>
+                      </div>
+                      <Link
+                        className="inline-flex h-9 shrink-0 items-center rounded-md border border-amber-200/30 bg-amber-100/10 px-3 text-xs font-semibold text-amber-50 hover:bg-amber-100/20"
+                        to={`/app/support/approvals?kind=${waitingConsentOperations.length ? "pending_consent" : "pending_approval"}`}
+                      >
+                        Открыть в Центре
+                      </Link>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {approvalSummary?.pending_count ? (
+                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
+                          Ждёт согласования: {approvalSummary.pending_count}
+                        </span>
+                      ) : null}
+                      {waitingConsentOperations.length ? (
+                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
+                          Ждёт согласия пользователя: {waitingConsentOperations.length}
+                        </span>
+                      ) : null}
+                      {approvalSummary?.current_action_owner ? (
+                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
+                          Владелец действия: {approvalSummary.current_action_owner}
+                        </span>
+                      ) : null}
+                    </div>
+                    {approvalSummary?.items?.length ? (
+                      <p className="mt-3 break-words text-xs leading-5 text-amber-50/90">
+                        {approvalSummary.items.find((item) => item.status === "requested" || item.status === "pending")?.reason ??
+                          "Откройте центр согласований для общего списка pending approvals и consent-запросов."}
+                      </p>
+                    ) : null}
+                  </section>
+                ) : null}
+
 
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Категория / услуга</p>
@@ -3550,7 +3549,7 @@ export function TicketListPage() {
                     <ContextInfoRow icon={MessageSquare} label="Похожие тикеты" value={viewModel.right.context.classification.similarTicketsCount} />
                   </dl>
                 </section>
-              </div>
+              </TicketContextPanel>
             ) : null}
 
             {selectedTicket && sidebarTab === "quality" ? (

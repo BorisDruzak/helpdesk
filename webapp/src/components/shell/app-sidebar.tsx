@@ -47,7 +47,7 @@ function writeOpenGroups(groupIds: string[]) {
     return;
   }
 
-  window.localStorage.setItem(ADMIN_GROUP_STORAGE_KEY, JSON.stringify(groupIds));
+  try {window.localStorage.setItem(ADMIN_GROUP_STORAGE_KEY, JSON.stringify(groupIds));} catch { /* Navigation remains usable without storage. */ }
 }
 
 function resolveSidebarWorkspace({
@@ -161,7 +161,6 @@ function SupportSidebar({
   items,
   currentPath,
   label = "Навигация поддержки",
-  onCollapsedChange,
   onNavigate,
 }: {
   collapsed: boolean;
@@ -179,7 +178,6 @@ function SupportSidebar({
           currentPath={currentPath}
           item={item}
           key={item.to}
-          onCollapsedChange={onCollapsedChange}
           onNavigate={onNavigate}
         />
       ))}
@@ -394,6 +392,7 @@ export function AppSidebar({
 
       {showCollapseToggle ? (
         <button
+          aria-expanded={!collapsed}
           aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"}
           className={cn(
             "mt-4 flex items-center gap-3 rounded-panel border border-white/10 bg-white/8 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/14 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700",

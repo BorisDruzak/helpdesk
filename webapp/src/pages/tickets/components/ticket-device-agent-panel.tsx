@@ -9,11 +9,13 @@ type TicketDeviceAgentPanelProps = {
   inventoryContext?: SupportTicketInventoryContext | null;
 };
 
-export function TicketDeviceAgentPanel({ inventoryContext }: TicketDeviceAgentPanelProps) {
+export function TicketDeviceAgentPanel({ inventoryContext,deviceContext }: TicketDeviceAgentPanelProps) {
   const context = inventoryContext?.context;
   const inventory = context?.snapshots.find((snapshot) => snapshot.profile === "inventory_v1");
   return <section className="rounded-xl border border-white/10 p-4">
-    <h3 className="text-base font-semibold">Устройство · Endpoint</h3>
+    <h3 className="text-base font-semibold">Компьютер · Endpoint</h3>
+    {deviceContext?.assetTypeLabel&&<p className="mt-2 text-sm">Тип актива обращения: <span>{deviceContext.assetTypeLabel}</span></p>}
+    {deviceContext?.assetId&&<p className="mt-1 text-sm">Объект Registry: <span>{deviceContext.assetId}</span></p>}
     {context ? <>
       <p>{context.device.display_name} · {context.device.online && !context.device.retired_at ? "ONLINE" : "OFFLINE"}</p>
       <p>Последняя связь: {contextDate(context.device.last_seen_at)}</p>

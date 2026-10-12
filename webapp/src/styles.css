@@ -1,6 +1,16 @@
 @import "tailwindcss";
 
 .endpoint-tools-container { container-type: inline-size; }
+@media (max-width: 767px) {
+  .support-workspace[data-has-ticket="false"] .support-workspace__mode-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .support-workspace[data-has-ticket="false"] .support-workspace__mode-grid > main,
+  .support-workspace[data-has-ticket="false"] [data-testid="support-inspector-panel"] { display: none; }
+  .support-workspace[data-has-ticket="true"]:not([data-mode="queue"]) .support-workspace__mode-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .support-workspace[data-has-ticket="true"]:not([data-mode="queue"]) .support-workspace__ticket-list { display: none; }
+  .support-workspace[data-mode="queue"] .support-workspace__mode-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .support-workspace[data-mode="queue"] .support-workspace__mode-grid > main,
+  .support-workspace[data-mode="queue"] [data-testid="support-inspector-panel"] { display: none; }
+}
 @container (min-width: 640px) {
   .endpoint-tools-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }

@@ -54,3 +54,13 @@ selected run/step identity; response identity is checked before updating its UI.
 Persisted `attached_steps` restores “В паспорте” after reload. Capturing completed
 evidence requires `ticket.passport.manage` and remains possible when new-run
 admission is disabled; that action issues no Endpoint command.
+
+Ticket context composition orders the requester/account projection, canonical
+Endpoint computer context, agent connection facts and collapsed Observer details.
+The Observer error summary remains visible; absent provider agent/launcher
+versions remain “Нет данных”. Registry asset identity stays a business fact and
+is not used to infer Endpoint technical facts. Navigation and ticket-list collapse
+are independent account/workspace preferences; hidden list controls unmount and
+selection/search remain intact. The list remains visible without a selected
+ticket. Storage errors preserve navigation usability. At mobile width the selected
+ticket uses the full column and the existing queue action opens the list.

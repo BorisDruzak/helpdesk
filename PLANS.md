@@ -1855,3 +1855,14 @@ browser acceptance remain required. The synthetic orphan was denied through
 the browser and all three temporary accounts were disabled; staging was stopped.
 
 Admin cutover 2026-10-01: final 2cf828af full CI and actual Windows/browser staging accepted and restored. The user subsequently authorized merging all cutover and seven Sonar commits into main; PR 39 now targets main. Pre-merge review reproduced accepted Python-only conditional/comment regex groups and a bounded mirrored validation fix adds publication, saved-form and browser regressions. Fresh candidate full CI and main integration are the remaining gates. Production deployment/data deletion remain excluded.
+
+2026-10-12 Endpoint tools workspace: approved catalog/parameters/result/passport and
+six-profile collection workflow implemented in an isolated task branch. Context
+now orders requester, Endpoint computer and agent before collapsed Observer details;
+critical error counts remain visible. Account/workspace preferences independently
+collapse navigation and the ticket list; search/selection persist and hidden list
+controls unmount. Functional PostgreSQL gates passed for admission, leases,
+permissions and retained evidence; frontend unit/type/build checks passed. Browser
+screenshots and runtime acceptance remain pending. Staging deployment must wait for
+Guided Request Studio147 to merge into main, then attach unreleased148 to that
+accepted migration chain. No production or staging service was deployed by this work.
