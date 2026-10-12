@@ -62,6 +62,10 @@ def validate_module_projection(projection):
         for step in projection.steps:
             if step.safe_result is not None:
                 validate_safe_result(step.capability, step.safe_result)
+                if step.status not in {"succeeded", "failed"} or step.safe_result.status != step.status:
+                    raise ValueError("safe result contradicts step lifecycle")
+        if projection.status == "succeeded" and any(step.status != "succeeded" for step in projection.steps):
+            raise ValueError("successful parent has incomplete or failed steps")
     return projection
 
 

@@ -253,7 +253,7 @@ from web_api.endpoint_operation_handlers import (
 )
 from web_api.endpoint_tool_handlers import (
     handle_tool_catalog, handle_tool_run_create, handle_tool_run_get, handle_tool_runs_list,
-    handle_tool_batch_create, handle_tool_batch_get,
+    handle_tool_batch_create, handle_tool_batch_get, handle_tool_attach,
 )
 from web_api.session_handlers import (
     handle_web_session_login,
@@ -592,6 +592,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs', handle_tool_run_create),
         web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs', handle_tool_runs_list),
         web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs/{run_id}', handle_tool_run_get),
+        web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs/{run_id}/passport-evidence', handle_tool_attach),
         web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/collections', handle_tool_batch_create),
         web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/collections/{run_id}', handle_tool_batch_get),
         web.post('/api/web/support/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run', handle_ticket_diagnostics_capability_run),

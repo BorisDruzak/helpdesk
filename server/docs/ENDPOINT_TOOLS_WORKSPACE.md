@@ -28,3 +28,10 @@ are 502 errors, preserving the human session. The default-off
 `ENDPOINT_TOOLS_WORKSPACE_ENABLED` controls admission, never worker resumption.
 Catalog primitives cache for 60 seconds and exact-device pages for 5 seconds;
 mutations bypass both caches and validate the exact published version afresh.
+
+POST `.../runs/{run_id}/passport-evidence` accepts only a selected step sequence.
+The server validates the closed result and immutable provenance, creates one
+deterministic DiagnosticEvidence and copies the safe payload into the passport's
+own metadata snapshot. Ticket locks serialize repeated attachments. Queued or
+missing results cannot be attached; a negative safe result keeps its failure
+status. Neither evidence nor passports depend on Endpoint's result retention.

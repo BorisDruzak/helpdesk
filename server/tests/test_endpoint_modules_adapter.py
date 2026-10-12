@@ -110,6 +110,13 @@ async def test_empty_success_keeps_its_own_run_and_collection_time():
 
 
 @pytest.mark.asyncio
+async def test_successful_step_cannot_carry_failed_facts():
+    payload=operation_payload()
+    payload["steps"][0]["safe_result"].update(status="failed",error_code="dns_failed")
+    assert isinstance(await read_operation(payload),EndpointInvalidProjection)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("defect", ["overflow", "missing_fact"])
 async def test_resource_snapshot_retains_nullable_bounds_and_requires_success_facts(defect):
     payload = operation_payload()

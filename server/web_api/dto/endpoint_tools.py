@@ -24,6 +24,11 @@ class EndpointToolBatchCreateV1(_DTO):
     caller_key: str = Field(min_length=1, max_length=128)
 
 
+class EndpointToolAttachV1(_DTO):
+    schema_version: Literal["endpoint_tool_attach_v1"]
+    step_sequence: StrictInt = Field(ge=0,le=7)
+
+
 class EndpointToolItemV1(_DTO):
     module_key: str
     version: str

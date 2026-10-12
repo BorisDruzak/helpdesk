@@ -23,7 +23,7 @@ from domain_ports.endpoint_module_contracts_generated import EndpointDeviceModul
 from tickets.handlers import _get_ticket_or_response
 from web_api.dto.endpoint_tools import (
     EndpointToolRunCreateV1, EndpointToolBatchCreateV1, EndpointToolRunPayloadV1,
-    EndpointToolBatchPayloadV1, EndpointToolItemV1, EndpointToolCatalogPayloadV1,
+    EndpointToolBatchPayloadV1, EndpointToolItemV1, EndpointToolCatalogPayloadV1, EndpointToolAttachV1,
 )
 
 _NO_STORE = {"Cache-Control": "no-store"}
@@ -217,3 +217,17 @@ async def handle_tool_batch_get(request):
     async with get_session() as session: runs=await EndpointToolRunsRepo(session).list_runs(ticket.ticket_id,batch_id=request.match_info["run_id"],limit=6)
     for run in runs: require_run_identity(run,ticket.ticket_id,_device(ticket).external_id)
     return _response(_batch_payload(request.match_info["run_id"],ticket.ticket_id,runs))
+
+
+@require_auth("admin","support")
+@_safe
+async def handle_tool_attach(request):
+    from diagnostics.passport_bridge import DiagnosticPassportBridgeService
+    access,error=await _ticket_access(request,mutation=True)
+    if error is not None: return error
+    ticket,actor=access
+    body=EndpointToolAttachV1.model_validate(await request.json())
+    async with get_session() as session:
+        item=await DiagnosticPassportBridgeService(session).attach_endpoint_tool_result(ticket_id=ticket.ticket_id,
+            run_id=request.match_info["run_id"],step_sequence=body.step_sequence,actor=actor)
+    return _response({"schema_version":"endpoint_tool_attachment_v1","evidence_id":item.source_id,"passport_evidence_id":item.id,"run_id":request.match_info["run_id"],"step_sequence":body.step_sequence})
