@@ -8,8 +8,42 @@ Isolated staging scenario publication is authorized for the acceptance pilot.
 
 ## Current acceptance state (2026-10-12)
 
-P0–P9 are committed; P10 remains incomplete. Earlier entries below are historical
-receipts, not acceptance of subsequent corrections.
+P0–P10 are complete for the scope approved on 2026-10-12, with the user's explicit
+Sonar deferral. Verified implementation and installed staging SHA:
+`f529ff048e975edda322211f0ad159ed6c075a3f`. The final acceptance matrix is in
+[Guided Studio acceptance](../../GUIDED_REQUEST_STUDIO_ACCEPTANCE.md).
+Earlier entries below retain their historical candidate-specific meaning.
+
+- Exact-head workflow_dispatch CI
+  [38206157926](https://github.com/BorisDruzak/helpdesk/actions/runs/38206157926)
+  passed all18 canonical layers and Endpoint contracts. Downloaded artifacts
+  verify112 frontend files/663 unit tests and106 fixture browser cases. Summary
+  SHA256:`14fe6868940794486c7f1bfda26f2284eb4f9903bfd3fa7f9ed48ee72a75e4ff`.
+- Fresh f529 frontend coverage:112 files/663 tests PASS, line66.91%; exact
+  Semgrep1.178.0:17 baseline findings, zero task findings/secrets/errors. The seven
+  successful backend coverage layers from eacd apply to byte-identical committed
+  backend/dependency/workflow objects; line74.08%. They are source-equivalent
+  evidence, not a newly executed f529 coverage run.
+- Sonar Community Build rejected PR analysis; its gate remains NOT_COMPUTED.
+  User instruction: "С sonar пока пасс". The scoped staging admission preserves
+  this failure, hashes all underlying evidence, requires canonical CI/raw reports,
+  and grants no production permission. Genuine positive1/negative23 admission
+  fixtures PASS; no successful Sonar receipt was created.
+- Canonical staging installation verified f529. Actual A-J and1366/1440/1920/820
+  UI/database proofs PASS: fallback, self-resolution, conditional pruning,
+  one-ticket duplicate submit, auditor/owner boundaries, four failure simulations,
+  canonical priority/SLA, V2 pinned sessions after V3 publication, and independent
+  publication blockers despite healthOK. Installed catalog type search and one
+  local editor/advanced region passed at all four sizes.
+- Ten bounded owned tickets closed through requester/support lifecycle; owned
+  scenario archived. Exact version/session history and ticket snapshots retained;
+  zero owned device operations/approvals/notifications, global operation/link
+  counters unchanged. Canonical staging service stop verified inactive.
+- Source/fixture/runtime proofs remain distinct. Full receipts and screenshots
+  are retained locally under artifacts/studio-f529ff04-* and the matching browser
+  evidence directory. Production and main merge remain excluded. Deferred Sonar,
+  commissioning coverage comparison and unobserved prior CI runner container
+  absence remain explicit limits in the final report.
 
 - Exact `6a2d9ff6068024879772498e297851c88aa084ab` CI 38173068210 passed all
   18 canonical layers and Endpoint contract acceptance. Downloaded report audit
