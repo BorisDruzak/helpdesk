@@ -6,7 +6,7 @@ import json
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from sqlalchemy import select, or_
-from app.db.models import EndpointToolRun, EndpointOperationLink, Operation, Ticket
+from app.db.models import EndpointToolRun, EndpointOperationLink, Operation, Ticket, DiagnosticSession, DiagnosticStep
 from app.repos.operations_repo import OperationsRepo
 from domain_ports.endpoint_tools import ToolRunRequestV1
 from domain_ports.endpoint import EndpointDeviceRef
@@ -105,6 +105,15 @@ class EndpointToolRunsRepo:
         now = datetime.now(timezone.utc)
         await OperationsRepo(self.session).create_operation(run_id, ticket.device_id, "endpoint_operation", actor_role,
             str(uuid4()), ticket_id=ticket_id, tool_name=CAPABILITIES[request.kind], phase="endpoint_create_pending")
+        session_id = batch_id or str(uuid5(NAMESPACE_URL, f"helpdesk-tool-session:{run_id}"))
+        if await self.session.get(DiagnosticSession, session_id) is None:
+            self.session.add(DiagnosticSession(id=session_id, ticket_id=ticket_id, status="in_progress",
+                trigger_source="endpoint_tools", started_by_user_id=actor_id[:100], started_at=now))
+            await self.session.flush()
+        self.session.add(DiagnosticStep(id=run_id, session_id=session_id, ticket_id=ticket_id,
+            step_type=request.kind, provider_id="endpoint_platform", capability_id=CAPABILITIES[request.kind],
+            operation_id=run_id, status="pending"))
+        await self.session.flush()
         marker = EndpointToolRun(run_id=run_id, actor_id=actor_id, ticket_id=ticket_id, caller_key=caller_key,
             execution_kind=request.kind, request_snapshot_json=snapshot, request_sha256=digest, batch_id=batch_id, created_at=now)
         link = EndpointOperationLink(link_id=str(uuid4()), operation_id=run_id, endpoint_device_ref=device_ref,
@@ -114,6 +123,7 @@ class EndpointToolRunsRepo:
             module_spec_sha256=hashlib.sha256(canonical_json(snapshot["recipe"]).encode()).hexdigest() if request.recipe else None,
             module_inputs_snapshot_json=request.inputs if request.kind == "module" else None,
             safe_module_snapshot_json=snapshot["recipe"], context_profile=request.profile)
+        link.diagnostic_session_id, link.diagnostic_step_id = session_id, run_id
         self.session.add_all([marker, link])
         await self.session.flush()
         return self._stored(marker, link)
@@ -161,5 +171,20 @@ class EndpointToolRunsRepo:
         operation.status = {"create_pending": "queued", "queued": "queued", "delivered": "sent", "acknowledged": "accepted", "expired": "timed_out"}.get(projection.status, projection.status)
         operation.phase, operation.error_code = f"endpoint_{projection.status}", projection.error_code
         if projection.status in TERMINAL: operation.finished_at = now
+        if link.diagnostic_step_id:
+            step = await self.session.get(DiagnosticStep, link.diagnostic_step_id)
+            if step is not None:
+                step.status = "completed" if projection.status == "succeeded" else "failed" if projection.status in TERMINAL else "running" if projection.status == "running" else "pending"
+                step.error_code, step.external_ref = projection.error_code, projection.remote_ref or old_ref
+                if projection.status in TERMINAL: step.finished_at = now
+        if link.diagnostic_session_id:
+            # The current state is not autoflushed in every configured session.
+            await self.session.flush()
+            statuses = list((await self.session.execute(select(EndpointOperationLink.remote_status)
+                .where(EndpointOperationLink.diagnostic_session_id == link.diagnostic_session_id))).scalars())
+            if statuses and all(s in TERMINAL for s in statuses):
+                diagnostic_session = await self.session.get(DiagnosticSession, link.diagnostic_session_id, with_for_update=True)
+                diagnostic_session.status = "completed" if all(s == "succeeded" for s in statuses) else "partial" if "succeeded" in statuses else "failed"
+                diagnostic_session.finished_at = now
         await self.session.flush()
         return True

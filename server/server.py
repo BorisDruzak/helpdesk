@@ -230,6 +230,15 @@ async def on_startup(app: web.Application):
                 app["endpoint_operation_reconciler"] = runner
                 logger.success("✅ Endpoint operation reconciler started")
 
+                from app.services.endpoint_tool_reconciler import EndpointToolReconciler, EndpointToolReconcilerRunner
+                ports = DomainPortContainer.from_config()
+                tool_runner = EndpointToolReconcilerRunner(EndpointToolReconciler(
+                    endpoint_port=ports.endpoint, modules_port=ports.endpoint_modules,
+                    session_factory=get_session_maker()), interval_seconds=ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS,
+                    batch_size=ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE)
+                tool_runner.start()
+                app["endpoint_tool_reconciler"] = tool_runner
+
             # Этап 2: Ticket SLA Watchdog (breach + reminders)
             from app.services.ticket_sla_watchdog import get_ticket_sla_watchdog
             sla_watchdog = get_ticket_sla_watchdog(state=app['state'])
@@ -340,6 +349,9 @@ async def on_cleanup(app: web.Application):
         logger.info("⏹️ Stopping Endpoint operation reconciler...")
         await app["endpoint_operation_reconciler"].stop()
         logger.success("✅ Endpoint operation reconciler stopped")
+
+    if "endpoint_tool_reconciler" in app:
+        await app["endpoint_tool_reconciler"].stop()
 
     if 'operation_watchdog' in app:
         logger.info("⏹️ Stopping operation watchdog...")

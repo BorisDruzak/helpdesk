@@ -395,6 +395,12 @@ Tech descriptions explicitly name Endpoint. Generic Helpdesk-owned Agent wording
 is absent from these current device-navigation descriptions.
 # Ticket UI and profile/SLA projections
 
+Endpoint tools: `app/services/endpoint_tool_run_service.py` admits fresh published
+recipes and atomically persists six-profile batches. `endpoint_tool_reconciler.py`
+resumes owned runs in short claim/commit transactions, separate from the legacy
+diagnostic worker. Both runners are composed/stopped in `server.py`; the UI flag
+does not interrupt active intents. See `ENDPOINT_TOOLS_WORKSPACE.md`.
+
 See [ticket UI behavior](../../docs/HELPDESK_TICKET_UI.md).
 `web_api/support_handlers.py` projects completed and paused SLA timers and
 enriches validated requester identity with actor-scoped Registry profile contacts.

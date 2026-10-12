@@ -33,7 +33,7 @@ from app.services.endpoint_diagnostic_operation_service import (
     ENDPOINT_DIAGNOSTIC_REASON,
     endpoint_operation_correlation_ref,
 )
-from app.db.models import DiagnosticEvidence, DiagnosticSession, DiagnosticStep, EndpointOperationLink, Operation
+from app.db.models import DiagnosticEvidence, DiagnosticSession, DiagnosticStep, EndpointOperationLink, Operation, EndpointToolRun
 
 
 _TERMINAL_LOCAL = frozenset({"succeeded", "failed", "timed_out", "canceled"})
@@ -333,6 +333,13 @@ class EndpointOperationReconciler:
         return value
 
 
+def legacy_endpoint_claim_predicates():
+    return (
+        EndpointOperationLink.capability_code == "context.diagnostic.collect",
+        ~select(EndpointToolRun.run_id).where(EndpointToolRun.run_id == EndpointOperationLink.operation_id).exists(),
+    )
+
+
 class SqlAlchemyEndpointOperationReconcileStore:
     """PostgreSQL claim/commit adapter; remote calls stay in the reconciler."""
 
@@ -348,6 +355,7 @@ class SqlAlchemyEndpointOperationReconcileStore:
                     select(EndpointOperationLink, Operation)
                     .join(Operation, Operation.operation_id == EndpointOperationLink.operation_id)
                     .where(
+                        *legacy_endpoint_claim_predicates(),
                         EndpointOperationLink.remote_status.notin_(tuple(_TERMINAL_REMOTE)),
                         EndpointOperationLink.next_attempt_at <= now,
                         or_(
@@ -614,6 +622,7 @@ class SqlAlchemyEndpointOperationReconcileStore:
                                 Operation.operation_id == EndpointOperationLink.operation_id,
                             )
                             .where(
+                                *legacy_endpoint_claim_predicates(),
                                 DiagnosticSession.status.in_(("draft", "running")),
                                 Operation.status == "succeeded",
                                 EndpointOperationLink.remote_status == "succeeded",

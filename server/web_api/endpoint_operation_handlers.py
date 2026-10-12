@@ -69,7 +69,7 @@ async def handle_web_support_endpoint_operation_cancel(request: web.Request) -> 
             return _error(status=404, code="OPERATION_NOT_FOUND", message="Operation not found")
         link = await EndpointOperationLinksRepo(session).get_by_operation_id(operation_id)
 
-    if link is None or not link.endpoint_operation_ref or operation.status != "queued":
+    if link is None or link.capability_code != "context.diagnostic.collect" or not link.endpoint_operation_ref or operation.status != "queued":
         return _error(
             status=409,
             code="operation_cancel_not_supported",

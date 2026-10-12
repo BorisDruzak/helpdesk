@@ -5,7 +5,7 @@ import importlib
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from app.db.models import Ticket, Operation, EndpointOperationLink
+from app.db.models import Ticket, Operation, EndpointOperationLink, DiagnosticStep
 
 pytestmark = pytest.mark.db_cleanup("full")
 
@@ -46,6 +46,7 @@ async def test_same_actor_key_replays_same_request_and_changed_inputs_conflict(t
             replay = await repo.create_pending(request, **args)
             assert first.run_id == replay.run_id
             assert first.request == replay.request
+            assert await session.get(DiagnosticStep, first.run_id) is not None
             with pytest.raises(ToolRunConflict):
                 await repo.create_pending(request.model_copy(update={"profile": "network_v1"}), **args)
             assert await repo.get_authorized_run(first.run_id, str(uuid4())) is None
