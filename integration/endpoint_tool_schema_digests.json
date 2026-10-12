@@ -1,0 +1,8 @@
+{
+  "endpoint-device-modules-v1.json": "cfd66b6e3ee532ecb5ad38d1fe272029f9246e146ce638a3778bd6abdcd96a55",
+  "endpoint-module-operation-create-v1.json": "74a0c1000c15ef62174fd2301e6b3d196646f9e796e14cae68cc12fcbb5014f9",
+  "endpoint-module-operation-detail-v1.json": "86ca87c290726c47fdb63d10851e08c20b9abce860dfda61db2e7b34f39bfde7",
+  "endpoint-module-operation-v1.json": "e11f132ab6b60f79d2be295e8b833fe8c705e36e337236190f02a1ed7f6a9a24",
+  "endpoint-module-version-view-v1.json": "00affcea091edd3733144e01466dbf4212f60db5c28b474bc63b72a97457632c",
+  "module-capability-catalog-v1.json": "3aac8753809f6ea87b61e54881930fa038e31b21439aac3193e77aee03788f0b"
+}

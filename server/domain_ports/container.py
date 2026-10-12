@@ -8,6 +8,7 @@ import ssl
 from urllib.parse import urlsplit
 
 from .endpoint import EndpointPort
+from .endpoint_modules import EndpointModulesPort, UnavailableEndpointModulesPort
 from .knowledge import KnowledgePort
 from .registry import RegistryPort
 from .unavailable import (
@@ -123,6 +124,13 @@ class DomainPortContainer:
     knowledge: KnowledgePort
     registry: RegistryPort
     endpoint: EndpointPort
+
+    @property
+    def endpoint_modules(self) -> EndpointModulesPort:
+        """Reuse the same configured identity and transport, never an admin client."""
+        if isinstance(self.endpoint, EndpointModulesPort):
+            return self.endpoint
+        return UnavailableEndpointModulesPort()
 
     @classmethod
     def from_config(

@@ -1,5 +1,24 @@
 # Helpdesk server code map
 
+## Endpoint module discovery and inputs
+
+- `domain_ports/endpoint_modules.py` declares read-only primitive/published-module
+  discovery and caller-owned module execution. There are no authoring methods.
+  `endpoint_module_contracts_generated.py` contains frozen, extra-forbid DTOs and
+  the closed 21-result union generated from published provider JSON Schemas.
+- `scripts/generate_endpoint_tool_contracts.py --provider-root <clean-checkout>`
+  regenerates these DTOs and `integration/endpoint_tool_schema_digests.json`;
+  `--check` detects schema drift. Provider runtime imports are test-only.
+- `endpoint_adapter/modules_http.py` reuses the existing TLS/correlation transport
+  with redirects disabled and a 1 MiB response limit. Exact device/module/version/
+  operation identity checks and typed failures prevent empty-success fallback.
+  `modules_wire.py` adds recipe/metadata/lifecycle and safe-result semantic checks.
+- `diagnostics/endpoint_tool_parameters.py` derives recipe-only controls by
+  intersecting metadata and independently accepted bounds across every binding.
+  Literal-only fields remain fixed; unsupported schemas, conflicting bounds,
+  undeclared/extra inputs, URLs and out-of-bound values fail closed.
+  This foundation does not yet expose ticket BFF routes or enable the workspace.
+
 ## Entry points
 
 - `server/observability/browser_runtime.py` validates the independent public

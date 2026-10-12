@@ -15,6 +15,7 @@ import aiohttp
 from pydantic import BaseModel, ValidationError
 
 from .context_http import EndpointContextHttpMixin
+from .modules_http import EndpointModulesHttpMixin
 
 from .wire import (
     DeviceCapabilitiesWireV1,
@@ -95,7 +96,7 @@ def _path_ref(value: str) -> str:
     return quote(value, safe="")
 
 
-class ExternalEndpointHttpAdapter(EndpointContextHttpMixin, EndpointPort):
+class ExternalEndpointHttpAdapter(EndpointModulesHttpMixin, EndpointContextHttpMixin, EndpointPort):
     """HTTPS-only Endpoint Operations API v1 client.
 
     The adapter has no database, ticket, WebSocket or logging dependencies.
@@ -183,10 +184,13 @@ class ExternalEndpointHttpAdapter(EndpointContextHttpMixin, EndpointPort):
         extra_headers: Mapping[str, str] | None = None,
         binding_contract: bool = False,
         context_contract: bool = False,
+        bounded_response: bool = False,
+        unwrap_data: bool = True,
+        correlation_id_override: str | None = None,
     ) -> Mapping[str, object] | BaseModel:
         if not self.configured:
             return EndpointUnavailable(code="endpoint_external_unconfigured")
-        correlation_id = str(self._correlation_id_factory() or "")
+        correlation_id = str(correlation_id_override if correlation_id_override is not None else self._correlation_id_factory() or "")
         if not self._valid_header_value(correlation_id):
             return EndpointInvalidProjection()
         headers = self._headers(correlation_id)
@@ -219,16 +223,18 @@ class ExternalEndpointHttpAdapter(EndpointContextHttpMixin, EndpointPort):
                         return EndpointUnavailable(code="endpoint_binding_throttled")
                     if response.status in _HTTP_FAILURES:
                         return _HTTP_FAILURES[response.status]()
+                    if bounded_response and 300 <= response.status < 400:
+                        return EndpointInvalidProjection()
                     if response.status == 422:
                         return EndpointInvalidProjection()
                     if response.status == 429 or response.status >= 500 or response.status not in expected_statuses:
                         return _TRANSPORT_UNAVAILABLE
                     try:
-                        if binding_contract or context_contract:
+                        if binding_contract or context_contract or bounded_response:
                             raw = bytearray()
                             async for chunk in response.content.iter_chunked(2048):
                                 raw.extend(chunk)
-                                if len(raw) > (1_048_576 if context_contract else 2048):
+                                if len(raw) > (1_048_576 if context_contract or bounded_response else 2048):
                                     return EndpointInvalidProjection()
                             envelope = json.loads(raw)
                         else:
@@ -238,6 +244,8 @@ class ExternalEndpointHttpAdapter(EndpointContextHttpMixin, EndpointPort):
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
             return _TRANSPORT_UNAVAILABLE
         if binding_contract:
+            return dict(envelope) if isinstance(envelope, Mapping) else EndpointInvalidProjection()
+        if not unwrap_data:
             return dict(envelope) if isinstance(envelope, Mapping) else EndpointInvalidProjection()
         if not isinstance(envelope, Mapping) or set(envelope) != {"data"} or not isinstance(envelope.get("data"), Mapping):
             return EndpointInvalidProjection()

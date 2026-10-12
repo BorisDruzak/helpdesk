@@ -100,7 +100,11 @@ jobs:
 
       - name: Run Endpoint integration guard suites
         run: |
+          python scripts/generate_endpoint_tool_contracts.py --provider-root "$GITHUB_WORKSPACE/endpoint-platform" --check
           python -m pytest \
+            server/tests/test_endpoint_modules_adapter.py \
+            server/tests/test_endpoint_tool_parameters.py \
+            server/tests/test_endpoint_tool_contract_generation.py \
             server/tests/test_endpoint_contract_lock.py \
             server/tests/test_endpoint_http_adapter.py \
             server/tests/test_endpoint_context_adapter.py server/tests/test_device_cutover_boundary.py server/tests/test_legacy_inventory_retirement_audit.py \

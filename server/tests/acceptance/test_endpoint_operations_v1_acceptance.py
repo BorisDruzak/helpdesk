@@ -64,9 +64,11 @@ if not _endpoint_root_value:
 _ENDPOINT_ROOT = Path(_endpoint_root_value).resolve()
 try:
     validate_contract_lock(
-        lock_path=Path(__file__).resolve().parents[3]
-        / "integration"
-        / "endpoint_contract.lock.json",
+        # A local provider-first gate can use a candidate lock before updating
+        # the tracked consumer lock. Exact clean HEAD/blob validation is identical.
+        lock_path=Path(os.environ["ENDPOINT_ACCEPTANCE_CANDIDATE_LOCK"])
+        if os.environ.get("ENDPOINT_ACCEPTANCE_CANDIDATE_LOCK") else
+        Path(__file__).resolve().parents[3] / "integration" / "endpoint_contract.lock.json",
         provider_root=_ENDPOINT_ROOT,
     )
 except ValueError as error:
@@ -518,6 +520,82 @@ class _FacadeAccess:
     async def require_ticket_operation_access(self, *, actor: object, ticket_id: str) -> None:
         assert getattr(actor, "actor_id", None) == "support-acceptance"
         assert ticket_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.cross_repo_acceptance
+async def test_real_endpoint_module_catalog_and_parent_acceptance(tmp_path: Path, test_database_admin_url: str):
+    """Clean provider, migrated PostgreSQL, real routes and credentials."""
+    from endpoint_server.db.models import ModuleDefinition, ModuleVersion
+    from endpoint_server.gateway.connection_registry import GatewayConnection
+    from domain_ports.endpoint_module_contracts_generated import ModuleOperationCreateV1
+    from domain_ports.endpoint import EndpointForbidden, EndpointOperationRef
+    from diagnostics.endpoint_tool_parameters import derive_recipe_inputs, validate_tool_inputs
+    database = await _disposable_endpoint_postgres(test_database_admin_url)
+    provider = database.provider
+    device_id, definition_id = uuid4(), uuid4()
+    recipe = {"schema_version": "endpoint_recipe_module_v1", "module_key": "acceptance.dns",
+        "supported_platforms": ["linux_amd64"], "inputs": [{"name": "target", "value_type": "string"}],
+        "steps": [{"step_id": "dns", "capability": "dns.resolve", "parameters": {
+            "target": {"kind": "input", "name": "target"}, "family": {"kind": "literal", "value": "any"}}}]}
+    now = datetime.now(UTC)
+    try:
+        async with provider() as session:
+            service = ServiceClient(id=uuid4(), client_identifier="helpdesk-module-acceptance", display_name="Module acceptance")
+            session.add_all([service, Device(id=device_id, device_identifier="module-acceptance", display_name="Module test"),
+                ModuleDefinition(id=definition_id, module_key="acceptance.dns", display_name="DNS acceptance")])
+            await session.flush()
+            session.add_all([ModuleVersion(id=uuid4(), module_definition_id=definition_id, version="1.0.0",
+                state="published", recipe=recipe, created_at=now), ModuleVersion(id=uuid4(), module_definition_id=definition_id,
+                version="2.0.0", state="draft", recipe=recipe, created_at=now + timedelta(seconds=1))])
+            await session.commit()
+        token = await _issue_acceptance_service_token(provider, service_client_id=service.id, credential_identifier="d" * 32,
+            scopes=("devices.read", "modules.read", "module_operations.create", "module_operations.read"))
+        narrow_token = await _issue_acceptance_service_token(provider, service_client_id=service.id, credential_identifier="e" * 32,
+            scopes=("devices.read",))
+        settings = Settings(database_url=database.database_url, public_base_url="https://endpoint.example.test",
+            device_token_pepper=_DEVICE_PEPPER, service_token_pepper=_SERVICE_PEPPER, session_secret=b"module-acceptance",
+            allowed_agent_cidrs=(ipaddress.ip_network("127.0.0.0/8"),), allowed_admin_cidrs=(), artifact_root=tmp_path,
+            endpoint_module_platform_enabled=True, endpoint_module_execution_enabled=True, endpoint_operations_api_enabled=True,
+            endpoint_network_primitives_enabled=True, endpoint_network_probe_allowed_suffixes=(".example.test",))
+        app = create_app(settings, provider)
+        port = _free_port()
+        server, task = await _start(app, port)
+        adapter = ExternalEndpointHttpAdapter(base_url=f"http://127.0.0.1:{port}", service_token=token, ca_file="",
+            timeout_seconds=2, allow_insecure_test_url=True)
+        narrow = ExternalEndpointHttpAdapter(base_url=f"http://127.0.0.1:{port}", service_token=narrow_token, ca_file="",
+            timeout_seconds=2, allow_insecure_test_url=True)
+        ref = EndpointDeviceRef(external_id=str(device_id))
+        try:
+            assert isinstance(await narrow.list_device_modules(ref), EndpointForbidden)
+            metadata = await adapter.list_primitives()
+            assert len(metadata.items) == 21
+            offline = await adapter.list_device_modules(ref)
+            assert [(item.version, item.availability) for item in offline.items] == [("1.0.0", "unavailable")]
+            await app.state.gateway_connection_registry.register(GatewayConnection(device_id, uuid4(), object(),
+                agent_version="3.2.82", platform="linux_amd64", effective_capabilities=frozenset({"dns.resolve"})))
+            page = await adapter.list_device_modules(ref)
+            assert page.items[0].availability == "available"
+            exact = await adapter.read_module_version("acceptance.dns", "1.0.0")
+            assert exact.state == "published"
+            schema = derive_recipe_inputs(page.items[0].recipe, metadata)
+            inputs = validate_tool_inputs(schema, {"target": "probe.example.test"})
+            request = ModuleOperationCreateV1(schema_version="endpoint_module_operation_create_v1",
+                module_key="acceptance.dns", version="1.0.0", inputs=inputs.inputs)
+            created = await adapter.create_module_operation(ref, request, idempotency_key="helpdesk-module-acceptance",
+                correlation_id="module-parent-acceptance")
+            replay = await adapter.create_module_operation(ref, request, idempotency_key="helpdesk-module-acceptance",
+                correlation_id="module-parent-replay")
+            assert created.operation_id == replay.operation_id
+            assert created.status == "queued"
+            detail = await adapter.read_module_operation(EndpointOperationRef(external_id=str(created.operation_id)))
+            assert detail.expected_step_count == 1
+            assert detail.steps[0].capability == "dns.resolve"
+            assert detail.steps[0].safe_result is None  # acceptance is not execution
+        finally:
+            await _stop(server, task)
+    finally:
+        await database.close()
 
 
 @pytest.mark.asyncio
