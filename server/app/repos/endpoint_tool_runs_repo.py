@@ -93,6 +93,11 @@ class EndpointToolRunsRepo:
         # Serialize intents for this ticket, including concurrent browser replay.
         ticket = await self.session.get(Ticket, ticket_id, with_for_update=True)
         if ticket is None: raise LookupError("ticket not found")
+        if ticket.endpoint_device_ref != device_ref: raise ToolRunConflict("ticket device changed during admission")
+        if actor_role == "support" and ticket.queue_id is not None and ticket.assignee_id != actor_id:
+            from app.repos.ticket_events_repo import TicketEventsRepo
+            if not await TicketEventsRepo(self.session).is_actor_in_queue(ticket.queue_id, actor_id):
+                raise PermissionError("ticket queue access changed")
         run_id = tool_run_id(actor_id, ticket_id, caller_key)
         snapshot = request.model_dump(mode="json")
         digest = hashlib.sha256(canonical_json(snapshot).encode()).hexdigest()

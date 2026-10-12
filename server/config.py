@@ -60,6 +60,7 @@ REGISTRY_EXTERNAL_TIMEOUT_SECONDS = _bounded_registry_external_timeout()
 # Endpoint Operations API v1 composition is fail-closed. The external adapter
 # is introduced separately; these settings contain no production defaults.
 ENDPOINT_PORT_MODE = (os.getenv("ENDPOINT_PORT_MODE", "unavailable") or "unavailable").strip().lower()
+ENDPOINT_TOOLS_WORKSPACE_ENABLED = (os.getenv("ENDPOINT_TOOLS_WORKSPACE_ENABLED", "false") or "false").strip().lower() == "true"
 ENDPOINT_EXTERNAL_BASE_URL = (os.getenv("ENDPOINT_EXTERNAL_BASE_URL", "") or "").strip().rstrip("/")
 ENDPOINT_EXTERNAL_SERVICE_TOKEN = os.getenv("ENDPOINT_EXTERNAL_SERVICE_TOKEN", "") or ""
 ENDPOINT_EXTERNAL_CA_FILE = (os.getenv("ENDPOINT_EXTERNAL_CA_FILE", "") or "").strip()

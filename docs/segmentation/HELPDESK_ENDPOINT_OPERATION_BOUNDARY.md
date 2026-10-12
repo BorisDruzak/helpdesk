@@ -1,5 +1,13 @@
 # Helpdesk Endpoint Operation Boundary
 
+The Endpoint tools workspace extension consumes published device modules and
+caller-owned module operations through a separate typed read/execute facet.
+It retains independent safe-context collection and diagnostic contracts, exact
+ticket/device authorization, actor/ticket replay identity and local immutable
+snapshots. Authoring, shell execution and service credentials are not exposed to
+the browser. See `server/docs/ENDPOINT_TOOLS_WORKSPACE.md` and the approved tools
+specification for the reserved148 migration and staging prerequisite.
+
 ## Status
 
 Approved and staging-accepted architectural boundary for the Helpdesk-side

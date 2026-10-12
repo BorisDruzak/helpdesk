@@ -251,6 +251,10 @@ from web_api.endpoint_operation_handlers import (
     handle_web_admin_endpoint_operation_get,
     handle_web_support_endpoint_operation_cancel,
 )
+from web_api.endpoint_tool_handlers import (
+    handle_tool_catalog, handle_tool_run_create, handle_tool_run_get, handle_tool_runs_list,
+    handle_tool_batch_create, handle_tool_batch_get,
+)
 from web_api.session_handlers import (
     handle_web_session_login,
     handle_web_session_logout,
@@ -584,6 +588,12 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/passport/evidence', handle_web_support_ticket_passport_evidence),
         web.get('/api/web/support/tickets/{ticket_id}/diagnostics/overview', handle_web_support_ticket_diagnostics_overview),
         web.get('/api/web/support/tickets/{ticket_id}/diagnostics/capabilities', handle_ticket_diagnostics_capabilities),
+        web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools', handle_tool_catalog),
+        web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs', handle_tool_run_create),
+        web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs', handle_tool_runs_list),
+        web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs/{run_id}', handle_tool_run_get),
+        web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/collections', handle_tool_batch_create),
+        web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/collections/{run_id}', handle_tool_batch_get),
         web.post('/api/web/support/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run', handle_ticket_diagnostics_capability_run),
         web.put('/api/admin/tickets/{ticket_id}/endpoint-device-mapping', handle_admin_ticket_endpoint_device_mapping),
         web.get('/api/web/support/tickets/{ticket_id}/diagnostics/sessions', handle_ticket_diagnostics_sessions),

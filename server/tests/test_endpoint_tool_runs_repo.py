@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 import importlib
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
@@ -22,13 +24,25 @@ def test_immutable_run_identity_is_ticket_and_actor_scoped():
     assert remote_tool_key("module", run) != remote_tool_key("context_collection", run)
 
 
-async def seed(session):
+async def seed(session, device):
     now = datetime.now(timezone.utc)
     ticket = Ticket(ticket_id=str(uuid4()), title="Endpoint tools", description="Persistence",
-                    status="in_progress", created_at=now, updated_at=now)
+                    endpoint_device_ref=device, status="in_progress", created_at=now, updated_at=now)
     session.add(ticket)
     await session.flush()
     return ticket.ticket_id
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_changed_device_is_rejected_inside_intent_transaction():
+    from app.repos.endpoint_tool_runs_repo import EndpointToolRunsRepo, ToolRunConflict
+    from domain_ports.endpoint_tools import ToolRunRequestV1
+    session=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(endpoint_device_ref="changed")))
+    with pytest.raises(ToolRunConflict):
+        await EndpointToolRunsRepo(session).create_pending(ToolRunRequestV1(kind="diagnostic"),actor_id="actor",
+            ticket_id="ticket",device_ref="original",caller_key="key")
+    assert session.get.await_count==1
 
 
 @pytest.mark.asyncio
@@ -39,9 +53,10 @@ async def test_same_actor_key_replays_same_request_and_changed_inputs_conflict(t
     request = ToolRunRequestV1(kind="context_collection", profile="inventory_v1")
     async with maker() as session:
         async with session.begin():
-            ticket = await seed(session)
+            device = str(uuid4())
+            ticket = await seed(session, device)
             repo = EndpointToolRunsRepo(session)
-            args = dict(actor_id="actor", ticket_id=ticket, device_ref=str(uuid4()), caller_key="key")
+            args = dict(actor_id="actor", ticket_id=ticket, device_ref=device, caller_key="key")
             first = await repo.create_pending(request, **args)
             replay = await repo.create_pending(request, **args)
             assert first.run_id == replay.run_id
@@ -60,10 +75,11 @@ async def test_only_owned_runs_are_claimed_and_lease_tokens_are_exclusive(test_e
     now = datetime.now(timezone.utc)
     async with maker() as session:
         async with session.begin():
-            ticket = await seed(session)
+            device = str(uuid4())
+            ticket = await seed(session, device)
             repo = EndpointToolRunsRepo(session)
             run = await repo.create_pending(ToolRunRequestV1(kind="diagnostic"), actor_id="actor",
-                ticket_id=ticket, device_ref=str(uuid4()), caller_key="key")
+                ticket_id=ticket, device_ref=device, caller_key="key")
             old = Operation(operation_id=str(uuid4()), kind="endpoint_operation", actor_role="system",
                             trace_id=str(uuid4()), status="queued", queued_at=now)
             session.add(old)

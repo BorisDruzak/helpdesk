@@ -17,3 +17,14 @@ Migration 148 reuses the module columns already introduced by 142 and only adds
 context linkage and the ownership table. It is currently based on local/main146;
 before staging release it must follow the accepted Guided Request Studio147.
 Do not apply this candidate to the current staging147 or create a second head.
+
+The `web_api/endpoint_tool_handlers.py` BFF provides ticket-scoped catalog, run
+history/detail and six-step collection routes under
+`/api/web/support/tickets/{ticket_id}/endpoint-tools`. Existing authenticated
+ticket/queue access and permissions apply, with read access for auditors and
+execution for support/admin. Cookie mutations retain the shared same-origin CSRF
+middleware. Responses are no-store and bounded to 1 MiB. Provider auth failures
+are 502 errors, preserving the human session. The default-off
+`ENDPOINT_TOOLS_WORKSPACE_ENABLED` controls admission, never worker resumption.
+Catalog primitives cache for 60 seconds and exact-device pages for 5 seconds;
+mutations bypass both caches and validate the exact published version afresh.
