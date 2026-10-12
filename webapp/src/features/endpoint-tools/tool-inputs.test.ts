@@ -16,4 +16,10 @@ describe("published Endpoint input controls",()=>{
     expect(module!.validateInputs([{name:"count",value_type:"integer",minimum:1,maximum:5,enum_values:null}],{count:"2"})).not.toBeNull();
     expect(module!.validateInputs([{name:"target",value_type:"string",minimum:null,maximum:null,enum_values:null}],{target:"https://example.test/private"})).not.toBeNull();
   });
+  it("rejects patterns for any input bound to software.find",async()=>{
+    const {validateInputs}=await import("./tool-inputs");
+    const control={name:"query",value_type:"string" as const,minimum:null,maximum:null,enum_values:null,semantic_types:["software_name"]};
+    expect(validateInputs([control],{query:"Chrome*"})).not.toBeNull();
+    expect(validateInputs([control],{query:"Chrome"})).toBeNull();
+  });
 });

@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 import importlib
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Ticket, Operation, EndpointOperationLink, DiagnosticStep
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -102,3 +104,42 @@ async def test_only_owned_runs_are_claimed_and_lease_tokens_are_exclusive(test_e
             assert await repo.commit_projection(claim, ToolRunProjection(status="failed", error_code="endpoint_unavailable"), now=now)
             old_link = (await session.execute(select(EndpointOperationLink).where(EndpointOperationLink.create_idempotency_key == "historical"))).scalar_one()
             assert old_link.remote_status == "create_pending" and old_link.lease_owner is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_last_children_finalize_parent_session(test_engine):
+    from app.repos.endpoint_tool_runs_repo import EndpointToolRunsRepo,ToolRunProjection
+    from app.services.endpoint_tool_run_service import collection_requests
+    from app.db.models import DiagnosticSession
+    maker=async_sessionmaker(test_engine,expire_on_commit=False)
+    now=datetime.now(timezone.utc);batch=str(uuid4())
+    async with maker() as session:
+        async with session.begin():
+            device=str(uuid4());ticket=await seed(session,device)
+            repo=EndpointToolRunsRepo(session)
+            for i,request in enumerate(collection_requests()):
+                await repo.create_pending(request,actor_id="actor",ticket_id=ticket,device_ref=device,caller_key=f"child{i}",batch_id=batch)
+    async with maker() as session:
+        async with session.begin():claims=await EndpointToolRunsRepo(session).claim_ready(owner="batch",limit=6,now=now+timedelta(seconds=1))
+    for claim in claims[:4]:
+        async with maker() as session:
+            async with session.begin():await EndpointToolRunsRepo(session).commit_projection(claim,ToolRunProjection("succeeded",str(uuid4())),now=now)
+    both_read=asyncio.Event();reads=0
+    class OverlapSession(AsyncSession):
+        async def execute(self,statement,*args,**kwargs):
+            nonlocal reads
+            result=await super().execute(statement,*args,**kwargs)
+            if str(statement).startswith("SELECT endpoint_operation_links.remote_status"):
+                reads+=1
+                if reads==2:both_read.set()
+                try:await asyncio.wait_for(both_read.wait(),1)
+                except asyncio.TimeoutError:pass  # Correct parent locking serializes the second reader.
+            return result
+    concurrent=async_sessionmaker(test_engine,class_=OverlapSession,expire_on_commit=False)
+    async def finish(claim):
+        async with concurrent() as session:
+            async with session.begin():await EndpointToolRunsRepo(session).commit_projection(claim,ToolRunProjection("succeeded",str(uuid4())),now=now)
+    await asyncio.gather(*(finish(claim) for claim in claims[4:]))
+    async with maker() as session:
+        parent=await session.get(DiagnosticSession,batch)
+        assert parent.status=="completed" and parent.finished_at is not None

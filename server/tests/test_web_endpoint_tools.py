@@ -130,3 +130,32 @@ async def test_real_ticket_api_batch_replay_and_foreign_run_denial(test_client_l
         assert await session.get(DiagnosticStep,run_id) is not None
     auditor=await test_client_light.get(f"{path}/{data['batch_id']}",headers={"Authorization":"Bearer test-ui-auditor-token"})
     assert auditor.status==200,await auditor.text()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["module", "batch"])
+async def test_stale_panel_device_precondition_rejects_before_durable_intent(test_client_light,test_engine,monkeypatch,kind):
+    from datetime import datetime,timezone
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from sqlalchemy import select
+    from app.db.models import Ticket,EndpointToolRun
+    from app.services.endpoint_device_reference_service import EndpointDeviceSnapshotV1
+    import web_api.endpoint_tool_handlers as handlers
+    import config
+    monkeypatch.setattr(config,"ENDPOINT_TOOLS_WORKSPACE_ENABLED",True)
+    device=str(uuid4());old=str(uuid4());ticket=str(uuid4());now=datetime.now(timezone.utc)
+    snapshot=EndpointDeviceSnapshotV1(device_ref=device,display_name="Device B",retired=False,last_seen_at=now,captured_at=now).model_dump(mode="json")
+    maker=async_sessionmaker(test_engine,expire_on_commit=False)
+    async with maker() as session:
+        session.add(Ticket(ticket_id=ticket,title="Changed mapping",description="Tools",status="in_progress",endpoint_device_ref=device,endpoint_device_snapshot_json=snapshot));await session.commit()
+    modules=SimpleNamespace(list_device_modules=AsyncMock())
+    endpoint=SimpleNamespace(read_device_presence=AsyncMock())
+    monkeypatch.setattr(handlers,"_runtime",lambda _:(SimpleNamespace(endpoint=endpoint,endpoint_modules=modules),None))
+    body={"schema_version":"endpoint_tool_run_create_v1" if kind=="module" else "endpoint_tool_batch_create_v1","caller_key":"stale", "expected_device_ref":old}
+    if kind=="module":body.update(module_key="helpdesk.dns",version="1.0.0",inputs={"target":"example.test"})
+    path=f"/api/web/support/tickets/{ticket}/endpoint-tools/"+("runs" if kind=="module" else "collections")
+    response=await test_client_light.post(path,json=body,headers={"Authorization":"Bearer test-ui-admin-token"})
+    assert response.status==409,await response.text()
+    assert (await response.json())["error_code"]=="endpoint_device_changed"
+    modules.list_device_modules.assert_not_awaited();endpoint.read_device_presence.assert_not_awaited()
+    async with maker() as session:assert not (await session.execute(select(EndpointToolRun).where(EndpointToolRun.ticket_id==ticket))).scalars().all()

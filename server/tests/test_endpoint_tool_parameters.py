@@ -105,3 +105,16 @@ def test_family_input_is_available_when_published_recipe_declares_it():
     schema = tools.derive_recipe_inputs(dns, metadata)
     assert next(item for item in schema.inputs if item.name == "family").enum_values == ("any", "ipv4", "ipv6")
     assert tools.validate_tool_inputs(schema, {"target": "example.test", "family": "ipv6"}).inputs["family"] == "ipv6"
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_software_find_plain_text_constraint_applies_to_shared_inputs(shared):
+    tools = parameters_module()
+    capabilities = ["software.find", "process.find"] if shared else ["software.find"]
+    recipe = {"schema_version":"endpoint_recipe_module_v1","module_key":"software.search","supported_platforms":["windows_amd64"],
+        "inputs":[{"name":"query","value_type":"string"}],"steps":[{"step_id":f"s{i}","capability":capability,"parameters":{"name":{"kind":"input","name":"query"}}} for i,capability in enumerate(capabilities)]}
+    metadata = {"items":[{"capability":capability,"parameter_schema_version":capability.replace(".","_")+"_parameters_v1",
+        "parameters":[{"name":"name","value_type":"string","allowed_sources":["literal","input"]}]} for capability in capabilities]}
+    schema = tools.derive_recipe_inputs(recipe,metadata)
+    assert tools.validate_tool_inputs(schema,{"query":"Chrome"}).inputs=={"query":"Chrome"}
+    with pytest.raises(ValueError):tools.validate_tool_inputs(schema,{"query":"Chrome*"})
