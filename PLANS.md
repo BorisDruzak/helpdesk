@@ -1,4 +1,4 @@
-# In progress: 2026-10-12 Unified request catalog follow-up
+# Complete: 2026-10-12 Unified request catalog follow-up
 
 Approved bounded change: one offering card; requester mode separate from draft
 status; selectable service categories including plain forms; dedicated offering
@@ -13,8 +13,13 @@ PostgreSQL API validation at 86246512: 20 passed with temporary-role cleanup.
 Full fixture browser regression: 106 passed after adapting the remaining legacy
 scenario links to the dedicated offering page. An unavailable offering's detail
 explains its publication/form prerequisite instead of claiming requester access.
-The first CI run passed 17 layers but exposed those outdated browser locators;
-the corrected exact-head CI and installed staging browser gates remain pending.
+The first CI run stopped at the fixture layer after three successful layers;
+the corrected exact-head CI38239732745 passed all18 layers and Endpoint acceptance.
+Installed candidate112bead8 passed four actual staging viewport checks:12 unique
+services, complete root filters, separate pages, dirty guard and real category
+options. No JS/application network errors; one telemetry request was cancelled
+by test navigation. Staging remains active for user inspection; production untouched.
+Evidence: `docs/UNIFIED_REQUEST_CATALOG_STAGING_ACCEPTANCE.md`. Sonar deferred.
 No schema migration, publication, enablement or user-data rewrite is introduced.
 
 # In progress: 2026-10-11 Guided Request Studio v2
