@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 import json
-from sqlalchemy import select
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,18 +97,18 @@ class DiagnosticPassportBridgeService:
 
     async def attach_endpoint_tool_result(self,*,ticket_id,run_id,step_sequence,actor):
         from app.repos.endpoint_tool_runs_repo import EndpointToolRunsRepo
-        from diagnostics.endpoint_tool_evidence import materialize_tool_evidence
+        from diagnostics.endpoint_tool_evidence import materialize_tool_evidence,retained_evidence_identity,validate_retained_tool_evidence
         ticket=await self.session.get(Ticket,ticket_id,with_for_update=True)
         run=await EndpointToolRunsRepo(self.session).get_authorized_run(run_id,ticket_id)
         if ticket is None or run is None: raise LookupError("run not found")
         if ticket.endpoint_device_ref!=run.device_ref: raise ValueError("ticket device changed")
-        draft=materialize_tool_evidence(run,step_sequence)
-        existing=await self.session.get(DiagnosticEvidence,draft.evidence_id)
+        evidence_id,_source=retained_evidence_identity(run,step_sequence)
+        existing=await self.session.get(DiagnosticEvidence,evidence_id)
         if existing is not None:
-            if existing.ticket_id!=ticket_id or existing.normalized_payload!=draft.normalized_payload:
-                raise ValueError("immutable evidence conflicts")
+            validate_retained_tool_evidence(run,step_sequence,existing)
             existing.selected_for_passport=True
         else:
+            draft=materialize_tool_evidence(run,step_sequence)
             self.session.add(DiagnosticEvidence(id=draft.evidence_id,ticket_id=ticket_id,source_type=draft.source_type,
                 source_id=draft.source_id,provider_id="endpoint_platform",capability_id=draft.capability_id,
                 kind="endpoint_tool_result",domain="endpoint",perspective="device",title=draft.title,
@@ -119,5 +118,5 @@ class DiagnosticPassportBridgeService:
         await self.session.flush()
         passport=await self.passports.get_latest_passport(ticket_id)
         items=await self.attach_selected_diagnostic_evidence_to_passport(ticket_id=ticket_id,actor=actor,
-            passport_id=passport.id if passport else None,evidence_ids={draft.evidence_id})
+            passport_id=passport.id if passport else None,evidence_ids={evidence_id})
         return items[0]

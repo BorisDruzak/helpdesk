@@ -2,6 +2,7 @@ from datetime import datetime,timezone
 import importlib.util
 from types import SimpleNamespace
 from uuid import uuid4
+from unittest.mock import AsyncMock
 import pytest
 
 pytestmark=pytest.mark.db_cleanup("full")
@@ -44,6 +45,27 @@ def test_snapshot_digest_is_deterministic_and_step_identity_is_distinct():
     with pytest.raises(ValueError): materialize_tool_evidence(run,1)
 
 
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_retained_attachment_replay_does_not_require_expired_remote_result(monkeypatch):
+    from app.db.models import Ticket,DiagnosticEvidence
+    from app.repos.endpoint_tool_runs_repo import EndpointToolRunsRepo
+    from diagnostics.endpoint_tool_evidence import materialize_tool_evidence
+    from diagnostics.passport_bridge import DiagnosticPassportBridgeService
+    run=run_fixture("succeeded"); draft=materialize_tool_evidence(run,0); run.safe_result=None
+    retained=SimpleNamespace(id=draft.evidence_id,ticket_id=run.ticket_id,source_type="endpoint_platform",kind="endpoint_tool_result",
+        source_id=draft.source_id,normalized_payload=draft.normalized_payload,selected_for_passport=True)
+    async def get(model,_id,**kwargs):
+        return SimpleNamespace(endpoint_device_ref=run.device_ref) if model is Ticket else retained if model is DiagnosticEvidence else None
+    session=SimpleNamespace(get=AsyncMock(side_effect=get),flush=AsyncMock())
+    monkeypatch.setattr(EndpointToolRunsRepo,"get_authorized_run",AsyncMock(return_value=run))
+    bridge=DiagnosticPassportBridgeService(session)
+    bridge.passports.get_latest_passport=AsyncMock(return_value=None)
+    bridge.attach_selected_diagnostic_evidence_to_passport=AsyncMock(return_value=[SimpleNamespace(id=123)])
+    item=await bridge.attach_endpoint_tool_result(ticket_id=run.ticket_id,run_id=run.run_id,step_sequence=0,actor=SimpleNamespace(actor_id="admin"))
+    assert item.id==123
+
+
 @pytest.mark.asyncio
 async def test_attach_same_evidence_is_idempotent_and_survives_provider_expiry(test_engine):
     from sqlalchemy import select,func
@@ -73,6 +95,8 @@ async def test_attach_same_evidence_is_idempotent_and_survives_provider_expiry(t
             link.safe_result_snapshot_json=None
             await session.flush()
             assert snapshot["result"]["profile"]=="diagnostic_v1"
+            replay_after_expiry=await bridge.attach_endpoint_tool_result(ticket_id=ticket,run_id=run.run_id,step_sequence=0,actor=SimpleNamespace(actor_id="admin"))
+            assert replay_after_expiry.id==first.id
     async with maker() as session:
         stored=(await session.execute(select(TicketEvidenceItem).where(TicketEvidenceItem.ticket_id==ticket))).scalar_one()
         assert stored.metadata_json["endpoint_tool_snapshot"]==snapshot

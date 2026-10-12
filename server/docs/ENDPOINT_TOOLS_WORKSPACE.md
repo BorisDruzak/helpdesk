@@ -46,3 +46,11 @@ includes account, ticket, device, exact module/version and selected run; older
 responses cannot replace a newer selection. Results display their own collection
 time and request parameters. Browser intent keys survive an uncertain response
 and must be saved before dispatch; storage failure prevents the launch.
+
+The general collection shows six independent child statuses and a partial outcome
+when only some succeed. It polls active runs every two seconds and stops on
+terminal state, logout, hidden page or unmount. Passport mutations capture the
+selected run/step identity; response identity is checked before updating its UI.
+Persisted `attached_steps` restores “В паспорте” after reload. Capturing completed
+evidence requires `ticket.passport.manage` and remains possible when new-run
+admission is disabled; that action issues no Endpoint command.

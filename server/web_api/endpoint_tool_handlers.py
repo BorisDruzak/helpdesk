@@ -6,11 +6,12 @@ from functools import wraps
 
 from aiohttp import web
 from pydantic import ValidationError
+from sqlalchemy import select,or_
 import config
 from access_control.service import can
 from app.db import get_session
 from app.db.engine import get_session_maker
-from app.db.models import Ticket
+from app.db.models import Ticket,DiagnosticEvidence,TicketEvidenceItem
 from app.repos.endpoint_tool_runs_repo import EndpointToolRunsRepo, ToolRunConflict
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 from app.services.endpoint_tool_run_service import EndpointToolRunService, ToolAdmissionError, require_projection, batch_status
@@ -58,12 +59,27 @@ def require_run_identity(run, ticket_id, device_ref):
     if run.device_ref!=device_ref: raise ToolAdmissionError("endpoint_device_changed",409)
 
 
-def run_payload(run, *, summary=False):
+def run_payload(run, *, summary=False,attached_steps=()):
     r=run.request
     return EndpointToolRunPayloadV1(run_id=run.run_id,ticket_id=run.ticket_id,device_ref=run.device_ref,kind=r.kind,
         module_key=r.module_key,version=r.version,profile=r.profile,inputs=r.inputs,status=run.status,
         remote_ref=run.remote_ref,safe_result=None if summary else run.safe_result,error_code=run.error_code,
-        created_at=run.created_at,batch_id=run.batch_id)
+        created_at=run.created_at,batch_id=run.batch_id,attached_steps=attached_steps)
+
+
+async def _attached_steps(session,runs):
+    if not runs: return {}
+    refs=list((await session.execute(select(DiagnosticEvidence.source_id).join(TicketEvidenceItem,
+        TicketEvidenceItem.source_id==DiagnosticEvidence.id).where(DiagnosticEvidence.ticket_id==runs[0].ticket_id,
+        TicketEvidenceItem.ticket_id==runs[0].ticket_id,TicketEvidenceItem.source_kind=="diagnostic_evidence",
+        DiagnosticEvidence.kind=="endpoint_tool_result",DiagnosticEvidence.source_type=="endpoint_platform",
+        or_(*(DiagnosticEvidence.source_id.like(f"helpdesk-tool:{run.run_id}:step:%") for run in runs))))).scalars())
+    result={r.run_id:set() for r in runs}
+    for ref in refs:
+        parts=ref.split(":")
+        if len(parts)==4 and parts[0]=="helpdesk-tool" and parts[2]=="step" and parts[1] in result and parts[3] in tuple(str(i) for i in range(8)):
+            result[parts[1]].add(int(parts[3]))
+    return {key:tuple(sorted(values)) for key,values in result.items()}
 
 
 class EndpointToolCatalogCache:
@@ -99,13 +115,13 @@ def _runtime(request):
     return cached[1:]
 
 
-async def _ticket_access(request, *, mutation=False):
+async def _ticket_access(request, *, mutation=False,permission_code=None,admit_run=True):
     async with get_session() as session:
         ticket,error,_repo,actor=await _get_ticket_or_response(request,session,write=mutation)
         if error is not None: return None,error
-        permission="ticket.tool.run" if mutation else "ticket.detail.view"
+        permission=permission_code or ("ticket.tool.run" if mutation else "ticket.detail.view")
         if not await can(session,actor,permission): raise ToolAdmissionError("endpoint_permission_denied",403)
-        if mutation and not config.ENDPOINT_TOOLS_WORKSPACE_ENABLED: raise ToolAdmissionError("endpoint_tools_disabled",409)
+        if mutation and admit_run and not config.ENDPOINT_TOOLS_WORKSPACE_ENABLED: raise ToolAdmissionError("endpoint_tools_disabled",409)
         return (ticket,actor),None
 
 
@@ -177,8 +193,9 @@ async def handle_tool_run_get(request):
     ticket,_actor=access
     async with get_session() as session:
         run=await EndpointToolRunsRepo(session).get_authorized_run(request.match_info["run_id"],ticket.ticket_id)
+        attached=await _attached_steps(session,[run]) if run else {}
     require_run_identity(run,ticket.ticket_id,_device(ticket).external_id)
-    return _response(run_payload(run))
+    return _response(run_payload(run,attached_steps=attached.get(run.run_id,())))
 
 
 @require_auth("admin","support","auditor")
@@ -192,9 +209,9 @@ async def handle_tool_runs_list(request):
     return _response({"schema_version":"endpoint_tool_run_history_v1","items":[run_payload(r,summary=True).model_dump(mode="json") for r in runs if r.device_ref==device.external_id]})
 
 
-def _batch_payload(batch_id,ticket_id,runs):
+def _batch_payload(batch_id,ticket_id,runs,attached=None):
     if len(runs)!=6: raise ToolAdmissionError("endpoint_batch_not_found",404)
-    return EndpointToolBatchPayloadV1(batch_id=batch_id,ticket_id=ticket_id,status=batch_status([r.status for r in runs]),runs=tuple(run_payload(r) for r in runs))
+    return EndpointToolBatchPayloadV1(batch_id=batch_id,ticket_id=ticket_id,status=batch_status([r.status for r in runs]),runs=tuple(run_payload(r,attached_steps=(attached or {}).get(r.run_id,())) for r in runs))
 
 
 @require_auth("admin","support")
@@ -214,16 +231,18 @@ async def handle_tool_batch_get(request):
     access,error=await _ticket_access(request)
     if error is not None: return error
     ticket,_actor=access
-    async with get_session() as session: runs=await EndpointToolRunsRepo(session).list_runs(ticket.ticket_id,batch_id=request.match_info["run_id"],limit=6)
+    async with get_session() as session:
+        runs=await EndpointToolRunsRepo(session).list_runs(ticket.ticket_id,batch_id=request.match_info["run_id"],limit=6)
+        attached=await _attached_steps(session,runs)
     for run in runs: require_run_identity(run,ticket.ticket_id,_device(ticket).external_id)
-    return _response(_batch_payload(request.match_info["run_id"],ticket.ticket_id,runs))
+    return _response(_batch_payload(request.match_info["run_id"],ticket.ticket_id,runs,attached))
 
 
 @require_auth("admin","support")
 @_safe
 async def handle_tool_attach(request):
     from diagnostics.passport_bridge import DiagnosticPassportBridgeService
-    access,error=await _ticket_access(request,mutation=True)
+    access,error=await _ticket_access(request,mutation=True,permission_code="ticket.passport.manage",admit_run=False)
     if error is not None: return error
     ticket,actor=access
     body=EndpointToolAttachV1.model_validate(await request.json())

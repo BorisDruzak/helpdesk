@@ -68,6 +68,7 @@ class EndpointToolRunPayloadV1(_DTO):
     error_code: str | None
     created_at: AwareDatetime
     batch_id: str | None
+    attached_steps: tuple[StrictInt, ...] = Field(default=(),max_length=8)
 
 
 class EndpointToolBatchPayloadV1(_DTO):
