@@ -21,12 +21,13 @@ function mount(code: string, path: string) {
   fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
   return change;
 }
-it("opens the source of a broken transition, expands its local settings and focuses its target", async () => {
+it("opens the source of a broken transition and focuses its visible target", async () => {
   const change = mount("unknown_target", "blocks.broken.transitions");
   fireEvent.click(await screen.findByRole("button", { name: "Исправить: Проверка принтера" }));
   expect(screen.getByLabelText("Название блока")).toHaveValue("Проверка принтера");
   await waitFor(() => expect(screen.getByLabelText("Следующий блок")).toHaveFocus());
-  expect(screen.getByLabelText("Следующий блок").closest("details")).toHaveAttribute("open");
+  expect(screen.getByLabelText("Следующий блок")).toBeVisible();
+  expect(screen.getByRole("region", { name: "Следующий шаг" })).toBeVisible();
   expect(change).not.toHaveBeenCalled();
 });
 it.each([["routing_unavailable", "Маршрут и очередь"], ["sla_unavailable", "Сроки обслуживания"], ["closure_missing", "Закрытие обращения"]])("jumps %s to its policy control after registry loading", async (code, label) => {
