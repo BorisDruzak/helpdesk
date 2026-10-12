@@ -1,3 +1,4 @@
+import { AdminTemplateCreatePage } from "../pages/admin/template-create-page";
 import { AdminServiceCreatePage } from "../pages/admin/service-create-page";
 import { Suspense, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
@@ -464,6 +465,10 @@ export const appRoutes: RouteObject[] = [
                 <AdminCapabilitiesPage />
               </WorkspaceAccessGate>
             )
+          },
+          {
+            path: "admin/forms/new",
+            element: <WorkspaceAccessGate workspace="admin"><AdminTemplateCreatePage /></WorkspaceAccessGate>
           },
           {
             path: "admin/forms",

@@ -40,3 +40,16 @@ it("creates only a service draft with canonical template binding, without creati
   expect(saved).toHaveLength(1);
   expect(saved[0]).toMatchObject({ service_code: "it", lifecycle_status: "draft", request_type: "service_request", metadata: { studio_profile: "software_install" }, request_template_key: "printer", ticket_type_code: "incident" });
 });
+
+it("offers independent template creation and refreshes choices without losing the service draft", async () => {
+  const registry = (templates: unknown[]) => response({ status: "success", data: { request_templates: templates } });
+  const fetcher = vi.fn().mockResolvedValueOnce(registry([])).mockResolvedValueOnce(registry([{ template_code: "new", public_title: "Новый шаблон", ticket_type: "incident", is_active: true, published_at: "2026-10-12" }]));
+  vi.stubGlobal("fetch", fetcher); mount(); await screen.findByText(/Нет опубликованных шаблонов обработки/);
+  fireEvent.change(screen.getByLabelText("Название услуги"), { target: { value: "Восстановление почты" } });
+  expect(screen.getByRole("link", { name: "Создать шаблон" })).toHaveAttribute("href", "/app/admin/forms/new");
+  expect(screen.getByRole("link", { name: "Создать шаблон" })).toHaveAttribute("target", "_blank");
+  fireEvent.click(screen.getByRole("button", { name: "Обновить список шаблонов" }));
+  await screen.findByRole("option", { name: "Новый шаблон" });
+  expect(screen.getByLabelText("Название услуги")).toHaveValue("Восстановление почты");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});

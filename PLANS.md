@@ -1,3 +1,15 @@
+# In progress: 2026-10-12 Independent processing template creation
+
+Browser confirmed: new offering requires an existing published template while
+active FormsBuilderWorkspace exposes editing only, with no creation action.
+Bounded fix: dedicated /app/admin/forms/new, canonical single-template publication,
+explicit confirmation, existing published policy refs, no shared-pack rewrite;
+new-tab creation link and template-list refresh preserve the unsaved service.
+Frozen unit682, fixture browser110 (four new creation viewports), fresh build/
+typecheck, scoped workspace and diff checks passed. Independent contract review:
+no blockers. Exact-candidate CI and actual staging template/offering/requester
+acceptance pending. Production excluded. Preserve current user draft/browser tabs.
+
 # Complete: 2026-10-12 Independent service creation and authoring clarity
 
 Approved staging follow-up: standalone service creation/publication, optional

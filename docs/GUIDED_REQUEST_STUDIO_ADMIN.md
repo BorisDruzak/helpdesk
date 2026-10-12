@@ -55,6 +55,17 @@ before canonical standalone publication. Employees then use its ordinary form;
 a scenario can be added later. Canonical publication validates forms, sections
 and policies and retains the existing role/audit guards.
 
+**Создать шаблон** next to the offering's template picker opens
+`/app/admin/forms/new` in a separate tab. It explains ordinary questions and
+processing rules, allows text/long-text/checkbox questions, and selects existing
+published policy references. Explicit confirmation publishes one new template and
+form schema through the canonical publish-from-form endpoint, with
+`publish_policies=false`; it does not rewrite the shared form pack or existing
+policies. Stable keys are generated automatically. Admin and forms-publication
+permission checks, unsaved-navigation protection, loading/retry/error states and
+mutation locking remain in effect. After publication, return to the offering tab
+and choose **Обновить список шаблонов**; local service values remain intact.
+
 The scenario purpose step links to separate service creation instead of embedding
 a second form. Existing offering drafts can still opt into source-bound atomic
 publication with their scenario; selection sets the explicit publication intent.

@@ -53,6 +53,7 @@ export function ScenarioOfferingForm({ catalog, initialServiceCode, onDone, onCa
         <label className="block">Шаблон обработки<Select value={value.template} onChange={event => setValue({ ...value, template: event.target.value })}><option value="">Выберите действующий шаблон</option>{templates.map(item => <option key={item.template_code} value={item.template_code}>{item.public_title}</option>)}</Select></label>
         {!templates.length && <p role="alert">Нет опубликованных шаблонов обработки. Подготовьте шаблон в существующем реестре Helpdesk.</p>}
       </>}
+      <div className="space-y-2"><p className="text-sm">Шаблон определяет вопросы обычной формы и правила обработки: очередь, приоритет и сроки. Можно использовать существующий или создать свой.</p><div className="flex flex-wrap gap-3"><a className="inline-flex min-h-11 items-center text-sm font-semibold underline" href="/app/admin/forms/new" target="_blank" rel="noopener noreferrer">Создать шаблон</a><Button variant="outline" onClick={() => setAttempt(count => count + 1)}>Обновить список шаблонов</Button></div><p className="text-sm text-slate-600">Создание откроется в отдельной вкладке. После публикации вернитесь сюда и обновите список; введённая услуга сохранится.</p></div>
       <p className="text-sm">Маршрут, сроки и остальные политики наследуются от раздела и шаблона. Настроить их для сценария можно на этапе обработки.</p>
     </fieldset>
     {mutation.isError && <p role="alert">Не удалось создать черновик услуги. Проверьте настройки и повторите.</p>}

@@ -373,3 +373,29 @@ test("guided studio loading empty error and retry states", async ({ page }) => {
   expect(state.errors.filter(error => !error.includes("Failed to load resource"))).toEqual([]);
   expect(state.failures.every(failure => failure.startsWith("500 ") && failure.includes("/request-studio/catalog"))).toBe(true);
 });
+for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
+  test(`guided studio independent template ${viewport.width}`, async ({ page }, info) => {
+    await page.setViewportSize(viewport); const state = await fixture(page);
+    await page.route("**/api/web/session/me", route => route.fulfill({ json: { status: "success", data: { user_login: "studio-test@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view", "admin.forms.publish"] } } }));
+    await page.route("**/api/web/admin/helpdesk-model/policies", route => route.fulfill({ json: { status: "success", data: { policies: {} } } }));
+    const published: unknown[] = [];
+    await page.route("**/api/web/admin/helpdesk-model/request-templates/publish-from-form", async route => {
+      const body = route.request().postDataJSON(); published.push(body);
+      expect(body).toMatchObject({ publish_policies: false, form: { title: "Восстановление почты", fields: [{ label: "Опишите проблему" }, { label: "Адрес почты" }] } });
+      await route.fulfill({ json: { status: "success", data: { request_template: { template_code: body.form.key } } } });
+    });
+    await page.goto("/app/admin/forms/new");
+    const primary=page.getByRole("button", { name: "Опубликовать шаблон", exact: true });
+    await expect(primary).toBeInViewport({ ratio: 1 });await expect(primary).toBeDisabled();
+    await page.getByRole("textbox", { name: "Название шаблона", exact: true }).fill("Восстановление почты");
+    await page.getByRole("button", { name: "Добавить вопрос", exact: true }).click();
+    await page.getByRole("textbox", { name: "Название вопроса 2", exact: true }).fill("Адрес почты");
+    await primary.click(); expect(published).toHaveLength(0);
+    await page.getByRole("button", { name: "Продолжить редактирование", exact: true }).click();
+    await primary.click(); await page.getByRole("button", { name: "Подтвердить публикацию шаблона", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Шаблон опубликован: Восстановление почты", exact: true })).toBeVisible();
+    expect(published).toHaveLength(1);expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`${viewport.width}-template-published.png`) });
+    expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
+  });
+}

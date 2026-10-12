@@ -509,3 +509,12 @@ creation via the existing catalog API, followed by dedicated offering details.
 `offering-publication.tsx` confirms canonical standalone offering publication;
 scenario authoring is optional. Simulation renders safe structured issue codes
 and paths from the existing admin handler without altering backend contracts.
+
+### Independent template creation (admin UI)
+
+- `webapp/src/pages/admin/template-create-page.tsx`: `/app/admin/forms/new`,
+  own ordinary question form and existing published policy references; explicit
+  canonical `POST /api/web/admin/helpdesk-model/request-templates/publish-from-form`
+  confirmation with `publish_policies=false`, no shared pack rewrite.
+- `scenario-offering-form.tsx`: explanation, separate-tab template creation and
+  explicit template-list refresh preserving local offering draft values.
