@@ -1,6 +1,7 @@
 # Панель инструментов Endpoint в Helpdesk
 
-Дата: 12.10.2026. Статус: спецификация для пользовательского review; реализация не начата.
+Дата: 12.10.2026. Статус: пользователь подтвердил спецификацию и продолжение
+к implementation plan; реализация не начата.
 
 ## 1. Назначение и согласованный результат
 
@@ -315,6 +316,9 @@ Backend повторно проверяет принадлежность evidenc
 — `module_operations.create` и `module_operations.read`. Existing context/diagnostic scopes
 сохраняются. Helpdesk не получает modules.write/validate/publish. Нужные одношаговые
 модули и fixed presets публикуются владельцем Endpoint через штатный lifecycle.
+Существующий provisioning CLI для Module workbench выдаёт authoring scopes; для
+диагностической панели нужен отдельный узкий audited режим/CLI без этих прав,
+с сохранением identity текущего integration client при credential rotation.
 
 Подготовка требует нового provider read projection, его contract acceptance, текущего
 provider lock и scoped credential configuration. Это отдельная часть реализации
