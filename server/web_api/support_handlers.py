@@ -66,6 +66,7 @@ from observer.integrity_service import ObserverIntegrityService
 from observer.service import ObserverOverlayService
 from observer.web_event_writer import write_web_cabinet_observer_event
 from diagnostics.capability_registry import CapabilityRegistry
+import config
 from tickets.handlers import (
     RESOLUTION_CONFIRMATION_TEXT,
     _build_resolution_confirmation_request,
@@ -3517,6 +3518,7 @@ async def handle_web_support_bootstrap(_request):
             "ticket_workspace",
             "observer_trace",
             "tool_actions",
+            *(["endpoint_tools_workspace"] if config.ENDPOINT_TOOLS_WORKSPACE_ENABLED else []),
         ],
         observer=SupportObserverCapabilities(
             ticket_summary_endpoint="/api/tickets/{ticket_id}/observer",

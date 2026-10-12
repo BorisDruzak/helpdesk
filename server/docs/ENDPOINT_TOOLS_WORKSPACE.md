@@ -35,3 +35,14 @@ deterministic DiagnosticEvidence and copies the safe payload into the passport's
 own metadata snapshot. Ticket locks serialize repeated attachments. Queued or
 missing results cannot be attached; a negative safe result keeps its failure
 status. Neither evidence nor passports depend on Endpoint's result retention.
+
+The support bootstrap advertises `endpoint_tools_workspace` only when enabled.
+`webapp/src/features/endpoint-tools` replaces the diagnostic panel composition
+for that feature. Its forms consume server-derived input controls; readonly
+result types are generated from the accepted public operation schema, including
+the closed 21-primitive result union. Unsupported controls are disabled. A named
+container switches parameters/result to two columns at640px. Query identity
+includes account, ticket, device, exact module/version and selected run; older
+responses cannot replace a newer selection. Results display their own collection
+time and request parameters. Browser intent keys survive an uncertain response
+and must be saved before dispatch; storage failure prevents the launch.

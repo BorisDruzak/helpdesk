@@ -42,6 +42,8 @@ import {
 } from "./api";
 import { normalizeCapabilityParamSchema } from "./params-schema";
 import { clearEndpointRunKey, pendingEndpointRunKey } from "./endpoint-run-intent";
+import { fetchSupportBootstrap } from "../queues/api";
+import { EndpointToolsPanel } from "../endpoint-tools/endpoint-tools-panel";
 
 type DiagnosticCenterPanelProps = {
   ticketId: string;
@@ -270,6 +272,13 @@ function summarizeRunResult(result: Record<string, unknown> | null): string | nu
 }
 
 export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) {
+  const { session } = useSession();
+  const feature=useQuery({queryKey:["support-bootstrap",session?.user_login],queryFn:fetchSupportBootstrap,staleTime:60000,retry:false});
+  if(feature.data?.features.includes("endpoint_tools_workspace")) return <EndpointToolsPanel ticketId={ticketId}/>;
+  return <LegacyDiagnosticCenterPanel ticketId={ticketId}/>;
+}
+
+function LegacyDiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const [targetFilter, setTargetFilter] = useState(ALL_FILTER);

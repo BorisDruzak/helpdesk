@@ -92,6 +92,18 @@ async def test_web_support_bootstrap_exposes_observer_capabilities(web_support_c
     assert payload["data"]["observer"]["ticket_summary_endpoint"] == "/api/tickets/{ticket_id}/observer"
 
 
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_support_bootstrap_gates_endpoint_tools_workspace(web_support_client,monkeypatch):
+    import config
+    monkeypatch.setattr(config,"ENDPOINT_TOOLS_WORKSPACE_ENABLED",True)
+    response=await web_support_client.get("/api/web/support/bootstrap")
+    assert "endpoint_tools_workspace" in (await response.json())["data"]["features"]
+    monkeypatch.setattr(config,"ENDPOINT_TOOLS_WORKSPACE_ENABLED",False)
+    response=await web_support_client.get("/api/web/support/bootstrap")
+    assert "endpoint_tools_workspace" not in (await response.json())["data"]["features"]
+
+
 @pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_web_support_queue_returns_empty_payload_when_db_is_unavailable(web_support_client, monkeypatch):

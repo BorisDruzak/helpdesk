@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+.endpoint-tools-container { container-type: inline-size; }
+@container (min-width: 640px) {
+  .endpoint-tools-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
 @theme {
   --font-sans: "Manrope", "Segoe UI", "Inter", sans-serif;
   --font-display: "Sora", "Manrope", "Segoe UI", sans-serif;
