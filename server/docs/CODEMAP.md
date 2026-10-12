@@ -500,3 +500,12 @@ keeps its main-only job and adds a manual exact-head draft PR41 job. YAML aliase
 share canonical security/coverage steps; candidate admission precedes checkout
 and Sonar upload, with explicit PR parameters and no main-analysis fallback.
 Synthetic admission checks live in `.github/tests/test_dev_scanner_candidate_workflow.py`.
+
+## Independent service authoring entry
+
+`webapp/src/pages/admin/service-create-page.tsx` serves
+`/app/admin/request-template-studio/services/new`: admin-only offering draft
+creation via the existing catalog API, followed by dedicated offering details.
+`offering-publication.tsx` confirms canonical standalone offering publication;
+scenario authoring is optional. Simulation renders safe structured issue codes
+and paths from the existing admin handler without altering backend contracts.

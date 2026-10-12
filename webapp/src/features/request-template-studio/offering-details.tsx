@@ -4,6 +4,7 @@ import { EmptyState } from "../../components/ui-page/page-components";
 import { OfferingCardSummary, catalogEntries, scenarioEditingLabel } from "./offering-card";
 import type { ScenarioCatalog, ScenarioItem } from "./scenario-api";
 import type { AdminServiceCatalogOffering } from "../service-catalog/api";
+import { OfferingPublication } from "./offering-publication";
 
 export function OfferingDetails({ data, code, canEdit, onOpen, onCreate }: { data: ScenarioCatalog; code: string; canEdit: boolean;
   onOpen: (item: ScenarioItem) => void; onCreate: (offering: AdminServiceCatalogOffering) => void }) {
@@ -12,7 +13,9 @@ export function OfferingDetails({ data, code, canEdit, onOpen, onCreate }: { dat
   const current = card.scenarios.filter(item => !item.archived && item.status !== "archived");
   const archive = card.scenarios.filter(item => item.archived || item.status === "archived");
   return <section className="min-w-0 space-y-5" aria-label="Страница услуги">
+    {canEdit && card.offering.lifecycle_status === "draft" && <OfferingPublication code={code} />}
     <div className="flex flex-wrap gap-3">
+      {card.requester_available && <Link className="inline-flex min-h-11 items-center rounded-pill border px-4 text-sm font-semibold" target="_blank" to={`/app/requester/new?${new URLSearchParams({ offering: code })}`}>Открыть в кабинете сотрудника</Link>}
       {card.offering.request_template_key && <Link className="inline-flex min-h-11 items-center rounded-pill border px-4 text-sm font-semibold" to={`/app/admin/forms?template=${encodeURIComponent(card.offering.request_template_key)}`}>Открыть обычную форму</Link>}
       {canEdit && !current.length && card.offering.request_template_key && <Button onClick={() => onCreate(card.offering)}>Создать сценарий для услуги</Button>}
       <Link className="inline-flex min-h-11 items-center px-3 text-sm underline" to={`/app/admin/service-catalog/offerings/${encodeURIComponent(code)}`}>Настройки услуги</Link>

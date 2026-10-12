@@ -3,6 +3,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSimulationPanel } from "./scenario-simulation";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it("explains a missing transition instead of blaming the answers", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "error", error_code: "SCENARIO_INVALID", issues: [{ code: "missing_fallback", path: "blocks.check.transitions" }] }), { status: 400, headers: { "content-type": "application/json" } })));
+  render(<ScenarioSimulationPanel id="scenario" revision={3} dirty={false} disabled={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
+  expect(await screen.findByText(/Не настроен переход дальше/)).toBeVisible();
+});
+
 it("keeps a dynamic page editable when focus moves from its heading to an answer", async () => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));

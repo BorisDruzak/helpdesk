@@ -1,3 +1,18 @@
+# In progress: 2026-10-12 Independent service creation and authoring clarity
+
+Approved follow-up: create a service on its own page, independently publish its
+ordinary form, then optionally author a scenario. Stage only; production excluded.
+Runtime reproduction of the user's test failure: SCENARIO_INVALID/missing_fallback
+on an instruction without an outgoing transition. Preserve server validation;
+show a specific explanation and route to the affected block instead of blaming answers.
+Frontend RED cases reproduced missing independent creation and hidden error details.
+GREEN focused authoring tests passed; added independent-creation, dirty-navigation,
+canonical-publication confirmation/failure and template-retry coverage. Local full
+unit677, selected block controls6, full fixture browser106 and fresh build/typecheck
+passed. Independent review: no blockers. Exact-head CI and actual staging
+creation/publication/requester acceptance remain pending.
+No dependency, schema, backend, security, processing or Endpoint contract changes.
+
 # Complete: 2026-10-12 Unified request catalog follow-up
 
 Approved bounded change: one offering card; requester mode separate from draft

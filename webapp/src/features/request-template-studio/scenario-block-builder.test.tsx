@@ -8,6 +8,16 @@ function Harness() {
   const [definition, setDefinition] = useState<ScenarioDraftDefinition>({ scenario_key: "test", title: "Тест", service_code: "it", offering_full_code: "it.test", process_binding: { request_template_key: "test" }, blocks: [] });
   return <ScenarioBlockBuilder definition={definition} disabled={false} onChange={setDefinition} />;
 }
+it("makes next-step controls available without opening advanced settings", () => {
+  render(<Harness />);
+  fireEvent.change(screen.getByLabelText("Тип нового блока"), { target: { value: "instruction" } });
+  fireEvent.click(screen.getByRole("button", { name: "Добавить блок" }));
+  fireEvent.change(screen.getByLabelText("Тип нового блока"), { target: { value: "finish" } });
+  fireEvent.click(screen.getByRole("button", { name: "Добавить блок" }));
+  fireEvent.click(screen.getByRole("button", { name: "Инструкция" }));
+  expect(screen.getByRole("button", { name: "Добавить переход" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Добавить переход" })).toBeEnabled();
+});
 it("shows diagnostic consent, execution boundary and missing mandatory fallback", () => {
   render(<Harness />);
   fireEvent.change(screen.getByLabelText("Тип нового блока"), { target: { value: "diagnostic" } });

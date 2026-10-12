@@ -46,16 +46,27 @@ its service section and available subcategories. Before selection, the disabled
 subcategory picker explains the prerequisite. A service without subcategories
 explicitly offers its main section and inline category creation.
 
-**Создать услугу здесь** creates a public draft inside the purpose step, under
-an already published/public service. Choose a human profile and an active
-published processing template. Software installation maps to existing
-`service_request`, retaining its human profile in offering metadata; ticket type
-comes from the selected canonical template. No second policy engine is created.
-The draft stays unavailable to requesters until source-bound scenario publication
-promotes both objects atomically. The existing Service Catalog validator must
-pass. Loading/error/empty template states prevent submission; retry keeps edits.
-While this inline form is open, draft saving and wizard/page navigation are
-guarded. Cancel requires discarding local changes explicitly.
+**Создать услугу** opens `/app/admin/request-template-studio/services/new`, an
+independent creation page. Choose a published/public section and an active,
+published processing template. Saving creates only an offering draft and opens
+its dedicated page; no scenario is created. Unsaved edits are protected, and save
+remains visible when scrolling. The offering page requires explicit confirmation
+before canonical standalone publication. Employees then use its ordinary form;
+a scenario can be added later. Canonical publication validates forms, sections
+and policies and retains the existing role/audit guards.
+
+The scenario purpose step links to separate service creation instead of embedding
+a second form. Existing offering drafts can still opt into source-bound atomic
+publication with their scenario; selection sets the explicit publication intent.
+Software installation retains its profile metadata and existing service_request
+type. A published service exposes a requester deep link on its dedicated page.
+
+The selected step displays its essential next-step transitions in the visible
+**Что делать дальше** section. Stable keys stay in advanced settings.
+Testing preserves structured server issue codes/paths. Missing transitions are
+explained in Russian, with a link to the affected block and transitions. Revision
+conflicts request reloading the current version. Validation is not bypassed and
+simulation remains free of ticket/approval/Endpoint side effects.
 
 Saving creates or updates a disabled draft and displays its server revision.
 A conflict preserves local edits. **Загрузить серверную версию** explicitly

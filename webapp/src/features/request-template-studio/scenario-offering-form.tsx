@@ -4,12 +4,13 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { fetchHelpdeskModelRegistry, type AdminHelpdeskRequestTemplateItem } from "../forms-builder/api";
+import { ScenarioActionBar } from "./scenario-action-bar";
 import { saveOfferingDraft, type AdminServiceCatalogOffering } from "../service-catalog/api";
 import type { ScenarioCatalog } from "./scenario-api";
 
 const requestTypes = [{ code: "incident", title: "Инцидент", requestType: "incident" }, { code: "request", title: "Общий запрос", requestType: "request" }, { code: "service_request", title: "Запрос услуги", requestType: "service_request" }, { code: "access", title: "Запрос доступа", requestType: "access" }, { code: "software_install", title: "Установка ПО", requestType: "service_request" }, { code: "consultation", title: "Консультация", requestType: "consultation" }];
 
-export function ScenarioOfferingForm({ catalog, initialServiceCode, onDone, onCancel, onDirty }: { catalog: ScenarioCatalog; initialServiceCode: string; onDone: (saved: AdminServiceCatalogOffering) => Promise<void>; onCancel: () => void; onDirty: (dirty: boolean) => void }) {
+export function ScenarioOfferingForm({ catalog, initialServiceCode, onDone, onCancel, onDirty, standalone = false }: { catalog: ScenarioCatalog; initialServiceCode: string; onDone: (saved: AdminServiceCatalogOffering) => Promise<void>; onCancel: () => void; onDirty: (dirty: boolean) => void; standalone?: boolean }) {
   const services = catalog.services.filter(item => item.lifecycle_status === "published" && item.visibility === "public");
   const [value, setValue] = useState(() => ({ service_code: services.find(item => item.code === initialServiceCode)?.code ?? services[0]?.code ?? "", title: "", description: "", request_type: "incident", template: "" }));
   const [code] = useState(() => `scenario_${crypto.randomUUID().replaceAll("-", "")}`);
@@ -38,9 +39,10 @@ export function ScenarioOfferingForm({ catalog, initialServiceCode, onDone, onCa
     const result = await saveOfferingDraft(payload);
     await latestDone.current(result.offering);
   } });
-  return <form className="min-w-0 space-y-4 rounded-xl border p-5" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}>
+  return <form id={`service-${code}`} className="min-w-0 space-y-4 rounded-xl border p-5" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}>
     <h2 className="text-lg font-semibold">Новая услуга</h2>
-    <p>Создайте черновик услуги. Она станет доступна сотрудникам после общей проверки и публикации со сценарием.</p>
+    <p>{standalone ? "Сохраните карточку, затем опубликуйте её на странице услуги. До публикации сотрудники её не видят. Сценарий для создания услуги не требуется." : "Создайте черновик услуги. Она станет доступна сотрудникам после общей проверки и публикации со сценарием."}</p>
+    <ScenarioActionBar><div className="flex flex-wrap gap-2"><Button form={`service-${code}`} type="submit" disabled={mutation.isPending || !value.title.trim() || !value.service_code || !template}>Создать черновик услуги</Button><Button variant="ghost" disabled={mutation.isPending} onClick={() => { if (!dirty || window.confirm("Закрыть услугу без сохранения изменений?")) onCancel(); }}>Отмена</Button></div></ScenarioActionBar>
     <fieldset disabled={mutation.isPending} className="space-y-4">
       <label className="block">Раздел услуги<Select value={value.service_code} onChange={event => setValue({ ...value, service_code: event.target.value })}><option value="">Выберите опубликованный раздел</option>{services.map(item => <option key={item.code} value={item.code}>{item.public_title}</option>)}</Select></label>
       {!services.length && <p role="alert">Нет опубликованных публичных разделов для новой услуги.</p>}
@@ -54,6 +56,6 @@ export function ScenarioOfferingForm({ catalog, initialServiceCode, onDone, onCa
       <p className="text-sm">Маршрут, сроки и остальные политики наследуются от раздела и шаблона. Настроить их для сценария можно на этапе обработки.</p>
     </fieldset>
     {mutation.isError && <p role="alert">Не удалось создать черновик услуги. Проверьте настройки и повторите.</p>}
-    <div className="flex flex-wrap gap-2"><Button type="submit" disabled={mutation.isPending || !value.title.trim() || !value.service_code || !template}>Создать черновик услуги</Button><Button variant="ghost" disabled={mutation.isPending} onClick={() => { if (!dirty || window.confirm("Закрыть услугу без сохранения изменений?")) onCancel(); }}>Отмена</Button></div>
+
   </form>;
 }

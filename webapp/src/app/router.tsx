@@ -1,3 +1,4 @@
+import { AdminServiceCreatePage } from "../pages/admin/service-create-page";
 import { Suspense, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
@@ -481,7 +482,11 @@ export const appRoutes: RouteObject[] = [
             )
           },
           {
-            path: "admin/request-template-studio/services/:offeringCode",
+            path: "admin/request-template-studio/services/new",
+              element: <WorkspaceAccessGate workspace="admin"><AdminServiceCreatePage /></WorkspaceAccessGate>
+            },
+            {
+              path: "admin/request-template-studio/services/:offeringCode",
             element: <ScenarioStudioAccessGate><AdminRequestTemplateStudioPage /></ScenarioStudioAccessGate>
           },
           {

@@ -12,6 +12,10 @@ async function ready() { await waitFor(() => expect(screen.getByRole("button", {
 function mock() { const fetcher = vi.fn(async (_url: unknown, _init?: RequestInit) => _init?.method === "POST" && String(_url).endsWith("/scenarios") ? response({ scenario: { id: "s1", archived: false }, draft: { revision: 1, definition: JSON.parse(String(_init.body)).definition } }) : response(catalog)); vi.stubGlobal("fetch", fetcher); return fetcher; }
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 describe("Guided Studio workflow", () => {
+  it("offers independent service creation before scenario authoring", async () => {
+    mock(); mount(); await ready();
+    expect(screen.getByRole("link", { name: "Создать услугу" })).toHaveAttribute("href", "/app/admin/request-template-studio/services/new");
+  });
   it("updates the service category when the URL changes in the same router", async () => {
     const fetcher = mock(); const router = mount("/?service=it"); await ready();
     expect(String(fetcher.mock.calls.at(-1)?.[0])).toContain("service_code=it");

@@ -1,33 +1,35 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { RequestFormFieldControl, type DynamicFormValues } from "../requester/dynamic-form";
-import { simulateScenario, type ScenarioSimulation } from "./scenario-api";
+import { simulateScenario, ScenarioApiError, type ScenarioSimulation } from "./scenario-api";
+import { scenarioIssueDestination, type ScenarioIssueDestination } from "./scenario-issue-navigation";
 import type { ScenarioAnswerRequest, ScenarioDraftDefinition } from "./scenario-contract";
 import { diagnosticFailureLabels, type DiagnosticFailureStatus } from "./scenario-diagnostics";
 import { ScenarioProcessingResult } from "./scenario-processing-result";
 import { ScenarioFields } from "../requester/scenario-fields";
 
-export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition }) {
+export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition, onIssue }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; onIssue?: (target: ScenarioIssueDestination) => void }) {
   const [result, setResult] = useState<ScenarioSimulation | null>(null);
   const [steps, setSteps] = useState<ScenarioAnswerRequest[]>([]);
   const [values, setValues] = useState<DynamicFormValues>({});
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [issues, setIssues] = useState<{ code: string; path: string }[]>([]);
   const [diagnosticOutcomes, setDiagnosticOutcomes] = useState<Record<string, DiagnosticFailureStatus>>({});
   const diagnostics = (definition?.blocks || []).filter(item => item.kind === "diagnostic");
   const sequence = useRef(0);
   const heading = useRef<HTMLHeadingElement>(null);
   const block = result?.current_step;
   useEffect(() => {
-    sequence.current++; setResult(null); setSteps([]); setValues({}); setError(""); setBusy(false); setDiagnosticOutcomes({});
+    sequence.current++; setResult(null); setSteps([]); setValues({}); setError(""); setIssues([]); setBusy(false); setDiagnosticOutcomes({});
     return () => { sequence.current++; };
   }, [id, revision, dirty, disabled]);
   useEffect(() => { heading.current?.focus(); }, [block?.id]);
   async function run(next: ScenarioAnswerRequest[], preview?: ScenarioAnswerRequest) {
     if (dirty || disabled) return;
     const current = ++sequence.current;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setIssues([]);
     try {
       const outcomes = Object.fromEntries(diagnostics.map(item => [item.id, diagnosticOutcomes[item.id] || "unavailable"]));
       const response = await simulateScenario(id, revision, next, preview, outcomes);
@@ -35,7 +37,10 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       setResult(response);
       if (!preview) { setSteps(next); setAcknowledged(false); setValues(Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, field.value])) as DynamicFormValues); }
       else setValues(previous => Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, previous[field.key]])));
-    } catch { if (current === sequence.current) setError("Проверьте ответы и сохранённый сценарий, затем повторите проверку."); }
+    } catch (failure) { if (current === sequence.current) {
+      setIssues(failure instanceof ScenarioApiError ? failure.issues : []);
+      setError(failure instanceof ScenarioApiError && failure.errorCode === "SCENARIO_INVALID" ? "Сценарий пока не готов к проверке. Исправьте указанные шаги и сохраните черновик." : failure instanceof ScenarioApiError && failure.errorCode === "REVISION_CONFLICT" ? "Сохранённая версия изменилась. Загрузите текущую версию сценария и повторите проверку." : "Проверьте ответы и сохранённый сценарий, затем повторите проверку.");
+    } }
     finally { if (current === sequence.current) setBusy(false); }
   }
   function answer(currentResult?: ScenarioAnswerRequest["current_result"]) {
@@ -60,6 +65,11 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
     </fieldset>}
     <Button disabled={dirty || disabled || busy} onClick={() => void run([])}>Начать проверку</Button>
     {dirty && <p>Сначала сохраните изменения.</p>}{error && <p role="alert">{error}</p>}
+    {issues.map((issue, index) => {
+      const target = definition ? scenarioIssueDestination(issue, definition) : null;
+      const blockTitle = definition?.blocks?.find(block => block.id === target?.blockId)?.title;
+      return <div key={index} className="rounded border border-amber-300 p-3"><p>{blockTitle ? `Шаг «${blockTitle}»: ` : ""}{issue.code === "missing_fallback" ? "Не настроен переход дальше. Укажите следующий шаг и переход по умолчанию для возможных результатов." : "Проверьте настройки шага и его переходы."}</p>{target && onIssue && <Button variant="outline" onClick={() => onIssue(target)}>Исправить шаг</Button>}</div>;
+    })}
     {Object.entries(result?.state.results || {}).filter(([, value]) => value !== null && typeof value === "object" && "simulated" in value && value.simulated === true && "operation_created" in value && value.operation_created === false).map(([key, value]) => {
       const status = (value as { status?: string }).status;
       const label = status && Object.hasOwn(diagnosticFailureLabels, status) ? diagnosticFailureLabels[status as DiagnosticFailureStatus] : "Недоступно";

@@ -2,7 +2,7 @@ import type { ScenarioPublicationPreview } from "./scenario-api";
 import type { ScenarioDraftDefinition, ScenarioPolicyKind } from "./scenario-contract";
 
 export type ScenarioIssueDestination = { step: number; label: string; blockId?: string; transitions?: boolean; policy?: ScenarioPolicyKind };
-export function scenarioIssueDestination(issue: ScenarioPublicationPreview["readiness"]["issues"][number], definition: ScenarioDraftDefinition): ScenarioIssueDestination {
+export function scenarioIssueDestination(issue: Pick<ScenarioPublicationPreview["readiness"]["issues"][number], "code" | "path">, definition: ScenarioDraftDefinition): ScenarioIssueDestination {
   const path = issue.path || "";
   const block = definition.blocks?.find(item => path === `blocks.${item.id}` || path.startsWith(`blocks.${item.id}.`));
   if (block) return { step: 1, label: block.title, blockId: block.id, transitions: path.endsWith(".transitions") };

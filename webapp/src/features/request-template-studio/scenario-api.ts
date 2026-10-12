@@ -45,12 +45,18 @@ export type ScenarioPublicationPreview = {
   confirmation_token: string | null; expires_at: string | null;
 };
 const root = "/api/web/admin/request-studio";
+export class ScenarioApiError extends RequestStudioApiError {
+  constructor(status: number, code?: string, public issues: { code: string; path: string }[] = []) {
+    super("Не удалось выполнить действие в Студии", status, code);
+  }
+}
 async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(`${root}${path}`, { method, credentials: "same-origin",
     ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
   const payload = response.headers.get("content-type")?.includes("application/json") ? await response.json() : null;
   if (!response.ok || payload?.status !== "success") {
-    throw new RequestStudioApiError("Не удалось выполнить действие в Студии", response.status, payload?.error_code);
+    const issues = Array.isArray(payload?.issues) ? payload.issues.filter((item: unknown): item is { code: string; path: string } => !!item && typeof item === "object" && "code" in item && typeof item.code === "string" && "path" in item && typeof item.path === "string").slice(0, 100).map((item: { code: string; path: string }) => ({ code: item.code, path: item.path })) : [];
+    throw new ScenarioApiError(response.status, payload?.error_code, issues);
   }
   return payload.data as T;
 }

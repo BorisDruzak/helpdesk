@@ -47,7 +47,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
     {block.kind === "review" && <p>Перед продолжением сотрудник увидит собранные ответы и сможет вернуться к вопросам.</p>}
     {block.kind === "submit_ticket" && <p>Обращение создаёт сервер с применением политик услуги. Этот блок завершает сценарий.</p>}
     {block.kind === "finish" && <label className="block">Сообщение о решении<textarea disabled={disabled} maxLength={2000} className="field-base min-h-24 w-full" value={block.message ?? ""} onChange={event => onChange({ ...block, message: event.target.value })} /></label>}
-    <AdvancedDisclosure title="Расширенные настройки" description="Переходы и стабильные параметры выбранного блока">
+    <AdvancedDisclosure title="Расширенные настройки" description="Стабильные параметры выбранного шага">
       <div className="min-w-0 space-y-4">
         <p className="break-all text-sm">Стабильный ключ: {block.id}</p>
         <p>{definition.entry_block_id === block.id ? "Первый блок сценария" : "Начало можно изменить кнопкой «Начать с этого блока»."}</p>
@@ -55,7 +55,11 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
           <label className="block">Возможность диагностики<Select disabled value={block.capability ?? "endpoint.context.diagnostic.collect"}><option value="endpoint.context.diagnostic.collect">Контекст устройства (пока недоступно)</option></Select></label>
           <label className="block">Ожидание, секунд<Input disabled={disabled} type="number" min={1} max={120} value={block.timeout_seconds ?? 30} onChange={event => onChange({ ...block, timeout_seconds: Number(event.target.value) })} /></label>
         </>}
-        <h3 className="font-medium">Переходы</h3>
+      </div>
+    </AdvancedDisclosure>
+    <section aria-label="Следующий шаг" className="space-y-4 rounded-lg border p-3">
+        <h3 className="font-medium">Что делать дальше</h3>
+        {!terminal && <p className="text-sm text-slate-600">Выберите следующий шаг. Порядок шагов в списке сам по себе не задаёт переходы. Последний переход без условия — запасной путь.</p>}
         {!transitions.length && <p className="text-sm">{terminal ? "Конечный блок не имеет переходов." : "Добавьте переходы. Перестановка блоков не изменяет маршруты автоматически."}</p>}
         {transitions.map((edge, index) => <fieldset disabled={disabled} key={index} className="min-w-0 space-y-3 rounded-lg border p-3">
           <legend>Переход {index + 1}</legend>
@@ -72,7 +76,6 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
           </div>
         </fieldset>)}
         <Button disabled={disabled || terminal || !targets.length || transitions.length >= 30} variant="secondary" onClick={() => onChange({ ...block, transitions: [...transitions, { to: targets[0].id, when: null }] })}>Добавить переход</Button>
-      </div>
-    </AdvancedDisclosure>
+    </section>
   </div>;
 }
