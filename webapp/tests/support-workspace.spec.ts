@@ -36,11 +36,16 @@ test("operator shows Endpoint presence and preserves unknown on provider outage"
   });
   await loginSupport(page);
   await page.goto("/app/tickets/ticket-1");
-  const panel = page.getByRole("heading", { name: "Устройство · Endpoint", exact: true }).locator("..");
+  const panel = page.getByRole("heading", { name: "Компьютер · Endpoint", exact: true }).locator("..");
   await expect(panel).toBeVisible();
   await expect(panel.getByText("Windows fixture · ONLINE", { exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: "Открыть карточку устройства", exact: true })).toHaveAttribute("href", `/app/admin/device?device=${endpointDeviceId}`);
   await expect(panel.getByText("Версия", { exact: true })).toHaveCount(0);
+  expect(await page.locator("[data-context-layer]").evaluateAll(nodes=>nodes.map(node=>node.getAttribute("data-context-layer")))).toEqual(["requester","device","agent","observer"]);
+  const agent = page.getByRole("region", { name: "Агент Endpoint", exact: true });
+  await expect(agent.getByText("В сети", {exact:true})).toBeVisible();
+  await expect(agent.getByText("Версия агента", {exact:true})).toBeVisible();
+  await expect(agent.getByText("Версия загрузчика", {exact:true})).toBeVisible();
   await panel.screenshot({ path: testInfo.outputPath("operator-endpoint-online-card.png") });
   await page.screenshot({ path: testInfo.outputPath("operator-endpoint-online.png"), fullPage: true });
   online = false;
@@ -48,6 +53,8 @@ test("operator shows Endpoint presence and preserves unknown on provider outage"
   await expect(panel.getByText("UNKNOWN · Endpoint context недоступен", { exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: "Открыть карточку устройства", exact: true })).toHaveCount(0);
   await expect(panel.getByText("Агент offline", { exact: true })).toHaveCount(0);
+  await expect(agent.getByText("Не в сети", {exact:true})).toHaveCount(0);
+  await expect(agent.getByText("Нет данных", {exact:true})).toHaveCount(4);
   await panel.screenshot({ path: testInfo.outputPath("operator-endpoint-unknown-card.png") });
   await page.screenshot({ path: testInfo.outputPath("operator-endpoint-unknown.png"), fullPage: true });
   expect(pageErrors).toEqual([]);
