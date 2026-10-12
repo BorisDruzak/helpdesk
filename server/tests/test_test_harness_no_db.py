@@ -591,7 +591,7 @@ def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 171
+    assert len(full_tables) == 172
     assert full_tables[:5] == (
         "requester_ticket_create_requests",
         "observer_integrity_check_runs",
@@ -600,6 +600,7 @@ def test_full_cleanup_profile_preserves_current_table_scope():
         "observer_error_occurrences",
     )
     assert {
+        "endpoint_tool_runs",
         "registry_person_identities",
         "registry_endpoint_device_mappings",
         "ticket_kb_links",
