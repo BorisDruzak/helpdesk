@@ -400,6 +400,11 @@ recipes and atomically persists six-profile batches. `endpoint_tool_reconciler.p
 resumes owned runs in short claim/commit transactions, separate from the legacy
 diagnostic worker. Both runners are composed/stopped in `server.py`; the UI flag
 does not interrupt active intents. See `ENDPOINT_TOOLS_WORKSPACE.md`.
+`endpoint_adapter/modules_wire.py` validates closed safe results against the
+saved recipe bindings; `diagnostics/endpoint_tool_evidence.py` repeats that check
+before copying one selected step into immutable passport evidence.
+`webapp/tests/endpoint-tools.spec.ts` covers fixture browser races, partial batches,
+passport capture, degradation and390/1366/1920/2582 layouts; it is not live Agent proof.
 
 See [ticket UI behavior](../../docs/HELPDESK_TICKET_UI.md).
 `web_api/support_handlers.py` projects completed and paused SLA timers and

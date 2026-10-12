@@ -140,3 +140,15 @@ Support device snapshots on absent Endpoint references or failed presence reads
 keep hostname, OS, version and observation time empty with UNKNOWN connection
 state. A local Registry-compatible Device row cannot supply a technical fallback.
 Historical Observer operations and canonical Registry business details remain visible.
+
+## Tools workspace collection boundary
+
+General collection creates one local atomic batch of six separate intents:
+baseline, health, network, inventory and session context collections plus the
+existing fixed diagnostic operation. Collection IDs never substitute for diagnostic
+operation IDs. Each child retains its own state, snapshot and collection time;
+a failed or expired child gives a partial batch rather than a false aggregate success.
+The selected output is never substituted with a device's older current snapshot.
+Requester, Endpoint computer and Agent connection context precede the collapsed
+Observer trace view; missing provider facts stay unknown. Fixtures and protocol
+test clients are separate evidence layers from an installed Agent acceptance.

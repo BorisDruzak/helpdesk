@@ -8,7 +8,7 @@ from uuid import uuid5,NAMESPACE_URL
 from domain_ports.endpoint import EndpointDiagnosticResultProjection
 from domain_ports.endpoint_context import EndpointContextSnapshot
 from domain_ports.endpoint_module_contracts_generated import ModuleOperationDetailV1,ModuleOperationStepV1
-from endpoint_adapter.modules_wire import validate_module_projection
+from endpoint_adapter.modules_wire import validate_module_projection, validate_result_request
 
 
 def _canonical(value): return json.dumps(value,sort_keys=True,separators=(",",":"),ensure_ascii=False)
@@ -39,6 +39,7 @@ def validate_retained_tool_evidence(run,step,item):
         from endpoint_adapter.modules_wire import validate_safe_result
         if selected.safe_result is None or selected.status!=selected.safe_result.status: raise ValueError("retained status mismatch")
         validate_safe_result(selected.capability,selected.safe_result)
+        validate_result_request(selected,request.recipe.steps[step],request.inputs)
     elif request.kind=="context_collection":
         result=EndpointContextSnapshot.model_validate(payload["result"])
         if step!=0 or result.profile!=request.profile: raise ValueError("retained profile mismatch")
@@ -69,6 +70,7 @@ def materialize_tool_evidence(run,step):
             raise ValueError("result provenance mismatch")
         if step>=len(detail.steps) or len(detail.steps)!=len(request.recipe.steps): raise ValueError("unknown step")
         selected=detail.steps[step]
+        validate_result_request(selected,request.recipe.steps[step],request.inputs)
         if selected.capability!=request.recipe.steps[step].capability or selected.status not in {"succeeded","failed"} or selected.safe_result is None:
             raise ValueError("step has no completed safe result")
         if selected.status!=selected.safe_result.status: raise ValueError("result status contradicts step")

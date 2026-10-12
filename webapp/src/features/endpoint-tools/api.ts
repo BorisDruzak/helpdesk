@@ -21,11 +21,17 @@ export async function createRun(ticket:string,module_key:string,version:string,i
   if(run.ticket_id!==ticket || run.module_key!==module_key || run.version!==version) throw new SupportBootstrapApiError("Ответ не совпадает с отправленной проверкой",502,"endpoint_invalid_projection");
   return run;
 }
-export function createBatch(ticket:string,caller_key:string) {return request<ToolBatch>(`${base(ticket)}/collections`,json({schema_version:"endpoint_tool_batch_create_v1",caller_key}),"endpoint_tool_batch_v1");}
-export async function getBatch(ticket:string,batch:string,signal?:AbortSignal) {
-  const result=await request<ToolBatch>(`${base(ticket)}/collections/${encodeURIComponent(batch)}`,{signal},"endpoint_tool_batch_v1");
+function validateBatch(result:ToolBatch,ticket:string,batch:string) {
   if(result.batch_id!==batch || result.ticket_id!==ticket || result.runs.length!==6 || new Set(result.runs.map(r=>r.run_id)).size!==6 || result.runs.some(r=>r.ticket_id!==ticket || r.batch_id!==batch)) throw new SupportBootstrapApiError("Ответ общего сбора не совпадает с запросом",502,"endpoint_invalid_projection");
   return result;
+}
+export async function createBatch(ticket:string,caller_key:string) {
+  const result=await request<ToolBatch>(`${base(ticket)}/collections`,json({schema_version:"endpoint_tool_batch_create_v1",caller_key}),"endpoint_tool_batch_v1");
+  return validateBatch(result,ticket,result.batch_id);
+}
+export async function getBatch(ticket:string,batch:string,signal?:AbortSignal) {
+  const result=await request<ToolBatch>(`${base(ticket)}/collections/${encodeURIComponent(batch)}`,{signal},"endpoint_tool_batch_v1");
+  return validateBatch(result,ticket,batch);
 }
 export async function attachSelectedToolResult(ticket:string,run:string,step:number) {
   const result=await request<{schema_version:"endpoint_tool_attachment_v1";run_id:string;step_sequence:number}>(`${base(ticket)}/runs/${encodeURIComponent(run)}/passport-evidence`,json({schema_version:"endpoint_tool_attach_v1",step_sequence:step}),"endpoint_tool_attachment_v1");

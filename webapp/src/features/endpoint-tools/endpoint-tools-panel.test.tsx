@@ -14,9 +14,9 @@ it("renders literal settings and does not enable an unavailable published tool",
   const query=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
   const Panel=module!.EndpointToolsPanel;
   render(<QueryClientProvider client={query}><Panel ticketId="ticket"/></QueryClientProvider>);
-  fireEvent.click(await screen.findByRole("button",{name:/Проверка DNS/}));
+  fireEvent.change(await screen.findByRole("combobox",{name:"Инструмент Endpoint"}),{target:{value:"helpdesk.dns:1.0.0"}});
   expect(await screen.findByText(/IPv4/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button",{name:/Проверка связи/}));
+  fireEvent.change(screen.getByRole("combobox",{name:"Инструмент Endpoint"}),{target:{value:"helpdesk.ping:1.0.0"}});
   expect(screen.getByRole("button",{name:"Запустить проверку"})).toBeDisabled();
 });
 

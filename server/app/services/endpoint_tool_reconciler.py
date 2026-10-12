@@ -13,7 +13,7 @@ from domain_ports.endpoint import (
 )
 from domain_ports.endpoint_context import EndpointContextCollection, EndpointCollectionDetails
 from domain_ports.endpoint_module_contracts_generated import ModuleOperationCreateV1, ModuleOperationV1, ModuleOperationDetailV1
-from endpoint_adapter.modules_wire import validate_module_projection
+from endpoint_adapter.modules_wire import validate_module_projection, validate_result_request
 
 _LOG = logging.getLogger(__name__)
 
@@ -70,6 +70,11 @@ class EndpointToolReconciler:
             validate_module_projection(result)
             if isinstance(result, ModuleOperationDetailV1):
                 if [s.capability for s in result.steps] != [s.capability for s in request.recipe.steps]:
+                    return ToolRunProjection("failed", error_code="endpoint_invalid_projection")
+                try:
+                    for step, recipe_step in zip(result.steps, request.recipe.steps):
+                        validate_result_request(step, recipe_step, request.inputs)
+                except ValueError:
                     return ToolRunProjection("failed", error_code="endpoint_invalid_projection")
                 if result.status == "succeeded" and any(s.status != "succeeded" or s.safe_result is None for s in result.steps):
                     return ToolRunProjection("failed", remote_ref=str(result.operation_id), error_code="endpoint_result_expired")

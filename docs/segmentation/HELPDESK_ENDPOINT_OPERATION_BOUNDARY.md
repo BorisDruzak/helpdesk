@@ -174,6 +174,26 @@ verified Helpdesk deployment. Existing external operations remain
 reconciliation/read-only work until terminal; they are never rewritten as
 legacy commands.
 
+## Published diagnostic tools workspace
+
+The separately gated `ENDPOINT_TOOLS_WORKSPACE_ENABLED` workspace discovers
+published, compatible recipes through device-scoped modules and primitive metadata.
+The support BFF accepts only module identity/version, bounded declared inputs and
+a caller replay key; it resolves the verified ticket device and recipe server-side.
+It does not grant authoring rights. Module operations retain their own remote
+reference, immutable inputs/recipe and step results; reflected target, port and
+logical preset facts must match those saved inputs before display or passport capture.
+The existing empty-parameter diagnostic remains a separate operation.
+
+Revision148 adds ownership markers and context profile/collection references while
+reusing physical module columns from142. It is unreleased and must be attached to
+the accepted Guided Request Studio147 chain before deployment. Only marked runs
+are claimed by the tools reconciler; legacy diagnostics exclude those rows.
+Accepted remote intent is polled, never submitted again. Endpoint retention is
+distinct from Helpdesk passport retention: exact selected safe evidence is copied
+with provenance and digest; replay reads the validated retained copy after expiry.
+See `server/docs/ENDPOINT_TOOLS_WORKSPACE.md` and the approved workspace design/plan.
+
 Endpoint outage is represented as a typed degraded state and may prevent this
 technical diagnostic from starting, but must not prevent ticket creation,
 routing, correspondence, specialist work, closure, or any unrelated legacy

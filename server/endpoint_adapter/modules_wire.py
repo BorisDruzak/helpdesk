@@ -83,6 +83,31 @@ CAPABILITY_RESULT_SCHEMAS = {
 }
 
 
+def validate_result_request(step, recipe_step, inputs):
+    """Match reflected facts to the immutable, resolved request, not current UI inputs."""
+    if step.capability != recipe_step.capability:
+        raise ValueError("result capability mismatch")
+    if step.safe_result is None:
+        return
+    parameters = {key: binding.value if binding.kind == "literal" else inputs[binding.name]
+                  for key, binding in recipe_step.parameters.items()}
+    payload = step.safe_result.model_dump(mode="json")
+    for key in ("target", "port", "name", "printer_name", "path_key", "profile", "lookback_minutes", "service_key"):
+        if key in parameters and key in payload and payload[key] != parameters[key]:
+            raise ValueError("result request mismatch")
+    if parameters.get("family") in {"ipv4", "ipv6"}:
+        if payload.get("family") is not None and payload["family"] != parameters["family"]:
+            raise ValueError("result family mismatch")
+        if any(record["family"] != parameters["family"] for record in payload.get("addresses", [])):
+            raise ValueError("DNS result family mismatch")
+    if "service_key" in parameters and payload.get("service") is not None:
+        if payload["service"]["service_key"] != parameters["service_key"]:
+            raise ValueError("service result request mismatch")
+    if "printer_name" in parameters and payload.get("printer") is not None:
+        if payload["printer"]["name"] != parameters["printer_name"]:
+            raise ValueError("printer result request mismatch")
+
+
 def validate_safe_result(capability, result):
     if result.schema_version != CAPABILITY_RESULT_SCHEMAS.get(capability):
         raise ValueError("result does not belong to capability")

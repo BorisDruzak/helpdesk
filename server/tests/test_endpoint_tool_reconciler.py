@@ -44,6 +44,23 @@ def test_legacy_claim_predicate_excludes_new_ownership_and_module_residue():
 
 
 @pytest.mark.asyncio
+async def test_module_result_for_another_target_is_rejected():
+    from app.services.endpoint_tool_reconciler import EndpointToolReconciler
+    from domain_ports.endpoint_module_contracts_generated import ModuleOperationDetailV1,EndpointRecipeModuleSpecV1
+    from domain_ports.endpoint_tools import ToolRunRequestV1
+    from tests.test_endpoint_modules_adapter import operation_payload,DEVICE
+    payload=operation_payload()
+    recipe=EndpointRecipeModuleSpecV1(schema_version="endpoint_recipe_module_v1",module_key="network.dns",supported_platforms=["windows_amd64"],
+        inputs=[{"name":"host","value_type":"string"}],steps=[{"step_id":"dns","capability":"dns.resolve","parameters":{"target":{"kind":"input","name":"host"},"family":{"kind":"literal","value":"ipv4"}}}])
+    request=ToolRunRequestV1(kind="module",module_key="network.dns",version="1.0.0",recipe=recipe,inputs={"host":"expected.example.test"})
+    modules=SimpleNamespace(read_module_operation=AsyncMock(return_value=ModuleOperationDetailV1.model_validate(payload)))
+    worker=EndpointToolReconciler(endpoint_port=None,modules_port=modules,session_factory=None)
+    run=SimpleNamespace(run_id=str(uuid4()),device_ref=DEVICE,remote_ref=DEVICE,request=request)
+    result=await worker.project(run)
+    assert result.status=="failed" and result.safe_result is None
+
+
+@pytest.mark.asyncio
 async def test_terminal_context_without_snapshot_remains_incomplete():
     from app.services.endpoint_tool_reconciler import EndpointToolReconciler
     from domain_ports.endpoint_context import EndpointContextCollection
