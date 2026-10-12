@@ -17,6 +17,9 @@ Migration 148 reuses the module columns already introduced by 142 and only adds
 context linkage and the ownership table. It is currently based on local/main146;
 before staging release it must follow the accepted Guided Request Studio147.
 Do not apply this candidate to the current staging147 or create a second head.
+The marker table is classified with operation runtime rows in the cleanup catalog;
+static test profiles reset it alongside operation links. The physical migrated
+schema audit must pass before a release can proceed.
 
 The `web_api/endpoint_tool_handlers.py` BFF provides ticket-scoped catalog, run
 history/detail and six-step collection routes under
