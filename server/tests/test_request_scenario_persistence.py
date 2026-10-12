@@ -154,8 +154,19 @@ async def test_retired_version_cannot_reactivate_or_delete_and_session_owner_is_
                 await session.execute(sa.update(m.RequestStudioSession).where(m.RequestStudioSession.id == run.id).values(owner_actor_id="another-requester"))
 
 
-def test_additive_revision_rollback_preserves_legacy_catalog(test_database_url, run_migrations):
-    """Only 147 -> 146 -> 147, on the harness-owned private database."""
+def test_additive_revision_rollback_preserves_legacy_catalog(test_database_url, test_database_admin_url):
+    """Only 147 -> 146 -> 147, isolated from later forward-only revisions."""
+    database = "pc_support_test_studio147_" + uuid.uuid4().hex
+    test_database_url = sa.engine.make_url(test_database_url).set(database=database).render_as_string(hide_password=False)
+
+    async def manage_database(create):
+        engine = create_async_engine(test_database_admin_url, isolation_level="AUTOCOMMIT")
+        try:
+            async with engine.connect() as connection:
+                await connection.execute(sa.text(("CREATE DATABASE " if create else "DROP DATABASE ") + '"' + database + '"'))
+        finally:
+            await engine.dispose()
+
     server_root = Path(__file__).resolve().parents[1]
     environment = os.environ.copy()
     environment["DATABASE_URL"] = test_database_url
@@ -180,18 +191,23 @@ def test_additive_revision_rollback_preserves_legacy_catalog(test_database_url, 
         # Do not emit subprocess diagnostics that might contain a database URL.
         assert result.returncode == 0, f"isolated Alembic {command} {revision} failed"
 
-    before, tables, head = asyncio.run(inspect(seed=True))
-    assert head == {"147"}
+    asyncio.run(manage_database(True))
     try:
-        migrate("downgrade", "146")
-        after, downgraded, revision = asyncio.run(inspect())
-        assert before == after
-        assert revision == {"146"}
-        assert tables - downgraded == {"request_studio_categories", "request_studio_scenarios", "request_studio_scenario_versions", "request_studio_drafts", "request_studio_sessions"}
+        migrate("upgrade", "147")
+        before, tables, head = asyncio.run(inspect(seed=True))
+        assert head == {"147"}
+        try:
+            migrate("downgrade", "146")
+            after, downgraded, revision = asyncio.run(inspect())
+            assert before == after
+            assert revision == {"146"}
+            assert tables - downgraded == {"request_studio_categories", "request_studio_scenarios", "request_studio_scenario_versions", "request_studio_drafts", "request_studio_sessions"}
+        finally:
+            migrate("upgrade", "147")
+        after, restored, revision = asyncio.run(inspect())
+        assert after == before and restored == tables and revision == {"147"}
     finally:
-        migrate("upgrade", "head")
-    after, restored, revision = asyncio.run(inspect())
-    assert after == before and restored == tables and revision == {"147"}
+        asyncio.run(manage_database(False))
 
 
 @pytest.mark.asyncio
