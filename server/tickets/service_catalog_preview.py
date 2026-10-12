@@ -5,6 +5,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from sqlalchemy import select
+from app.db.models import TicketQueue
+
 from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.policy_health_service import PolicyHealthService
@@ -44,7 +47,7 @@ def _safe_text(value: Any) -> str | None:
     return text or None
 
 
-async def build_requester_service_catalog_preview(session: Any, payload: dict[str, Any]) -> dict[str, Any]:
+async def simulate_service_catalog_processing(session: Any, payload: dict[str, Any], *, scenario_snapshot=None, allow_draft_offering: bool = False):
     resolver = ServiceCatalogRuntimeResolver(session)
     try:
         selection = await resolver.resolve_selection(
@@ -52,11 +55,20 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
             offering_code=_safe_text(payload.get("offering_code")),
             offering_full_code=_safe_text(payload.get("offering_full_code") or payload.get("full_offering_code")),
             request_template_key=_safe_text(payload.get("request_template_key")),
-            actor_role="requester",
+            # Internal admin candidate preview only; never read this authority
+            # from a requester payload or scenario answer.
+            actor_role="admin" if allow_draft_offering else "requester",
             require_catalog=True,
         )
     except ServiceCatalogResolutionError as exc:
         raise ServiceCatalogPreviewError(exc.details) from exc
+
+    if allow_draft_offering and (not selection.service or not selection.offering
+            or selection.service.get("lifecycle_status") != "published"
+            or selection.service.get("visibility") != "public"
+            or selection.offering.get("visibility") != "public"
+            or selection.offering.get("lifecycle_status") not in {"draft", "published"}):
+        raise ServiceCatalogPreviewError({"offering_code": "draft candidate must have a published public parent and public visibility"})
 
     template_key = selection.request_template_key or _safe_text(payload.get("request_template_key"))
     if not template_key:
@@ -72,8 +84,14 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
             request_template_key=template_key,
             raw_values=form_payload,
         )
+        if scenario_snapshot is not None:
+            from tickets.request_scenario_submission import augment_scenario_submission
+            validated = augment_scenario_submission(validated, scenario_snapshot)
         validated = await resolver.apply_to_validated_submission(validated, selection)
-        await apply_effective_registry_policies(session, validated)
+        validated = await apply_effective_registry_policies(session, validated)
+        if scenario_snapshot is not None:
+            from tickets.request_scenario_processing import apply_scenario_policy_refs
+            validated = await apply_scenario_policy_refs(session, validated, scenario_snapshot.get("policy_refs"))
     except ValueError as exc:
         details = exc.args[0] if exc.args else "invalid form payload"
         raise ServiceCatalogPreviewError({"form_payload": details}) from exc
@@ -91,7 +109,21 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
         "description": _safe_text(payload.get("description")) or "",
         "diagnostic_consent": deepcopy(payload.get("diagnostic_consent") if isinstance(payload.get("diagnostic_consent"), dict) else {}),
     }
-    simulation = await PolicyHealthService(session).simulate(simulate_payload)
+    simulation = await PolicyHealthService(session).simulate(simulate_payload, validated_submission=validated)
+    return selection, simulation
+
+
+async def lock_active_scenario_queue(session: Any, queue_id: int | None) -> bool:
+    """Refresh and retain the selected queue through the caller's transaction."""
+    if queue_id is None:
+        return False
+    queue = await session.scalar(select(TicketQueue).where(TicketQueue.id == queue_id)
+                                 .with_for_update(read=True).execution_options(populate_existing=True))
+    return queue is not None and queue.is_active
+
+
+async def build_requester_service_catalog_preview(session: Any, payload: dict[str, Any], *, scenario_snapshot=None) -> dict[str, Any]:
+    selection, simulation = await simulate_service_catalog_processing(session, payload, scenario_snapshot=scenario_snapshot)
 
     service = selection.service or {}
     offering = selection.offering or {}
@@ -103,6 +135,8 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
     blockers: list[str] = []
     if not routing.get("queue_code") and routing.get("queue_id") is None:
         blockers.append("Не удалось определить маршрут обращения.")
+    if scenario_snapshot is not None and not await lock_active_scenario_queue(session, routing.get("queue_id")):
+        blockers.append("Маршрут обращения недоступен. Обратитесь в поддержку.")
 
     first_response = _minutes_label(sla.get("first_response_min"))
     resolution = _minutes_label(sla.get("resolution_min"))

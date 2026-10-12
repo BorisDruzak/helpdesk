@@ -14,9 +14,9 @@ diagnostic prefix. Leases use unique claim tokens and short transactions; HTTP
 calls occur outside them. Accepted snapshots remain local after remote expiry.
 
 Migration 148 reuses the module columns already introduced by 142 and only adds
-context linkage and the ownership table. It is currently based on local/main146;
-before staging release it must follow the accepted Guided Request Studio147.
-Do not apply this candidate to the current staging147 or create a second head.
+context linkage and the ownership table. The combined staging preview follows Guided Request Studio147 in a single
+146→147→148 chain. The standalone implementation remains isolated from main;
+production integration still requires the accepted upstream migration chain.
 The marker table is classified with operation runtime rows in the cleanup catalog;
 static test profiles reset it alongside operation links. The physical migrated
 schema audit must pass before a release can proceed.

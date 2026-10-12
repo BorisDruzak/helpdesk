@@ -28,6 +28,10 @@ PROFILE_NAME = "keep-forms-admin-support-clear-knowledge"
 ADMIN_SUPPORT_ROLES = ("admin", "support")
 
 FORM_CONSTRUCTOR_KEEP_TABLES = {
+    "request_studio_categories",
+    "request_studio_scenarios",
+    "request_studio_scenario_versions",
+    "request_studio_drafts",
     "ticket_form_packs",
     "form_builder_drafts",
     "form_schemas",
@@ -128,6 +132,7 @@ CHANGE_KEEP_TABLES = {
 }
 
 EXPLICIT_CLEAR_TABLES = {
+    "request_studio_sessions",
     "access_audit",
     "agent_build_download_audit",
     "agent_observer_events",

@@ -1,3 +1,119 @@
+# In progress: 2026-10-12 Independent processing template creation
+
+Browser confirmed: new offering requires an existing published template while
+active FormsBuilderWorkspace exposes editing only, with no creation action.
+Bounded fix: dedicated /app/admin/forms/new, canonical single-template publication,
+explicit confirmation, existing published policy refs, no shared-pack rewrite;
+new-tab creation link and template-list refresh preserve the unsaved service.
+Frozen unit682, fixture browser110 (four new creation viewports), fresh build/
+typecheck, scoped workspace and diff checks passed. Independent contract review:
+no blockers. Exact-candidate CI and actual staging template/offering/requester
+acceptance pending. Production excluded. Preserve current user draft/browser tabs.
+
+# Complete: 2026-10-12 Independent service creation and authoring clarity
+
+Approved staging follow-up: standalone service creation/publication, optional
+scenario authoring, clearer visible transitions and actionable simulation errors.
+Implemented at 1f022cbd; corrected the stale advanced-disclosure test at 519cc296.
+Frozen local verification: 678 unit tests, 106 fixture browser cases, fresh
+build/typecheck, scoped workspace and diff checks passed. Independent source review
+found no blockers. Exact 519cc296 CI run 38251065696 passed all 18 canonical layers
+and Endpoint contract job. Exact security scan: zero task-file findings/secrets.
+Installed 519cc296 staging identity and active service verified after acceptance.
+Actual strict-TLS browser: created one service independently, published ordinary
+form, created a scenario, reproduced/explained missing transition, repaired its
+graph through UI, completed simulation, configured mandatory published policies,
+published, completed self-resolution and created/viewed one synthetic support
+request. Publication checked 161 outcomes. Final requester path: no browser or
+unexpected HTTP errors. Interrupted helper stages resumed using the same owned
+records; historical failed harness logs are retained, not relabeled as green.
+See docs/INDEPENDENT_SERVICE_STAGING_ACCEPTANCE.md for identities and evidence.
+Production untouched. Staging remains running by user request; synthetic demo
+service/scenario and one test ticket retained for inspection. Sonar remains
+explicitly deferred by user. No backend/schema/dependency/Endpoint changes.
+
+# Complete: 2026-10-12 Unified request catalog follow-up
+
+Approved bounded change: one offering card; requester mode separate from draft
+status; selectable service categories including plain forms; dedicated offering
+and settings pages; explanatory subcategory selection. Production excluded.
+Backend RED reproduced duplicate total (3 instead of 2), missing root-category
+filter and missing mode projection. GREEN: 31 catalog tests; 194 focused no-DB tests.
+Frontend RED reproduced missing offering link and empty category explanation.
+Focused components, settings navigation/pending-save and URL-context regressions
+pass. Fixture browser: 33 passed across 1366, 1440, 1920 and tablet 820 widths.
+Independent review findings corrected; no remaining blockers. Exact-source
+PostgreSQL API validation at 86246512: 20 passed with temporary-role cleanup.
+Full fixture browser regression: 106 passed after adapting the remaining legacy
+scenario links to the dedicated offering page. An unavailable offering's detail
+explains its publication/form prerequisite instead of claiming requester access.
+The first CI run stopped at the fixture layer after three successful layers;
+the corrected exact-head CI38239732745 passed all18 layers and Endpoint acceptance.
+Installed candidate112bead8 passed four actual staging viewport checks:12 unique
+services, complete root filters, separate pages, dirty guard and real category
+options. No JS/application network errors; one telemetry request was cancelled
+by test navigation. Staging remains active for user inspection; production untouched.
+Evidence: `docs/UNIFIED_REQUEST_CATALOG_STAGING_ACCEPTANCE.md`. Sonar deferred.
+No schema migration, publication, enablement or user-data rewrite is introduced.
+
+# In progress: 2026-10-11 Guided Request Studio v2
+
+Canonical plan: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2.md`.
+Execution ledger: `docs/superpowers/plans/2026-10-11-guided-request-studio-v2-progress.md`.
+P10 catalog fidelity: human category paths, description, active version number,
+latest scenario/draft timestamp and independent category collapse verified by
+63 frontend tests, 2 owned PostgreSQL tests and 4 browser viewport checks.
+Actual staging A–J and exact CI
+remain open; P10 is IN PROGRESS.
+P10 readiness covers finite multi-select policy combinations, graph-only numeric/
+text predicates, and distinct omitted/unknown optional answers.
+P10 publication result now includes target offering, immutable definition summary
+and a catalog-validated requester deep link with isolated draft restoration.
+P10 new-offering creation is inline with canonical profiles/templates and explicit
+source-bound atomic catalog promotion; full staging/CI gates remain open.
+Branch: `codex/guided-request-studio-v2`, specification baseline `507ee7154b947391d51148d3a8929b77983eb77e`.
+P0 PASS: new domain/auth RED 13 failures + 2 legacy passes; existing PostgreSQL API 5,
+no-DB server 22 and frontend 74 passes. Independent review and owned DB/tunnel cleanup complete.
+P1 PASS: typed DTO/TS + migration147/storage; PostgreSQL10 and corrected FK/concurrency2,
+DTO/reset42 and frontendwire1 pass; tsc, cleanup/inventory/workspace gates pass.
+P2 PASS: canonical graph runtime, 80 domain/runtime/reset and 18 legacy form/preview
+tests; frontend21, tsc and inventory pass. Independent review has no blockers.
+P3 PASS: admin CRUD/RBAC/CAS/audit + pure simulation; PostgreSQL14 (9new+5legacy),
+fast92, inventory/cleanup/workspace and independent review pass.
+P4 PASS: catalog/five-step React shell, legacy form inventory, category filter
+before pagination, CAS save/reload and unsaved navigation guard. Frontend39,
+fast94, PostgreSQL2, browser3, build/inventory/workspace and independent review
+pass; details/screenshots are in the execution ledger.
+P5 PASS: selected block/field workbench, typed conditions and multi-role mappings,
+safe graph edits, bounded undo/redo and responsive preview. Frontend59, fast94,
+browser7, build/inventory/workspace and independent review pass.
+P6 PASS: owner-scoped pinned sessions, typed steps/Back/TTL/replay, safe picker
+choices and redacted audit; per-offering requester flow preserves legacy forms.
+Fast106, frontend24, PostgreSQL3 plus audit rollback1, browser4, build/inventory/
+workspace and independent review pass.
+P7 PASS: canonical ticket preview/create, trusted facts and human summary,
+owner/device gates, transactional session/ledger/audit and idempotent submit.
+Fast217, frontend28, PostgreSQL3 plus final legacy regression9, browser8,
+build/inventory/workspace and independent review pass.
+P8 PASS: independent readiness, source-bound one-use confirmation, atomic version
+publication and rollback into a new draft; canonical dry-run parity fixes.
+Fast122, frontend61, PostgreSQL14 plus latest parity/calendar3, browser11,
+build/inventory/workspace and independent review pass. Finite coverage limits
+and remaining processing/UI acceptance gaps are explicit in the ledger.
+P9 PASS: admin-only typed diagnostic failure simulation and full failure-branch
+readiness; readable consent/fallback inspector and truthful result labels.
+Unsupported pre-ticket attachments stay fail-closed. Backend78, frontend51,
+PostgreSQL1 plus expanded side-effect repeat1, browser4 at all four viewports,
+build/inventory/workspace and independent review pass. P10 remains required,
+including actual A–J staging/CI and processing-selection/presentation gaps.
+P10 processing increment verified: existing published policy choices now apply
+through canonical registry references in dry-run and actual creation; complete
+processing results use canonical OLA shape and truthful notification rules.
+Fast142, frontend54, PostgreSQL legacy/new8 plus selected SLA parity1, browser4,
+build/inventory/workspace and bounded independent review pass. Full P10 still
+requires actual staging A–J, field/readiness fidelity audit and canonical CI/AC matrix.
+No production deployment, live publication or Endpoint execution.
+
 # Completed locally: 2026-10-11 Helpdesk tickets, requester chat and Russian quality UI
 
 Goal: restore readable SLA/profile data and use the shared support shell for tickets;
@@ -1866,3 +1982,87 @@ permissions and retained evidence; frontend unit/type/build checks passed. Brows
 screenshots and runtime acceptance remain pending. Staging deployment must wait for
 Guided Request Studio147 to merge into main, then attach unreleased148 to that
 accepted migration chain. No production or staging service was deployed by this work.
+
+Guided Request Studio v2 P10 fidelity: inline category creation reuses existing
+category CRUD in the purpose step; category save selects the new node without
+losing scenario edits, including edits made while its API response is pending.
+Wizard navigation and scenario actions are disabled while the category form is
+open. Component RED/GREEN and typecheck pass; browser validation is in progress.
+Full P10 actual staging A–J and canonical CI remain open.
+Inline category final browser gate: 4 viewports PASS (10.1s), no console/network
+errors or body overflow. Independent review and deferred-response regression
+pass; Chromium /v HTML patterns fixed. Full P10 remains in progress.
+
+Guided Studio P10 sections/preview fidelity: named sections are now rendered in
+requester/simulator/selected-step preview through a shared display-only renderer.
+Group titles use additive bounded DTO metadata, preserve old keys and validate
+consistency; the builder assigns/renames groups by title. Preview uses existing
+requester controls; full-branch preview opens server simulation. Reviewer found
+missing simulator unknown-answer controls; RED/GREEN and browser now verify
+explicit null. Server 146 PASS; frontend 72 PASS; owned PostgreSQL selected-policy
+publication/session/ticket creation 1 PASS (67.70s); 32-question browser all four
+viewports PASS (10.9s); build/typecheck PASS. Full P10 remains in progress.
+
+Guided Studio P10 staging: candidate 8fd099ee installed with schema 147 and a
+verified pre-migration backup. Strict HTTPS synthetic login/catalog and installed
+catalog at three required desktop viewports pass. Original exact-SHA CI failed
+one simulator test; one unchanged-SHA diagnostic rerun is underway. Synchronous
+unknown checkbox snapshots prevent reading mutable DOM in deferred updates;
+null/omission tests and focused 21/full 650 frontend checks pass, build and scoped
+workspace pass, review has no blocking findings. Original CI RCA remains unproven.
+Actual printer A-J, final exact-SHA CI/security/Sonar and full acceptance remain open.
+
+P10 exact CI 47012713 passes 650 frontend tests and Endpoint contracts; the full
+gate exposed a stale cleanup count/prefix. RED reproduced 171 versus 173;
+focused harness GREEN 42 passed after preserving exact Studio runtime entries.
+Owned staging pilot draft configured through the wizard; readiness checks 192
+outcomes and correctly blocks missing closure/visibility registry policies and
+draft categories despite Health=ok. No publication/tickets; staging stopped.
+
+P10 instruction escape: explicit current-result equality to review grants the
+server-projected support action without claiming acknowledgment. Required facts
+and canonical submit checks remain enforced; old graphs retain their behavior.
+RED 8 / GREEN 8, focused backend 107, full no-DB 1279 and frontend 25 pass;
+full frontend 654, build/typecheck and 12 requester fixture browser cases pass. Independent review
+has no blockers. Actual installed acceptance and final quality gates remain open.
+
+P10 raw-SQL concurrency regression: accept only PostgreSQL cycle constraint or
+deadlock abort, preserve exactly one commit and exact tree shape, then retry the
+losing edge after winner commit and require 23514. Independent review PASS;
+canonical isolated PostgreSQL persistence suite 9 PASS (773.26s), including
+147→146→147 legacy sentinel preservation. Temporary DB/role cleanup confirmed.
+Final exact-SHA CI remains required before candidate installation/publication.
+
+P10 J publication correction: blocker actions select the source block and focus
+the missing transition target, or open and focus the relevant processing policy
+after registry loading. Navigation leaves the draft unchanged. Four RED tests
+confirmed the missing actions; focused GREEN and installed acceptance are
+recorded in the progress ledger. Full P10 acceptance remains open.
+
+P10 routing availability correction: a policy's nonempty queue ID could pass
+readiness even when its target was absent/inactive. Match IDs against active
+queues in the locked publication snapshot; scenario preview refreshes and share
+locks the current queue, and submit repeats this guard. Actual scenario creation
+checks its routed queue before downstream initialization/playbooks, covering
+interleaved routing-policy changes. Four RED tests; focused 39 and full backend
+no-DB 1285 PASS for the initial guard; three PostgreSQL checks PASS. Additional
+boundary RED 2/GREEN 14 and interleaved PostgreSQL RED confirmed the remaining
+race. Final focused 54 and full no-DB 1287/1 skipped PASS; nine PostgreSQL
+scenario/publication/legacy-create regressions PASS (274.81s), scoped role absent
+and no residual owned DBs. Independent review, workspace and diff checks PASS.
+Latest exact-candidate CI and installed A–J remain required.
+
+P10 long requester page: actual eacd57c5 tablet D exposed Continue below the
+viewport; A/B/C UI and DB passed but do not accept D or a later candidate.
+Separate native disabled fieldsets keep actions sticky while questions remain
+in document flow. The new-request shell uses horizontal clip for both canonical
+and trailing-slash URLs, avoiding an intermediate vertical scroll ancestor.
+Longform browser RED reproduced the missing primary action. Exact candidate CI,
+fresh installed pilot and final cleanup remain required. Sonar is deferred by
+the user's explicit instruction; no Sonar PASS or production admission is inferred.
+
+2026-10-12 Endpoint tools staging preview: user authorized immediate test deployment
+before Guided Request Studio merges. Dedicated codex/endpoint-tools-staging-preview
+combines the installed Guided2f2a2ec with the reviewed tools candidate; unreleased148
+follows147. Preserve staging data and services for inspection. Main/production
+publication and live Agent execution remain separate acceptance steps.

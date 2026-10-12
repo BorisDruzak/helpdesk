@@ -130,6 +130,35 @@ Use env/profile settings instead of editing scripts when a stand changes:
 
 The current example.test stand remains the fallback only for the existing lab profile.
 
+## Guided Request Studio enablement
+
+Installation does not publish or enable scenarios. Before production enablement
+or pilot expansion,
+require exact-candidate full CI, verified pre-migration backup/isolated restore,
+the installed printer A–J pilot and AC01–AC20 evidence, and candidate security/
+coverage/Sonar checks. Use only the approved isolated staging resources; do not
+substitute production or Endpoint resources for a missing staging prerequisite.
+An owned isolated staging scenario may be published after exact-candidate CI
+passes to collect the required installed pilot evidence; this does not authorize
+production enablement.
+
+Strict publication requires a protected `REQUEST_STUDIO_CONFIRMATION_SECRET`;
+see [runtime setup](../server/docs/GUIDED_REQUEST_SCENARIOS.md#strict-publication-runtime-setup).
+Configure canonical routing/SLA/closure/visibility and published category ancestry
+before asking for a preview. Health=ok, draft save or simulation is insufficient.
+Review the source-bound diff, use its one-time confirmation and let server-side
+revalidation commit the immutable version (and explicitly bound draft offering)
+atomically. Never enable by patching database flags or deployed files.
+
+For operational rollback, archive/disable the scenario through the reviewed
+configuration flow. This blocks both new starts and continuation of existing
+version-pinned sessions; their stored data and ticket snapshots remain preserved.
+Restore a previous definition by copying it into a new draft
+and publishing a new reviewed version; never mutate or reactivate immutable
+history. Schema downgrade 147→146 removes Studio data and is a separate stopped,
+backed-up release operation, tested only on a harness-owned private database.
+Stop staging services after validation unless explicitly requested otherwise.
+
 ## GitHub Gate
 
 Repository settings must enforce protected release branches outside the codebase:

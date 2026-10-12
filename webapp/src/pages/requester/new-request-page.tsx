@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "../../features/auth/session-provider";
 import { pendingCreateKey, clearCreateKey } from "../../features/requester/create-intent";
+import { ScenarioSession } from "../../features/requester/scenario-session";
 
 import { createRequesterTicket, previewRequesterTicket, RequesterApiError, searchRequesterOnBehalfPeople } from "../../features/requester/api";
 import {
@@ -38,6 +39,7 @@ import {
   recommendOffering,
   requesterFormPrefillFromContext,
   resolveRecommendedCategoryKey,
+  CategorySelector,
 } from "./new-request-workflow";
 import type {
   RequestFormDefinition,
@@ -318,12 +320,20 @@ function uniqueMessages(messages: string[]): string[] {
 }
 
 export function RequesterNewRequestPage() {
+  const location = useLocation();
+  const parameters = new URLSearchParams(location.search);
+  // Each URL selection owns its restoration lifecycle and persistence key.
+  return <RequesterNewRequestContent key={JSON.stringify([parameters.get("intent") || "", parameters.get("offering") || ""])} />;
+}
+
+function RequesterNewRequestContent() {
   const { session } = useSession();
   const [createConflict, setCreateConflict] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const requestIntent = useMemo(() => new URLSearchParams(location.search).get("intent") || "", [location.search]);
+  const linkedOffering = useMemo(() => new URLSearchParams(location.search).get("offering") || "", [location.search]);
   const bootstrapQuery = useRequesterBootstrapQuery();
   const formPackQuery = useRequesterFormPackQuery();
   const catalogQuery = useRequesterServiceCatalogQuery();
@@ -338,7 +348,7 @@ export function RequesterNewRequestPage() {
   const selectedDeviceId = deviceChoice ?? defaultDeviceId;
   const primaryDevice = devices.find((device) => device.device_id === selectedDeviceId) ?? null;
   const hasAgentContext = Boolean(primaryDevice);
-  const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, requestIntent) : null;
+  const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, linkedOffering ? `${requestIntent}:offering:${linkedOffering}` : requestIntent) : null;
   const [requestSeed, setRequestSeed] = useState(() => (requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : ""));
   const [fieldValues, setFieldValues] = useState<DynamicFormValues>({});
   const [fieldServerErrors, setFieldServerErrors] = useState<Record<string, string>>({});
@@ -375,7 +385,8 @@ export function RequesterNewRequestPage() {
   );
   const shouldAutoSelectRecommendedCategory = Boolean(recommendedCategoryKey && recommendation?.confident);
   const autoSelectCategoryKey =
-    requestIntent === OWNER_CHANGE_INTENT ? recommendedCategoryKey : shouldAutoSelectRecommendedCategory ? recommendedCategoryKey : null;
+    categoryOptions.find(option => linkedOffering && option.offering?.full_code === linkedOffering)?.key ??
+    (requestIntent === OWNER_CHANGE_INTENT ? recommendedCategoryKey : shouldAutoSelectRecommendedCategory ? recommendedCategoryKey : null);
   const selectedCategory = useMemo(
     () => categoryOptions.find((option) => option.key === selectedCategoryKey) ?? null,
     [categoryOptions, selectedCategoryKey],
@@ -497,7 +508,7 @@ export function RequesterNewRequestPage() {
   ]);
 
   useEffect(() => {
-    if (!requestDraftStorageKey || restoredDraftRef.current || !formPackQuery.data || !categoryOptions.length) {
+    if (!requestDraftStorageKey || restoredDraftRef.current || !formPackQuery.data || catalogQuery.isLoading || !categoryOptions.length) {
       return;
     }
     restoredDraftRef.current = true;
@@ -524,7 +535,7 @@ export function RequesterNewRequestPage() {
     setFieldServerErrors({});
     setCategoryError(null);
     setError(null);
-  }, [categoryOptions, formPackQuery.data, requestDraftStorageKey, requestIntent]);
+  }, [categoryOptions, formPackQuery.data, catalogQuery.isLoading, requestDraftStorageKey, requestIntent]);
 
   useEffect(() => {
     if (!requestDraftStorageKey || !formPackQuery.data || !restoredDraftRef.current) {
@@ -805,7 +816,11 @@ export function RequesterNewRequestPage() {
             }}>Начать отдельное обращение</button>
           </div>
         ) : null}
-        <DetailsStepPanel
+        {selectedOffering?.guided_scenario_enabled ? <>
+          <CategorySelector options={categorySelectorOptions} selectedKey={selectedCategoryKey}
+            recommendedKey={recommendedCategoryKey} onChange={selectCategoryKey} />
+          <ScenarioSession key={selectedOffering.full_code} offering={selectedOffering.full_code} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
+        </> : <DetailsStepPanel
           categoryError={categoryError}
           categoryInputRef={(element) => {
             categorySelectRef.current = element;
@@ -847,7 +862,7 @@ export function RequesterNewRequestPage() {
           submitting={submitting}
           validationAttempted={validationAttempted}
           valueValidation={valueValidation}
-        />
+        />}
       </RequestWizardShell>
       <RequestSummaryAside
         bootstrap={bootstrap}

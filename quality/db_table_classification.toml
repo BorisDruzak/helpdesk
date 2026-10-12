@@ -20,6 +20,7 @@ reason = "Cleanup preserves admin/support survivors and prunes non-survivors wit
 name = "ticket runtime rows"
 classification = "ephemeral_test_data"
 tables = [
+  "request_studio_sessions",
   "tickets",
   "requester_ticket_create_requests",
   "ticket_action_log",
@@ -209,6 +210,10 @@ name = "form and request fixtures"
 classification = "persistent_reference_fixture"
 patterns = ["form_*"]
 tables = [
+  "request_studio_categories",
+  "request_studio_scenarios",
+  "request_studio_scenario_versions",
+  "request_studio_drafts",
   "request_studio_publish_tokens",
   "request_templates",
 ]

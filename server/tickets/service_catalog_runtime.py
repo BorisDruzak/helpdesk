@@ -197,6 +197,8 @@ class ServiceCatalogRuntimeResolver:
             raise ServiceCatalogResolutionError({"service_code": "service or offering is not visible"})
 
     async def current_catalog_for_requester(self) -> dict[str, Any]:
+        from tickets.request_scenario_catalog import enabled_guided_offerings
+        guided_offerings = await enabled_guided_offerings(self.session)
         services = [
             service
             for service in await self.repo.list_services(published_only=True)
@@ -229,7 +231,7 @@ class ServiceCatalogRuntimeResolver:
         fallback_payload = serialize_offering_for_requester(fallback_offering)
         fallback_payload["service_code"] = FALLBACK_SERVICE_CODE
         fallback_payload["service_title"] = fallback_service.get("public_title") or fallback_service.get("name")
-        return {
+        result = {
             "catalog_version": "runtime",
             "services": [
                 serialize_service_for_requester(service, offerings=by_service.get(str(service.get("code") or ""), []))
@@ -237,6 +239,10 @@ class ServiceCatalogRuntimeResolver:
             ],
             "fallback": fallback_payload,
         }
+        for service in result["services"]:
+            for offering in service["offerings"]:
+                offering["guided_scenario_enabled"] = offering["full_code"] in guided_offerings
+        return result
 
     async def apply_to_validated_submission(
         self,

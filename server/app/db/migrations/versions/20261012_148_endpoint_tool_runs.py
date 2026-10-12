@@ -1,14 +1,14 @@
 """Add immutable tool ownership without rewriting historical intents.
 
 Revision ID: 148
-Revises: 146 (attach to accepted 147 after Guided Request Studio merges)
+Revises: 147 (combined staging preview; main integration remains separate)
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "148"
-down_revision = "146"
+down_revision = "147"
 branch_labels = None
 depends_on = None
 

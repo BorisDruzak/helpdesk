@@ -10,7 +10,7 @@ def test_tool_run_upgrade_reuses_module_columns_and_preserves_existing_rows():
     spec = importlib.util.spec_from_file_location("tool_run_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.revision == "148" and module.down_revision == "146"
+    assert module.revision == "148" and module.down_revision == "147"
     class Recorder:
         def __init__(self): self.columns = []; self.tables = []
         def add_column(self, table, column): self.columns.append((table, column.name))

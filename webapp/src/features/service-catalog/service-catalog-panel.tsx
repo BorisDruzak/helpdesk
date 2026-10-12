@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, ShieldCheck } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
+
+import { useScenarioDirtyGuard } from "../request-template-studio/use-scenario-dirty-guard";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -123,19 +125,40 @@ function parseExpertJson<T>(rawValue: string): { data: Partial<T>; error: null }
 }
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2";
+const CompactSettings = createContext(false);
+const ignoreSettingsDirty = () => {};
 
 function ExpertGroup({ children, defaultOpen = true, title }: { children: ReactNode; defaultOpen?: boolean; title: string }) {
+  const compact = useContext(CompactSettings);
   return (
-    <details className="rounded-md border border-slate-200 bg-white p-3" open={defaultOpen}>
+    <details className="rounded-md border border-slate-200 bg-white p-3" open={compact ? false : defaultOpen}>
       <summary className="cursor-pointer text-sm font-semibold text-slate-800">{title}</summary>
       <div className="mt-3">{children}</div>
     </details>
   );
 }
 
+/** Expert settings belong to one offering route, outside the catalog list. */
+export function ServiceCatalogOfferingSettings({ code }: { code: string }) {
+  const [dirty, setDirty] = useState(false);
+  useScenarioDirtyGuard(dirty);
+  const dashboard = useQuery({ queryKey: ["service-catalog-dashboard"], queryFn: fetchServiceCatalogDashboard });
+  const registry = useQuery({ queryKey: ["service-catalog-helpdesk-model-registry"], queryFn: fetchHelpdeskModelRegistry });
+  const offering = dashboard.data?.offerings.find(item => item.full_code === code);
+  const service = dashboard.data?.services.find(item => item.code === offering?.service_code);
+  if (dashboard.isPending) return <section className="workspace-page p-6">Загрузка настроек услуги…</section>;
+  if (dashboard.isError) return <section className="workspace-page p-6" role="alert">Настройки недоступны. <Button onClick={() => void dashboard.refetch()}>Повторить</Button></section>;
+  if (!offering || !service) return <section className="workspace-page p-6">Услуга не найдена. <Link to="/app/admin/request-template-studio">Вернуться в каталог</Link></section>;
+  return <section className="workspace-page min-w-0 space-y-5 p-6">
+    <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold">{offering.public_title}: настройки</h1><p className="mt-2 text-sm text-slate-500">Изменяйте нужную группу настроек. Все остальные услуги находятся в каталоге.</p></div><Link className="text-sm underline" to={`/app/admin/request-template-studio/services/${encodeURIComponent(code)}`}>Вернуться к услуге</Link></header>
+    <CompactSettings.Provider value={true}><ServiceDetails key={code} service={service} services={dashboard.data?.services ?? []} offerings={[offering]} requestedOfferingCode={code} registry={registry.data} onDirtyChange={setDirty} onOfferingSelect={() => {}} /></CompactSettings.Provider>
+  </section>;
+}
+
 function ServiceDetails({
   offerings,
   onOfferingSelect,
+  onDirtyChange = ignoreSettingsDirty,
   requestedOfferingCode,
   registry,
   service,
@@ -143,6 +166,7 @@ function ServiceDetails({
 }: {
   offerings: AdminServiceCatalogOffering[];
   onOfferingSelect: (offeringCode: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
   requestedOfferingCode: string | null;
   registry: Awaited<ReturnType<typeof fetchHelpdeskModelRegistry>> | undefined;
   service: AdminServiceCatalogService | null;
@@ -160,7 +184,11 @@ function ServiceDetails({
   const [serviceDraft, setServiceDraft] = useState<Partial<AdminServiceCatalogService>>({});
   const [offeringDraft, setOfferingDraft] = useState<Partial<AdminServiceCatalogOffering>>({});
 
+  const [savedService, setSavedService] = useState<Partial<AdminServiceCatalogService>>({});
+  const [savedOffering, setSavedOffering] = useState<Partial<AdminServiceCatalogOffering>>({});
+
   useEffect(() => {
+    setSavedService(service ?? {});
     setServiceDraft(service ?? {});
     setDraftJson("");
     setDraftJsonError(null);
@@ -191,6 +219,7 @@ function ServiceDetails({
         request_type: "service_request",
       },
     );
+    setSavedOffering(selectedOffering ?? {});
     setDraftJsonError(null);
   }, [selectedOffering?.full_code, service?.code]);
 
@@ -234,7 +263,7 @@ function ServiceDetails({
         business_criticality: emptyToNull(serviceDraft.business_criticality),
         reporting_category: emptyToNull(serviceDraft.reporting_category),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["service-catalog-dashboard"] }),
+    onSuccess: result => { setSavedService(result.service); setServiceDraft(result.service); setDraftJson(""); return queryClient.invalidateQueries({ queryKey: ["service-catalog-dashboard"] }); },
   });
   const publishServiceMutation = useMutation({
     mutationFn: () => publishServiceCatalogObject("service", service?.code ?? ""),
@@ -269,8 +298,14 @@ function ServiceDetails({
         reporting_policy_code: emptyToNull(offeringDraft.reporting_policy_code),
         reporting_category: emptyToNull(offeringDraft.reporting_category),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["service-catalog-dashboard"] }),
+    onSuccess: result => { setSavedOffering(result.offering); setOfferingDraft(result.offering); setDraftJson(""); return queryClient.invalidateQueries({ queryKey: ["service-catalog-dashboard"] }); },
   });
+
+  const settingsDirty = JSON.stringify(serviceDraft) !== JSON.stringify(savedService)
+    || JSON.stringify(offeringDraft) !== JSON.stringify(savedOffering) || !!draftJson.trim();
+  const settingsPending = saveServiceMutation.isPending || saveOfferingMutation.isPending
+    || publishServiceMutation.isPending || publishOfferingMutation.isPending || retireServiceMutation.isPending;
+  useEffect(() => { onDirtyChange(settingsDirty || settingsPending); }, [settingsDirty, settingsPending, onDirtyChange]);
 
   if (!service) {
     return (
@@ -282,6 +317,7 @@ function ServiceDetails({
 
   return (
     <aside className="surface-panel space-y-5 p-5">
+      <fieldset disabled={settingsPending} className="min-w-0 space-y-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-950">{service.public_title || service.code}</h2>
@@ -392,7 +428,7 @@ function ServiceDetails({
             Код услуги
             <input
               className={fieldClass}
-              onChange={(event) => setServiceDraft((current) => ({ ...current, code: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, code: value })); }}
               value={serviceDraft.code ?? ""}
             />
           </label>
@@ -400,7 +436,7 @@ function ServiceDetails({
             Название для пользователей
             <input
               className={fieldClass}
-              onChange={(event) => setServiceDraft((current) => ({ ...current, public_title: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, public_title: value })); }}
               value={serviceDraft.public_title ?? ""}
             />
           </label>
@@ -408,7 +444,7 @@ function ServiceDetails({
             Краткое описание
             <input
               className={fieldClass}
-              onChange={(event) => setServiceDraft((current) => ({ ...current, short_description: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, short_description: value })); }}
               value={serviceDraft.short_description ?? ""}
             />
           </label>
@@ -416,12 +452,10 @@ function ServiceDetails({
             Жизненный цикл
             <select
               className={fieldClass}
-              onChange={(event) =>
-                setServiceDraft((current) => ({
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({
                   ...current,
-                  lifecycle_status: event.currentTarget.value as AdminServiceCatalogService["lifecycle_status"],
-                }))
-              }
+                  lifecycle_status: value as AdminServiceCatalogService["lifecycle_status"],
+                })); }}
               value={serviceDraft.lifecycle_status ?? "draft"}
             >
               <option value="draft">Черновик</option>
@@ -433,12 +467,10 @@ function ServiceDetails({
             Видимость
             <select
               className={fieldClass}
-              onChange={(event) =>
-                setServiceDraft((current) => ({
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({
                   ...current,
-                  visibility: event.currentTarget.value as AdminServiceCatalogService["visibility"],
-                }))
-              }
+                  visibility: value as AdminServiceCatalogService["visibility"],
+                })); }}
               value={serviceDraft.visibility ?? "public"}
             >
               <option value="public">Публичная</option>
@@ -451,7 +483,7 @@ function ServiceDetails({
             <input
               className={fieldClass}
               inputMode="numeric"
-              onChange={(event) => setServiceDraft((current) => ({ ...current, owner_queue_id: numberOrNull(event.currentTarget.value) }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, owner_queue_id: numberOrNull(value) })); }}
               value={serviceDraft.owner_queue_id ?? ""}
             />
           </label>
@@ -460,7 +492,7 @@ function ServiceDetails({
             <input
               className={fieldClass}
               inputMode="numeric"
-              onChange={(event) => setServiceDraft((current) => ({ ...current, default_queue_id: numberOrNull(event.currentTarget.value) }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, default_queue_id: numberOrNull(value) })); }}
               value={serviceDraft.default_queue_id ?? ""}
             />
           </label>
@@ -468,7 +500,7 @@ function ServiceDetails({
             Политика маршрутизации по умолчанию
             <select
               className={fieldClass}
-              onChange={(event) => setServiceDraft((current) => ({ ...current, default_routing_policy_code: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, default_routing_policy_code: value })); }}
               value={serviceDraft.default_routing_policy_code ?? ""}
             >
               <option value="">Наследовать</option>
@@ -479,7 +511,7 @@ function ServiceDetails({
             SLA по умолчанию
             <select
               className={fieldClass}
-              onChange={(event) => setServiceDraft((current) => ({ ...current, default_sla_policy_code: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, default_sla_policy_code: value })); }}
               value={serviceDraft.default_sla_policy_code ?? ""}
             >
               <option value="">Наследовать</option>
@@ -490,7 +522,7 @@ function ServiceDetails({
             Диагностика по умолчанию
             <select
               className={fieldClass}
-              onChange={(event) => setServiceDraft((current) => ({ ...current, default_diagnostic_policy_code: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, default_diagnostic_policy_code: value })); }}
               value={serviceDraft.default_diagnostic_policy_code ?? ""}
             >
               <option value="">Наследовать</option>
@@ -501,7 +533,7 @@ function ServiceDetails({
             Категория отчётности
             <input
               className={fieldClass}
-              onChange={(event) => setServiceDraft((current) => ({ ...current, reporting_category: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, reporting_category: value })); }}
               value={serviceDraft.reporting_category ?? ""}
             />
           </label>
@@ -509,7 +541,7 @@ function ServiceDetails({
             Критичность для бизнеса
             <select
               className={fieldClass}
-              onChange={(event) => setServiceDraft((current) => ({ ...current, business_criticality: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setServiceDraft((current) => ({ ...current, business_criticality: value })); }}
               value={serviceDraft.business_criticality ?? "medium"}
             >
               <option value="low">Низкая</option>
@@ -539,7 +571,7 @@ function ServiceDetails({
             Родительская услуга
             <select
               className={fieldClass}
-              onChange={(event) => setOfferingDraft((current) => ({ ...current, service_code: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({ ...current, service_code: value })); }}
               value={offeringDraft.service_code ?? service.code}
             >
               {parentServiceOptions.map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
@@ -550,7 +582,7 @@ function ServiceDetails({
             <input
               className={fieldClass}
               placeholder="Будет использован как technical id"
-              onChange={(event) => setOfferingDraft((current) => ({ ...current, code: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({ ...current, code: value })); }}
               value={offeringDraft.code ?? ""}
             />
           </label>
@@ -558,7 +590,7 @@ function ServiceDetails({
             Название для пользователей
             <input
               className={fieldClass}
-              onChange={(event) => setOfferingDraft((current) => ({ ...current, public_title: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({ ...current, public_title: value })); }}
               value={offeringDraft.public_title ?? ""}
             />
           </label>
@@ -566,7 +598,7 @@ function ServiceDetails({
             Краткое описание
             <input
               className={fieldClass}
-              onChange={(event) => setOfferingDraft((current) => ({ ...current, short_description: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({ ...current, short_description: value })); }}
               value={offeringDraft.short_description ?? ""}
             />
           </label>
@@ -574,12 +606,10 @@ function ServiceDetails({
             Жизненный цикл
             <select
               className={fieldClass}
-              onChange={(event) =>
-                setOfferingDraft((current) => ({
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({
                   ...current,
-                  lifecycle_status: event.currentTarget.value as AdminServiceCatalogOffering["lifecycle_status"],
-                }))
-              }
+                  lifecycle_status: value as AdminServiceCatalogOffering["lifecycle_status"],
+                })); }}
               value={offeringDraft.lifecycle_status ?? "draft"}
             >
               <option value="draft">Черновик</option>
@@ -591,12 +621,10 @@ function ServiceDetails({
             Видимость
             <select
               className={fieldClass}
-              onChange={(event) =>
-                setOfferingDraft((current) => ({
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({
                   ...current,
-                  visibility: event.currentTarget.value as AdminServiceCatalogOffering["visibility"],
-                }))
-              }
+                  visibility: value as AdminServiceCatalogOffering["visibility"],
+                })); }}
               value={offeringDraft.visibility ?? "public"}
             >
               <option value="public">Публичный</option>
@@ -608,7 +636,7 @@ function ServiceDetails({
             Тип обращения
             <input
               className={fieldClass}
-              onChange={(event) => setOfferingDraft((current) => ({ ...current, request_type: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({ ...current, request_type: value })); }}
               value={offeringDraft.request_type ?? ""}
             />
           </label>
@@ -616,7 +644,7 @@ function ServiceDetails({
             Шаблон обращения
             <select
               className={fieldClass}
-              onChange={(event) => setOfferingDraft((current) => ({ ...current, request_template_key: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({ ...current, request_template_key: value })); }}
               value={offeringDraft.request_template_key ?? ""}
             >
               <option value="">Не выбран</option>
@@ -638,7 +666,7 @@ function ServiceDetails({
               {label}
               <select
                 className={fieldClass}
-                onChange={(event) => setOfferingDraft((current) => ({ ...current, [key]: event.currentTarget.value }))}
+                onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({ ...current, [key]: value })); }}
                 value={String(offeringDraft[key as keyof AdminServiceCatalogOffering] ?? "")}
               >
                 <option value="">Наследовать</option>
@@ -650,7 +678,7 @@ function ServiceDetails({
             Категория отчётности
             <input
               className={fieldClass}
-              onChange={(event) => setOfferingDraft((current) => ({ ...current, reporting_category: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setOfferingDraft((current) => ({ ...current, reporting_category: value })); }}
               value={offeringDraft.reporting_category ?? ""}
             />
           </label>
@@ -733,19 +761,19 @@ function ServiceDetails({
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-medium text-slate-700">
             Инициатор
-            <input className={fieldClass} onChange={(event) => setSimulationDraft((current) => ({ ...current, requester: event.currentTarget.value }))} value={simulationDraft.requester} />
+            <input className={fieldClass} onChange={(event) => { const value = event.currentTarget.value; setSimulationDraft((current) => ({ ...current, requester: value })); }} value={simulationDraft.requester} />
           </label>
           <label className="text-sm font-medium text-slate-700">
             Устройство
-            <input className={fieldClass} onChange={(event) => setSimulationDraft((current) => ({ ...current, device: event.currentTarget.value }))} value={simulationDraft.device} />
+            <input className={fieldClass} onChange={(event) => { const value = event.currentTarget.value; setSimulationDraft((current) => ({ ...current, device: value })); }} value={simulationDraft.device} />
           </label>
           <label className="text-sm font-medium text-slate-700">
             Локация
-            <input className={fieldClass} onChange={(event) => setSimulationDraft((current) => ({ ...current, location: event.currentTarget.value }))} value={simulationDraft.location} />
+            <input className={fieldClass} onChange={(event) => { const value = event.currentTarget.value; setSimulationDraft((current) => ({ ...current, location: value })); }} value={simulationDraft.location} />
           </label>
           <label className="text-sm font-medium text-slate-700">
             Ожидаемый приоритет
-            <select className={fieldClass} onChange={(event) => setSimulationDraft((current) => ({ ...current, expectedPriority: event.currentTarget.value }))} value={simulationDraft.expectedPriority}>
+            <select className={fieldClass} onChange={(event) => { const value = event.currentTarget.value; setSimulationDraft((current) => ({ ...current, expectedPriority: value })); }} value={simulationDraft.expectedPriority}>
               <option value="">Не проверять</option>
               <option value="P0">P0</option>
               <option value="P1">P1</option>
@@ -757,7 +785,7 @@ function ServiceDetails({
             Ответы формы / контекст проверки
             <textarea
               className="field-base mt-1 min-h-24 w-full px-3 py-2"
-              onChange={(event) => setSimulationDraft((current) => ({ ...current, answerSummary: event.currentTarget.value }))}
+              onChange={(event) => { const value = event.currentTarget.value; setSimulationDraft((current) => ({ ...current, answerSummary: value })); }}
               placeholder="Опишите данные формы, которые должны повлиять на маршрут, SLA, согласования и закрытие."
               value={simulationDraft.answerSummary}
             />
@@ -777,6 +805,7 @@ function ServiceDetails({
         {simulationMutation.isError ? <p className="text-sm text-rose-700">Симуляция не выполнена.</p> : null}
       </section>
       </ExpertGroup>
+      </fieldset>
     </aside>
   );
 }

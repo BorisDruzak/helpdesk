@@ -313,14 +313,17 @@ class RequestStudioPublicationService:
         auth_context: AuthContext,
         summary: dict[str, int],
     ) -> tuple[str, datetime]:
+        return await self.issue_bound_confirmation_token(_draft_hash(payload), scope=CONFIRMATION_SCOPE, auth_context=auth_context, summary=summary)
+
+    async def issue_bound_confirmation_token(self, binding_hash: str, *, scope: str, auth_context: AuthContext, summary: dict) -> tuple[str, datetime]:
         actor_id, actor_role = _actor(auth_context)
         issued_at = _utc_now()
         ttl = max(1, int(REQUEST_STUDIO_CONFIRMATION_TTL_SECONDS or 600))
         expires_at = issued_at + timedelta(seconds=ttl)
         nonce = secrets.token_urlsafe(32)
         token_payload = {
-            "scope": CONFIRMATION_SCOPE,
-            "draft_hash": _draft_hash(payload),
+            "scope": scope,
+            "draft_hash": binding_hash,
             "actor_id": actor_id,
             "actor_role": actor_role,
             "issued_at": issued_at.isoformat(),
@@ -337,7 +340,7 @@ class RequestStudioPublicationService:
                 token_hash=_sha256_text(token),
                 nonce_hash=_sha256_text(nonce),
                 draft_hash=token_payload["draft_hash"],
-                scope=CONFIRMATION_SCOPE,
+                scope=scope,
                 actor_id=actor_id,
                 actor_role=actor_role,
                 issued_at=issued_at,
@@ -356,16 +359,19 @@ class RequestStudioPublicationService:
         *,
         auth_context: AuthContext,
     ) -> RequestStudioPublishToken:
-        token = str(payload.confirmation_token or "").strip()
+        return await self.validate_bound_confirmation_token(str(payload.confirmation_token or ""), _draft_hash(payload), scope=CONFIRMATION_SCOPE, auth_context=auth_context)
+
+    async def validate_bound_confirmation_token(self, token: str, binding_hash: str, *, scope: str, auth_context: AuthContext) -> RequestStudioPublishToken:
+        token = token.strip()
         if not token:
             raise RequestStudioConfirmationError("CONFIRMATION_TOKEN_REQUIRED", "Confirmation token is required.")
         decoded = _decode_confirmation_token(token)
         actor_id, actor_role = _actor(auth_context)
-        if decoded.get("scope") != CONFIRMATION_SCOPE:
+        if decoded.get("scope") != scope:
             raise RequestStudioConfirmationError("CONFIRMATION_TOKEN_SCOPE", "Confirmation token относится к другому действию.")
         if decoded.get("actor_id") != actor_id or decoded.get("actor_role") != actor_role:
             raise RequestStudioConfirmationError("CONFIRMATION_TOKEN_ACTOR_MISMATCH", "Confirmation token выпущен для другого администратора.")
-        draft_hash = _draft_hash(payload)
+        draft_hash = binding_hash
         if not hmac.compare_digest(str(decoded.get("draft_hash") or ""), draft_hash):
             raise RequestStudioConfirmationError("CONFIRMATION_TOKEN_DRAFT_MISMATCH", "Draft изменился после preview. Подготовьте публикацию заново.", status=409)
         expires_at = _parse_iso_datetime(decoded.get("expires_at"))
@@ -385,7 +391,7 @@ class RequestStudioPublicationService:
         stored_expires_at = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
         if stored_expires_at <= _utc_now():
             raise RequestStudioConfirmationError("CONFIRMATION_TOKEN_EXPIRED", "Preview устарел. Подготовьте публикацию заново.", status=409)
-        if row.scope != CONFIRMATION_SCOPE or row.actor_id != actor_id or row.actor_role != actor_role:
+        if row.scope != scope or row.actor_id != actor_id or row.actor_role != actor_role:
             raise RequestStudioConfirmationError("CONFIRMATION_TOKEN_ACTOR_MISMATCH", "Confirmation token выпущен для другого администратора.")
         if row.draft_hash != draft_hash or row.nonce_hash != _sha256_text(nonce):
             raise RequestStudioConfirmationError("CONFIRMATION_TOKEN_DRAFT_MISMATCH", "Draft изменился после preview. Подготовьте публикацию заново.", status=409)

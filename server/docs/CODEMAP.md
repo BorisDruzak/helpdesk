@@ -52,6 +52,87 @@
 
 ## Dynamic request forms
 
+- Scenario publication/readiness: `tickets/request_scenario_publication.py`
+  and `tickets/request_scenario_readiness.py` reuse the canonical evaluator,
+  form/catalog processing dry-run and existing signed confirmation storage,
+  with explicit atomic promotion of a bound public draft offering through the
+  existing Service Catalog validator/repository. `publish_offering` defaults
+  false; internal candidate simulation never takes authority from public JSON.
+  The wizard's `scenario-offering-form.tsx` reuses catalog draft creation and the
+  published template registry; software-install profile maps to `service_request`
+  with existing offering metadata, leaving canonical ticket/policy runtime intact.
+  Readiness includes all four simulation-only diagnostic failure outcomes
+  (bounded coverage); imported unsupported pre-ticket attachments block publication.
+  Graph-only numeric/text predicates use truth-equivalent representatives;
+  multi-select policy inputs enumerate ordered subsets. Explicit unknown and
+  omitted optional answers are distinct; unbounded policy inputs fail closed.
+  Admin `readiness`, `publish-preview`, `publish` and `rollback-draft` routes
+  require revision checks; publication validates locked canonical sources,
+  creates an immutable version, changes the active pointer and consumes the
+  actor/scope-bound token in one audited transaction. Business calendars are
+  part of source binding. A rollback copies history into a new draft revision.
+  Every routed branch must reference an active queue in the canonical source
+  snapshot; nonempty routing IDs/codes alone cannot establish readiness.
+- `tickets/request_scenario_processing.py` applies admin-saved, server-loaded
+  published policy references via `HelpdeskPolicyRepo.resolve_policy_ref` after
+  inherited registry overlays. Canonical create and dry-run share this bridge;
+  requester commands cannot inject references. SLA row activity and explicit
+  deadline readiness are fail-closed. No separate processing engine is added.
+- `tickets/service_catalog_preview.py::simulate_service_catalog_processing`
+  passes the already validated canonical submission to Policy Health via a
+  trusted internal keyword. Request JSON cannot inject that context. Requester
+  preview and admin scenario simulation share this path without ticket writes.
+  Scenario requester preview additionally refreshes/share-locks the current
+  queue; submit repeats preview and refuses a removed or inactive target.
+  `tickets/create_flow.py` additionally checks actual scenario routing before
+  SLA/OLA, approvals and playbooks through an internal `require_active_queue`
+  parameter. `web_api/requester_handlers.py` rolls back the typed queue failure
+  as `PROCESSING_UNAVAILABLE`; legacy creation keeps its default behavior.
+  Frontend publication, simulation and version history live in the corresponding
+  `webapp/src/features/request-template-studio/scenario-*.tsx` modules.
+- Guided scenario contracts/storage: `web_api/dto/request_scenario.py`,
+  `app/db/request_scenario_models.py`, additive migration 147. See
+  `GUIDED_REQUEST_SCENARIOS.md` for limits, immutable version/session pins,
+  cleanup classification and the 147 → 146 rollback boundary.
+- React admin catalog/wizard: `webapp/src/pages/admin/request-template-studio-page.tsx`
+  orchestrates the scenario-api/catalog/purpose/category/wizard components and
+  editor/context/dirty-guard hooks under `features/request-template-studio`.
+  See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
+  Catalog metadata uses the immutable version referenced by the active pointer
+  (not the greatest historical version), and the latest scenario/draft timestamp.
+  `app/repos/request_scenario_repo.py` searches offering request types and Studio
+  profiles by machine codes and Russian labels for scenarios and legacy forms
+  before sorting and paginating offering cards. `tickets/request_studio_catalog_projection.py`
+  groups scenarios/history into one card per offering and separates requester mode
+  from editing status using the shared public-ancestor guard. Admin catalog query
+  adds bounded `service_code` and exact `offering_code` selectors. `offering-card`
+  and `offering-details` render the unified list and dedicated offering route;
+  expert settings have a separate offering route with collapsed groups.
+  `scenario-publication-summary` reuses requester block preview controls and
+  links the immutable publication result to `/app/requester/new?offering=...`.
+  Requester selection is validated against its existing public catalog; keyed
+  request-page content keeps draft restoration isolated per intent/offering.
+- The wizard's user-scenario step uses `scenario-block-builder` for selection,
+  bounded undo and graph edits; `scenario-builder-model` preserves explicit
+  routes and checks removal dependencies. Block/form-page/field/condition editors
+  are separate components. `scenario-preview-panel` provides a responsive safe
+  selected-step preview; no client component executes the server graph.
+- `tickets/request_scenario_validation.py` validates reachable acyclic graphs,
+  field dependencies, typed conditions, terminal/fallback safety and role mapping.
+  `request_scenario_conditions.py` owns the canonical condition evaluator and
+  priority-ordered transition selection, including explicit instruction escape
+  permission (`request_ticket` to review) shared by projection and advance.
+  `request_scenario_runtime.py` executes that graph for simulation and sessions,
+  normalizes visible answers through existing codecs and clears downstream state
+  on Back. It has no DB, ticket creation or Endpoint dispatch side effects.
+  `web_api/request_scenario_admin_handlers.py` exposes authenticated admin CRUD,
+  catalog/search/version reads and simulation; `dto/request_scenario_admin.py`
+  defines strict bodies and bounded inputs. `app/repos/request_scenario_repo.py`
+  binds existing catalog/template records, serializes edits by service/draft
+  revision and writes the existing catalog audit in the same transaction.
+  Persistent requester sessions and safe publication are documented above and
+  in `GUIDED_REQUEST_SCENARIOS.md`.
+
 - `server/tickets/form_catalog.py` is the compatibility facade and catalog
   persistence/augmentation boundary. Existing import names and callable
   signatures are retained.
@@ -406,6 +487,25 @@ before copying one selected step into immutable passport evidence.
 `webapp/tests/endpoint-tools.spec.ts` covers fixture browser races, partial batches,
 passport capture, degradation and390/1366/1920/2582 layouts; it is not live Agent proof.
 
+Guided requester runtime: `web_api/request_scenario_handlers.py` registers
+owner-only session start/read/answer/advance/back/finish/step-preview and
+ticket-preview/submit routes in
+`routes.py`. `app/repos/request_scenario_session_repo.py` owns PostgreSQL locks,
+TTL, immutable version pinning, last-command replay and redacted catalog audit.
+`tickets/request_scenario_runtime.py` remains the only graph evaluator;
+`request_scenario_session.py` projects one safe step, and
+`request_scenario_pickers.py` reads/validates scoped Registry entities.
+`request_scenario_catalog.py` adds per-offering availability to the existing
+Service Catalog. Requester UI uses `features/requester/scenario-session.tsx`
+from `pages/requester/new-request-page.tsx`; legacy offering UI remains default.
+`tickets/request_scenario_submission.py` revalidates visited pages and maps typed
+facts/roles into the existing form submission, retaining a support snapshot.
+`web_api/requester_handlers.py` exposes caller-transaction create/preview helpers:
+the same profile/device/form checks and policy runtime serve legacy and guided
+requests. Scenario submit locks the owner session, rechecks processing preview,
+then completes the existing requester create ledger, ticket and session audit in
+one transaction; preview rolls back its observer writes and creates no ticket.
+
 See [ticket UI behavior](../../docs/HELPDESK_TICKET_UI.md).
 `web_api/support_handlers.py` projects completed and paused SLA timers and
 enriches validated requester identity with actor-scoped Registry profile contacts.
@@ -413,3 +513,38 @@ enriches validated requester identity with actor-scoped Registry profile contact
 `registry_adapter/local.py` supplies them without profile metadata.
 Frontend chat entrypoint: `webapp/src/pages/requester/ticket-chat-page.tsx`,
 with mutations in `use-ticket-chat.ts`; `tickets-page.tsx` owns the list only.
+
+The Studio purpose step (`scenario-purpose.tsx`) embeds `scenario-category-form.tsx`
+using the existing category CRUD. `scenario-wizard.tsx` and the admin page guard
+navigation/actions while this inline form is open and refresh the catalog after
+save; the unsaved scenario definition stays in its existing editor state.
+
+`webapp/src/features/requester/scenario-fields.tsx` renders already-projected
+scenario fields in named sections without evaluating conditions. It is shared
+by requester sessions, admin simulation and disabled block preview. The Studio
+`scenario-field-group.tsx` assigns/renames section titles in the draft; server
+scenario DTO/graph validation bound and validate `group_title` alongside `group`.
+
+Guided Studio candidate quality gate: `.github/workflows/dev-scanner-quality.yml`
+keeps its main-only job and adds a manual exact-head draft PR41 job. YAML aliases
+share canonical security/coverage steps; candidate admission precedes checkout
+and Sonar upload, with explicit PR parameters and no main-analysis fallback.
+Synthetic admission checks live in `.github/tests/test_dev_scanner_candidate_workflow.py`.
+
+## Independent service authoring entry
+
+`webapp/src/pages/admin/service-create-page.tsx` serves
+`/app/admin/request-template-studio/services/new`: admin-only offering draft
+creation via the existing catalog API, followed by dedicated offering details.
+`offering-publication.tsx` confirms canonical standalone offering publication;
+scenario authoring is optional. Simulation renders safe structured issue codes
+and paths from the existing admin handler without altering backend contracts.
+
+### Independent template creation (admin UI)
+
+- `webapp/src/pages/admin/template-create-page.tsx`: `/app/admin/forms/new`,
+  own ordinary question form and existing published policy references; explicit
+  canonical `POST /api/web/admin/helpdesk-model/request-templates/publish-from-form`
+  confirmation with `publish_policies=false`, no shared pack rewrite.
+- `scenario-offering-form.tsx`: explanation, separate-tab template creation and
+  explicit template-list refresh preserving local offering draft values.

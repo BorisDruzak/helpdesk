@@ -80,6 +80,7 @@ export type RequestFormPack = {
 };
 
 export type ServiceCatalogOffering = {
+  guided_scenario_enabled?: boolean;
   offering_code: string;
   full_code: string;
   title: string;

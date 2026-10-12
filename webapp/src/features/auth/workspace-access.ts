@@ -8,6 +8,7 @@ import {
 import type { WebSession } from "./api";
 
 export type AppWorkspace = "support" | "admin" | "requester";
+export const REQUEST_STUDIO_PATH = "/app/admin/request-template-studio";
 
 type WorkspaceStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -66,7 +67,7 @@ export function resolveDefaultWorkspace(session: WebSession | null): AppWorkspac
 
 export function resolveDefaultWorkspacePath(session: WebSession | null): string | null {
   const workspace = resolveDefaultWorkspace(session);
-  return workspace ? getWorkspacePath(workspace) : null;
+  return workspace ? getWorkspacePath(workspace) : session?.actor_role === "auditor" ? REQUEST_STUDIO_PATH : null;
 }
 
 export function hasWorkspaceAccess(
@@ -83,6 +84,9 @@ export function resolveNextWorkspacePath(
   nextPath: string | null,
   session: WebSession | null
 ): string | null {
+  if (session?.actor_role === "auditor" && nextPath && normalizePath(nextPath) === REQUEST_STUDIO_PATH) {
+    return nextPath;
+  }
   if (nextPath && isRequesterProfileSetupPath(nextPath) && hasWorkspaceAccess(session, "requester")) {
     return nextPath;
   }

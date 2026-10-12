@@ -8,6 +8,12 @@ The local Knowledge suggestion integration is removed. A future external Knowled
 
 ## Канонические поверхности
 
+Guided Request Studio drafts use the typed scenario domain and canonical pure
+graph runtime above this form/policy boundary. New admin catalog/category/draft/
+version/simulation APIs are described in [GUIDED_REQUEST_SCENARIOS.md](GUIDED_REQUEST_SCENARIOS.md).
+They verify the existing offering/template binding and cannot enable or publish a
+scenario by ordinary draft save. Legacy form builder endpoints remain compatible.
+
 - Typed workspace: панель `Конструктор форм заявок` в `/app/admin`, файлы `webapp/src/features/forms-builder/forms-builder-panel.tsx` и `webapp/src/features/forms-builder/api.ts`.
 - Новый typed boundary для React-панели: `GET /api/web/admin/forms/current`, `POST /api/web/admin/forms/save`, `POST /api/web/admin/forms/route-preview` и `POST /api/web/admin/forms/process-preview`.
 - Доменный pack-registry остаётся общим: `GET /api/ticket_forms/current`, `GET /public_api/ticket_forms/current`, `POST /api/ticket_forms/packs/save`, `PATCH /api/ticket_forms/packs/{pack_key}/{version}/preferred`.
@@ -180,3 +186,10 @@ The local Knowledge suggestion integration is removed. A future external Knowled
 - `/app/admin/forms` can add the standard priority question set to any request template, after which every label, option, required flag and role remains editable in the server UI.
 - The local agent reads the same server form pack. If a template defines priority fields, the agent renders those fields in the priority step and sends their values in `form_payload`. Fixed local priority controls are only a fallback for old packs without priority fields.
 - SLA shown to the requester/agent is not local text. It is read from the created/refreshed ticket payload (`first_response_due_at`, `resolution_due_at`) after the server computes effective priority and SLA targets.
+
+Guided scenario pages add optional human section titles (`group_title`) to their
+existing group key. The Studio assigns sections by title and preserves the key
+when renaming. Requester, simulator and selected-step preview share a display-only
+section renderer, using existing dynamic-form controls. Legacy form packs and
+form-only API payloads keep their current behavior. Unknown-answer toggles in
+scenario simulation use explicit null, never fabricated entity context.

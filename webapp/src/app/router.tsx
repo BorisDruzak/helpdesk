@@ -1,3 +1,5 @@
+import { AdminTemplateCreatePage } from "../pages/admin/template-create-page";
+import { AdminServiceCreatePage } from "../pages/admin/service-create-page";
 import { Suspense, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
@@ -176,6 +178,14 @@ function WorkspaceAccessGate({ permission, workspace, children }: WorkspaceAcces
 function RequesterLegacyRedirect({ target }: { target: string }) {
   const location = useLocation();
   return <Navigate replace to={`${target}${location.search}${location.hash}`} />;
+}
+
+function ScenarioStudioAccessGate({ children }: { children: ReactNode }) {
+  const { session } = useSession();
+  // The canonical Studio API grants auditors read access, without assigning
+  // the admin workspace. All editing remains admin-only in UI and server RBAC.
+  if (session?.actor_role === "auditor") return <>{children}</>;
+  return <WorkspaceAccessGate workspace="admin">{children}</WorkspaceAccessGate>;
 }
 
 function RequesterNotFoundPage() {
@@ -457,6 +467,10 @@ export const appRoutes: RouteObject[] = [
             )
           },
           {
+            path: "admin/forms/new",
+            element: <WorkspaceAccessGate workspace="admin"><AdminTemplateCreatePage /></WorkspaceAccessGate>
+          },
+          {
             path: "admin/forms",
             element: (
               <WorkspaceAccessGate workspace="admin">
@@ -467,10 +481,22 @@ export const appRoutes: RouteObject[] = [
           {
             path: "admin/request-template-studio",
             element: (
-              <WorkspaceAccessGate workspace="admin">
+              <ScenarioStudioAccessGate>
                 <AdminRequestTemplateStudioPage />
-              </WorkspaceAccessGate>
+              </ScenarioStudioAccessGate>
             )
+          },
+          {
+            path: "admin/request-template-studio/services/new",
+              element: <WorkspaceAccessGate workspace="admin"><AdminServiceCreatePage /></WorkspaceAccessGate>
+            },
+            {
+              path: "admin/request-template-studio/services/:offeringCode",
+            element: <ScenarioStudioAccessGate><AdminRequestTemplateStudioPage /></ScenarioStudioAccessGate>
+          },
+          {
+            path: "admin/service-catalog/offerings/:offeringCode",
+            element: <WorkspaceAccessGate workspace="admin"><AdminServiceCatalogPage /></WorkspaceAccessGate>
           },
           {
             path: "admin/service-catalog",

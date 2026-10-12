@@ -218,9 +218,10 @@ class PolicyHealthService:
                 return item
         return None
 
-    async def simulate(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def simulate(self, payload: dict[str, Any], *, validated_submission: dict[str, Any] | None = None) -> dict[str, Any]:
         if self.session is None:
             raise RuntimeError("session is required")
+        trusted_submission = validated_submission is not None
         template_code = str(payload.get("template_code") or payload.get("request_template_key") or "").strip()
         repo = HelpdeskPolicyRepo(self.session)
         catalog_selection = None
@@ -268,19 +269,19 @@ class PolicyHealthService:
         if template.get("sla_policy_id") is not None:
             template_context["sla_policy_id"] = template.get("sla_policy_id")
 
-        validated_submission = await apply_effective_registry_policies(
-            self.session,
-            {
-                "form_key": template_code,
-                "ticket_type": template.get("ticket_type"),
-                "template_context": template_context,
-            },
-        )
-        if catalog_selection is not None:
-            validated_submission = await ServiceCatalogRuntimeResolver(self.session).apply_to_validated_submission(
-                validated_submission,
-                catalog_selection,
+        if validated_submission is None:
+            validated_submission = await apply_effective_registry_policies(
+                self.session,
+                {"form_key": template_code, "ticket_type": template.get("ticket_type"), "template_context": template_context},
             )
+            if catalog_selection is not None:
+                validated_submission = await ServiceCatalogRuntimeResolver(self.session).apply_to_validated_submission(validated_submission, catalog_selection)
+        else:
+            # Trusted caller-only keyword: the public JSON payload cannot supply
+            # this context. Preserve the same normalized form and policy overlays
+            # that actual canonical creation will use.
+            validated_submission = deepcopy(validated_submission)
+            request_form_data = deepcopy(validated_submission.get("submitted_values") or {})
         template_context = validated_submission.get("template_context") or template_context
         if not isinstance(template_context, dict):
             template_context = {}
@@ -310,6 +311,9 @@ class PolicyHealthService:
             custom_fields["diagnostic_consent"] = deepcopy(diagnostic_consent)
 
         now = datetime.now(timezone.utc)
+        ticket_type = template.get("ticket_type") or "service_request"
+        if trusted_submission:
+            ticket_type = validated_submission.get("ticket_type") or template_context.get("ticket_type") or ticket_type
         ticket = Ticket(
             ticket_id=f"dry-run-{uuid.uuid4()}",
             ticket_code="DRY-RUN",
@@ -319,10 +323,10 @@ class PolicyHealthService:
             status="new",
             priority=legacy_priority,
             requester_id=str(requester_context.get("requester_id") or "dry-run:requester"),
-            ticket_type=str(template.get("ticket_type") or "service_request"),
-            category_id=template.get("category_id"),
-            service_id=template.get("service_id"),
-            subcategory_id=template.get("subcategory_id"),
+            ticket_type=str(ticket_type),
+            category_id=template_context.get("category_id") if trusted_submission else template.get("category_id"),
+            service_id=template_context.get("service_id") if trusted_submission else template.get("service_id"),
+            subcategory_id=template_context.get("subcategory_id") if trusted_submission else template.get("subcategory_id"),
             custom_fields=custom_fields,
             created_at=now,
             updated_at=now,
@@ -346,6 +350,7 @@ class PolicyHealthService:
             routing_payload = {
                 "queue_id": queue_id,
                 "queue_code": getattr(queue, "code", None),
+                "queue_title": getattr(queue, "name", None),
                 "source": routing_decision.get("source"),
                 "matched_rule": routing_decision.get("matched_rule"),
                 "assignee_strategy": actions.get("assignee_strategy"),
@@ -418,6 +423,19 @@ class PolicyHealthService:
             state=None,
         )
 
+        # Project the existing notification rules without recipient writes,
+        # provider calls or delivery. Groups are configured rules, not receipts.
+        from tickets.notification_service import _event_policy, _recipient_enabled, _external_channel_actions
+        notification_policy = await resolve_effective_ticket_policy(self.session, ticket, "notification")
+        event_policy = _event_policy(notification_policy, "ticket_created")
+        notification_payload = {
+            "policy_code": _policy_code(notification_policy, template_context, "notification"),
+            "event": "ticket_created", "would_send": False,
+            "recipient_groups": [group for group in ("queue", "assignee", "watchers") if _recipient_enabled(event_policy, group, legacy_default=True)],
+            "channels": [{"channel": action.channel, "enabled": action.enabled, "available": action.available, "reason": action.reason}
+                         for action in _external_channel_actions(notification_policy, event_policy, channel_provider=None)],
+        }
+
         return {
             "template_code": template_code,
             "service_catalog": template_context.get("service_catalog") if isinstance(template_context.get("service_catalog"), dict) else None,
@@ -427,11 +445,14 @@ class PolicyHealthService:
                 "priority_class": priority_class,
                 "legacy_priority": legacy_priority,
                 "priority_source": priority_decision.get("priority_source"),
+                "reason": priority_decision.get("priority_reason"),
             },
             "sla": sla_payload,
             "ola": ola_payload,
             "approval": approval_payload,
             "closure": closure_payload,
+            "notification": notification_payload,
+            "validated_facts": deepcopy(request_form_data),
             "visibility": {
                 "policy_code": _policy_ref_code(template_context, "visibility"),
                 "public_status": visibility_payload.get("public_status"),
