@@ -1,0 +1,87 @@
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+import importlib
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from app.db.models import Ticket, Operation, EndpointOperationLink
+
+pytestmark = pytest.mark.db_cleanup("full")
+
+
+@pytest.mark.no_db
+def test_immutable_run_identity_is_ticket_and_actor_scoped():
+    assert importlib.util.find_spec("app.repos.endpoint_tool_runs_repo") is not None
+    from app.repos.endpoint_tool_runs_repo import tool_run_id, remote_tool_key
+    assert tool_run_id("a", "t", "k") == tool_run_id("a", "t", "k")
+    assert tool_run_id("a", "t", "k") != tool_run_id("b", "t", "k")
+    assert tool_run_id("a", "t", "k") != tool_run_id("a", "t2", "k")
+    run = str(uuid4())
+    assert remote_tool_key("diagnostic", run) == f"helpdesk-endpoint-operation:{run}"
+    assert remote_tool_key("module", run) != remote_tool_key("context_collection", run)
+
+
+async def seed(session):
+    now = datetime.now(timezone.utc)
+    ticket = Ticket(ticket_id=str(uuid4()), title="Endpoint tools", description="Persistence",
+                    status="in_progress", created_at=now, updated_at=now)
+    session.add(ticket)
+    await session.flush()
+    return ticket.ticket_id
+
+
+@pytest.mark.asyncio
+async def test_same_actor_key_replays_same_request_and_changed_inputs_conflict(test_engine):
+    from app.repos.endpoint_tool_runs_repo import EndpointToolRunsRepo, ToolRunConflict
+    from domain_ports.endpoint_tools import ToolRunRequestV1
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    request = ToolRunRequestV1(kind="context_collection", profile="inventory_v1")
+    async with maker() as session:
+        async with session.begin():
+            ticket = await seed(session)
+            repo = EndpointToolRunsRepo(session)
+            args = dict(actor_id="actor", ticket_id=ticket, device_ref=str(uuid4()), caller_key="key")
+            first = await repo.create_pending(request, **args)
+            replay = await repo.create_pending(request, **args)
+            assert first.run_id == replay.run_id
+            assert first.request == replay.request
+            with pytest.raises(ToolRunConflict):
+                await repo.create_pending(request.model_copy(update={"profile": "network_v1"}), **args)
+            assert await repo.get_authorized_run(first.run_id, str(uuid4())) is None
+
+
+@pytest.mark.asyncio
+async def test_only_owned_runs_are_claimed_and_lease_tokens_are_exclusive(test_engine):
+    from app.repos.endpoint_tool_runs_repo import EndpointToolRunsRepo, ToolRunProjection
+    from domain_ports.endpoint_tools import ToolRunRequestV1
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    async with maker() as session:
+        async with session.begin():
+            ticket = await seed(session)
+            repo = EndpointToolRunsRepo(session)
+            run = await repo.create_pending(ToolRunRequestV1(kind="diagnostic"), actor_id="actor",
+                ticket_id=ticket, device_ref=str(uuid4()), caller_key="key")
+            old = Operation(operation_id=str(uuid4()), kind="endpoint_operation", actor_role="system",
+                            trace_id=str(uuid4()), status="queued", queued_at=now)
+            session.add(old)
+            await session.flush()
+            session.add(EndpointOperationLink(link_id=str(uuid4()), operation_id=old.operation_id,
+                endpoint_device_ref=str(uuid4()), create_idempotency_key="historical",
+                capability_code="endpoint.module.recipe", module_key="old.module", module_version="1.0.0",
+                remote_status="create_pending", next_attempt_at=now))
+    async with maker() as session:
+        async with session.begin():
+            claims = await EndpointToolRunsRepo(session).claim_ready(owner="one", limit=10, now=now+timedelta(seconds=1))
+            assert [c.run.run_id for c in claims] == [run.run_id]
+    async with maker() as session:
+        async with session.begin():
+            repo = EndpointToolRunsRepo(session)
+            assert await repo.claim_ready(owner="two", limit=10, now=now+timedelta(seconds=2)) == []
+            claim = claims[0]
+            stale = type(claim)(run=claim.run, lease_token="wrong")
+            assert not await repo.commit_projection(stale, ToolRunProjection(status="failed", error_code="endpoint_unavailable"), now=now)
+            assert await repo.commit_projection(claim, ToolRunProjection(status="failed", error_code="endpoint_unavailable"), now=now)
+            old_link = (await session.execute(select(EndpointOperationLink).where(EndpointOperationLink.create_idempotency_key == "historical"))).scalar_one()
+            assert old_link.remote_status == "create_pending" and old_link.lease_owner is None
