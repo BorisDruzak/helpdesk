@@ -221,7 +221,7 @@ async def handle_tool_batch_create(request):
     if error is not None: return error
     ticket,actor=access
     body=EndpointToolBatchCreateV1.model_validate(await request.json())
-    batch,runs=await _service(request).create_context_batch(actor,ticket.ticket_id,body.caller_key)
+    batch,runs=await _service(request).create_context_batch(actor,ticket.ticket_id,body.caller_key,expected_device_ref=body.expected_device_ref)
     return _response(_batch_payload(batch,ticket.ticket_id,runs),202)
 
 

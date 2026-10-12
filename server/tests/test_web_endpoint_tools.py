@@ -12,7 +12,7 @@ pytestmark = pytest.mark.db_cleanup("full")
 def test_browser_intent_cannot_supply_device_recipe_or_coerce_inputs():
     assert importlib.util.find_spec("web_api.dto.endpoint_tools") is not None
     from web_api.dto.endpoint_tools import EndpointToolRunCreateV1
-    valid = dict(schema_version="endpoint_tool_run_create_v1", module_key="helpdesk.dns", version="1.0.0", inputs={"target": "example.test"}, caller_key="key")
+    valid = dict(schema_version="endpoint_tool_run_create_v1", expected_device_ref=str(uuid4()),module_key="helpdesk.dns", version="1.0.0", inputs={"target": "example.test"}, caller_key="key")
     assert EndpointToolRunCreateV1(**valid).inputs["target"] == "example.test"
     for field in ("device_id", "recipe", "service_token"):
         with pytest.raises(ValidationError): EndpointToolRunCreateV1(**valid, **{field:"untrusted"})
@@ -116,7 +116,7 @@ async def test_real_ticket_api_batch_replay_and_foreign_run_denial(test_client_l
     monkeypatch.setattr(handlers,"_runtime",lambda _:(ports,None))
     headers={"Authorization":"Bearer test-ui-admin-token"}
     path=f"/api/web/support/tickets/{ticket}/endpoint-tools/collections"
-    body={"schema_version":"endpoint_tool_batch_create_v1","caller_key":"batch-replay"}
+    body={"schema_version":"endpoint_tool_batch_create_v1","expected_device_ref":device,"caller_key":"batch-replay"}
     first=await test_client_light.post(path,json=body,headers=headers)
     assert first.status==202,await first.text()
     data=(await first.json())["data"]

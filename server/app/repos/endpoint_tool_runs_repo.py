@@ -183,12 +183,14 @@ class EndpointToolRunsRepo:
                 step.error_code, step.external_ref = projection.error_code, projection.remote_ref or old_ref
                 if projection.status in TERMINAL: step.finished_at = now
         if link.diagnostic_session_id:
+            # Lock the shared parent before aggregating sibling states. Concurrent
+            # final children then observe the previous worker's committed status.
+            diagnostic_session = await self.session.get(DiagnosticSession, link.diagnostic_session_id, with_for_update=True)
             # The current state is not autoflushed in every configured session.
             await self.session.flush()
             statuses = list((await self.session.execute(select(EndpointOperationLink.remote_status)
                 .where(EndpointOperationLink.diagnostic_session_id == link.diagnostic_session_id))).scalars())
             if statuses and all(s in TERMINAL for s in statuses):
-                diagnostic_session = await self.session.get(DiagnosticSession, link.diagnostic_session_id, with_for_update=True)
                 diagnostic_session.status = "completed" if all(s == "succeeded" for s in statuses) else "partial" if "succeeded" in statuses else "failed"
                 diagnostic_session.finished_at = now
         await self.session.flush()

@@ -31,7 +31,7 @@ export function useEndpointTools(ticketId:string) {
       const sorted=Object.fromEntries(Object.entries(inputs).sort(([a],[b])=>a.localeCompare(b)));
       const identity=pendingToolKey(account,ticketId,device,[tool.module_key,tool.version,sorted]);
       const scope={account,ticketId,device};
-      const result=await createRun(ticketId,tool.module_key,tool.version,sorted,identity.key);acceptedToolKey(identity);return {result,selectionVersion,scope};
+      const result=await createRun(ticketId,tool.module_key,tool.version,sorted,identity.key,device);acceptedToolKey(identity);return {result,selectionVersion,scope};
     },onSuccess:({result,selectionVersion,scope})=>{
       queries.setQueryData(runQueryKey(scope.account,scope.ticketId,result.device_ref,result),result);
       void queries.invalidateQueries({queryKey:["endpoint-tools",scope.account,scope.ticketId,result.device_ref,"history"]});

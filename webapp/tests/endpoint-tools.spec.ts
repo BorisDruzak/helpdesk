@@ -18,7 +18,7 @@ for(const width of [390,1366,1920,2582]) {
   await page.getByRole("combobox",{name:"Инструмент Endpoint"}).selectOption("helpdesk.ping:1.0.0");await expect(page.getByRole("button",{name:"Запустить проверку"})).toBeDisabled();
   await page.getByRole("combobox",{name:"Инструмент Endpoint"}).selectOption("helpdesk.dns:1.0.0");await page.getByLabel(/Адрес или имя/).fill("router.example.test");
   const run=page.getByRole("button",{name:"Запустить проверку"});await expect(run).toBeInViewport();await run.click();
-  await expect(page.getByText("203.0.113.7 · IPv4",{exact:true})).toBeVisible();expect(fixture.receipts).toHaveLength(1);expect(fixture.receipts[0].inputs).toEqual({target:"router.example.test"});
+  await expect(page.getByText("203.0.113.7 · IPv4",{exact:true})).toBeVisible();expect(fixture.receipts).toHaveLength(1);expect(fixture.receipts[0].inputs).toEqual({target:"router.example.test"});expect(fixture.receipts[0].expected_device_ref).toBe(fixture.catalog.device_ref);
   await page.getByRole("button",{name:"Приложить к паспорту",exact:true}).click();await expect(page.getByRole("button",{name:"В паспорте"})).toBeDisabled();expect(fixture.attached.size).toBe(1);
   await page.screenshot({path:info.outputPath(`tool-result-${width}.png`)});
   await page.getByRole("button",{name:"Собрать общий контекст"}).click();await expect(page.getByText("Частичный результат",{exact:true})).toBeVisible();await expect(page.getByRole("button",{name:/Выбрать результат/})).toHaveCount(6);

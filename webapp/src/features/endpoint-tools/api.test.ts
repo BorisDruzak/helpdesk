@@ -11,5 +11,5 @@ it("does not read a foreign run into the selected query",async()=>{
 });
 it("rejects a created context batch owned by another ticket",async()=>{
   vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{schema_version:"endpoint_tool_batch_v1",batch_id:"batch",ticket_id:"other",runs:[]}}),{status:200,headers:{"content-type":"application/json"}})));
-  await expect(createBatch("ticket","request-key")).rejects.toThrow();
+  await expect(createBatch("ticket","request-key","device")).rejects.toThrow();
 });

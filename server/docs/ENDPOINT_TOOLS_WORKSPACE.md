@@ -28,6 +28,13 @@ are 502 errors, preserving the human session. The default-off
 `ENDPOINT_TOOLS_WORKSPACE_ENABLED` controls admission, never worker resumption.
 Catalog primitives cache for 60 seconds and exact-device pages for 5 seconds;
 mutations bypass both caches and validate the exact published version afresh.
+Create requests require `expected_device_ref` from the displayed catalog as a
+freshness precondition. It is compared with the verified mapping before provider
+admission, and the authoritative device is checked again under the ticket lock.
+It cannot select or override a target. Forms carry intersected numeric/enum and
+semantic restrictions for every bound step, including plain-text software names.
+Batch session finalization locks the shared parent before aggregating child states,
+so concurrent final children cannot leave the persisted session unfinished.
 
 POST `.../runs/{run_id}/passport-evidence` accepts only a selected step sequence.
 The server validates the closed result and immutable provenance, creates one

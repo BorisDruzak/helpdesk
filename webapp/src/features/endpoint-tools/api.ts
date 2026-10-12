@@ -16,18 +16,18 @@ export async function getRun(ticket:string,runId:string,signal?:AbortSignal) {
   if(run.run_id!==runId || run.ticket_id!==ticket) throw new SupportBootstrapApiError("Выбранный запуск не совпадает с ответом",502,"endpoint_invalid_projection");
   return run;
 }
-export async function createRun(ticket:string,module_key:string,version:string,inputs:Readonly<Record<string,string|number>>,caller_key:string) {
-  const run=await request<ToolRun>(`${base(ticket)}/runs`,json({schema_version:"endpoint_tool_run_create_v1",module_key,version,inputs,caller_key}),"endpoint_tool_run_v1");
-  if(run.ticket_id!==ticket || run.module_key!==module_key || run.version!==version) throw new SupportBootstrapApiError("Ответ не совпадает с отправленной проверкой",502,"endpoint_invalid_projection");
+export async function createRun(ticket:string,module_key:string,version:string,inputs:Readonly<Record<string,string|number>>,caller_key:string,expected_device_ref:string) {
+  const run=await request<ToolRun>(`${base(ticket)}/runs`,json({schema_version:"endpoint_tool_run_create_v1",module_key,version,inputs,caller_key,expected_device_ref}),"endpoint_tool_run_v1");
+  if(run.ticket_id!==ticket || run.device_ref!==expected_device_ref || run.module_key!==module_key || run.version!==version) throw new SupportBootstrapApiError("Ответ не совпадает с отправленной проверкой",502,"endpoint_invalid_projection");
   return run;
 }
-function validateBatch(result:ToolBatch,ticket:string,batch:string) {
-  if(result.batch_id!==batch || result.ticket_id!==ticket || result.runs.length!==6 || new Set(result.runs.map(r=>r.run_id)).size!==6 || result.runs.some(r=>r.ticket_id!==ticket || r.batch_id!==batch)) throw new SupportBootstrapApiError("Ответ общего сбора не совпадает с запросом",502,"endpoint_invalid_projection");
+function validateBatch(result:ToolBatch,ticket:string,batch:string,device?:string) {
+  if(result.batch_id!==batch || result.ticket_id!==ticket || result.runs.length!==6 || new Set(result.runs.map(r=>r.run_id)).size!==6 || result.runs.some(r=>r.ticket_id!==ticket || r.batch_id!==batch || device!=null&&r.device_ref!==device)) throw new SupportBootstrapApiError("Ответ общего сбора не совпадает с запросом",502,"endpoint_invalid_projection");
   return result;
 }
-export async function createBatch(ticket:string,caller_key:string) {
-  const result=await request<ToolBatch>(`${base(ticket)}/collections`,json({schema_version:"endpoint_tool_batch_create_v1",caller_key}),"endpoint_tool_batch_v1");
-  return validateBatch(result,ticket,result.batch_id);
+export async function createBatch(ticket:string,caller_key:string,expected_device_ref:string) {
+  const result=await request<ToolBatch>(`${base(ticket)}/collections`,json({schema_version:"endpoint_tool_batch_create_v1",caller_key,expected_device_ref}),"endpoint_tool_batch_v1");
+  return validateBatch(result,ticket,result.batch_id,expected_device_ref);
 }
 export async function getBatch(ticket:string,batch:string,signal?:AbortSignal) {
   const result=await request<ToolBatch>(`${base(ticket)}/collections/${encodeURIComponent(batch)}`,{signal},"endpoint_tool_batch_v1");

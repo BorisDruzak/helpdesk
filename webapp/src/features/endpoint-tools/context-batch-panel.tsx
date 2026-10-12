@@ -15,7 +15,7 @@ export function ContextBatchPanel({ticketId,deviceRef,canRun,initialBatch}:{tick
   const current=useRef({account,ticketId,deviceRef});current.current={account,ticketId,deviceRef};
   const create=useMutation({mutationKey:["endpoint-tools",account,ticketId,deviceRef,"collection"],mutationFn:async()=>{
     const scope={account,ticketId,deviceRef};const identity=pendingToolKey(account,ticketId,deviceRef,"six-profile-context-v1");
-    const batch=await createBatch(ticketId,identity.key);acceptedToolKey(identity);return {batch,scope};
+    const batch=await createBatch(ticketId,identity.key,deviceRef);acceptedToolKey(identity);return {batch,scope};
   },onSuccess:({batch,scope})=>{if(current.current.account===scope.account&&current.current.ticketId===scope.ticketId&&current.current.deviceRef===scope.deviceRef){setAccepted(batch);setSelected(null);}}});
   const query=useQuery({queryKey:["endpoint-tools",account,ticketId,deviceRef,"collection",accepted?.batch_id],queryFn:({signal})=>getBatch(ticketId,accepted!.batch_id,signal),
     enabled:!!account&&status!=="anonymous"&&visible&&!!accepted,initialData:accepted,staleTime:accepted?.status==="running"?0:60000,retry:false,

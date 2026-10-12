@@ -16,6 +16,7 @@ class ToolInputV1(_DTO):
     minimum: int | None = None
     maximum: int | None = None
     enum_values: tuple[str, ...] | None = None
+    semantic_types: tuple[Literal["network_target", "bounded_text", "software_name"], ...] = ()
 
 
 class FixedSettingV1(_DTO):
@@ -92,6 +93,11 @@ def _check(value, bounds, parameter):
             raise ValueError("invalid bounded text")
 
 
+def _check_semantics(value, capability, parameter):
+    if capability == "software.find" and parameter == "name" and any(char in value for char in "*?[]"):
+        raise ValueError("software name must be plain text")
+
+
 def derive_recipe_inputs(recipe, primitive_catalog):
     recipe, primitive_catalog = _plain(recipe), _plain(primitive_catalog)
     if recipe.get("schema_version") != "endpoint_recipe_module_v1" or not 1 <= len(recipe.get("steps", [])) <= 8:
@@ -128,13 +134,17 @@ def derive_recipe_inputs(recipe, primitive_catalog):
                 raise ValueError("parameter source is not allowed")
             if binding["kind"] == "literal":
                 _check(binding["value"], bounds, parameter)
+                _check_semantics(binding["value"], capability, parameter)
                 fixed.append(FixedSettingV1(step_id=step["step_id"], parameter=parameter, value=binding["value"]))
                 continue
             name = binding["name"]
+            semantics = {"network_target" if parameter == "target" else "bounded_text"} if value_type == "string" else set()
+            if capability == "software.find" and parameter == "name": semantics.add("software_name")
             if not editable or declared.get(name) != value_type:
                 raise ValueError("literal-only or undeclared input")
             if name in controls:
                 previous = controls[name]
+                semantics.update(previous.semantic_types)
                 if previous.value_type != value_type:
                     raise ValueError("conflicting shared input types")
                 minimum = max(x for x in (minimum, previous.minimum) if x is not None) if minimum is not None or previous.minimum is not None else None
@@ -144,7 +154,7 @@ def derive_recipe_inputs(recipe, primitive_catalog):
             if minimum is not None and maximum is not None and minimum > maximum or enums == set():
                 raise ValueError("conflicting shared input bounds")
             controls[name] = ToolInputV1(name=name, value_type=value_type, minimum=minimum, maximum=maximum,
-                enum_values=tuple(sorted(enums)) if enums is not None else None)
+                enum_values=tuple(sorted(enums)) if enums is not None else None, semantic_types=tuple(sorted(semantics)))
     if set(controls) != set(declared):
         raise ValueError("unused recipe inputs")
     return ToolInputSchemaV1(inputs=tuple(controls[name] for name in declared), fixed_settings=tuple(fixed),
@@ -160,4 +170,5 @@ def validate_tool_inputs(schema, inputs):
         for parameter, binding in step["parameters"].items():
             value = binding["value"] if binding["kind"] == "literal" else inputs[binding["name"]]
             _check(value, PARAMETERS[step["capability"]][parameter], parameter)
+            _check_semantics(value, step["capability"], parameter)
     return CanonicalToolInputsV1(inputs=inputs)

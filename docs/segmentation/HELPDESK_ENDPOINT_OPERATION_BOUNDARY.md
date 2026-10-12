@@ -179,7 +179,10 @@ legacy commands.
 The separately gated `ENDPOINT_TOOLS_WORKSPACE_ENABLED` workspace discovers
 published, compatible recipes through device-scoped modules and primitive metadata.
 The support BFF accepts only module identity/version, bounded declared inputs and
-a caller replay key; it resolves the verified ticket device and recipe server-side.
+a caller replay key plus an expected-device freshness precondition; it resolves
+the verified ticket device and recipe server-side. The expected device cannot
+override the authoritative mapping; mismatch before or during admission rejects
+the request without creating a durable intent.
 It does not grant authoring rights. Module operations retain their own remote
 reference, immutable inputs/recipe and step results; reflected target, port and
 logical preset facts must match those saved inputs before display or passport capture.

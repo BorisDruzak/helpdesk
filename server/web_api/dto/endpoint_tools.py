@@ -1,5 +1,6 @@
 """Closed browser DTOs; service credentials and editable recipes are excluded."""
 from typing import Literal
+from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, AwareDatetime
 from domain_ports.endpoint_module_contracts_generated import ModuleOperationDetailV1
 from domain_ports.endpoint import EndpointDiagnosticResultProjection
@@ -13,6 +14,7 @@ class _DTO(BaseModel):
 
 class EndpointToolRunCreateV1(_DTO):
     schema_version: Literal["endpoint_tool_run_create_v1"]
+    expected_device_ref: UUID
     module_key: str = Field(min_length=3, max_length=128, pattern=r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){1,7}$")
     version: str = Field(max_length=64, pattern=r"^\d+\.\d+\.\d+$")
     inputs: dict[str, StrictStr | StrictInt] = Field(default_factory=dict, max_length=8)
@@ -21,6 +23,7 @@ class EndpointToolRunCreateV1(_DTO):
 
 class EndpointToolBatchCreateV1(_DTO):
     schema_version: Literal["endpoint_tool_batch_create_v1"]
+    expected_device_ref: UUID
     caller_key: str = Field(min_length=1, max_length=128)
 
 

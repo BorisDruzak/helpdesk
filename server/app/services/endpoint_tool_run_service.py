@@ -33,14 +33,16 @@ class EndpointToolRunService:
     def __init__(self, *, access_service, device_resolver, endpoint_port, modules_port, session_factory):
         self.access, self.resolver, self.endpoint, self.modules, self.sessions = access_service, device_resolver, endpoint_port, modules_port, session_factory
 
-    async def _device(self, actor, ticket_id):
+    async def _device(self, actor, ticket_id, expected_device_ref):
         await self.access.require_ticket_operation_access(actor=actor, ticket_id=ticket_id)
         result = await self.resolver.resolve_ticket(ticket_id)
         if result.status != "resolved" or not result.device_ref: raise ToolAdmissionError("endpoint_device_mapping_missing")
+        # A freshness precondition, never an authority to choose a different target.
+        if result.device_ref != str(expected_device_ref): raise ToolAdmissionError("endpoint_device_changed")
         return EndpointDeviceRef(external_id=result.device_ref)
 
     async def create_module(self, actor, ticket_id, request, caller_key):
-        device = await self._device(actor, ticket_id)
+        device = await self._device(actor, ticket_id, request.expected_device_ref)
         found, cursor, seen = None, None, set()
         for _ in range(20):
             page = require_projection(await self.modules.list_device_modules(device, limit=100, cursor=cursor), EndpointDeviceModulesPageV1)
@@ -64,8 +66,8 @@ class EndpointToolRunService:
                 return await EndpointToolRunsRepo(session).create_pending(intent, actor_id=str(actor.actor_id),
                     actor_role=actor.actor_role, ticket_id=ticket_id, device_ref=device.external_id, caller_key=caller_key, batch_id=batch_id)
 
-    async def create_context_batch(self, actor, ticket_id, caller_key):
-        device = await self._device(actor, ticket_id)
+    async def create_context_batch(self, actor, ticket_id, caller_key, *, expected_device_ref):
+        device = await self._device(actor, ticket_id, expected_device_ref)
         if not isinstance(caller_key, str) or not 1 <= len(caller_key) <= 128 or any(ord(c) < 33 or ord(c) > 126 for c in caller_key):
             raise ValueError("invalid caller key")
         presence = require_projection(await self.endpoint.read_device_presence(device), EndpointDevicePresenceProjection)

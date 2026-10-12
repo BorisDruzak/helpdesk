@@ -6,7 +6,13 @@ export function validControls(controls:readonly InputControl[]) {
   return Array.isArray(controls) && controls.length<=8 && controls.every(c=>c!=null && typeof c==="object") && new Set(controls.map(c=>c.name)).size===controls.length && controls.every(c=>
     /^[a-z][a-z0-9_]{0,63}$/.test(c.name) && ["integer","string"].includes(c.value_type) &&
     (c.minimum==null || Number.isSafeInteger(c.minimum)) && (c.maximum==null || Number.isSafeInteger(c.maximum)) &&
-    (c.minimum==null || c.maximum==null || c.minimum<=c.maximum) && (c.enum_values==null || Array.isArray(c.enum_values) && c.enum_values.length>0 && c.enum_values.every((v:string)=>typeof v==="string")));
+    (c.minimum==null || c.maximum==null || c.minimum<=c.maximum) && (c.enum_values==null || Array.isArray(c.enum_values) && c.enum_values.length>0 && c.enum_values.every((v:string)=>typeof v==="string")) &&
+    (c.semantic_types==null || Array.isArray(c.semantic_types)&&c.semantic_types.every((v:string)=>["network_target","bounded_text","software_name"].includes(v))));
+}
+function networkTarget(value:string) {
+  if(/[\s/%\\]/.test(value)) return false;
+  if(value.includes(":")) {try {return new URL(`http://[${value}]/`).hostname.startsWith("[");}catch{return false;}}
+  return /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.?$/i.test(value);
 }
 export function validateInputs(controls:readonly InputControl[],inputs:Readonly<Record<string,string|number>>) {
   if(!validControls(controls)) return "Формат параметров не поддерживается";
@@ -17,7 +23,9 @@ export function validateInputs(controls:readonly InputControl[],inputs:Readonly<
       if(typeof value!=="number" || !Number.isSafeInteger(value) || control.minimum!=null && value<control.minimum || control.maximum!=null && value>control.maximum) return `${label}: проверьте допустимый диапазон`;
     } else {
       if(typeof value!=="string" || !value || value!==value.trim() || value.length>253 || /[\x00-\x1f\x7f]/.test(value)) return `${label}: введите корректное значение`;
-      if(["target","host"].includes(control.name) && (/[\s/%\\]/.test(value) || value.includes("://"))) return "Укажите имя узла или IP-адрес без URL";
+      if((control.semantic_types?.includes("network_target") || ["target","host"].includes(control.name)) && !networkTarget(value)) return "Укажите имя узла или IP-адрес без URL";
+      if(control.semantic_types?.includes("bounded_text") && value.length>128) return `${label}: не более128 символов`;
+      if(control.semantic_types?.includes("software_name") && /[*?\[\]]/.test(value)) return `${label}: укажите обычное имя без шаблона`;
       if(control.enum_values!=null && !control.enum_values.includes(value)) return `${label}: выберите значение из списка`;
     }
   }

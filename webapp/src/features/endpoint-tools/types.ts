@@ -1,6 +1,6 @@
 import type { EndpointContextSnapshot } from "../admin/endpoint-context-types";
 import type { ModuleOperationDetailV1 } from "./endpoint-module-types.generated";
-export type InputControl = { readonly name:string; readonly value_type:"string"|"integer"; readonly minimum:number|null; readonly maximum:number|null; readonly enum_values:readonly string[]|null };
+export type InputControl = { readonly name:string; readonly value_type:"string"|"integer"; readonly minimum:number|null; readonly maximum:number|null; readonly enum_values:readonly string[]|null; readonly semantic_types?:readonly string[] };
 export type FixedSetting = { readonly step_id:string; readonly parameter:string; readonly value:string|number };
 export type ToolItem = { readonly module_key:string; readonly version:string; readonly title:string; readonly availability:"available"|"unavailable"|"unknown"; readonly reason_code:string|null; readonly input_controls:readonly InputControl[]; readonly fixed_settings:readonly FixedSetting[]; readonly capabilities:readonly string[] };
 export type ToolCatalog = { readonly schema_version:"endpoint_tool_catalog_v1"; readonly ticket_id:string; readonly device_ref:string; readonly enabled:boolean; readonly can_run:boolean; readonly observed_at:string; readonly items:readonly ToolItem[]; readonly next_cursor:string|null; readonly profiles:readonly string[] };
