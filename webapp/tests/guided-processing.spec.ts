@@ -35,6 +35,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "3. Обработка обращения", exact: true }).click();
     await page.getByRole("combobox", { name: "Маршрут и очередь", exact: true }).selectOption("printer_route");

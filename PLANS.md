@@ -8,8 +8,13 @@ filter and missing mode projection. GREEN: 31 catalog tests; 194 focused no-DB t
 Frontend RED reproduced missing offering link and empty category explanation.
 Focused components, settings navigation/pending-save and URL-context regressions
 pass. Fixture browser: 33 passed across 1366, 1440, 1920 and tablet 820 widths.
-Independent review findings corrected; no remaining blockers. Exact-SHA PostgreSQL,
-canonical CI and installed staging browser gates pending.
+Independent review findings corrected; no remaining blockers. Exact-source
+PostgreSQL API validation at 86246512: 20 passed with temporary-role cleanup.
+Full fixture browser regression: 106 passed after adapting the remaining legacy
+scenario links to the dedicated offering page. An unavailable offering's detail
+explains its publication/form prerequisite instead of claiming requester access.
+The first CI run passed 17 layers but exposed those outdated browser locators;
+the corrected exact-head CI and installed staging browser gates remain pending.
 No schema migration, publication, enablement or user-data rewrite is introduced.
 
 # In progress: 2026-10-11 Guided Request Studio v2

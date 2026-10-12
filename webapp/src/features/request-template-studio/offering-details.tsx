@@ -23,7 +23,7 @@ export function OfferingDetails({ data, code, canEdit, onOpen, onCreate }: { dat
     </div>
     <section aria-label="Сценарии услуги" className="space-y-3">
       <h2 className="text-lg font-semibold">Настройка сценария</h2>
-      {!current.length && <p className="text-sm text-slate-500">Сценарий не настроен. Сотрудники используют обычную форму.</p>}
+      {!current.length && <p className="text-sm text-slate-500">{card.requester_available === false ? "Услуга пока недоступна сотрудникам. Проверьте форму и публикацию в настройках услуги." : "Сценарий не настроен. Сотрудники используют обычную форму."}</p>}
       {current.map(item => <div key={item.id} className="rounded-xl border p-4"><Button className="h-auto max-w-full whitespace-normal text-left" variant="secondary" onClick={() => onOpen(item)}>{item.title}</Button><p className="mt-2 text-sm">{scenarioEditingLabel(item)}</p></div>)}
     </section>
     {!!archive.length && <details className="rounded-xl border p-4"><summary className="cursor-pointer font-semibold">Архив сценариев · {archive.length}</summary><ul className="mt-3 space-y-2">{archive.map(item => <li key={item.id}><Button className="h-auto max-w-full whitespace-normal text-left" variant="ghost" onClick={() => onOpen(item)}>{item.title}</Button><p className="text-sm text-slate-500">Архив · {item.published_version ? `версия ${item.published_version}` : "без публикации"}</p></li>)}</ul></details>}

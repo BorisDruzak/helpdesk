@@ -27,6 +27,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
+    await page.getByRole("link", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "2. Пользовательский сценарий", exact: true }).click();
     const questions = page.getByRole("list", { name: "Вопросы страницы", exact: true });
