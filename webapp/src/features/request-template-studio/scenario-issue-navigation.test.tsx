@@ -17,17 +17,17 @@ function mount(code: string, path: string) {
   } : { policies: {} } }), { headers: { "Content-Type": "application/json" } })));
   const change = vi.fn();
   render(<MemoryRouter><QueryClientProvider client={new QueryClient()}><ScenarioWizard definition={definition} detail={{ scenario: { id: "scenario" }, draft: { revision: 2, definition } } as ScenarioDetail} catalog={{ offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер" }], categories: [], services: [], scenarios: [] } as unknown as ScenarioCatalog} dirty={false} disabled={false} onChange={change} /></QueryClientProvider></MemoryRouter>);
-  fireEvent.click(screen.getByRole("button", { name: "5. Публикация" }));
+  fireEvent.click(screen.getByRole("button", { name: "Опубликовать" }));
   fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
   return change;
 }
 it("opens the source of a broken transition and focuses its visible target", async () => {
   const change = mount("unknown_target", "blocks.broken.transitions");
   fireEvent.click(await screen.findByRole("button", { name: "Исправить: Проверка принтера" }));
-  expect(screen.getByLabelText("Название блока")).toHaveValue("Проверка принтера");
-  await waitFor(() => expect(screen.getByLabelText("Следующий блок")).toHaveFocus());
-  expect(screen.getByLabelText("Следующий блок")).toBeVisible();
-  expect(screen.getByRole("region", { name: "Следующий шаг" })).toBeVisible();
+  expect(screen.getByRole("group", { name: "Переход из «Проверка принтера»" })).toBeVisible();
+  await waitFor(() => expect(screen.getByLabelText("Целевой блок")).toHaveFocus());
+  expect(screen.getByLabelText("Целевой блок")).toBeVisible();
+
   expect(change).not.toHaveBeenCalled();
 });
 it.each([["routing_unavailable", "Маршрут и очередь"], ["sla_unavailable", "Сроки обслуживания"], ["closure_missing", "Закрытие обращения"]])("jumps %s to its policy control after registry loading", async (code, label) => {

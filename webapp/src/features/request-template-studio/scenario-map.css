@@ -1,0 +1,19 @@
+.studio-map-workbench { display:grid; grid-template-columns:180px minmax(0,1fr) 340px; min-width:0; gap:12px; height: min(720px, calc(100vh - 430px)); min-height:280px; }
+.studio-map-explorer,.studio-map-inspector { min-width:0; overflow:auto; border:1px solid #e2e8f0; border-radius:16px; background:white; padding:14px; }
+.studio-map-canvas { min-width:0; height:100%; min-height:280px; border:1px solid #e2e8f0; border-radius:16px; background:#f8fafc; overflow:hidden; }
+.studio-map-node { width:230px; min-height:90px; padding:16px 18px; border:1px solid #cbd5e1; border-radius:14px; background:white; box-shadow:0 4px 12px #0f172a08; color:#0f172a; }
+.studio-map-node strong { display:block; font-size:15px; line-height:1.4; overflow-wrap:anywhere; }
+.studio-map-node__kind { font-size:11px; color:#64748b; margin-bottom:6px; }
+.studio-map-node__entry { display:block; border-radius:6px; background:#eff6ff; padding:4px 6px; margin-top:8px; font-size:11px; color:#1d4ed8; overflow-wrap:anywhere; }
+.studio-map-node.is-selected { border:2px solid #2563eb; padding:15px 17px; }
+.studio-map-node.is-system { background:#f0fdfa; border-color:#5eead4; }
+.studio-map-node.has-issue { border-color:#d97706; background:#fffbeb; }
+.studio-map-node.is-visited { box-shadow:0 0 0 3px #dbeafe; }
+.studio-map-node.is-current { box-shadow:0 0 0 4px #86efac; }
+.studio-map-node .react-flow__handle { width:9px; height:9px; background:#64748b; }
+.studio-map-inspector input,.studio-map-inspector select,.studio-map-inspector textarea { max-width:100%; min-width:0; }
+.studio-map-inspector .md\:grid-cols-2,.studio-map-inspector .lg\:grid-cols-2 { grid-template-columns:minmax(0,1fr); }
+.studio-map-panel { min-width:0; border:1px solid #e2e8f0; border-radius:16px; padding:20px; background:white; }
+@media (min-width:1700px) { .studio-map-workbench { grid-template-columns:200px minmax(0,1fr) 390px; } }
+@media (max-width:1100px) { .studio-map-workbench { grid-template-columns:150px minmax(0,1fr); height:auto; } .studio-map-inspector { grid-column:1/-1; max-height:540px; } }
+@media (max-width:650px) { .studio-map-workbench { grid-template-columns:minmax(0,1fr); } .studio-map-explorer { max-height:240px; } }

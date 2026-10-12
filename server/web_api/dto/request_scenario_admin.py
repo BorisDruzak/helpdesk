@@ -33,6 +33,7 @@ class RevisionInput(StrictModel):
 
 
 class SimulationInput(RevisionInput):
+    entry_point_key: Key | None = None
     steps: Annotated[list[ScenarioAnswerRequest], Field(max_length=256)] = Field(default_factory=list)
     preview: ScenarioAnswerRequest | None = None
     diagnostic_outcomes: Annotated[dict[Key, Literal["unavailable", "denied", "timeout", "capability_absent"]], Field(max_length=256)] = Field(default_factory=dict)

@@ -1,36 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "../../components/ui/button";
 import { type ScenarioCatalog, type ScenarioDetail } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
-import { ScenarioPurpose } from "./scenario-purpose";
-import { ScenarioBlockBuilder } from "./scenario-block-builder";
+import { ScenarioMapWorkbench } from "./scenario-map-workbench";
 import { ScenarioPublication } from "./scenario-publication";
 import { ScenarioSimulationPanel } from "./scenario-simulation";
 import { ScenarioVersionHistory } from "./scenario-version-history";
-import { ScenarioProcessing } from "./scenario-processing";
+import { ScenarioApprovals } from "./scenario-approvals";
 import type { ScenarioIssueDestination } from "./scenario-issue-navigation";
 
-export const scenarioSteps = ["Категория и назначение", "Пользовательский сценарий", "Обработка обращения", "Тестирование", "Публикация"];
-type Props = { definition: ScenarioDraftDefinition; detail: ScenarioDetail | null; catalog: ScenarioCatalog; disabled: boolean; simulationDisabled?: boolean; dirty: boolean; onChange: (value: ScenarioDraftDefinition) => void; onAccept?: (value: ScenarioDetail) => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryCreated?: () => Promise<void>; onCategoryOpen?: (open: boolean) => void };
-export function ScenarioWizard({ definition, detail, catalog, disabled, simulationDisabled = disabled, dirty, onChange, onAccept, onCategoryDirty, onCategoryCreated, onCategoryOpen }: Props) {
-  const [step, setStep] = useState(0);
+export const scenarioSteps = ["Каталог", "Карта сценария", "Согласования"];
+type Props = { definition: ScenarioDraftDefinition; detail: ScenarioDetail | null; catalog: ScenarioCatalog; disabled: boolean; simulationDisabled?: boolean; dirty: boolean; onChange: (value: ScenarioDraftDefinition) => void; onAccept?: (value: ScenarioDetail) => void; onCatalog?: () => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryCreated?: () => Promise<void>; onCategoryOpen?: (open: boolean) => void };
+export function ScenarioWizard({ definition, detail, catalog, disabled, simulationDisabled = disabled, dirty, onChange, onAccept, onCatalog, onCategoryDirty, onCategoryCreated, onCategoryOpen }: Props) {
+  const [section, setSection] = useState("map");
+  const [panel, setPanel] = useState<"simulation" | "publication" | "versions" | null>(null);
   const [destination, setDestination] = useState<ScenarioIssueDestination | null>(null);
-  const sectionRef = useRef<HTMLElement>(null);
-  useEffect(() => { if (destination && !destination.blockId && !destination.policy) sectionRef.current?.focus(); }, [destination]);
-  function navigate(index: number) { setDestination(null); setStep(index); }
+  const [simulation, setSimulation] = useState<{ current: string; path: string[] }>({ current: "", path: [] });
   const [categoryOpen, setCategoryOpen] = useState(false);
   const offering = catalog.offerings.find(item => item.full_code === definition.offering_full_code);
-  const purposeReady = !!detail && !!definition.title.trim() && !!offering && offering.service_code === definition.service_code;
-  return <div className="min-w-0 space-y-5">
-    <nav aria-label="Этапы настройки"><ol className="flex min-w-0 flex-wrap gap-2">{scenarioSteps.map((label, index) => <li key={label}><Button disabled={categoryOpen || (index > 0 && !purposeReady)} variant={step === index ? "secondary" : "ghost"} aria-current={step === index ? "step" : undefined} onClick={() => navigate(index)}>{index + 1}. {label}</Button></li>)}</ol></nav>
-    <section ref={sectionRef} tabIndex={-1} aria-label={scenarioSteps[step]} className="min-w-0 rounded-xl border bg-white p-5">
-      {step === 0 && <ScenarioPurpose definition={definition} catalog={catalog} disabled={disabled} existing={!!detail} onChange={onChange} onCategoryDirty={onCategoryDirty} onCategoryOpen={open => { setCategoryOpen(open); onCategoryOpen?.(open); }} onCategoryCreated={onCategoryCreated} />}
-      {step === 1 && <ScenarioBlockBuilder definition={definition} disabled={disabled} onChange={onChange} onSimulate={() => navigate(3)} issueBlockId={destination?.blockId} issueTransitions={destination?.transitions} />}
-      {step === 2 && <ScenarioProcessing definition={definition} disabled={disabled} onChange={onChange} focusPolicy={destination?.policy} />}
-      {step === 3 && (detail ? <ScenarioSimulationPanel key={detail.scenario.id} id={detail.scenario.id} revision={detail.draft.revision} dirty={dirty} disabled={simulationDisabled} definition={definition} onIssue={target => { setDestination(target); setStep(target.step); }} /> : <p>Сначала сохраните сценарий.</p>)}
-      {step === 4 && (detail ? <><ScenarioPublication key={detail.scenario.id} id={detail.scenario.id} revision={detail.draft.revision} dirty={dirty} disabled={disabled} definition={definition} offeringTitle={offering?.public_title} onIssue={target => { setDestination(target); setStep(target.step); }} />{onAccept && <ScenarioVersionHistory id={detail.scenario.id} revision={detail.draft.revision} disabled={disabled || dirty} onAccept={onAccept} />}</> : <p>Сначала сохраните сценарий.</p>)}
-    </section>
-    {!purposeReady && <p className="text-sm text-slate-500">Выберите услугу и сохраните назначение сценария, прежде чем переходить к следующим этапам.</p>}
-    <div className="flex flex-wrap justify-between gap-2"><Button variant="ghost" disabled={categoryOpen || step === 0} onClick={() => navigate(step - 1)}>Предыдущий этап</Button><Button disabled={categoryOpen || !purposeReady || step === scenarioSteps.length - 1} onClick={() => navigate(step + 1)}>Следующий этап</Button></div>
-  </div>;
+  function issue(target: ScenarioIssueDestination) { setDestination(target); setSection("map"); setPanel(null); }
+  const inspector = panel ? <div className="grid min-w-0 gap-4"><Button variant="ghost" onClick={() => setPanel(null)}>Закрыть панель</Button>{detail ? panel === "simulation" ? <ScenarioSimulationPanel id={detail.scenario.id} revision={detail.draft.revision} dirty={dirty} disabled={simulationDisabled} definition={definition} onIssue={issue} onState={(current, path) => setSimulation({ current, path })} /> : panel === "publication" ? <ScenarioPublication id={detail.scenario.id} revision={detail.draft.revision} dirty={dirty} disabled={disabled} definition={definition} offeringTitle={offering?.public_title} onIssue={issue} /> : onAccept ? <ScenarioVersionHistory id={detail.scenario.id} revision={detail.draft.revision} disabled={disabled || dirty} onAccept={onAccept} /> : null : <p>Сначала сохраните сценарий.</p>}</div> : undefined;
+  return <div className="min-w-0 space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><nav aria-label="Разделы Студии" className="flex flex-wrap gap-2"><Button variant="ghost" disabled={categoryOpen} onClick={onCatalog}>Каталог</Button><Button variant={section === "map" ? "secondary" : "ghost"} disabled={categoryOpen} aria-current={section === "map" ? "page" : undefined} onClick={() => setSection("map")}>Карта сценария</Button><Button variant={section === "approvals" ? "secondary" : "ghost"} disabled={categoryOpen} aria-current={section === "approvals" ? "page" : undefined} onClick={() => setSection("approvals")}>Согласования</Button></nav><div className="flex flex-wrap gap-2"><Button variant="outline" disabled={categoryOpen || simulationDisabled} onClick={() => { setSection("map"); setPanel("simulation"); }}>Тестировать</Button><Button disabled={categoryOpen || disabled} onClick={() => { setSection("map"); setPanel("publication"); }}>Опубликовать</Button><Button variant="ghost" disabled={categoryOpen || !detail} onClick={() => { setSection("map"); setPanel("versions"); }}>Версии{detail?.scenario.published_version_id ? " • активная" : ""}</Button></div></div><div hidden={section !== "map"}><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={!!detail} disabled={disabled} onChange={onChange} issueBlockId={destination?.blockId} issueTransitions={destination?.transitions} issuePolicy={destination?.policy} path={simulation.path} current={simulation.current} inspectorPanel={inspector} onCategoryDirty={onCategoryDirty} onCategoryOpen={open => { setCategoryOpen(open); onCategoryOpen?.(open); }} onCategoryCreated={onCategoryCreated} /></div>{section === "approvals" && <ScenarioApprovals definition={definition} disabled={disabled} onChange={onChange} />}</div>;
 }

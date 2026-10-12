@@ -9,8 +9,8 @@ import { ScenarioConditionEditor } from "./scenario-condition-editor";
 import { conditionFields } from "./scenario-builder-model";
 import { diagnosticFailureLabels } from "./scenario-diagnostics";
 
-type Props = { block: ScenarioBlock; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioBlock) => void; focusTitle: boolean; focusTransitions?: boolean };
-export function ScenarioBlockEditor({ block, definition, disabled, onChange, focusTitle, focusTransitions }: Props) {
+type Props = { block: ScenarioBlock; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioBlock) => void; focusTitle: boolean; focusTransitions?: boolean; hideTransitions?: boolean };
+export function ScenarioBlockEditor({ block, definition, disabled, onChange, focusTitle, focusTransitions, hideTransitions = false }: Props) {
   const titleRef = useRef<HTMLInputElement>(null);
   const transitionRef = useRef<HTMLSelectElement>(null);
   useEffect(() => {
@@ -57,7 +57,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
         </>}
       </div>
     </AdvancedDisclosure>
-    <section aria-label="Следующий шаг" className="space-y-4 rounded-lg border p-3">
+    {!hideTransitions && <section aria-label="Следующий шаг" className="space-y-4 rounded-lg border p-3">
         <h3 className="font-medium">Что делать дальше</h3>
         {!terminal && <p className="text-sm text-slate-600">Выберите следующий шаг. Порядок шагов в списке сам по себе не задаёт переходы. Последний переход без условия — запасной путь.</p>}
         {!transitions.length && <p className="text-sm">{terminal ? "Конечный блок не имеет переходов." : "Добавьте переходы. Перестановка блоков не изменяет маршруты автоматически."}</p>}
@@ -76,6 +76,6 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
           </div>
         </fieldset>)}
         <Button disabled={disabled || terminal || !targets.length || transitions.length >= 30} variant="secondary" onClick={() => onChange({ ...block, transitions: [...transitions, { to: targets[0].id, when: null }] })}>Добавить переход</Button>
-    </section>
+    </section>}
   </div>;
 }

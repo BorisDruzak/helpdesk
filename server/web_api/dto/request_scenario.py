@@ -201,6 +201,27 @@ class ProcessBinding(StrictModel):
     policy_refs: Annotated[dict[Literal["priority", "routing", "sla", "ola", "approval", "notification", "closure", "visibility"], CatalogCode], Field(max_length=8)] = Field(default_factory=dict)
 
 
+class ScenarioEntryPoint(StrictModel):
+    key: Key
+    title: Annotated[str, Field(min_length=1, max_length=300)]
+    description: str = Field(default="", max_length=2000)
+    category_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")] | None = None
+    synonyms: Annotated[list[Annotated[str, Field(min_length=1, max_length=100)]], Field(max_length=20)] = Field(default_factory=list)
+    visibility: Literal["public", "internal", "restricted"] = "public"
+    enabled: StrictBool = True
+    target_block_id: Key
+    reported_symptom: str = Field(default="", max_length=2000)
+
+
+class EditorPosition(StrictModel):
+    x: float | int = Field(ge=-100000, le=100000)
+    y: float | int = Field(ge=-100000, le=100000)
+
+
+class ScenarioEditorLayout(StrictModel):
+    positions: Annotated[dict[Key, EditorPosition], Field(max_length=257)] = Field(default_factory=dict)
+
+
 class ScenarioDraftDefinition(StrictModel):
     schema_version: Literal[1] = 1
     scenario_key: Key
@@ -210,6 +231,8 @@ class ScenarioDraftDefinition(StrictModel):
     title: Annotated[str, Field(min_length=1, max_length=300)]
     description: str = Field(default="", max_length=2000)
     entry_block_id: Key | None = None
+    entry_points: Annotated[list[ScenarioEntryPoint], Field(max_length=64)] = Field(default_factory=list)
+    editor_layout: ScenarioEditorLayout = Field(default_factory=ScenarioEditorLayout)
     blocks: Annotated[list[Block], Field(max_length=256)] = Field(default_factory=list)
     process_binding: ProcessBinding
     publish_offering: StrictBool = False

@@ -8,6 +8,8 @@ type Step = {
   revision: number;
   state: string;
   linked_ticket_id?: string | null;
+  entry_point_key?: string | null;
+  version_id?: string;
   back_targets: { id: string; title: string }[];
   block: {
     id: string; kind: string; title: string;
@@ -40,7 +42,7 @@ async function request<T = Step>(path: string, body?: unknown, signal?: AbortSig
   return result.data;
 }
 
-export function ScenarioSession({ offering, owner = "", deviceId }: { offering: string; owner?: string; deviceId?: string }) {
+export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey }: { offering: string; owner?: string; deviceId?: string; entryPointKey?: string }) {
   const [step, setStep] = useState<Step | null>(null);
   const [values, setValues] = useState<DynamicFormValues>({});
   const [error, setError] = useState<SessionError | null>(null);
@@ -52,7 +54,7 @@ export function ScenarioSession({ offering, owner = "", deviceId }: { offering: 
   const requestSequence = useRef(0);
   const lifecycle = useRef(0);
   const commandControllers = useRef(new Set<AbortController>());
-  const storageKey = owner ? `pc_client.scenario.session:${owner}:${offering}` : null;
+  const storageKey = owner ? `pc_client.scenario.session:${owner}:${offering}${entryPointKey ? `:entry:${encodeURIComponent(entryPointKey)}` : ""}` : null;
 
   function remember(data: Step) {
     if (storageKey) {
@@ -75,7 +77,7 @@ export function ScenarioSession({ offering, owner = "", deviceId }: { offering: 
     let saved: string | null = null;
     try { saved = storageKey ? sessionStorage.getItem(storageKey) : null; } catch { /* Optional opaque ID. */ }
     const path = saved ? `${base}/${encodeURIComponent(saved)}` : base;
-    request(path, saved ? undefined : { offering_full_code: offering }, controller.signal)
+    request(path, saved ? undefined : { offering_full_code: offering, ...(entryPointKey ? { entry_point_key: entryPointKey } : {}) }, controller.signal)
       .then(data => { if (!controller.signal.aborted) accept(data); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause); })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
@@ -84,7 +86,7 @@ export function ScenarioSession({ offering, owner = "", deviceId }: { offering: 
       for (const pending of commandControllers.current) pending.abort();
       commandControllers.current.clear();
     };
-  }, [offering, storageKey, reload, deviceId]); // Context changes invalidate pending commands and previews.
+  }, [offering, storageKey, reload, deviceId, entryPointKey]); // Context changes invalidate pending commands and previews.
 
   useEffect(() => { heading.current?.focus(); }, [step?.block.id]);
 

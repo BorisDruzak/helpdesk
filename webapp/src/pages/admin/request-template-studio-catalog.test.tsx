@@ -56,7 +56,7 @@ describe("Guided Studio catalog", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
     expect(await screen.findByLabelText("Название сценария")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Сохранить черновик" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "4. Тестирование" }));
+    fireEvent.click(screen.getByRole("button", { name: "Тестировать" }));
     expect(screen.getByRole("button", { name: "Начать проверку" })).toBeEnabled();
   });
 });

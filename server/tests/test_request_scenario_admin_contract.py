@@ -66,7 +66,7 @@ async def test_error_filter_includes_published_scenario_with_invalid_new_draft()
         def all(self):
             from datetime import datetime, timezone
             row.updated_at = draft.updated_at = datetime.now(timezone.utc)
-            return [(row, draft, 3)]
+            return [(row, draft, 3, 2)]
     class Session:
         async def execute(self, statement): return Result()
     class Catalog:
@@ -80,6 +80,7 @@ async def test_error_filter_includes_published_scenario_with_invalid_new_draft()
     assert result["total"] == 1 and result["scenarios"][0]["id"] == row.id
     assert result["scenarios"][0]["status"] == "published"
     assert result["scenarios"][0]["published_version"] == 3
+    assert result["scenarios"][0]["published_entry_count"] == 2
 
 
 @pytest.mark.asyncio
@@ -91,14 +92,14 @@ async def test_category_tree_filter_applies_before_pagination():
         row = RequestStudioScenario(id=identifier, scenario_key=identifier, service_code="it", offering_full_code="it." + identifier, title=identifier, description="", category_id=category, archived=False)
         from datetime import datetime, timezone
         row.updated_at = datetime.now(timezone.utc)
-        rows.append((row, RequestStudioDraft(scenario_id=identifier, definition={}, revision=1, updated_by="test", updated_at=row.updated_at), None))
+        rows.append((row, RequestStudioDraft(scenario_id=identifier, definition={}, revision=1, updated_by="test", updated_at=row.updated_at), None, 0))
     class Result:
         def all(self): return rows
     class Session:
         async def execute(self, statement): return Result()
     class Catalog:
         async def list_services(self): return []
-        async def list_offerings(self): return [{"full_code": row.offering_full_code, "service_code": "it", "public_title": row.title} for row, _, _ in rows]
+        async def list_offerings(self): return [{"full_code": row.offering_full_code, "service_code": "it", "public_title": row.title} for row, _, _, _ in rows]
     repo = RequestScenarioRepo(Session(), None)
     repo.catalog = Catalog()
     async def categories(): return [{"id": "root", "parent_id": None, "title": "Root"}, {"id": "child", "parent_id": "root", "title": "Child"}]

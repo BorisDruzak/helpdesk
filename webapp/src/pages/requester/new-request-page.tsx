@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "../../features/auth/session-provider";
 import { pendingCreateKey, clearCreateKey } from "../../features/requester/create-intent";
-import { ScenarioSession } from "../../features/requester/scenario-session";
+import { ScenarioEntrances } from "../../features/requester/scenario-entrances";
 
 import { createRequesterTicket, previewRequesterTicket, RequesterApiError, searchRequesterOnBehalfPeople } from "../../features/requester/api";
 import {
@@ -819,7 +819,7 @@ function RequesterNewRequestContent() {
         {selectedOffering?.guided_scenario_enabled ? <>
           <CategorySelector options={categorySelectorOptions} selectedKey={selectedCategoryKey}
             recommendedKey={recommendedCategoryKey} onChange={selectCategoryKey} />
-          <ScenarioSession key={selectedOffering.full_code} offering={selectedOffering.full_code} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
+          <ScenarioEntrances key={selectedOffering.full_code} offering={selectedOffering} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
         </> : <DetailsStepPanel
           categoryError={categoryError}
           categoryInputRef={(element) => {

@@ -42,6 +42,12 @@ export type ScenarioBlock = BlockBase & (
   | { kind: "finish"; message?: string }
 );
 export type ScenarioPolicyKind = "priority" | "routing" | "sla" | "ola" | "approval" | "notification" | "closure" | "visibility";
+export type ScenarioEntryPoint = {
+  key: string; title: string; description?: string; category_id?: string | null;
+  synonyms?: string[]; visibility?: "public" | "internal" | "restricted";
+  enabled?: boolean; target_block_id: string; reported_symptom?: string;
+};
+export type ScenarioEditorLayout = { positions?: Record<string, { x: number; y: number }> };
 export type ScenarioDraftDefinition = {
   schema_version?: 1;
   scenario_key: string;
@@ -52,6 +58,8 @@ export type ScenarioDraftDefinition = {
   description?: string;
   publish_offering?: boolean;
   entry_block_id?: string | null;
+  entry_points?: ScenarioEntryPoint[];
+  editor_layout?: ScenarioEditorLayout;
   blocks?: ScenarioBlock[];
   process_binding: { request_template_key: string; priority_source?: "existing_server_policy_runtime"; policy_refs?: Partial<Record<ScenarioPolicyKind, string>> };
 };

@@ -16,6 +16,7 @@ export type ScenarioItem = {
   category_id: string | null; title: string; description: string; archived: boolean; enabled: boolean;
   published_version_id: string | null; status?: ScenarioStatus; revision?: number;
   published_version?: number | null; updated_at?: string;
+  published_entry_count?: number;
   issues?: { code: string; path: string; message: string }[];
 };
 export type ScenarioDetail = { scenario: ScenarioItem; draft: { revision: number; definition: ScenarioDraftDefinition } };
@@ -29,6 +30,7 @@ export type OfferingCard = { offering: AdminServiceCatalogOffering; scenarios: S
   active_mode: "form" | "scenario"; requester_available?: boolean; active_scenario_id?: string | null; category_ids: string[] };
 export type SimulationState = { current_block_id: string; revision: number; state: string; answers: Record<string, unknown>; history: string[]; results: Record<string, unknown> };
 export type ScenarioSimulation = { revision: number; current_block: ScenarioBlock; state: SimulationState;
+  simulation_scope?: { limited_scope: boolean; excluded_block_ids: string[]; issues: { code: string; path: string; message: string }[] };
   current_step?: { id: string; kind: string; title: string; fields?: (RequestFormField & { value?: unknown; allow_unknown?: boolean; group?: string | null; group_title?: string | null })[]; layout?: "single" | "group" | "section";
     has_dynamic_fields?: boolean; content?: { body: string }; acknowledgment_required?: boolean; can_request_ticket?: boolean; message?: string;
     answers?: { key: string; label: string; display_value: string }[] };
@@ -71,8 +73,8 @@ export function saveScenario(id: string, definition: ScenarioDraftDefinition, re
 export function archiveScenario(id: string, revision: number) { return request<ScenarioDetail>(`/scenarios/${encodeURIComponent(id)}/archive`, "POST", { revision }); }
 export function saveCategory(input: CategoryInput, id?: string) { return request<ScenarioCategory>(id ? `/categories/${encodeURIComponent(id)}` : "/categories", id ? "PUT" : "POST", input); }
 export function archiveCategory(id: string, revision: number) { return request<ScenarioCategory>(`/categories/${encodeURIComponent(id)}?revision=${revision}`, "DELETE"); }
-export function simulateScenario(id: string, revision: number, steps: ScenarioAnswerRequest[] = [], preview?: ScenarioAnswerRequest, diagnosticOutcomes?: Record<string, DiagnosticFailureStatus>) {
-  return request<ScenarioSimulation>(`/scenarios/${encodeURIComponent(id)}/simulate`, "POST", { revision, steps, ...(preview ? { preview } : {}), ...(diagnosticOutcomes && Object.keys(diagnosticOutcomes).length ? { diagnostic_outcomes: diagnosticOutcomes } : {}) });
+export function simulateScenario(id: string, revision: number, steps: ScenarioAnswerRequest[] = [], preview?: ScenarioAnswerRequest, diagnosticOutcomes?: Record<string, DiagnosticFailureStatus>, entryPointKey?: string) {
+  return request<ScenarioSimulation>(`/scenarios/${encodeURIComponent(id)}/simulate`, "POST", { revision, steps, ...(entryPointKey ? { entry_point_key: entryPointKey } : {}), ...(preview ? { preview } : {}), ...(diagnosticOutcomes && Object.keys(diagnosticOutcomes).length ? { diagnostic_outcomes: diagnosticOutcomes } : {}) });
 }
 export function previewScenarioPublication(id: string, revision: number) {
   return request<ScenarioPublicationPreview>(`/scenarios/${encodeURIComponent(id)}/publish-preview`, "POST", { revision });

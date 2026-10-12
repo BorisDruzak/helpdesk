@@ -77,10 +77,11 @@ class RequestScenarioSessionRepo:
             "id": row.id, "version_id": row.version_id, "revision": row.revision,
             "state": row.state, "expires_at": row.expires_at.isoformat(),
             "linked_ticket_id": row.linked_ticket_id,
+            "entry_point": deepcopy(row.results.get("_entry_point")),
             **await self._projection(runtime, self._state(row)),
         }
 
-    async def start(self, offering):
+    async def start(self, offering, entry_point_key=None):
         # Serialize start with publish/disable and other starts for this offering.
         scenario = await self.session.scalar(select(RequestStudioScenario).where(
             RequestStudioScenario.offering_full_code == offering,
@@ -93,14 +94,23 @@ class RequestScenarioSessionRepo:
         if not version or version.state != "published" or version.scenario_id != scenario.id:
             raise SessionAccessError("SCENARIO_UNAVAILABLE")
         runtime = ScenarioRuntime(ScenarioDefinition.model_validate(version.definition))
+        entry = next((item for item in runtime.definition.entry_points if item.key == entry_point_key), None)
+        if entry_point_key is not None:
+            if not entry or not entry.enabled or entry.visibility != "public":
+                raise SessionAccessError("SCENARIO_UNAVAILABLE")
+            from tickets.request_scenario_catalog import category_path_is_public
+            categories = {item.id: item for item in (await self.session.scalars(select(RequestStudioCategory))).all()}
+            if not category_path_is_public(entry.category_id, categories):
+                raise SessionAccessError("SCENARIO_UNAVAILABLE")
         now = datetime.now(timezone.utc)
         row = await self.session.scalar(select(RequestStudioSession).where(
             RequestStudioSession.owner_actor_id == self.owner,
             RequestStudioSession.version_id == version.id,
             RequestStudioSession.state == "active", RequestStudioSession.expires_at > now,
+            RequestStudioSession.results[("_entry_point", "key")].astext == entry_point_key,
         ).order_by(RequestStudioSession.created_at.desc()).limit(1))
         if row is None:
-            state = runtime.initial_state()
+            state = runtime.initial_state(entry_point_key)
             row = RequestStudioSession(owner_actor_id=self.owner, version_id=version.id,
                                        expires_at=now + timedelta(hours=24))
             self._store(row, state)
@@ -126,6 +136,12 @@ class RequestScenarioSessionRepo:
         version = await self.session.get(RequestStudioScenarioVersion, row.version_id)
         scenario = await self.session.get(RequestStudioScenario, version.scenario_id)
         await self._visible(scenario)
+        entry = row.results.get("_entry_point")
+        if entry:
+            from tickets.request_scenario_catalog import category_path_is_public
+            categories = {item.id: item for item in (await self.session.scalars(select(RequestStudioCategory))).all()}
+            if not category_path_is_public(entry.get("category_id"), categories):
+                raise SessionAccessError("SCENARIO_UNAVAILABLE")
         if version.state == "revoked":
             raise SessionAccessError("SESSION_REVOKED", 410)
         if row.expires_at <= datetime.now(timezone.utc):

@@ -37,11 +37,11 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.goto("/app/admin/request-template-studio");
     await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
-    await page.getByRole("button", { name: "3. Обработка обращения", exact: true }).click();
+    await page.getByText("Политики и наследование", { exact: true }).click();
     await page.getByRole("combobox", { name: "Маршрут и очередь", exact: true }).selectOption("printer_route");
     await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
     await expect(page.getByText("Черновик сохранён. Ревизия 4.", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "4. Тестирование", exact: true }).click();
+    await page.getByRole("button", { name: "Тестировать", exact: true }).click();
     const start = page.getByRole("button", { name: "Начать проверку", exact: true });
     await start.focus(); await page.keyboard.press("Enter");
     await expect(page.getByText("Весь отдел", { exact: true })).toBeVisible();

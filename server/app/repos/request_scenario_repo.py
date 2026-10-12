@@ -1,13 +1,14 @@
 """Scenario admin persistence over the existing catalog and its audit transaction."""
 from copy import deepcopy
 from dataclasses import asdict
+from datetime import datetime, timezone
 import hashlib
 import json
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, exists, or_, func
 
 from app.db.models import RequestTemplate
-from app.db.request_scenario_models import RequestStudioCategory, RequestStudioDraft, RequestStudioScenario, RequestStudioScenarioVersion
+from app.db.request_scenario_models import RequestStudioCategory, RequestStudioDraft, RequestStudioScenario, RequestStudioScenarioVersion, RequestStudioSession
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from tickets.request_studio_catalog_projection import offering_cards
 from tickets.request_scenario_runtime import ScenarioRuntime
@@ -84,6 +85,22 @@ class RequestScenarioRepo:
         scenario = await self.session.scalar(select(RequestStudioScenario.id).where(RequestStudioScenario.category_id == row.id, RequestStudioScenario.archived.is_(False)).limit(1))
         if child or scenario:
             raise ScenarioAdminError("CATEGORY_NOT_EMPTY", 409)
+        entry_category = {"entry_points": [{"category_id": row.id}]}
+        draft_entry = await self.session.scalar(select(RequestStudioDraft.scenario_id).join(
+            RequestStudioScenario, RequestStudioDraft.scenario_id == RequestStudioScenario.id,
+        ).where(RequestStudioScenario.archived.is_(False), RequestStudioDraft.definition.contains(entry_category)).limit(1))
+        if draft_entry:
+            raise ScenarioAdminError("CATEGORY_NOT_EMPTY", 409)
+        pinned = exists(select(RequestStudioSession.id).where(
+            RequestStudioSession.version_id == RequestStudioScenarioVersion.id,
+            RequestStudioSession.state == "active", RequestStudioSession.expires_at > datetime.now(timezone.utc),
+        ))
+        published_entry = await self.session.scalar(select(RequestStudioScenarioVersion.id).join(
+            RequestStudioScenario, RequestStudioScenarioVersion.scenario_id == RequestStudioScenario.id,
+        ).where(RequestStudioScenario.archived.is_(False), RequestStudioScenarioVersion.definition.contains(entry_category),
+                or_(RequestStudioScenario.published_version_id == RequestStudioScenarioVersion.id, pinned)).limit(1))
+        if published_entry:
+            raise ScenarioAdminError("CATEGORY_NOT_EMPTY", 409)
 
     async def save_category(self, payload, identifier=None):
         await self._service_lock(payload.service_code)
@@ -147,6 +164,8 @@ class RequestScenarioRepo:
         from tickets.request_scenario_processing import apply_scenario_policy_refs
         await apply_scenario_policy_refs(self.session, {"template_context": {}}, definition.process_binding.policy_refs)
         await self._category(definition.category_id, definition.service_code)
+        for entry in definition.entry_points:
+            await self._category(entry.category_id, definition.service_code)
 
     async def detail(self, identifier, *, lock=False):
         stmt = select(RequestStudioScenario).where(RequestStudioScenario.id == identifier)
@@ -225,8 +244,14 @@ class RequestScenarioRepo:
         row, draft = await self.detail(identifier)
         if row.archived or draft.revision != payload.revision:
             raise ScenarioAdminError("REVISION_CONFLICT", 409)
-        engine = ScenarioRuntime(ScenarioDefinition.model_validate(draft.definition), diagnostic_outcomes=payload.diagnostic_outcomes)
-        state = engine.initial_state()
+        from tickets.request_scenario_simulation import simulation_definition
+        definition, scope = simulation_definition(draft.definition, payload.entry_point_key)
+        available_diagnostics = {block.get("id") for block in draft.definition.get("blocks", []) if block.get("kind") == "diagnostic"}
+        if payload.diagnostic_outcomes.keys() - available_diagnostics:
+            raise ScenarioAdminError("DIAGNOSTIC_OUTCOME_INVALID")
+        selected_ids = {block.id for block in definition.blocks}
+        engine = ScenarioRuntime(definition, diagnostic_outcomes={key: value for key, value in payload.diagnostic_outcomes.items() if key in selected_ids})
+        state = engine.initial_state(payload.entry_point_key)
         for step in payload.steps:
             state = engine.advance(state, step)
         from tickets.request_scenario_session import project_step
@@ -239,7 +264,8 @@ class RequestScenarioRepo:
             _, processing = await simulate_service_catalog_processing(self.session, data, scenario_snapshot=snapshot,
                 **({"allow_draft_offering": True} if draft.definition.get("publish_offering") is True else {}))
         return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"),
-                "current_step": project_step(engine.definition, projected)["block"], "processing": processing, "revision": draft.revision}
+                "current_step": project_step(engine.definition, projected)["block"], "processing": processing, "revision": draft.revision,
+                "simulation_scope": scope}
 
     async def catalog_view(self, *, query="", status="all", offset=0, limit=100, category_id=None, service_code=None, offering_code=None):
         categories = await self.categories()
@@ -254,9 +280,10 @@ class RequestScenarioRepo:
         category_names = {item["id"]: item["title"] for item in categories}
         offerings = await self.catalog.list_offerings()
         services = await self.catalog.list_services()
-        rows = (await self.session.execute(select(RequestStudioScenario, RequestStudioDraft, RequestStudioScenarioVersion.version).join(RequestStudioDraft, RequestStudioDraft.scenario_id == RequestStudioScenario.id).outerjoin(RequestStudioScenarioVersion, (RequestStudioScenarioVersion.id == RequestStudioScenario.published_version_id) & (RequestStudioScenarioVersion.state == "published")).order_by(RequestStudioScenario.title, RequestStudioScenario.id))).all()
+        rows = (await self.session.execute(select(RequestStudioScenario, RequestStudioDraft, RequestStudioScenarioVersion.version,
+            func.coalesce(func.jsonb_array_length(RequestStudioScenarioVersion.definition["entry_points"]), 0)).join(RequestStudioDraft, RequestStudioDraft.scenario_id == RequestStudioScenario.id).outerjoin(RequestStudioScenarioVersion, (RequestStudioScenarioVersion.id == RequestStudioScenario.published_version_id) & (RequestStudioScenarioVersion.state == "published")).order_by(RequestStudioScenario.title, RequestStudioScenario.id))).all()
         scenarios = []
-        for row, draft, published_version in rows:
+        for row, draft, published_version, published_entry_count in rows:
             item = serialize(row)
             item["updated_at"] = max(row.updated_at, draft.updated_at).isoformat()
             issues = []
@@ -266,7 +293,10 @@ class RequestScenarioRepo:
             except ValueError:
                 issues = [{"code": "incomplete_draft", "path": "blocks", "message": "Добавьте вопросы и переходы"}]
             item["status"] = "archived" if row.archived else "published" if row.published_version_id else "errors" if issues else "draft"
-            item.update(revision=draft.revision, published_version=published_version, issues=issues, category_title=category_names.get(row.category_id, ""))
+            item.update(revision=draft.revision, published_version=published_version,
+                published_entry_count=published_entry_count,
+                entry_point_count=len(draft.definition.get("entry_points", [])),
+                issues=issues, category_title=category_names.get(row.category_id, ""))
             scenarios.append(item)
         entries = offering_cards(offerings, scenarios, categories, services, query=query, status=status,
             service_code=service_code, offering_code=offering_code, selected=selected)

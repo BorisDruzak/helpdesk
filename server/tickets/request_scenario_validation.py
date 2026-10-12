@@ -84,6 +84,19 @@ def validate_scenario(definition):
 
     if definition.entry_block_id not in blocks:
         add("unknown_entry", "entry_block_id", "Entry block does not exist")
+    entries = [definition.entry_block_id]
+    entry_keys = set()
+    for entry in definition.entry_points:
+        path = f"entry_points.{entry.key}"
+        if entry.key in entry_keys:
+            add("duplicate_entry", path, "Entrance identifier is duplicated")
+        entry_keys.add(entry.key)
+        if entry.target_block_id not in blocks:
+            add("unknown_entry", path, "Entrance target does not exist")
+        entries.append(entry.target_block_id)
+    for key in definition.editor_layout.positions:
+        if key not in blocks and key != "system_start":
+            add("unknown_layout_block", f"editor_layout.positions.{key}", "Layout refers to a missing block")
     adjacency = {key: [] for key in blocks}
     parents = {key: set() for key in blocks}
     for block in blocks.values():
@@ -149,11 +162,11 @@ def validate_scenario(definition):
             seen.add(key)
             pending.extend(edges[key])
         return seen
-    reached = reachable(definition.entry_block_id, adjacency)
+    reached = set().union(*(reachable(entry, adjacency) for entry in entries))
     for key in blocks.keys() - reached:
         add("unreachable_block", f"blocks.{key}", "Block cannot be reached from entry")
     unconfirmed = {key: [edge.to for edge in block.transitions if not (block.kind == "resolution_check" and guarantees_yes(edge.when))] for key, block in blocks.items()}
-    unconfirmed_reached = reachable(definition.entry_block_id, unconfirmed)
+    unconfirmed_reached = set().union(*(reachable(entry, unconfirmed) for entry in entries))
     for key in unconfirmed_reached:
         if blocks[key].kind == "finish":
             add("unconfirmed_finish", f"blocks.{key}", "Self-resolution requires an explicit positive result check")

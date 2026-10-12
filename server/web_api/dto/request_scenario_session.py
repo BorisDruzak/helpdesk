@@ -7,6 +7,7 @@ from web_api.dto.request_scenario import Key, StrictModel
 
 
 class SessionStart(StrictModel):
+    entry_point_key: Key | None = None
     offering_full_code: Annotated[str, Field(max_length=220, pattern=r"^[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9_-]*$")]
 
 

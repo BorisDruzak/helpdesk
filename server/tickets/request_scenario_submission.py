@@ -40,6 +40,7 @@ def build_scenario_submission(definition, state, *, session_id, version_id):
         "history": list(state.history),
         "policy_refs": dict(definition.process_binding.policy_refs),
         "diagnostics": {key: value for key, value in state.results.items() if key in runtime.blocks and runtime.blocks[key].kind == "diagnostic"},
+        "reported_context": deepcopy(state.results.get("_entry_point")),
     }
     return payload, snapshot
 

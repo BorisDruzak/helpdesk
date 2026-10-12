@@ -29,7 +29,7 @@ async def _run(request, kind):
         async with get_session() as session:
             repo = RequestScenarioSessionRepo(session, request["auth_context"])
             if kind == "start":
-                result = await repo.start(payload.offering_full_code)
+                result = await repo.start(payload.offering_full_code, payload.entry_point_key)
             elif kind == "read":
                 result = await repo.read(identifier)
             elif kind == "preview":

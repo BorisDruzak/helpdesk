@@ -23,13 +23,15 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
         data = { state: { revision: steps.length ? 2 : 1, history: steps.length ? ["questions"] : [], results: {} }, current_step: steps.length ? { id: "review", kind: "review", title: "Ответы проверены" } : { id: "questions", kind: "form_page", title: "Вопросы о печати", layout: "section", fields } };
       }
       else if (path.endsWith("unread_count")) { await route.fulfill({ json: { status: "ok", unread_count: 0 } }); return; }
+      else if (path.endsWith("/helpdesk-model/policies")) data = { policies: {} };
       else unexpected.push(`${route.request().method()} ${path}`);
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
     await page.getByRole("link", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
-    await page.getByRole("button", { name: "2. Пользовательский сценарий", exact: true }).click();
+    await page.getByRole("button", { name: "Карта сценария", exact: true }).click();
+    await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Вопросы о печати", exact: true }).click();
     const questions = page.getByRole("list", { name: "Вопросы страницы", exact: true });
     const questionListSize = await questions.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }));
     expect(questionListSize.height).toBeLessThanOrEqual(200);
@@ -38,16 +40,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await last.focus(); await page.keyboard.press("Enter");
     await expect(page.getByRole("group", { name: "Редактор вопроса", exact: true })).toHaveCount(1);
     await expect(page.getByRole("textbox", { name: "Название вопроса", exact: true })).toHaveValue("Вопрос 32");
-    await page.getByRole("button", { name: "Предпросмотр шага", exact: true }).click();
-    const preview = viewport.width < 1440 ? page.getByRole("dialog", { name: "Предпросмотр выбранного шага" }) : page.getByRole("complementary", { name: "Предпросмотр выбранного шага" });
-    await expect(preview.getByRole("group", { name: "Устройство", exact: true })).toBeVisible();
-    await expect(preview.getByRole("group", { name: "Влияние", exact: true })).toHaveCount(1);
-    await expect(preview.getByRole("textbox", { name: "Вопрос 32", exact: true })).toBeDisabled();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.screenshot({ path: info.outputPath(`${viewport.width}-32-question-sections.png`) });
-    if (viewport.width < 1440) await page.keyboard.press("Escape");
-    else await page.getByRole("button", { name: "Скрыть предпросмотр", exact: true }).click();
-    await page.getByRole("button", { name: "Предпросмотр всей ветки", exact: true }).click();
+    await page.getByRole("button", { name: "Тестировать", exact: true }).click();
     await expect(page.getByRole("button", { name: "Начать проверку", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Начать проверку", exact: true }).click();
     await expect(page.getByRole("group", { name: "Устройство", exact: true })).toBeVisible();

@@ -1,3 +1,29 @@
+# In progress: 2026-10-13 Guided Request Studio v3
+
+Branch `codex/guided-request-studio-v3`, baseline `bb8c521faaf76eea01119f314f68fecdeb34cefb`.
+Spec and plan: `docs/superpowers/specs/2026-10-13-guided-request-studio-v3.md`
+and `docs/superpowers/plans/2026-10-13-guided-request-studio-v3.md`.
+Goal: one map, multiple version-pinned entrances, contextual graph workbench,
+canonical Helpdesk policies/approvals and requester catalog. Production, actual
+scenario publication, real tickets and real diagnostic actions excluded.
+Backend additive contracts/runtime and all-entry readiness implemented; no migration
+(head 148). Safe partial admin simulation discloses unrelated errors without
+weakening full publication validation. Archive-category dependencies now account
+for draft/current/pinned entrances and release archived maps. Final review's
+three P2 findings fixed (dynamic handles, multiline synonyms, approval save race).
+Verification: full no-DB server 1375 passed/1 skipped; scripts 275 passed; baseline
+frontend 711 passed, latest changed surface 129 passed; scoped workspace and all
+six CI audits passed, mutation smoke 4/4 killed. Real pointer browser graph flows
+passed at 1366/1920. Full fixture browser118 PASS; isolated Linux PostgreSQL/API36 PASS with
+fresh migrations to148 and temporary role/database cleanup confirmed. Latest
+full-width map sizing and viewport-contained inspector subset:10 PASS. Initial DB fixture illegally changed immutable published JSON;
+fixed to insert replacement snapshots; failed/interrupted attempts preserved,
+temporary roles/databases removed. No application service was started/stopped.
+Final screenshots preserved and inspected. Remaining: frozen diff/commit and draft
+PR with canonical CI. Existing group approval markers cannot expand to decision
+actors; UI honestly exposes trusted manager/owner/lead and Registry account
+selection. Preserve unrelated untracked files/prototype; stage only task files.
+
 # Complete: 2026-10-12 Independent processing template creation
 
 Fixed missing new-template creation from service authoring. Dedicated

@@ -39,7 +39,16 @@ describe("Guided Studio workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     expect(await screen.findByText("Черновик сохранён. Ревизия 1.")).toBeVisible();
   });
-  it("shows only the current wizard step", async () => { mock(); mount(); await ready(); fireEvent.click(screen.getByRole("button", { name: "Создать сценарий" })); expect(screen.getByRole("button", { name: "Следующий этап" })).toBeDisabled(); fireEvent.change(screen.getByLabelText("Услуга"), { target: { value: "it.printer" } }); fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" })); await screen.findByText("Черновик сохранён. Ревизия 1."); fireEvent.click(screen.getByRole("button", { name: "Следующий этап" })); expect(screen.getByText("Блоки сценария")).toBeVisible(); expect(screen.queryByLabelText("Название сценария")).not.toBeInTheDocument(); expect(screen.queryByText("Проверка пользовательского сценария")).not.toBeInTheDocument(); });
+  it("opens the map with three primary sections and contextual testing", async () => {
+    mock(); mount(); await ready(); fireEvent.click(screen.getByRole("button", { name: "Создать сценарий" }));
+    expect(screen.getByRole("navigation", { name: "Разделы Студии" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Карта сценария" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Согласования" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Следующий этап" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Тестировать" }));
+    expect(screen.getByText("Сначала сохраните сценарий.")).toBeVisible();
+    expect(screen.getByLabelText("Найти блок")).toBeVisible();
+  });
   it("requires an explicit decision before discarding edits", async () => { mock(); mount(); await ready(); fireEvent.click(screen.getByRole("button", { name: "Создать сценарий" })); fireEvent.click(screen.getByRole("button", { name: "Вернуться в каталог" })); expect(screen.getByText("Уйти без сохранения локальных изменений?")).toBeVisible(); fireEvent.click(screen.getByRole("button", { name: "Отмена" })); expect(screen.getByLabelText("Название сценария")).toBeVisible(); });
   it("creates a category through local settings", async () => { const fetcher = mock(); mount(); await ready(); fireEvent.click(screen.getByRole("button", { name: "Создать категорию" })); fireEvent.change(screen.getByLabelText("Название категории"), { target: { value: "Принтеры" } }); expect(screen.getByText("Расширенные настройки")).toBeVisible(); fireEvent.click(screen.getByRole("button", { name: "Сохранить категорию" })); await waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true)); });
 });

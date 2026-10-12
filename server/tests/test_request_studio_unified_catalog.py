@@ -19,7 +19,7 @@ def repository():
             service_code="workplace", offering_full_code="workplace.print", category_id="printers",
             archived=archived, enabled=enabled, updated_at=now)
         draft = RequestStudioDraft(scenario_id=identifier, revision=1, definition={}, updated_at=now)
-        rows.append((scenario, draft, None))
+        rows.append((scenario, draft, None, 0))
     repo = RequestScenarioRepo(SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: rows))), None)
     repo.categories = AsyncMock(return_value=[{"id": "printers", "service_code": "workplace", "parent_id": None,
         "title": "Принтеры", "visibility": "public", "lifecycle_status": "published"}])
@@ -60,7 +60,7 @@ async def test_service_category_includes_plain_forms_and_subcategory_retains_dis
 async def test_published_disabled_or_hidden_scenario_does_not_claim_requester_uses_it():
     repo, rows = repository()
     rows[1][0].published_version_id = "version"
-    rows[1] = (*rows[1][:2], 3)
+    rows[1] = (*rows[1][:2], 3, 2)
     assert (await repo.catalog_view())["entries"][1]["active_mode"] == "form"
 
     assert (await repo.catalog_view(status="guided"))["total"] == 0

@@ -8,7 +8,8 @@ import { diagnosticFailureLabels, type DiagnosticFailureStatus } from "./scenari
 import { ScenarioProcessingResult } from "./scenario-processing-result";
 import { ScenarioFields } from "../requester/scenario-fields";
 
-export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition, onIssue }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; onIssue?: (target: ScenarioIssueDestination) => void }) {
+export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition, onIssue, onState }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; onIssue?: (target: ScenarioIssueDestination) => void; onState?: (current: string, path: string[]) => void }) {
+  const [entryPointKey, setEntryPointKey] = useState("");
   const [result, setResult] = useState<ScenarioSimulation | null>(null);
   const [steps, setSteps] = useState<ScenarioAnswerRequest[]>([]);
   const [values, setValues] = useState<DynamicFormValues>({});
@@ -24,7 +25,7 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
   useEffect(() => {
     sequence.current++; setResult(null); setSteps([]); setValues({}); setError(""); setIssues([]); setBusy(false); setDiagnosticOutcomes({});
     return () => { sequence.current++; };
-  }, [id, revision, dirty, disabled]);
+  }, [id, revision, dirty, disabled, entryPointKey]);
   useEffect(() => { heading.current?.focus(); }, [block?.id]);
   async function run(next: ScenarioAnswerRequest[], preview?: ScenarioAnswerRequest) {
     if (dirty || disabled) return;
@@ -32,9 +33,10 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
     setBusy(true); setError(""); setIssues([]);
     try {
       const outcomes = Object.fromEntries(diagnostics.map(item => [item.id, diagnosticOutcomes[item.id] || "unavailable"]));
-      const response = await simulateScenario(id, revision, next, preview, outcomes);
+      const response = await simulateScenario(id, revision, next, preview, outcomes, entryPointKey);
       if (current !== sequence.current) return;
       setResult(response);
+      onState?.(response.state.current_block_id, response.state.history ?? []);
       if (!preview) { setSteps(next); setAcknowledged(false); setValues(Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, field.value])) as DynamicFormValues); }
       else setValues(previous => Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, previous[field.key]])));
     } catch (failure) { if (current === sequence.current) {
@@ -57,6 +59,8 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
   return <div className="min-w-0 space-y-4" aria-busy={busy}>
     <h2 className="text-lg font-semibold">Проверка пользовательского сценария</h2>
     <p>Ответы и переходы проверяет сервер. Обращение, согласование и операции устройства не создаются.</p>
+    <label className="block">Точка входа для проверки<select className="field-base block w-full" value={entryPointKey} disabled={busy} onChange={event => setEntryPointKey(event.target.value)}><option value="">Совместимый вход карты</option>{definition?.entry_points?.map(entry => <option key={entry.key} value={entry.key}>{entry.title}</option>)}</select></label>
+    <details><summary>Сообщённые и проверенные сведения</summary><p>Сообщённый симптом: {definition?.entry_points?.find(entry => entry.key === entryPointKey)?.reported_symptom || "не задан"}</p><p>Ответы сотрудника: {Object.entries(result?.state.answers ?? {}).map(([key, value]) => `${definition?.blocks?.flatMap(block => block.kind === "form_page" ? block.fields : []).find(field => field.key === key)?.label ?? "Ответ"}: ${String(value ?? "Не знаю")}`).join("; ") || "пока нет"}</p><p>Проверенные факты диагностики: пока нет. Реальная диагностика недоступна.</p></details>
     {!!diagnostics.length && <fieldset className="grid gap-3 rounded border p-3" disabled={dirty || disabled || busy}>
       <legend>Исходы диагностики только для симуляции</legend>
       {diagnostics.map(item => <label key={item.id}>Исход симуляции: {item.title}<select className="block w-full rounded border p-2" value={diagnosticOutcomes[item.id] || "unavailable"} onChange={event => {
@@ -65,6 +69,7 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
     </fieldset>}
     <Button disabled={dirty || disabled || busy} onClick={() => void run([])}>Начать проверку</Button>
     {dirty && <p>Сначала сохраните изменения.</p>}{error && <p role="alert">{error}</p>}
+    {result?.simulation_scope?.limited_scope && <p role="status" className="rounded border border-amber-300 p-3">Проверяется только допустимая часть выбранного входа. В черновике есть ошибки; публикация всей карты заблокирована. Исключённые шаги: {result.simulation_scope.excluded_block_ids.map(id => definition?.blocks?.find(block => block.id === id)?.title ?? "Шаг").join(", ")}.</p>}
     {issues.map((issue, index) => {
       const target = definition ? scenarioIssueDestination(issue, definition) : null;
       const blockTitle = definition?.blocks?.find(block => block.id === target?.blockId)?.title;

@@ -2,6 +2,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSession } from "./scenario-session";
 
+it("starts the selected entrance instead of resuming another entrance", async () => {
+  sessionStorage.setItem("pc_client.scenario.session:user:workplace.printer", "legacy-session");
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "success", data: { id: "new-session", revision: 1, state: "active", back_targets: [], block: { id: "paper", kind: "instruction", title: "Paper" } } }), { headers: { "content-type": "application/json" } }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<ScenarioSession offering="workplace.printer" owner="user" entryPointKey="paper" />);
+  await screen.findByText("Paper");
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ offering_full_code: "workplace.printer", entry_point_key: "paper" });
+});
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); });
 
 it("previews processing before submitting only the session revision and confirmation", async () => {

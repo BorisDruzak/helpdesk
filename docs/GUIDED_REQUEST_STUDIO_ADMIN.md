@@ -34,17 +34,13 @@ one catalog entry. Settings guard unsaved changes on navigation/unload; mutation
 requests disable editing until their response updates the saved baseline. Existing
 plain-form consumers keep their canonical forms.
 
-**Создать сценарий** opens a five-step wizard: category/purpose, user scenario,
-ticket processing, testing, publication. Only the selected step is rendered.
-Choose an existing offering by its human title; the corresponding service and
-request template binding are set together. Technical keys live in the local
-**Расширенные настройки** disclosure, rather than a global mode or another tab.
-The service/offering/template binding cannot be replaced on a saved scenario.
-Later steps become available after saving a valid purpose/offering binding;
-navigation between them preserves local changes. Selecting an offering displays
-its service section and available subcategories. Before selection, the disabled
-subcategory picker explains the prerequisite. A service without subcategories
-explicitly offers its main section and inline category creation.
+**Создать карту сценария** opens the map workbench. The primary sections are
+**Каталог**, **Карта сценария** and **Согласования**. Testing, publication and
+version history open in the contextual inspector from header actions; the map
+remains visible. The single system **Начало** holds title, description, category,
+Service/Offering/RequestTemplate binding and inherited policies. It is metadata,
+not a runtime step. Existing bindings cannot be replaced on a saved scenario.
+Inline category creation preserves unsaved map values.
 
 **Создать услугу** opens `/app/admin/request-template-studio/services/new`, an
 independent creation page. Choose a published/public section and an active,
@@ -66,18 +62,18 @@ permission checks, unsaved-navigation protection, loading/retry/error states and
 mutation locking remain in effect. After publication, return to the offering tab
 and choose **Обновить список шаблонов**; local service values remain intact.
 
-The scenario purpose step links to separate service creation instead of embedding
+The Начало inspector links to separate service creation instead of embedding
 a second form. Existing offering drafts can still opt into source-bound atomic
 publication with their scenario; selection sets the explicit publication intent.
 Software installation retains its profile metadata and existing service_request
 type. A published service exposes a requester deep link on its dedicated page.
 
-The selected step displays its essential next-step transitions in the visible
-**Что делать дальше** section. Stable keys stay in advanced settings.
-Testing preserves structured server issue codes/paths. Missing transitions are
-explained in Russian, with a link to the affected block and transitions. Revision
-conflicts request reloading the current version. Validation is not bypassed and
-simulation remains free of ticket/approval/Endpoint side effects.
+Select a block to configure its questions/content, answer roles or catalog
+entrances; select an arrow to edit its target, typed condition, priority and
+fallback. Stable keys and technical limits stay in the selected element's local
+advanced disclosure. Testing uses structured server issue paths with actions
+that select the affected block/arrow/policy. Simulation never creates tickets,
+approvals, notifications or Endpoint operations.
 
 Saving creates or updates a disabled draft and displays its server revision.
 A conflict preserves local edits. **Загрузить серверную версию** explicitly
@@ -100,38 +96,47 @@ Ambiguous/missing context stays in the catalog with an explicit notice. A
 paginated/incomplete catalog also requires an explicit search/open choice;
 absence from its first page never causes automatic creation of another draft.
 
-P4 provides the catalog and wizard shell. P5 adds the block builder. Requester
-sessions/ticket submission (P6/P7) and publication/diff/confirmation flow (P8)
-are subsequent gates. No publication, enabling of requester scenarios,
-production deployment, or Endpoint execution is performed by this shell.
+## Map workbench
 
-## Block workbench
+The explorer contains seven palette types: Вопрос, Инструкция, Условие,
+Проверка результата, Диагностика, Сводка and Результат. Result modes reuse
+`finish`/`submit_ticket`; the other visual types reuse existing runtime kinds.
+React Flow supplies draggable blocks, ports, selectable/reconnectable arrows,
+zoom, pan and fit. `editor_layout.positions` persists geometry separately from
+runtime transitions. Keyboard alternatives use block search, position inputs and
+source/target pickers. Reconnecting updates one canonical transition. Inserting a
+continuing block on an arrow retains its original condition on the first link.
+Terminal/branching insertions require explicit route configuration. Automatic
+cycles are rejected with an explanation.
 
-The second wizard step contains the block explorer and exactly one selected
-block editor. Add from the palette inserts after selection and focuses its title.
-Drag/drop and keyboard-accessible up/down buttons change list order without
-rewriting explicit graph transitions. Copy assigns fresh block/field/fact keys
-and remaps copied local dependencies. Removal shows incoming transitions and
-requires an existing replacement for references/entry. An answer still referenced
-elsewhere cannot be removed until its dependencies are edited. Local undo/redo
-is bounded to 100 snapshots and resets on an externally replaced definition.
+Copy generates new block/field/fact keys and remaps local field dependencies.
+Deletion displays incoming/outgoing links, entrance bindings and field uses;
+entrances require an explicit draft reassignment/removal. Operations are atomic
+and reversible through bounded 100-snapshot Undo/Redo (Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y).
+Autosave persists valid bound drafts with visible status/errors and optimistic
+revision checks. Newer local edits survive an in-flight save; conflict pauses
+saving and retains local state until explicit server reload. Save is separate
+from publication.
 
-Question pages have single/group/section layout, a question list and exactly one
-field editor. The question list scrolls within a bounded height, so pages with
-30 or more questions do not push the selected editor below the entire list.
-Labels, types, required/help/placeholder and option labels are
-primary controls. Each field/option/block/instruction has its own inline advanced
-settings: stable identifiers, typed conditions, length/numeric bounds, aliases,
-fact key, dependency uses and compatible multiple process roles. Changing a
-field type removes incompatible roles/bounds/options. File fields are explicitly
-unavailable. Conditions use human-readable source/target pickers, never a JSON
-editor. The server remains authoritative for graph and answer semantics.
+Question blocks reuse single/group/section layout and one selected field editor,
+including supported field types, required/unknown/options/help/validation,
+visibility DSL and multiple compatible `process_mapping.roles`. Deleting used
+fields shows dependencies. Conditions reuse the server typed DSL; there is no
+client execution or SLA evaluator. Instructions render safe text.
 
-Selected-step preview is collapsible and renders content as safe text; it does
-not execute transitions. At 1440px and above it is the third workbench column;
-at smaller widths it is a keyboard-contained drawer with Escape/close and focus
-restoration. Tablet uses the explorer list above the full-width selected editor.
-Canonical branch execution is the separate server testing/session flow.
+Each ordinary block can own multiple stable catalog entrances with title,
+description, category, search phrases, availability, target and reported symptom.
+Markers and explorer entries select their block for editing. One version stores
+all entrances and shared graph; specialized routes do not duplicate diagnostics.
+Reported symptoms remain separate from answers and verified facts. Publication
+checks every configured entrance and canonical required processing inputs.
+
+**Согласования** manages existing published approval policies and explicit new
+policy versions. Modes and trusted approver sources use the existing backend;
+policy publication requires explicit confirmation. Actual approval happens only
+after ticket creation. Result/Начало inspectors choose published policies or
+inherit Service/Offering/template settings. Arbitrary requester manager IDs are
+never accepted as authority.
 
 ## Components and verification
 
@@ -142,10 +147,10 @@ The page orchestrates `scenario-catalog`, `scenario-category-form`,
 available for the subsequent publication integration.
 
 Component checks cover catalog/loading/empty/error/retry/search/category,
-creation, one visible step, CAS save/reload/conflict, auditor, legacy forms,
+creation, contextual map panels, CAS save/reload/conflict, auditor, legacy forms,
 deep links and unsaved navigation/unload. `webapp/tests/guided-studio.spec.ts`
 uses the project fixture server and mocked API contracts to verify the rendered
-catalog/wizard at 1366×768 and 1920×1080, and the block builder at those widths,
+catalog/map at 1366×768 and 1920×1080, and the block builder at those widths,
 1440×900 and tablet 820×1180. It checks preview column geometry, keyboard focus,
 separator typing, typed membership, save/reload, fully visible primary actions, inline settings,
 no horizontal document overflow, and console/network errors. Screenshots are
@@ -173,7 +178,7 @@ Publication shows the target offering, scenario title/description and a
 collapsible overview of every step using the existing requester preview controls.
 The result prefers the immutable definition returned by publication and links to
 `/app/requester/new?offering=<full_code>` in a separate browser tab; version
-history remains available in the publication stage. The link chooses only an
+history remains available from the map header. The link chooses only an
 offering present in the authenticated requester catalog. It grants no additional
 access and still starts/resumes through the owner-scoped server runtime.
 Normal requester drafts and drafts entered through individual offering links
@@ -189,7 +194,7 @@ actor/policy authority. Sessions expire after 24 hours, pin an immutable version
 and allow retired versions to continue unless revoked/disabled. Back clears
 downstream answers/results. Repeating the latest identical command returns its
 saved result; a changed stale command returns 409. Start resumes an active session
-for the same owner/version. Ticket submit uses the existing requester create
+for the same owner/version/entrance. Ticket submit uses the existing requester create
 ledger and a server-derived key scoped to the owner/session.
 
 `step-preview` uses the canonical runtime to reevaluate current-page conditions
@@ -200,8 +205,8 @@ to the owner's active bindings; user choices currently contain the verified self
 profile. Selected identifiers are checked again server-side. No Endpoint dispatch
 occurs. Session audit entries contain version/block/revision/state, never answers.
 
-The requester component stores only an opaque session ID per login/offering in
-sessionStorage. Late responses are canceled/ignored on owner/offering change;
+The requester component stores only an opaque session ID per login/offering/entrance in
+sessionStorage. Late responses are canceled/ignored on owner/offering/entrance change;
 resume preserves explicit unknown answers. Instructions are rendered as text;
 resolution checks require explicit yes/no/unknown.
 
@@ -223,7 +228,7 @@ The selected computer uses the existing ownership gate. Changing that selection
 invalidates the UI preview and pending responses; disagreement with a retained
 scenario device picker is rejected rather than silently replacing its target.
 
-The publication step separates Policy Health from Scenario Readiness. Prepare
+The publication panel separates Policy Health from Scenario Readiness. Prepare
 publication only after saving; examine the diff and blockers, then explicitly
 confirm. A confirmation belongs to the authenticated administrator, saved
 revision and complete canonical source snapshot. Changes to policy, form,
@@ -241,7 +246,7 @@ is blocked with a specific explanation. Policy Health alone cannot clear this.
 it to the saved draft; unsaved changes must be handled first. This replaces the
 draft through the normal revision gate, while the active publication remains
 effective. Review and publish the restored draft to create a new version.
-The simulation step accepts typed test answers and shows actual server priority,
+The simulation panel accepts typed test answers and shows actual server priority,
 queue, deadline and approval requirement without creating a ticket or running
 device operations. P8 acceptance and full staging signoff are tracked in the
 implementation progress ledger.
@@ -319,3 +324,9 @@ question pages. The new-request shell clips horizontal overflow without creating
 an intermediate scroll container, so the action bar follows the document scroll.
 Questions remain in normal document flow and keyboard order; busy steps disable
 both their fields and actions.
+
+Dynamic group approvers remain unavailable in the current backend: group sources
+produce a literal group marker, while decisions require exact authenticated actor
+identity and do not expand group membership. Existing configurations are preserved.
+Explicit approvers are selected by human names from active support/admin accounts
+in the existing Registry; requester-supplied IDs do not define managerial authority.

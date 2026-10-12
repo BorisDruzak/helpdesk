@@ -80,6 +80,7 @@ export type RequestFormPack = {
 };
 
 export type ServiceCatalogOffering = {
+  catalog_items?: Array<{ key: string; title: string; description?: string; category_id?: string | null; synonyms: string[]; entry_point_key: string; scenario_key: string; version_id: string; target_block_id: string }>;
   guided_scenario_enabled?: boolean;
   offering_code: string;
   full_code: string;

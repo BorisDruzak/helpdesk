@@ -6,6 +6,36 @@ Scenario execution and publication are separate from saving a draft.
 
 ## Contracts (schema version 1)
 
+Studio v3 extends schema 1 additively. `entry_points` holds up to 64 stable
+catalog items (`key`, title/description, optional category, up to 20 search
+synonyms, visibility/enabled, `target_block_id`, `reported_symptom`). The legacy
+`entry_block_id` remains the default. `editor_layout.positions` stores up to
+257 bounded finite `{x,y}` coordinates independently of executable transitions.
+Graph and entrances publish together in the existing immutable definition JSONB;
+no new migration is required (current source Alembic head 148).
+
+Session start and admin simulation accept optional `entry_point_key`, never a
+caller-supplied target/version. The server resolves requester entrances only from
+the active published version and rechecks Service/Offering and category ancestry.
+Requester offerings expose safe `catalog_items` from this version. Session
+`results._entry_point` pins the selected snapshot and survives Back; resumable
+sessions are scoped by owner, version and entrance. Submission `reported_context`
+is separate from answers/facts and supplies no diagnostic or policy authority.
+
+Validation covers every configured entrance, including hidden/disabled entries:
+union reachability, no cycles, positive resolution on every finish route, and
+canonical processing readiness for specialized submission routes. All entrances
+share the existing 512-terminal coverage cap; exceeding limits fails closed.
+New versions do not retarget existing sessions. Saving remains distinct from
+publication, whose authorization, bound confirmation token and audit are retained.
+
+Admin simulation may test the complete reachable portion of a selected entrance
+when unrelated draft errors exist. It keeps every outgoing edge and condition,
+requires unambiguous reachable IDs and runs the unchanged strict graph validator;
+missing targets, cycles and references to omitted fields still reject simulation.
+`simulation_scope` discloses the limitation, excluded blocks and full-draft issues.
+Publication and requester sessions never use this temporary projection.
+
 `web_api/dto/request_scenario.py` defines bounded, strict Pydantic inputs;
 `webapp/src/features/request-template-studio/scenario-contract.ts` mirrors the
 typed block and condition unions. Legacy Studio DTOs remain separate.

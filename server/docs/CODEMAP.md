@@ -94,7 +94,14 @@
   `app/db/request_scenario_models.py`, additive migration 147. See
   `GUIDED_REQUEST_SCENARIOS.md` for limits, immutable version/session pins,
   cleanup classification and the 147 → 146 rollback boundary.
-- React admin catalog/wizard: `webapp/src/pages/admin/request-template-studio-page.tsx`
+- Studio v3 entrances: the strict scenario DTO adds `entry_points` and
+  `editor_layout.positions` to existing immutable definition JSONB. Session start
+  and simulation accept `entry_point_key`; requester catalog projects safe
+  `catalog_items`. `request_scenario_session_repo` pins server-resolved context in
+  `results._entry_point`, preserving it on Back; submission `reported_context`
+  cannot supply facts. Validation/readiness cover all entrances under one bounded
+  coverage budget. No new migration or external Endpoint contract is introduced.
+- React admin catalog/map: `webapp/src/pages/admin/request-template-studio-page.tsx`
   orchestrates the scenario-api/catalog/purpose/category/wizard components and
   editor/context/dirty-guard hooks under `features/request-template-studio`.
   See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
@@ -112,11 +119,14 @@
   links the immutable publication result to `/app/requester/new?offering=...`.
   Requester selection is validated against its existing public catalog; keyed
   request-page content keeps draft restoration isolated per intent/offering.
-- The wizard's user-scenario step uses `scenario-block-builder` for selection,
-  bounded undo and graph edits; `scenario-builder-model` preserves explicit
-  routes and checks removal dependencies. Block/form-page/field/condition editors
-  are separate components. `scenario-preview-panel` provides a responsive safe
-  selected-step preview; no client component executes the server graph.
+- Studio v3 `scenario-wizard` composes map/testing/publication/version panels.
+  `scenario-map-workbench`, `scenario-map-canvas` and `scenario-map-model` own
+  React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
+  and cycle guards. `scenario-entry-inspector` edits catalog entrances on blocks;
+  `scenario-edge-inspector` edits canonical transitions using the existing typed
+  condition editor. Начало is visual metadata, never a runtime node. Seven visual
+  types reuse the eight existing runtime kinds. `scenario-approvals` reuses the
+  policy registry and ticket approval lifecycle; no client SLA/workflow evaluator.
 - `tickets/request_scenario_validation.py` validates reachable acyclic graphs,
   field dependencies, typed conditions, terminal/fallback safety and role mapping.
   `request_scenario_conditions.py` owns the canonical condition evaluator and
@@ -125,6 +135,11 @@
   `request_scenario_runtime.py` executes that graph for simulation and sessions,
   normalizes visible answers through existing codecs and clears downstream state
   on Back. It has no DB, ticket creation or Endpoint dispatch side effects.
+  `request_scenario_simulation.py` can isolate a complete reachable draft portion
+  for admin testing only, retaining broken edges/conditions for strict validation
+  and returning a visible limited-scope disclosure. Publication and sessions still
+  validate the full definition. Category archive guards include entrance-bound
+  drafts/current versions and usable pinned sessions; archived maps release guards.
   `web_api/request_scenario_admin_handlers.py` exposes authenticated admin CRUD,
   catalog/search/version reads and simulation; `dto/request_scenario_admin.py`
   defines strict bodies and bounded inputs. `app/repos/request_scenario_repo.py`

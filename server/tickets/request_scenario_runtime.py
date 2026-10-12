@@ -44,8 +44,15 @@ class ScenarioRuntime:
             if key not in self.blocks or self.blocks[key].kind != "diagnostic" or status not in DIAGNOSTIC_FAILURE_STATUSES:
                 raise ScenarioInputError({"diagnostic_outcomes": "Only approved diagnostic blocks and failure statuses can be simulated"})
 
-    def initial_state(self):
-        return self._settle(RuntimeState(self.definition.entry_block_id))
+    def initial_state(self, entry_point_key=None):
+        entry = next((item for item in self.definition.entry_points if item.key == entry_point_key), None)
+        if entry_point_key is not None and entry is None:
+            raise ScenarioInputError({"entry_point_key": "Unknown scenario entrance"})
+        state = RuntimeState(entry.target_block_id if entry else self.definition.entry_block_id)
+        if entry:
+            # Server-reported context has no answer/fact/condition authority.
+            state.results["_entry_point"] = entry.model_dump(mode="json")
+        return self._settle(state)
 
     def _next(self, block, answers, result=None):
         edge = selected_transition(block, answers, result)
@@ -192,7 +199,7 @@ class ScenarioRuntime:
         index = state.history.index(target_block_id)
         result.history = state.history[:index]
         retained = set(result.history)
-        result.results = {key: value for key, value in state.results.items() if key in retained}
+        result.results = {key: deepcopy(value) for key, value in state.results.items() if key in retained or key == "_entry_point"}
         retained.add(target_block_id)
         retained_fields = {item.key for key in retained for item in getattr(self.blocks[key], "fields", ())}
         result.answers = {key: value for key, value in state.answers.items() if key in retained_fields}

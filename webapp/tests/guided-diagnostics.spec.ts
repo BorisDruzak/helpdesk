@@ -24,17 +24,18 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
         data = { state: { revision: 1, results: { diagnostic: { status: "timeout", reason: "simulated_timeout", simulated: true, operation_created: false, consent_required: true } } }, current_step: { id: "review", kind: "review", title: "Проверьте данные", answers: [] } };
       } else if (path.endsWith("/scenarios/s1")) data = { scenario: { id: "s1", archived: false }, draft: { revision: 3, definition } };
       else if (path.endsWith("unread_count")) { await route.fulfill({ json: { status: "ok", unread_count: 0 } }); return; }
+      else if (path.endsWith("/helpdesk-model/policies")) data = { policies: {} };
       else { unexpected.push(`${route.request().method()} ${path}`); data = {}; }
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
     await page.getByRole("link", { name: "Принтер", exact: true }).click();
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
-    await page.getByRole("button", { name: "2. Пользовательский сценарий", exact: true }).click();
-    await page.getByRole("button", { name: "Проверка принтера", exact: true }).click();
+    await page.getByRole("button", { name: "Карта сценария", exact: true }).click();
+    await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Проверка принтера", exact: true }).click();
     await expect(page.getByText("Согласие хранится как настройка. В симуляции реального разрешения нет.", { exact: true })).toBeVisible();
     await expect(page.getByText(/Запасной шаг: Проверьте данные/)).toBeVisible();
-    await page.getByRole("button", { name: "4. Тестирование", exact: true }).click();
+    await page.getByRole("button", { name: "Тестировать", exact: true }).click();
     const outcome = page.getByRole("combobox", { name: "Исход симуляции: Проверка принтера", exact: true });
     await outcome.selectOption("timeout");
     const start = page.getByRole("button", { name: "Начать проверку", exact: true });

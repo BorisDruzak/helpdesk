@@ -78,7 +78,7 @@ export function ScenarioPublication({ id, revision, dirty, disabled, definition,
       {preview.diff.length ? <dl className="min-w-0 space-y-3">{preview.diff.map(change => <div key={change.path} className="min-w-0 break-words rounded border p-3">
         <dt className="font-medium">{labels[change.path] || change.path}</dt><dd className="grid gap-1"><span>{humanValue(change.before)}</span><span>{humanValue(change.after)}</span></dd>
       </div>)}</dl> : <p>Содержимое сценария не изменилось. Будет создана новая версия с проверенной обработкой.</p>}
-      {preview.readiness.can_publish && preview.confirmation_token && <div className="grid gap-3">
+      {preview.readiness.can_publish && preview.confirmation_token && <div className="sticky bottom-0 z-10 grid gap-3 border-t bg-white py-3">
         <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} disabled={busy || dirty || disabled} onChange={event => setConfirmed(event.target.checked)} />Изменения проверены, подтверждаю публикацию</label>
         <Button disabled={!confirmed || busy || dirty || disabled} onClick={() => void publish()}>Опубликовать сценарий</Button>
       </div>}

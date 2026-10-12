@@ -22,6 +22,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
         expect(category.service_code).toBe("workplace");
         categories.push(category); data = category;
       } else if (path.endsWith("unread_count")) { await route.fulfill({ json: { status: "ok", unread_count: 0 } }); return; }
+      else if (path.endsWith("/helpdesk-model/policies")) data = { policies: {} };
       else unexpected.push(`${route.request().method()} ${path}`);
       await route.fulfill({ json: { status: "success", data } });
     });
@@ -30,7 +31,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByLabel("Название сценария", { exact: true }).fill("Мой сценарий принтера");
     await page.getByRole("button", { name: "Создать категорию здесь", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Следующий этап", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Карта сценария", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Вернуться к услуге", exact: true })).toBeDisabled();
     await expect(page.getByRole("combobox", { name: "Сервис", exact: true })).toBeDisabled();
@@ -40,7 +41,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await expect(page.getByRole("combobox", { name: "Подкатегория", exact: true })).toHaveValue("printers");
     await expect(page.getByLabel("Название сценария", { exact: true })).toHaveValue("Мой сценарий принтера");
     await expect(page.getByRole("textbox", { name: "Описание", exact: true })).toHaveValue("Несохранённое описание");
-    await expect(page.getByRole("button", { name: "Следующий этап", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Карта сценария", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${viewport.width}-category-inline.png`) });
     expect(categories).toHaveLength(1); expect(errors).toEqual([]); expect(unexpected).toEqual([]);

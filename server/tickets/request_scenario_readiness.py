@@ -66,14 +66,25 @@ def _condition_domain(field, conditions):
 
 
 def submission_variants(definition, *, limit=512, process_fields=()):
+    # One shared budget covers every configured entrance, including hidden ones.
+    terminals = []
+    for entry_key in [None, *(entry.key for entry in definition.entry_points)]:
+        states = _entrance_variants(definition, limit=limit, process_fields=process_fields, entry_point_key=entry_key)
+        terminals.extend(states)
+        if len(terminals) > limit:
+            raise ReadinessCoverageError("Слишком много исходов всех точек входа. Разделите сценарий для полной проверки.")
+    return terminals
+
+
+def _entrance_variants(definition, *, limit, process_fields, entry_point_key):
     diagnostics = [block.id for block in definition.blocks if block.kind == "diagnostic"]
     if not diagnostics:
-        return _submission_variants(definition, limit=limit, process_fields=process_fields)
+        return _submission_variants(definition, limit=limit, process_fields=process_fields, entry_point_key=entry_point_key)
     if len(DIAGNOSTIC_FAILURE_STATUSES) ** len(diagnostics) > limit:
         raise ReadinessCoverageError("Слишком много сочетаний диагностических исходов. Разделите сценарий для полной проверки.")
     terminals = []
     for values in product(DIAGNOSTIC_FAILURE_STATUSES, repeat=len(diagnostics)):
-        states = _submission_variants(definition, limit=limit, process_fields=process_fields, diagnostic_outcomes=dict(zip(diagnostics, values)))
+        states = _submission_variants(definition, limit=limit, process_fields=process_fields, diagnostic_outcomes=dict(zip(diagnostics, values)), entry_point_key=entry_point_key)
         for state in states:
             if state not in terminals:
                 terminals.append(state)
@@ -82,7 +93,7 @@ def submission_variants(definition, *, limit=512, process_fields=()):
     return terminals
 
 
-def _submission_variants(definition, *, limit, process_fields, diagnostic_outcomes=None):
+def _submission_variants(definition, *, limit, process_fields, diagnostic_outcomes=None, entry_point_key=None):
     runtime = ScenarioRuntime(definition, diagnostic_outcomes=diagnostic_outcomes)
     referenced = {}
     for block in definition.blocks:
@@ -123,7 +134,7 @@ def _submission_variants(definition, *, limit, process_fields, diagnostic_outcom
             if significant and not field.required:
                 values = [*values, _OMITTED]
             domains[field.key] = values
-    pending, terminals, traversed = [runtime.initial_state()], [], 0
+    pending, terminals, traversed = [runtime.initial_state(entry_point_key)], [], 0
     while pending:
         state = pending.pop()
         traversed += 1

@@ -19,7 +19,7 @@ export function categoryDescendants(data: ScenarioCatalog, id: string): Set<stri
 type Props = { data: ScenarioCatalog; query: string; status: string; category: string | null; canEdit: boolean;
   onQuery: (value: string) => void; onStatus: (value: string) => void; onCategory: (id: string | null) => void;
   onOpen: (item: ScenarioItem) => void; onCreateForOffering: (item: AdminServiceCatalogOffering) => void; onEditCategory: (id: string) => void; onPage: (offset: number) => void };
-export function ScenarioCatalogExplorer({ data, query, status, category, canEdit, onQuery, onStatus, onCategory, onEditCategory, onPage }: Props) {
+export function ScenarioCatalogExplorer({ data, query, status, category, canEdit, onQuery, onStatus, onCategory, onEditCategory, onPage, onOpen }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const cards = catalogEntries(data);
   function tree(parent: string | null, serviceCode: string, ancestors = new Set<string>()): React.ReactNode {
@@ -50,6 +50,7 @@ export function ScenarioCatalogExplorer({ data, query, status, category, canEdit
         <label className="min-w-0 flex-1">Поиск услуг<Input value={query} onChange={event => onQuery(event.target.value)} placeholder="Название, категория или услуга" /></label>
         <label>Статус<Select value={status} onChange={event => onStatus(event.target.value)}><option value="all">Все статусы</option><option value="form_only">Для сотрудника: обычная форма</option><option value="guided">Для сотрудника: пошаговый сценарий</option>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select></label>
       </div>
+      {!!data.scenarios.length && <section aria-label="Карты сценариев" className="space-y-3"><h2 className="text-lg font-semibold">Карты сценариев</h2><ul className="grid min-w-0 gap-3 lg:grid-cols-2">{data.scenarios.map(item => <li key={item.id} className="min-w-0 rounded-xl border bg-white p-4"><Button variant="secondary" className="h-auto max-w-full whitespace-normal text-left" onClick={() => onOpen(item)}>{item.title}</Button><p className="mt-2 break-words text-sm">{item.description}</p><p className="text-sm text-slate-500">{item.archived ? "Архив" : item.status === "published" ? "Опубликована" : "Черновик"} · {item.published_version ? `Активная версия ${item.published_version}` : "Без опубликованной версии"}{item.published_entry_count !== undefined ? ` · Опубликованных входов: ${item.published_entry_count}` : ""}</p>{item.updated_at && <span className="text-xs text-slate-500">Изменена: {new Date(item.updated_at).toLocaleDateString("ru-RU")}</span>}</li>)}</ul></section>}
       {!cards.length ? <EmptyState title="Услуги не найдены" description={query || category || status !== "all" ? "Измените поиск, категорию или статус." : "Создайте услугу в выбранном разделе."} /> : <ul className="grid min-w-0 gap-3 lg:grid-cols-2">
         {cards.map(card => <OfferingCardLink key={card.offering.full_code} card={card} data={data} />)}
       </ul>}

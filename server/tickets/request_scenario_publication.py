@@ -143,6 +143,14 @@ class ScenarioPublicationService:
         definition = None
         try:
             definition = ScenarioDefinition.model_validate(draft.definition)
+            from tickets.request_scenario_catalog import category_path_is_public
+            categories = {item["id"]: item for item in source["taxonomy"]}
+            for entry in definition.entry_points:
+                category = categories.get(entry.category_id) if entry.category_id else None
+                if (entry.category_id and (not category or category.get("service_code") != definition.service_code)):
+                    add("entry_category_invalid", "Категория точки входа должна принадлежать услуге карты.", f"entry_points.{entry.key}.category_id")
+                elif entry.visibility == "public" and entry.enabled and not category_path_is_public(entry.category_id, categories):
+                    add("entry_category_unavailable", "Категория точки входа и её родители должны быть опубликованы и доступны сотруднику.", f"entry_points.{entry.key}.category_id")
             actual_fields = _policy_fields(effective) | _policy_fields(source["policies"])
             process_fields = {field.key for block in definition.blocks for field in getattr(block, "fields", ())
                               if (field.process_mapping.fact_key or field.key) in actual_fields}
@@ -161,8 +169,9 @@ class ScenarioPublicationService:
             add("submission_unreachable", "Нет проверяемой ветви обращения в поддержку.", "blocks")
         for state in states:
             checked += 1
+            entry_key = (state.results.get("_entry_point") or {}).get("key")
             if state.state == "completed_self_service":
-                outcomes.append({"terminal": state.current_block_id, "kind": "self_service"})
+                outcomes.append({"terminal": state.current_block_id, "kind": "self_service", "entry_point_key": entry_key})
                 continue
             try:
                 payload, snapshot = build_scenario_submission(definition, state, session_id="readiness", version_id="draft")
@@ -174,10 +183,11 @@ class ScenarioPublicationService:
                     add("sla_unavailable", "Одна из ветвей не имеет срока выполнения по действующей политике.")
                 if approval.get("required") and not approval.get("approvers"):
                     add("approval_unavailable", "Согласование требуется, но действующий источник не определил согласующих.")
-                outcomes.append({"terminal": state.current_block_id, "kind": "ticket", "priority": result["priority"], "routing": routing,
+                outcomes.append({"terminal": state.current_block_id, "kind": "ticket", "entry_point_key": entry_key, "priority": result["priority"], "routing": routing,
                                  "sla": {key: value for key, value in sla.items() if not key.endswith("preview")}, "approval_required": bool(approval.get("required"))})
             except ValueError:
-                add("processing_invalid", "Ответы одной из ветвей несовместимы с опубликованной формой или обработкой.")
+                add("processing_invalid", "Ответы одной из ветвей несовместимы с опубликованной формой или обработкой.",
+                    f"entry_points.{entry_key}" if entry_key else "process_binding")
         unique = {definition_hash(issue): issue for issue in issues}
         return {"health": health, "readiness": {"can_publish": not unique, "issues": list(unique.values()), "variants_checked": checked}, "outcomes": outcomes}
 

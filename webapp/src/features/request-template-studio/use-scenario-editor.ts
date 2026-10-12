@@ -1,10 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RequestStudioApiError } from "./api";
 import { archiveScenario, createScenario, fetchScenarioDetail, saveScenario, type ScenarioDetail } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
-export function useScenarioEditor() {
+export function useScenarioEditor(autosaveEnabled = false) {
   const cache = useQueryClient();
   const [detail, setDetail] = useState<ScenarioDetail | null>(null);
   const [definition, setDefinition] = useState<ScenarioDraftDefinition | null>(null);
@@ -13,16 +13,34 @@ export function useScenarioEditor() {
   const [conflict, setConflict] = useState(false);
   const [loading, setLoading] = useState(false);
   const requestSequence = useRef(0);
+  const saveSequence = useRef(0);
+  const latestDefinition = useRef(definition);
+  latestDefinition.current = definition;
   const [loadId, setLoadId] = useState<string | null>(null);
   const dirty = !!definition && (!detail || JSON.stringify(definition) !== JSON.stringify(detail.draft.definition));
   function accept(value: ScenarioDetail) { setDetail(value); setDefinition(value.draft.definition); setConflict(false); setError(""); cache.setQueryData(["scenario-detail", value.scenario.id], value); }
   const save = useMutation({ mutationFn: async () => {
     if (!definition) throw new Error("Нет черновика");
-    return detail ? saveScenario(detail.scenario.id, definition, detail.draft.revision) : createScenario(definition);
-  }, onSuccess: async value => { accept(value); setMessage(`Черновик сохранён. Ревизия ${value.draft.revision}.`); await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }, onError: value => {
+    const snapshot = definition;
+    const sequence = requestSequence.current;
+    saveSequence.current = sequence;
+    const value = await (detail ? saveScenario(detail.scenario.id, snapshot, detail.draft.revision) : createScenario(snapshot));
+    return { value, snapshot, sequence };
+  }, onSuccess: async ({ value, snapshot, sequence }) => {
+    if (sequence !== requestSequence.current) return;
+    setDetail(value); setConflict(false); setError("");
+    if (JSON.stringify(latestDefinition.current) === JSON.stringify(snapshot)) setDefinition(value.draft.definition);
+    cache.setQueryData(["scenario-detail", value.scenario.id], value);
+    setMessage(`Черновик сохранён. Ревизия ${value.draft.revision}.`); await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }, onError: value => {
+    if (saveSequence.current !== requestSequence.current) return;
     const isConflict = value instanceof RequestStudioApiError && value.status === 409;
     setConflict(isConflict); setMessage(""); setError(isConflict ? "Черновик изменён другим администратором. Локальные изменения сохранены в редакторе; загрузка серверной версии заменит их." : "Черновик не сохранён. Проверьте название, услугу и настройки, затем повторите.");
   } });
+  useEffect(() => {
+    if (!autosaveEnabled || !detail || detail.scenario.archived || !dirty || loading || save.isPending || conflict || error || !definition?.title.trim() || !definition.offering_full_code) return;
+    const timer = setTimeout(() => save.mutate(), 1200);
+    return () => clearTimeout(timer);
+  }, [autosaveEnabled, detail, definition, dirty, loading, save.isPending, conflict, error]);
   const archive = useMutation({ mutationFn: async () => {
     if (!detail) throw new Error("Нет черновика");
     return archiveScenario(detail.scenario.id, detail.draft.revision);

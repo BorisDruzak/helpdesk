@@ -29,7 +29,7 @@ async def test_catalog_type_search_includes_scenarios_and_legacy_before_paginati
     row = RequestStudioScenario(id="scenario-one", scenario_key="one", title="Alpha",
         offering_full_code="svc.one", archived=False, updated_at=now)
     draft = RequestStudioDraft(scenario_id=row.id, revision=1, definition={}, updated_at=now)
-    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: [(row, draft, None)])))
+    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: [(row, draft, None, 0)])))
     repo = RequestScenarioRepo(session, None)
     repo.categories = AsyncMock(return_value=[])
     offerings = [{"full_code": "svc." + code, "public_title": title,

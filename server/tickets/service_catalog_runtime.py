@@ -197,8 +197,8 @@ class ServiceCatalogRuntimeResolver:
             raise ServiceCatalogResolutionError({"service_code": "service or offering is not visible"})
 
     async def current_catalog_for_requester(self) -> dict[str, Any]:
-        from tickets.request_scenario_catalog import enabled_guided_offerings
-        guided_offerings = await enabled_guided_offerings(self.session)
+        from tickets.request_scenario_catalog import published_catalog_entries
+        guided_offerings = await published_catalog_entries(self.session)
         services = [
             service
             for service in await self.repo.list_services(published_only=True)
@@ -242,6 +242,7 @@ class ServiceCatalogRuntimeResolver:
         for service in result["services"]:
             for offering in service["offerings"]:
                 offering["guided_scenario_enabled"] = offering["full_code"] in guided_offerings
+                offering["catalog_items"] = guided_offerings.get(offering["full_code"], [])
         return result
 
     async def apply_to_validated_submission(
