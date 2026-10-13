@@ -27,15 +27,15 @@ it("creates a category inside the purpose step and preserves the unsaved scenari
   }
   render(<QueryClientProvider client={new QueryClient()}><Harness /></QueryClientProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Создать категорию здесь" }));
-  expect(screen.getByLabelText("Сервис")).toHaveValue("workplace");
-  expect(screen.getByLabelText("Сервис")).toBeDisabled();
+  expect(screen.getByLabelText("Раздел каталога")).toHaveValue("workplace");
+  expect(screen.getByLabelText("Раздел каталога")).toBeDisabled();
   fireEvent.change(screen.getByLabelText("Название категории"), { target: { value: "Проблемы с печатью" } });
   fireEvent.click(screen.getByRole("button", { name: "Сохранить категорию" }));
   await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
   fireEvent.change(screen.getByLabelText("Название карты"), { target: { value: "Последнее название" } });
   fireEvent.change(screen.getByLabelText("Описание"), { target: { value: "Последнее описание" } });
   complete(new Response(JSON.stringify({ status: "success", data: { ...categoryInput, id: "printing", revision: 1 } }), { headers: { "Content-Type": "application/json" } }));
-  await waitFor(() => expect(screen.getByLabelText("Раздел каталога")).toHaveValue("printing"));
+  await waitFor(() => expect(screen.getByLabelText("Категория карты (необязательно)")).toHaveValue("printing"));
   expect(screen.getByLabelText("Название карты")).toHaveValue("Последнее название");
   expect(screen.getByLabelText("Описание")).toHaveValue("Последнее описание");
   expect(request).toHaveBeenCalledTimes(1);

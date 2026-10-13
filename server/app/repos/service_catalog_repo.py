@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -346,6 +346,24 @@ class ServiceCatalogRepo:
         service = await self.get_service_row_by_code(service_code)
         if service is None:
             raise ValueError("service not found")
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict) and "studio_catalog" in metadata:
+            from app.db.request_scenario_models import RequestStudioCategory
+            settings = metadata["studio_catalog"]
+            if not isinstance(settings, dict):
+                raise ValueError("invalid catalog settings")
+            phrases = settings.get("synonyms", [])
+            if not isinstance(phrases, list) or len(phrases) > 20 or any(not isinstance(phrase, str) or not phrase.strip() or len(phrase) > 100 for phrase in phrases):
+                raise ValueError("invalid catalog search phrases")
+            category_id = settings.get("category_id")
+            if category_id is not None:
+                if not isinstance(category_id, str):
+                    raise ValueError("invalid catalog category")
+                uuid.UUID(category_id)
+                await self.session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:code, 0))"), {"code": service_code})
+                category = await self.session.get(RequestStudioCategory, category_id)
+                if category is None or category.service_code != service_code or category.lifecycle_status == "archived":
+                    raise ValueError("invalid catalog category")
         code = normalize_catalog_code(payload.get("code"), field_name="offering_code")
         combined = full_offering_code(service.code, code)
         row = await self.get_offering_row_by_full_code(combined)

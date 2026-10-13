@@ -43,7 +43,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
   test(`studio understandable access authoring ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport); const state = await setup(page);
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("button", { name: "Новая карта", exact: true }).click();
+    await page.getByRole("tab", { name: "Карты сценариев", exact: true }).click(); await page.getByRole("button", { name: "Новая карта", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "С чего начнём?" });
     await dialog.getByLabel("Название карты").fill("Выдать доступ"); await dialog.getByLabel("Раздел каталога").selectOption("10000000-0000-0000-0000-000000000001");
     await expect(dialog.getByRole("radio", { name: /Простая заявка/ })).toBeChecked();
@@ -93,7 +93,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
 
   test(`studio diagnostic branches and shared entrances ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport); const state = await setup(page); await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("button", { name: "Новая карта", exact: true }).click();
+    await page.getByRole("tab", { name: "Карты сценариев", exact: true }).click(); await page.getByRole("button", { name: "Новая карта", exact: true }).click();
     await page.getByLabel("Название карты").fill("Проблемы с печатью"); await page.getByLabel("Раздел каталога").selectOption("service:access");
     await page.getByRole("radio", { name: /Диагностика проблемы/ }).check(); await page.getByRole("button", { name: "Создать карту →" }).click();
     await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Создать обращение", exact: true }).click();
@@ -125,7 +125,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
 test("manual route authoring isolates geometry, edits conditions and deletes connected blocks", async ({ page }, info) => {
   await page.setViewportSize({width:1366,height:900}); const state=await setup(page);
   await page.goto("/app/admin/request-template-studio");
-  await page.getByRole("button",{name:"Новая карта",exact:true}).click();
+  await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click(); await page.getByRole("button",{name:"Новая карта",exact:true}).click();
   await page.getByLabel("Название карты").fill("Проверка ручного маршрута");
   await page.getByLabel("Раздел каталога").selectOption("service:access");
   await page.getByRole("radio",{name:/Пустая карта/}).check();
@@ -185,7 +185,7 @@ test("manual route authoring isolates geometry, edits conditions and deletes con
 
 test("canonical mandatory questions are inserted before the selected result",async({page})=>{
  await page.setViewportSize({width:1366,height:900});const state=await setup(page);await page.goto("/app/admin/request-template-studio");
- await page.getByRole("button",{name:"Новая карта",exact:true}).click();await page.getByLabel("Название карты").fill("Проверка обязательных данных");await page.getByLabel("Раздел каталога").selectOption("service:access");await page.getByRole("button",{name:"Создать карту →"}).click();
+ await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click(); await page.getByRole("button",{name:"Новая карта",exact:true}).click();await page.getByLabel("Название карты").fill("Проверка обязательных данных");await page.getByLabel("Раздел каталога").selectOption("service:access");await page.getByRole("button",{name:"Создать карту →"}).click();
  await page.getByRole("list",{name:"Блоки сценария"}).getByRole("button",{name:"Создать обращение",exact:true}).click();await page.getByLabel("Тип создаваемого обращения").selectOption("access.grant");
  await page.getByRole("button",{name:"Добавить обязательные вопросы типа обращения",exact:true}).click();
  await expect(page.getByRole("heading",{name:"Данные для обращения",exact:true})).toBeVisible();

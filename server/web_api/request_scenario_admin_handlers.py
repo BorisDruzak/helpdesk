@@ -24,7 +24,7 @@ class CatalogQuery(StrictModel):
     category_id: Identifier | None = None
     service_code: CatalogCode | None = None
     offering_code: str | None = Field(default=None, min_length=3, max_length=220, pattern=r"^[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9_-]*$")
-    status: Literal["all", "draft", "published", "errors", "archived", "form_only", "guided"] = "all"
+    status: Literal["all", "draft", "published", "errors", "archived", "form_only", "guided", "available", "hidden"] = "all"
     offset: int = Field(default=0, ge=0, le=100000)
     limit: int = Field(default=100, ge=1, le=500)
 

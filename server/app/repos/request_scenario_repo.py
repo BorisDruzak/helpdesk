@@ -7,7 +7,7 @@ import json
 
 from sqlalchemy import select, text, exists, or_, func
 
-from app.db.models import RequestTemplate
+from app.db.models import RequestTemplate, HelpdeskServiceOffering
 from app.db.request_scenario_models import RequestStudioCategory, RequestStudioDraft, RequestStudioScenario, RequestStudioScenarioVersion, RequestStudioSession
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from tickets.request_studio_catalog_projection import offering_cards
@@ -84,6 +84,11 @@ class RequestScenarioRepo:
         child = await self.session.scalar(select(RequestStudioCategory.id).where(RequestStudioCategory.parent_id == row.id, RequestStudioCategory.lifecycle_status != "archived").limit(1))
         scenario = await self.session.scalar(select(RequestStudioScenario.id).where(RequestStudioScenario.category_id == row.id, RequestStudioScenario.archived.is_(False)).limit(1))
         if child or scenario:
+            raise ScenarioAdminError("CATEGORY_NOT_EMPTY", 409)
+        offering = await self.session.scalar(select(HelpdeskServiceOffering.offering_id).where(
+            HelpdeskServiceOffering.metadata_json["studio_catalog"]["category_id"].astext == row.id,
+            HelpdeskServiceOffering.lifecycle_status != "retired").limit(1))
+        if offering:
             raise ScenarioAdminError("CATEGORY_NOT_EMPTY", 409)
         entry_category = {"entry_points": [{"category_id": row.id}]}
         draft_entry = await self.session.scalar(select(RequestStudioDraft.scenario_id).join(
@@ -287,9 +292,11 @@ class RequestScenarioRepo:
         offerings = await self.catalog.list_offerings()
         services = await self.catalog.list_services()
         rows = (await self.session.execute(select(RequestStudioScenario, RequestStudioDraft, RequestStudioScenarioVersion.version,
-            func.coalesce(func.jsonb_array_length(RequestStudioScenarioVersion.definition["entry_points"]), 0)).join(RequestStudioDraft, RequestStudioDraft.scenario_id == RequestStudioScenario.id).outerjoin(RequestStudioScenarioVersion, (RequestStudioScenarioVersion.id == RequestStudioScenario.published_version_id) & (RequestStudioScenarioVersion.state == "published")).order_by(RequestStudioScenario.title, RequestStudioScenario.id))).all()
+            func.coalesce(func.jsonb_array_length(RequestStudioScenarioVersion.definition["entry_points"]), 0), RequestStudioScenarioVersion.definition).join(RequestStudioDraft, RequestStudioDraft.scenario_id == RequestStudioScenario.id).outerjoin(RequestStudioScenarioVersion, (RequestStudioScenarioVersion.id == RequestStudioScenario.published_version_id) & (RequestStudioScenarioVersion.state == "published")).order_by(RequestStudioScenario.title, RequestStudioScenario.id))).all()
         scenarios = []
-        for row, draft, published_version, published_entry_count in rows:
+        for record in rows:
+            row, draft, published_version, published_entry_count = record[:4]
+            published_definition = record[4] if len(record) > 4 else None
             item = serialize(row)
             item["updated_at"] = max(row.updated_at, draft.updated_at).isoformat()
             issues = []
@@ -303,6 +310,18 @@ class RequestScenarioRepo:
                 published_entry_count=published_entry_count,
                 entry_point_count=len(draft.definition.get("entry_points", [])),
                 issues=issues, category_title=category_names.get(row.category_id, ""))
+            item["entry_points"] = deepcopy(draft.definition.get("entry_points", []))
+            item["published_entry_points"] = deepcopy((published_definition or {}).get("entry_points", []))
+            if len(record) > 4:
+                from tickets.request_scenario_catalog import project_catalog_entries
+                try:
+                    published = ScenarioDefinition.model_validate(published_definition)
+                    public_entries = project_catalog_entries(published, {c["id"]: c for c in categories}, row.published_version_id)
+                    item["published_public_entry_keys"] = [entry["key"] for entry in public_entries]
+                    item["published_route_available"] = bool(public_entries) or not published.entry_points
+                except ValueError:
+                    item["published_public_entry_keys"] = []
+                    item["published_route_available"] = False
             scenarios.append(item)
         entries = offering_cards(offerings, scenarios, categories, services, query=query, status=status,
             service_code=service_code, offering_code=offering_code, selected=selected)

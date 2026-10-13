@@ -34,7 +34,7 @@ it("creates only a service draft with canonical template binding, without creati
   expect(screen.queryByRole("option", { name: "Неопубликованная форма" })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Название услуги"), { target: { value: "Не печатает" } });
   fireEvent.change(screen.getByLabelText("Шаблон обработки"), { target: { value: "printer" } });
-  fireEvent.change(screen.getByLabelText("Тип запроса"), { target: { value: "software_install" } });
+  fireEvent.change(screen.getByLabelText("Класс обращения"), { target: { value: "software_install" } });
   fireEvent.click(screen.getByRole("button", { name: "Создать черновик услуги" }));
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
   expect(saved).toHaveLength(1);

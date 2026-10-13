@@ -2188,3 +2188,18 @@ this behind generic VALIDATION_ERROR. Simulation now separates reached route
 from blocked processing; explicit canonical required-question import preserves
 conditions and still requires the existing server form/policy checks. No
 requester/publication guard changes, catalog writes or real ticket creation.
+# Catalog restoration from supplied references — 2026-10-13
+
+- Scope: admin section → optional category → service; one full-width compact
+  list with resizable tree/inspector. Maps have their own administration tab.
+- Reuse canonical Offering/RequestTemplate/policy paths. Multiple named entrances
+  remain separate catalog services backed by one shared map/type. Preserve CAS,
+  active published snapshots, drafts, and existing route creation/testing.
+- Implemented inline section/category/service editing, category/search metadata
+  validation, shared-entry creation, four inspector groups, global Catalog return,
+  and removal of the duplicate map-library Catalog tab.
+- Verification: focused frontend/backend checks and fixture browsers at
+  1366×768, 1920×1080, and 820×1180; exact results and staging evidence recorded
+  in the task receipt after the canonical staging installer completes.
+- Staging only; no production/Endpoint changes, automatic catalog publication,
+  schema migration, or real ticket submission.

@@ -121,7 +121,16 @@
   groups scenarios/history into one card per offering and separates requester mode
   from editing status using the shared public-ancestor guard. Admin catalog query
   adds bounded `service_code` and exact `offering_code` selectors. `offering-card`
-  and `offering-details` render the unified list and dedicated offering route;
+  and `catalog-services-workbench`/`catalog-offering-inspector` render the
+  full-width tree/list/inspector. `catalog-service-model` projects named entrances
+  separately from their canonical Offering, preserving active published labels
+  and draft differences. `catalog-geometry` owns pointer/keyboard resizing.
+  Admin catalog adds draft/published entrance summaries and public entry keys,
+  plus `available`/`hidden` filters; existing offering pagination stays compatible.
+  `ServiceCatalogRepo.upsert_offering_draft` validates bounded ordinary-form
+  grouping/search metadata and locks category membership. Category archive also
+  checks ordinary offerings using the folder. No migration or requester policy
+  override is introduced. The offering-scoped route selects the same inspector;
   expert settings have a separate offering route with collapsed groups.
   `scenario-publication-summary` reuses requester block preview controls and
   links the immutable publication result to `/app/requester/new?offering=...`.

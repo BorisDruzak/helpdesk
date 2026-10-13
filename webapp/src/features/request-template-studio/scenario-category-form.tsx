@@ -8,20 +8,21 @@ import { RequestStudioApiError } from "./api";
 import { archiveCategory, saveCategory, type CategoryInput, type ScenarioCatalog, type ScenarioCategory } from "./scenario-api";
 import { categoryDescendants } from "./scenario-catalog";
 
-export function ScenarioCategoryForm({ catalog, category, initialServiceCode, initialParentId, onDone, onCancel, onDirty }: { catalog: ScenarioCatalog; category?: ScenarioCategory; initialServiceCode?: string; initialParentId?: string | null; onDone: (saved: ScenarioCategory) => Promise<void>; onCancel: () => void; onDirty: (dirty: boolean) => void }) {
+export function ScenarioCategoryForm({ catalog, category, initialServiceCode, initialParentId, onDone, onCancel, onDirty, onBusy }: { catalog: ScenarioCatalog; category?: ScenarioCategory; initialServiceCode?: string; initialParentId?: string | null; onDone: (saved: ScenarioCategory) => Promise<void>; onCancel: () => void; onDirty: (dirty: boolean) => void; onBusy?: (busy: boolean) => void }) {
   const [value, setValue] = useState<CategoryInput>(() => category ? { service_code: category.service_code, parent_id: category.parent_id, slug: category.slug, title: category.title, description: category.description, visibility: category.visibility, sort_order: category.sort_order, lifecycle_status: category.lifecycle_status, revision: category.revision } : { service_code: initialServiceCode ?? catalog.services[0]?.code ?? "", parent_id: initialParentId ?? null, slug: `category_${crypto.randomUUID().slice(0, 8)}`, title: "", description: "", sort_order: 0, visibility: "internal", lifecycle_status: "draft" });
   const [confirmArchive, setConfirmArchive] = useState(false);
   const initial = useRef(JSON.stringify(value));
   const dirty = JSON.stringify(value) !== initial.current;
   useEffect(() => { onDirty(dirty); return () => onDirty(false); }, [dirty, onDirty]);
   const mutation = useMutation({ mutationFn: (archive: boolean) => archive && category ? archiveCategory(category.id, category.revision) : saveCategory(value, category?.id), onSuccess: onDone });
+  useEffect(()=>{onBusy?.(mutation.isPending);return()=>onBusy?.(false);},[mutation.isPending,onBusy]);
   const excluded = category ? categoryDescendants(catalog, category.id) : new Set<string>();
   return <form className="min-w-0 space-y-4 rounded-xl border p-5" onSubmit={event => { event.preventDefault(); mutation.mutate(false); }}>
     <h2 className="text-lg font-semibold">{category ? "Изменить категорию" : "Новая категория"}</h2>
     <fieldset disabled={mutation.isPending} className="space-y-4">
       <label className="block">Название категории<Input required maxLength={300} value={value.title} onChange={event => setValue({ ...value, title: event.target.value })} /></label>
-      <label className="block">Сервис<Select disabled={!!category || !!initialServiceCode} value={value.service_code} onChange={event => setValue({ ...value, service_code: event.target.value, parent_id: null })}>{catalog.services.map(item => <option key={item.code} value={item.code}>{item.public_title}</option>)}</Select></label>
-      <label className="block">Родительская категория<Select value={value.parent_id ?? ""} onChange={event => setValue({ ...value, parent_id: event.target.value || null })}><option value="">Корень сервиса</option>{catalog.categories.filter(item => item.service_code === value.service_code && !excluded.has(item.id) && item.lifecycle_status !== "archived").map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
+      <label className="block">Раздел каталога<Select disabled={!!category || !!initialServiceCode} value={value.service_code} onChange={event => setValue({ ...value, service_code: event.target.value, parent_id: null })}>{catalog.services.map(item => <option key={item.code} value={item.code}>{item.public_title}</option>)}</Select></label>
+      <label className="block">Родительская категория<Select value={value.parent_id ?? ""} onChange={event => setValue({ ...value, parent_id: event.target.value || null })}><option value="">В основном разделе</option>{catalog.categories.filter(item => item.service_code === value.service_code && !excluded.has(item.id) && item.lifecycle_status !== "archived").map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
       <AdvancedDisclosure title="Расширенные настройки">
         <label className="block">Код категории<Input required pattern={"[a-z0-9][a-z0-9_\\-]*"} value={value.slug} onChange={event => setValue({ ...value, slug: event.target.value })} /></label>
         <label className="block">Описание категории<Input maxLength={2000} value={value.description} onChange={event => setValue({ ...value, description: event.target.value })} /></label>

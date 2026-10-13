@@ -32,14 +32,21 @@ def offering_cards(offerings, scenarios, categories, services, *, query="", stat
             -datetime.fromisoformat(item["updated_at"]).timestamp(), item["id"]))
         current = [item for item in history if not item["archived"]]
         category_ids = {item["category_id"] for item in (current or history) if item["category_id"]}
+        for item in current:
+            category_ids.update(entry.get("category_id") for entry in item.get("entry_points", []) + item.get("published_entry_points", []) if isinstance(entry, dict) and entry.get("category_id"))
+        catalog_metadata = (offering.get("metadata") or {}).get("studio_catalog", {}) if isinstance(offering.get("metadata") or {}, dict) else {}
+        catalog_metadata = catalog_metadata if isinstance(catalog_metadata, dict) else {}
+        folder = catalog_metadata.get("category_id")
+        if isinstance(folder, str) and folder in by_category and by_category[folder].get("service_code") == offering.get("service_code") and by_category[folder].get("lifecycle_status") != "archived":
+            category_ids.add(folder)
         if selected is not None and not category_ids.intersection(selected):
             continue
-        active = next((item for item in current if item["enabled"] and item["published_version"]
+        active = next((item for item in current if item["enabled"] and item["published_version"] and item.get("published_route_available", True)
             and category_path_is_public(item["category_id"], by_category)), None)
         service = by_service.get(offering.get("service_code"), {})
         available = all(item.get("visibility") == "public" and item.get("lifecycle_status") == "published"
             for item in (service, offering)) and bool(offering.get("request_template_key"))
-        matches = status == "all" or status == "form_only" and available and active is None or status == "guided" and available and active is not None or any(
+        matches = status == "all" or status == "available" and available or status == "hidden" and not available or status == "form_only" and available and active is None or status == "guided" and available and active is not None or any(
             item["status"] == status or status == "errors" and item["issues"] and not item["archived"]
             or status == "draft" and not item["archived"] and not item["published_version_id"] for item in history)
         if not matches:
@@ -48,6 +55,8 @@ def offering_cards(offerings, scenarios, categories, services, *, query="", stat
         text = " ".join(str(offering.get(key) or "") for key in ("public_title", "short_description", "full_code", "service_code"))
         text += " " + offering_type_search_text(offering)
         text += " " + " ".join(str(item.get(key) or "") for item in history for key in ("title", "description", "category_title"))
+        text += " " + " ".join(str(entry.get(key) or "") for item in current for entry in item.get("entry_points", []) + item.get("published_entry_points", []) if isinstance(entry, dict) for key in ("title", "description", "synonyms"))
+        text += " " + str(catalog_metadata.get("synonyms") or "")
         if query and query.casefold() not in text.casefold():
             continue
         cards.append({"offering": offering, "scenarios": history, "active_mode": "scenario" if active else "form",

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
@@ -11,11 +12,11 @@ it("shows human location, description, published version and timestamp, with ind
     scenarios: [{ id: "s1", service_code: "it", offering_full_code: "it.print", category_id: "child", title: "Не печатает",
       description: "Помощь при остановке печати", status: "published", published_version: 7, updated_at: "2026-10-11T10:00:00Z" }],
     total: 1, offset: 0, limit: 100 } as ScenarioCatalog;
-  render(<MemoryRouter><ScenarioCatalogExplorer data={data} query="" status="all" category="child" canEdit
-    onQuery={vi.fn()} onStatus={vi.fn()} onCategory={vi.fn()} onOpen={vi.fn()} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()} /></MemoryRouter>);
+  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ScenarioCatalogExplorer data={data} query="" status="all" category="child" canEdit
+    onQuery={vi.fn()} onStatus={vi.fn()} onCategory={vi.fn()} onOpen={vi.fn()} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()} /></MemoryRouter></QueryClientProvider>);
   expect(screen.getByText("ИТ → Оборудование → Принтеры")).toBeVisible();
-  expect(screen.getAllByText("Помощь при остановке печати")[0]).toBeVisible();
-  expect(screen.getByText("Версия 7")).toBeVisible();
+  fireEvent.click(screen.getByRole("tab",{name:"Карты сценариев"}));expect(screen.getAllByText("Помощь при остановке печати")[0]).toBeVisible();
+  expect(screen.getByText(/Опубликованная версия 7/)).toBeVisible();
   expect(document.querySelector("time")).toHaveAttribute("datetime", "2026-10-11T10:00:00Z");
   const toggle = screen.getByRole("button", { name: "Свернуть категорию Оборудование" });
   expect(toggle).toHaveAttribute("aria-expanded", "true");

@@ -1,6 +1,6 @@
 import type { AdminServiceCatalogOffering, AdminServiceCatalogService } from "../service-catalog/api";
 import { RequestStudioApiError } from "./api";
-import type { ScenarioAnswerRequest, ScenarioBlock, ScenarioDraftDefinition } from "./scenario-contract";
+import type { ScenarioAnswerRequest, ScenarioBlock, ScenarioDraftDefinition, ScenarioEntryPoint } from "./scenario-contract";
 import type { RequestFormField } from "../requester/types";
 import type { DiagnosticFailureStatus } from "./scenario-diagnostics";
 
@@ -17,6 +17,9 @@ export type ScenarioItem = {
   published_version_id: string | null; status?: ScenarioStatus; revision?: number;
   published_version?: number | null; updated_at?: string;
   published_entry_count?: number;
+  entry_points?: ScenarioEntryPoint[];
+  published_entry_points?: ScenarioEntryPoint[];
+  published_public_entry_keys?: string[];
   issues?: { code: string; path: string; message: string }[];
 };
 export type ScenarioDetail = { scenario: ScenarioItem; draft: { revision: number; definition: ScenarioDraftDefinition } };

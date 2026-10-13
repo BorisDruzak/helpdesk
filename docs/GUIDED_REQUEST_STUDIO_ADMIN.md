@@ -1,7 +1,9 @@
 # Guided Request Studio administration
 
 The admin/auditor entry is `/app/admin/request-template-studio`. It opens the
-catalog; **Новая карта** opens a compact starter with name, catalog section and
+full-width **Каталог услуг** workbench. **Создать услугу** is the primary action;
+**Карты сценариев** is a separate administration tab where **Новая карта**
+opens a compact starter with name, catalog section and
 **Простая заявка / Диагностика проблемы / Пустая карта**. Starters create real,
 editable schema-v1 blocks and transitions locally; they never save or publish
 automatically. A simple request has a catalog entrance, question, review and
@@ -28,9 +30,33 @@ the full human category path, description, active published version number and
 last scenario/draft modification time. The compact explorer has a section/category
 picker; server category filtering still includes descendants. Offering lookup
 context is separate from visible filtered/paginated catalog entries.
-The catalog has one card per offering, including offerings with only a canonical
-form. Requester mode (**Для сотрудника: обычная форма** or **Для сотрудника:
-пошаговый сценарий**) is separate from draft validation/publication status.
+The catalog has one compact service list: section/category tree on the left,
+services in the center, and a selected service inspector on the right. Panels
+resize by pointer/keyboard and retain their widths. Tablets stack the inspector;
+small screens also stack the tree. Selecting a service stays on the same page.
+The inspector groups **Основное / Помощь сотруднику / Обработка обращения /
+Доступность**. Sections and categories can be created/renamed inline; categories
+move within their section using the existing parent selector and revision guard.
+An ordinary service uses its canonical Offering. Named entrances are separate
+service rows identified by scenario ID and entrance key; they retain one shared
+Offering, RequestTemplate and map. **Создать услугу → Вход в существующий
+сценарий** adds an entrance using the existing draft API with its current CAS
+revision. The map picker has search and pagination. **Открыть карту** selects
+the corresponding first step. Map-toolbar **Каталог** returns to the general
+catalog through the unsaved-change guard. There is no duplicate Catalog tab in
+the block library.
+Ordinary-form grouping/search phrases are bounded `metadata.studio_catalog`
+settings: optional `category_id` and up to 20 synonyms of at most 100 characters.
+The server checks section ownership and archive state under the same section
+lock as category moves/archives. Ordinary services also prevent category archive.
+This grouping does not introduce new requester access rules or a new workflow
+engine. Unknown metadata and existing processing policies are preserved.
+Named-entrance grouping and synonyms use the existing versioned entry settings.
+Requester mode is separate from draft validation/publication status.
+Published entrance titles/availability come from the active immutable snapshot;
+new, changed and removed draft entrances are identified separately. Editing an
+entrance saves a map draft, not a publication. A removed draft entrance still
+works in its active published version until the next explicit publication.
 Archived/disabled scenarios never imply that requesters use them. Mode uses the
 same published-version and public category-ancestor guard as requester runtime.
 Separate requester availability also checks the offering and service publication,
@@ -42,8 +68,11 @@ descendants and retain disabled-scenario offerings; archive history supplies
 location only when no current scenario exists. Unassigned offerings remain in
 their main section. Search/status/category/pagination operate on offering cards.
 
-`/app/admin/request-template-studio/services/:offeringCode` opens one offering,
-with form/scenario actions and collapsed archive history.
+`/app/admin/request-template-studio/services/:offeringCode` selects the offering
+in the same catalog inspector. The standalone creation route remains compatible;
+its technical request class is in advanced settings. New sections may reuse the
+queue/SLA/routing/diagnostic defaults of an existing published section; publishing
+still uses the canonical validation API.
 `/app/admin/service-catalog/offerings/:offeringCode` opens settings for one
 offering; configuration groups start collapsed. The old `/app/admin/service-catalog`
 list redirects to the unified catalog, preserving link context. Navigation has

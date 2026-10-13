@@ -5,7 +5,7 @@ for(const [width,height] of [[1366,768],[1920,1080],[820,1180]]) {
   await page.setViewportSize({width,height});
   const definition={scenario_key:"preview",title:"Предпросмотр доступа",service_code:"it",offering_full_code:"it.printer",entry_block_id:"q",entry_points:[],process_binding:{request_template_key:"printer"},blocks:[{id:"q",kind:"form_page",title:"Запрос доступа",fields:[{key:"folder",type:"text",label:"Куда нужен доступ?",help_text:"Название папки"}],transitions:[{to:"done"}]},{id:"done",kind:"finish",title:"Завершено",message:"Готово"}]};
   const state=await fixture(page,false,definition);await page.goto("/app/admin/request-template-studio");
-  await page.getByRole("region",{name:"Карты сценариев"}).getByRole("button",{name:definition.title}).click();await expect(page.getByLabel("Название карты")).toHaveValue(definition.title);
+  await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region",{name:"Карты сценариев"}).getByRole("button",{name:definition.title}).click();await expect(page.getByLabel("Название карты")).toHaveValue(definition.title);
   await page.getByRole("button",{name:"Вся карта",exact:true}).click();
   await page.getByRole("combobox",{name:"Добавить пункт каталога для блока"}).selectOption("q");
   await expect(page.locator('.react-flow__edge[data-id^="studio:entry-point:"]')).toHaveCount(1);
@@ -31,7 +31,7 @@ for (const [width,height] of [[1280,720],[1366,768],[1920,1080]]) {
  test(`guided new map opens a compact starter ${width}`,async({page})=>{
   await page.setViewportSize({width,height});const state=await fixture(page);await page.goto("/app/admin/request-template-studio");
   await expect(page.getByLabel("Визуальная карта сценария",{exact:true})).toHaveCount(0);
-  await page.getByRole("button",{name:"Новая карта",exact:true}).click();
+  await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click(); await page.getByRole("button",{name:"Новая карта",exact:true}).click();
   await expect(page.getByRole("dialog",{name:"С чего начнём?"})).toBeVisible();
   await expect(page.getByRole("button",{name:"Создать карту →"})).toBeDisabled();
   expect(state.mutations).toHaveLength(0);
@@ -45,13 +45,13 @@ for (const width of [1366,1920]) {
   const state=await fixture(page,false,definition);
   await page.route("**/api/web/admin/request-studio/scenarios/s1/publish-preview",route=>route.fulfill({json:{status:"success",data:{revision:3,health:{health_status:"ok"},readiness:{can_publish:false,variants_checked:0,issues:[]},diff:[],confirmation_token:null}}}));
   await page.goto("/app/admin/request-template-studio");
-  await expect(page.getByRole("region",{name:"Карты сценариев"})).toBeVisible();
+  await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await expect(page.getByRole("region",{name:"Карты сценариев"})).toBeVisible();
   await expect(page.getByRole("link",{name:"Конструктор форм",exact:true})).toHaveCount(0);
   await expect(page.getByRole("link",{name:"Проверка политик",exact:true})).toHaveCount(0);
-  await page.getByRole("region",{name:"Карты сценариев"}).getByRole("button",{name:"Не печатает",exact:true}).click();
+  await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region",{name:"Карты сценариев"}).getByRole("button",{name:"Не печатает",exact:true}).click();
   await expect(page.getByLabel("Название карты")).toHaveValue("Не печатает");
   await expect(page).toHaveURL(/\/app\/admin\/request-template-studio$/);
-  await expect(page.getByRole("tab",{name:"Блоки",exact:true})).toHaveAttribute("aria-selected","true");
+  await expect(page.getByRole("heading",{name:"Библиотека блоков",exact:true})).toBeVisible();await expect(page.getByRole("tab",{name:"Каталог",exact:true})).toHaveCount(0);
   const left=page.getByRole("separator",{name:"Ширина каталога и блоков"});
   const leftBefore=Number(await left.getAttribute("aria-valuenow"));const leftBox=(await left.boundingBox())!;
   await page.mouse.move(leftBox.x+4,leftBox.y+leftBox.height/2);await page.mouse.down();await page.mouse.move(leftBox.x+44,leftBox.y+leftBox.height/2,{steps:5});await page.mouse.up();
@@ -62,7 +62,7 @@ for (const width of [1366,1920]) {
   const bottom=page.getByRole("separator",{name:"Высота редактора"});const before=Number(await bottom.getAttribute("aria-valuenow"));
   if(before>310){const box=(await bottom.boundingBox())!;await page.mouse.move(box.x+box.width/2,box.y+6);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y-24,{steps:5});await page.mouse.up();await expect(bottom).toHaveAttribute("aria-valuenow",String(before-30));}
   expect(state.mutations).toHaveLength(0);
-  await page.reload();await page.getByRole("region",{name:"Карты сценариев"}).getByRole("button",{name:"Не печатает",exact:true}).click();await expect(left).toHaveAttribute("aria-valuenow",String(leftBefore+40));
+  await page.reload();await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region",{name:"Карты сценариев"}).getByRole("button",{name:"Не печатает",exact:true}).click();await expect(left).toHaveAttribute("aria-valuenow",String(leftBefore+40));
   await expect(page.getByLabel("Название карты")).toHaveValue("Не печатает");
   await page.getByRole("tab",{name:"Как у сотрудника",exact:true}).click();
   await page.getByRole("button",{name:"Опубликовать",exact:true}).click();
@@ -103,7 +103,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       } } });
     });
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
+    if(await page.getByRole("tab",{name:"Карты сценариев",exact:true}).getAttribute("aria-selected")!=="true")await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Тестировать", exact: true }).click();
     await page.getByRole("button", { name: "Начать проверку", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Подробности влияния", exact: true })).toBeFocused();
@@ -134,7 +134,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await expect(page.getByRole("region", { name: "Каталог услуг", exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/app\/admin\/request-template-studio$/);
     await expect(page.getByRole("button", { name: "Создать сценарий", exact: true })).toHaveCount(0);
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
+    if(await page.getByRole("tab",{name:"Карты сценариев",exact:true}).getAttribute("aria-selected")!=="true")await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await expect(page.getByLabel("Название карты", { exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Тестировать", exact: true }).click();
@@ -166,8 +166,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await route.fulfill({ json: { status: "success", data: { scenario: { id: "new", archived: false }, draft: { revision: 1, definition: body.definition } } } });
     });
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("link", { name: "Создать тип обращения", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Создать услугу", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Создать услугу", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Новая услуга", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Карта сценария", exact: true })).toHaveCount(0);
     await page.getByLabel("Название услуги", { exact: true }).fill("Не печатает");
     await page.getByLabel("Краткое описание услуги", { exact: true }).fill("Помощь с печатью");
@@ -179,8 +179,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.screenshot({ path: info.outputPath(`${viewport.width}-standalone-offering.png`) });
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: "Новая услуга", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("region", { name: "Страница услуги", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Создать сценарий для услуги", exact: true }).click();
+    await expect(page.getByRole("complementary", { name: "Настройки услуги", exact: true })).toBeVisible();await page.getByRole("tab",{name:"Помощь сотруднику",exact:true}).click();
+    await page.getByRole("button", { name: "Создать карту", exact: true }).click();
     await expect(page.getByRole("dialog",{name:"С чего начнём?"})).toBeVisible();
     await page.getByRole("dialog",{name:"С чего начнём?"}).locator("summary").filter({hasText:"Тип обращения"}).click();
     await expect(page.getByLabel("Тип создаваемого обращения",{exact:true})).toHaveValue(String(offering?.full_code));
@@ -228,7 +228,7 @@ for (const width of [1366, 1440, 1920, 820]) {
     await page.route("**/api/web/admin/request-studio/scenarios/s1/versions", route => route.fulfill({ json: { status: "success", data: [] } }));
     await page.route("**/api/web/admin/helpdesk-model/policies", route => route.fulfill({ json: { status: "success", data: { policies: {} } } }));
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
+    if(await page.getByRole("tab",{name:"Карты сценариев",exact:true}).getAttribute("aria-selected")!=="true")await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     for (const [code, label] of [["unknown_target", "Проверьте бумагу"], ["routing_unavailable", "Маршрут и очередь"], ["sla_unavailable", "Сроки обслуживания"], ["closure_missing", "Закрытие обращения"]]) {
       issue = { code, path: code === "unknown_target" ? "blocks.instruction.transitions" : "process_binding", message: "Исправьте настройку" };
       await page.getByRole("button", { name: "Опубликовать", exact: true }).click();
@@ -271,7 +271,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
+    if(await page.getByRole("tab",{name:"Карты сценариев",exact:true}).getAttribute("aria-selected")!=="true")await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Опубликовать", exact: true }).click();
     await page.getByRole("button", { name: "Подготовить публикацию", exact: true }).click();
     await expect(page.getByText("Раньше", { exact: true })).toBeVisible();
@@ -309,15 +309,15 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.setViewportSize(viewport);
     const state = await fixture(page);
     await page.goto("/app/admin/request-template-studio");
-    const create = page.getByRole("button", { name: "Новая карта", exact: true });
+    await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();const create = page.getByRole("button", { name: "Новая карта", exact: true });
     await expect(create).toBeInViewport(); await expect(create).toBeEnabled();
     await expect(page.getByLabel("Визуальная карта сценария",{exact:true})).toHaveCount(0);
     await expect(page.getByText("Сценарий помощи с печатью",{exact:true}).first()).toBeVisible();
-    await expect(page.getByText(/Активная версия 7/)).toBeVisible();
+    await expect(page.getByText(/Опубликованная версия 7/)).toBeVisible();
     await page.getByRole("button",{name:"Принтеры",exact:true}).click();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath("catalog.png") });
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
+    if(await page.getByRole("tab",{name:"Карты сценариев",exact:true}).getAttribute("aria-selected")!=="true")await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await expect(page.getByLabel("Название карты")).toHaveValue("Не печатает");
     await page.getByLabel("Название карты").fill("Помощь с печатью");
     const save = page.getByRole("button", { name: "Сохранить черновик", exact: true });
@@ -349,7 +349,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await page.setViewportSize(viewport);
     const state = await fixture(page);
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
+    if(await page.getByRole("tab",{name:"Карты сценариев",exact:true}).getAttribute("aria-selected")!=="true")await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "+ Вопрос", exact: true }).click();
     await page.getByText("Название шага на карте",{exact:true}).click();
     await page.getByLabel("Название блока", { exact: true }).fill("Опишите проблему");
@@ -389,7 +389,7 @@ test("guided studio loading empty error and retry states", async ({ page }) => {
   await expect(page.getByText("Каталог недоступен", { exact: true })).toBeVisible({ timeout: 15000 });
   await page.unroute(pattern);
   await page.getByRole("button", { name: /Повторить/ }).click();
-  await expect(page.getByRole("region",{name:"Карты сценариев"})).toBeVisible();
+  await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await expect(page.getByRole("region",{name:"Карты сценариев"})).toBeVisible();
   expect(state.errors.filter(error => !error.includes("Failed to load resource"))).toEqual([]);
   expect(state.failures.every(failure => failure.startsWith("500 ") && failure.includes("/request-studio/catalog"))).toBe(true);
 });
@@ -406,7 +406,7 @@ for (const width of [1366, 1920]) {
       ] };
     const state = await fixture(page, false, definition);
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
+    if(await page.getByRole("tab",{name:"Карты сценариев",exact:true}).getAttribute("aria-selected")!=="true")await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Вся карта", exact: true }).click();
     const sourceNode = page.locator('.react-flow__node[data-id="q"]');
     const sourceBox = await sourceNode.boundingBox(); expect(sourceBox).not.toBeNull();
@@ -505,7 +505,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
       await route.fulfill({ json: { status: "success", data: { policy, message: "Опубликовано" } } });
     });
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
+    if(await page.getByRole("tab",{name:"Карты сценариев",exact:true}).getAttribute("aria-selected")!=="true")await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Согласования", exact: true }).click();
     await page.getByRole("button", { name: "Создать схему согласования", exact: true }).click();
     await page.getByLabel("Название", { exact: true }).fill("Руководитель отдела");

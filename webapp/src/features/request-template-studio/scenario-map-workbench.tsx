@@ -22,8 +22,8 @@ import { ScenarioMapGuidance } from "./scenario-map-guidance";
 import { ScenarioRequesterPreview, ScenarioPagePreview } from "./scenario-requester-preview";
 import { ScenarioWorkbenchCatalog, type WorkbenchCatalogProps } from "./scenario-workbench-catalog";
 
-type Props = { definition: ScenarioDraftDefinition; catalog: ScenarioCatalog; existing: boolean; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void; issueBlockId?: string; issueTransitions?: boolean; issuePolicy?: ScenarioPolicyKind; path?: string[]; current?: string; inspectorPanel?: ReactNode; catalogPanel?: WorkbenchCatalogProps; explorerTab?: "catalog" | "blocks"; onExplorerTab?: (tab: "catalog" | "blocks") => void; onTest?: () => void; onCheck?: () => void; onInspect?: () => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryOpen?: (open: boolean) => void; onCategoryCreated?: () => Promise<void> };
-export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, onChange, issueBlockId, issueTransitions, issuePolicy, path, current, inspectorPanel, catalogPanel, explorerTab = "blocks", onExplorerTab, onTest, onCheck, onInspect, ...categoryProps }: Props) {
+type Props = { definition: ScenarioDraftDefinition; catalog: ScenarioCatalog; existing: boolean; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void; focusBlockId?: string; issueBlockId?: string; issueTransitions?: boolean; issuePolicy?: ScenarioPolicyKind; path?: string[]; current?: string; inspectorPanel?: ReactNode; catalogPanel?: WorkbenchCatalogProps; explorerTab?: "catalog" | "blocks"; onExplorerTab?: (tab: "catalog" | "blocks") => void; onTest?: () => void; onCheck?: () => void; onInspect?: () => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryOpen?: (open: boolean) => void; onCategoryCreated?: () => Promise<void> };
+export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, onChange, focusBlockId, issueBlockId, issueTransitions, issuePolicy, path, current, inspectorPanel, catalogPanel, explorerTab = "blocks", onExplorerTab, onTest, onCheck, onInspect, ...categoryProps }: Props) {
   const [selected, setSelected] = useState(!existing ? definition.blocks?.[0]?.id ?? metadataNodeId : metadataNodeId);
   const [stepMenu, setStepMenu] = useState<{ source: string | null; index?: number } | null>(null);
   const [bindingFocus, setBindingFocus] = useState(false);
@@ -47,6 +47,7 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
   const positions = stableMapPositions(definition);
   const hasInspectorPanel = !!inspectorPanel;
   useEffect(() => { if (hasInspectorPanel) setRightCollapsed(false); }, [hasInspectorPanel]);
+  useEffect(() => { if (focusBlockId) { setSelected(focusBlockId); setEntranceLink(null); setInspectorTab("settings"); } }, [focusBlockId]);
   useEffect(() => { if (issueBlockId) { setSelected(issueBlockId); setEntranceLink(null); setInspectorTab("settings"); setEdge(issueTransitions && definition.blocks?.find(item => item.id === issueBlockId)?.transitions?.length ? { source: issueBlockId, index: 0 } : null); } else if (issuePolicy) { setSelected(metadataNodeId); setEdge(null); setEntranceLink(null); setInspectorTab("settings"); } }, [issueBlockId, issueTransitions, issuePolicy]);
   useEffect(() => { if (emitted.current.scenario_key !== definition.scenario_key) { setPast([]); setFuture([]); setSelected(metadataNodeId); setEdge(null); setPendingInsert(null); setRemoving(false); setError(""); setEntranceLink(null); setFullPreview(false); setInspectorTab("settings"); } emitted.current = definition; }, [definition]);
   useEffect(()=>{if(!entranceLink)return;const target=entranceLink.key===null?definition.entry_block_id:definition.entry_points?.find(entry=>entry.key===entranceLink.key)?.target_block_id;
@@ -91,8 +92,6 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
 
     <div ref={gridRef} className={`studio-map-workbench ${leftCollapsed ? "is-left-collapsed" : ""} ${rightCollapsed ? "is-right-collapsed" : ""}`} style={geometry.style}>
       <aside className="studio-map-explorer space-y-4" aria-label="Библиотека блоков">
-        {catalogPanel && <div role="tablist" aria-label="Содержимое левой панели" className="flex gap-1">{(["catalog", "blocks"] as const).map(tab=><button key={tab} type="button" role="tab" aria-selected={explorerTab===tab} className={`rounded px-3 py-2 text-sm ${explorerTab===tab?"bg-blue-50 font-semibold":"hover:bg-slate-100"}`} onClick={()=>onExplorerTab?.(tab)}>{tab==="catalog"?"Каталог":"Блоки"}</button>)}</div>}
-        {catalogPanel && explorerTab === "catalog" ? <ScenarioWorkbenchCatalog {...catalogPanel} /> : <>
         <h3 className="font-semibold">Библиотека блоков</h3>
         <div className="space-y-1">{mapPalette.map(item => <button key={item.kind} type="button" className="w-full rounded-lg border px-3 py-2 text-left text-sm hover:bg-blue-50 disabled:opacity-50" disabled={disabled || blocks.length >= 256} draggable={!disabled} onDragStart={event => event.dataTransfer.setData("application/x-scenario-kind", item.kind)} onClick={() => add(item.kind)}>+ {item.label}</button>)}</div>
         <details><summary className="cursor-pointer text-sm">Найти шаг · расположение панелей</summary><Button variant="ghost" onClick={geometry.reset}>Сбросить размеры панелей</Button><label className="block text-sm">Найти блок<Input value={search} onChange={event => setSearch(event.target.value)} /></label>
@@ -101,7 +100,6 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
         <h3 className="font-semibold">Точки входа · {entrances.length}</h3>
         {entrances.map(entry => <button className="block w-full break-words rounded p-2 text-left text-xs text-blue-700 hover:bg-blue-50" key={entry.key} onClick={() => choose(entry.target_block_id)}>{entry.title}</button>)}
         {!entrances.length && <p className="text-xs text-slate-500">Совместимый вход: {blocks.find(item => item.id === definition.entry_block_id)?.title ?? "не выбран"}. Добавьте пункты через инспектор блока.</p>}
-        </>}
       </aside>
       {geometry.handle("left")}
       <div className="studio-map-main">

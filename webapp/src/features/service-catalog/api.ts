@@ -20,6 +20,7 @@ export type AdminServiceCatalogService = {
 };
 
 export type AdminServiceCatalogOffering = {
+  metadata?: Record<string, unknown> & { studio_catalog?: { category_id?: string | null; synonyms?: string[] } };
   offering_id?: string;
   service_id?: string;
   service_code?: string | null;
