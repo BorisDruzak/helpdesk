@@ -4,7 +4,7 @@ import { addBlock, newBlock, newKey, removeBlock } from "./scenario-builder-mode
 export const mapPalette: { kind: ScenarioBlock["kind"]; label: string }[] = [
   { kind: "form_page", label: "Вопрос" }, { kind: "instruction", label: "Инструкция" },
   { kind: "decision", label: "Условие" }, { kind: "resolution_check", label: "Проверка результата" },
-  { kind: "diagnostic", label: "Диагностика" }, { kind: "review", label: "Сводка" }, { kind: "submit_ticket", label: "Результат" },
+  { kind: "submit_ticket", label: "Результат" },
 ];
 export const mapKindLabel = (kind: ScenarioBlock["kind"]) => kind === "finish" ? "Результат" : mapPalette.find(item => item.kind === kind)?.label ?? kind;
 export const terminal = (kind: ScenarioBlock["kind"]) => kind === "finish" || kind === "submit_ticket";
@@ -16,14 +16,15 @@ export function connectStart(definition: ScenarioDraftDefinition, target: string
   if (entries.some(entry => entry.target_block_id === target)) return definition.entry_block_id ? definition : { ...definition, entry_block_id: target };
   if (entries.length >= 64) throw new Error("Достигнут лимит 64 точек входа");
   return { ...definition, entry_block_id: definition.entry_block_id ?? target, entry_points: [...entries, {
-    key: newKey("entry"), title: block.title, target_block_id: target, category_id: null, visibility: "public" as const, enabled: true,
+    key: newKey("entry"), title: block.title, target_block_id: target, category_id: definition.category_id ?? null, visibility: "public" as const, enabled: true,
   }] };
 }
 export function reconnectStart(definition: ScenarioDraftDefinition, key: string | null, target: string) {
   if (!definition.blocks?.some(item => item.id === target)) throw new Error("Выберите существующий начальный блок");
   if (key === null) return { ...definition, entry_block_id: target };
   if (!definition.entry_points?.some(entry => entry.key === key)) throw new Error("Точка входа не найдена");
-  return { ...definition, entry_points: definition.entry_points.map(entry => entry.key === key ? { ...entry, target_block_id: target } : entry) };
+  const entry_points = definition.entry_points.map(entry => entry.key === key ? { ...entry, target_block_id: target } : entry);
+  return { ...definition, entry_points, entry_block_id: entry_points.some(entry => entry.enabled !== false && entry.target_block_id === definition.entry_block_id) ? definition.entry_block_id : target };
 }
 
 export function positionBlock(definition: ScenarioDraftDefinition, id: string, position: { x: number; y: number }): ScenarioDraftDefinition {
@@ -32,7 +33,7 @@ export function positionBlock(definition: ScenarioDraftDefinition, id: string, p
 }
 // Freeze the fallback layout before changing block order. Geometry never follows graph links.
 export function stableMapPositions(definition: ScenarioDraftDefinition): Record<string, { x: number; y: number }> {
-  return { system_start: { x: 0, y: -170 }, ...Object.fromEntries((definition.blocks ?? []).map((block, index) => [block.id, { x: (index % 3) * 310, y: Math.floor(index / 3) * 200 }])), ...definition.editor_layout?.positions };
+  return { system_start: { x: -320, y: 0 }, ...Object.fromEntries((definition.blocks ?? []).map((block, index) => [block.id, { x: (index % 3) * 310, y: Math.floor(index / 3) * 200 }])), ...definition.editor_layout?.positions };
 }
 export function requireAcyclic(definition: ScenarioDraftDefinition) {
   const blocks = new Map((definition.blocks ?? []).map(block => [block.id, block]));
@@ -59,7 +60,13 @@ export function connectBlocks(definition: ScenarioDraftDefinition, source: strin
   const block = definition.blocks?.find(item => item.id === source);
   if (!block || terminal(block.kind) || !definition.blocks?.some(item => item.id === target)) throw new Error("Этот блок нельзя соединить с выбранной целью");
   if ((block.transitions?.length ?? 0) >= 30) throw new Error("Достигнут лимит переходов");
-  return replaceTransitions(definition, source, [...block.transitions ?? [], { to: target }]);
+  let edge:ScenarioTransition={to:target};
+  if(definition.schema_version===2&&block.kind==="resolution_check"){
+    const used=(block.transitions??[]).map(item=>item.when&&"value" in item.when?item.when.value:null);
+    const value=["yes","no","unknown"].find(item=>!used.includes(item));
+    if(value)edge={to:target,when:{source:"current_result",op:"eq",value}};
+  }
+  return replaceTransitions(definition, source, [...block.transitions ?? [], edge]);
 }
 export function insertOnTransition(definition: ScenarioDraftDefinition, source: string, index: number, kind: ScenarioBlock["kind"], position?: { x: number; y: number }) {
   if (terminal(kind) || kind === "resolution_check" || kind === "decision") throw new Error("Этот шаг завершает маршрут или требует отдельных ветвей. Добавьте его из библиотеки и явно настройте переходы.");
@@ -93,7 +100,7 @@ export function appendMapStep(definition: ScenarioDraftDefinition, source: strin
   let next = addMapBlock(definition, kind, { x: point.x, y: point.y + 170 });
   const added = next.blocks!.at(-1)!;
   if (from) next = connectBlocks(next, from.id, added.id);
-  else if (!definition.blocks?.length) { next = connectStart(next, added.id); next = { ...next, entry_points: [{ ...next.entry_points![0], title: definition.title, category_id: definition.category_id }] }; }
+  else if (!definition.blocks?.length && definition.schema_version !== 2) { next = connectStart(next, added.id); next = { ...next, entry_points: [{ ...next.entry_points![0], title: definition.title, category_id: definition.category_id }] }; }
   return next;
 }
 export function deleteMapBlock(definition: ScenarioDraftDefinition, id: string, replacement: string | null, entranceAction?: "remove" | "reassign", referenceAction: "redirect" | "detach" = "redirect") {

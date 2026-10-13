@@ -3,9 +3,11 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { AdvancedDisclosure } from "../../components/ui-page/advanced-disclosure";
 import type { ScenarioDraftDefinition, ScenarioField, ScenarioFieldType, ScenarioRole } from "./scenario-contract";
-import { changeFieldType, compatibleRole, conditionFields, fieldLabels, fieldUses, isChoice, newKey, roleLabels } from "./scenario-builder-model";
+import { changeFieldType, editFieldOption, compatibleRole, conditionFields, fieldLabels, fieldUses, isChoice, newKey, roleLabels } from "./scenario-builder-model";
 import { ScenarioConditionEditor } from "./scenario-condition-editor";
 import { ScenarioSeparatedInput } from "./scenario-separated-input";
+
+import { QuestionProcessingEffects } from "./scenario-processing-facts";
 
 type Props = { field: ScenarioField; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (field: ScenarioField) => void };
 export function ScenarioFieldEditor({ field, definition, disabled, onChange }: Props) {
@@ -24,16 +26,17 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
     </Select></label>
     <div className="flex flex-wrap gap-4">
       <label><input type="checkbox" checked={!!field.required} onChange={event => onChange({ ...field, required: event.target.checked })} /> Обязательный ответ</label>
-      <label><input type="checkbox" checked={!!field.allow_unknown} onChange={event => onChange({ ...field, allow_unknown: event.target.checked })} /> Разрешить «Не знаю»</label>
+      <label><input type="checkbox" checked={!!field.allow_unknown} onChange={event => onChange({ ...field, allow_unknown: event.target.checked, process_mapping: { ...field.process_mapping, effects: event.target.checked ? field.process_mapping?.effects : field.process_mapping?.effects?.filter(effect => effect.value !== null) } })} /> Разрешить «Не знаю»</label>
     </div>
     <label className="block">Подсказка<Input maxLength={2000} value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label>
     {roles.some(role => role.startsWith("priority_")) && <p className="studio-next-help">Ответ используется действующей политикой Helpdesk.</p>}
+    {definition.schema_version === 2 && <QuestionProcessingEffects field={field} disabled={disabled} onChange={onChange}/>}
     <label className="block">Пример ответа<Input maxLength={500} value={field.placeholder ?? ""} onChange={event => onChange({ ...field, placeholder: event.target.value })} /></label>
     {isChoice(field.type) && <fieldset className="space-y-3"><legend className="font-medium">Варианты ответа</legend>
       {(field.options ?? []).map((option, index) => <div key={index} className="space-y-2 rounded-md border p-3">
         <label className="block">Вариант {index + 1}<Input maxLength={300} value={option.label} onChange={event => onChange({ ...field, options: field.options!.map((old, i) => i === index ? { ...old, label: event.target.value } : old) })} /></label>
-        <Button variant="ghost" disabled={disabled || field.options!.length <= 1} onClick={() => onChange({ ...field, options: field.options!.filter((_, i) => i !== index) })}>Удалить вариант {index + 1}</Button>
-        <AdvancedDisclosure title="Расширенные настройки"><label className="block">Машинное значение<Input maxLength={100} value={option.value} onChange={event => onChange({ ...field, options: field.options!.map((old, i) => i === index ? { ...old, value: event.target.value } : old) })} /></label><p className="text-sm text-slate-500">Изменение значения может потребовать исправить условия переходов.</p></AdvancedDisclosure>
+        <Button variant="ghost" disabled={disabled || field.options!.length <= 1} onClick={() => onChange(editFieldOption(field, index, null))}>Удалить вариант {index + 1}</Button>
+        <AdvancedDisclosure title="Расширенные настройки"><label className="block">Машинное значение<Input maxLength={100} value={option.value} onChange={event => onChange(editFieldOption(field, index, event.target.value))} /></label><p className="text-sm text-slate-500">Изменение значения может потребовать исправить условия переходов.</p></AdvancedDisclosure>
       </div>)}
       <Button variant="secondary" disabled={disabled || (field.options?.length ?? 0) >= 100} onClick={() => onChange({ ...field, options: [...(field.options ?? []), { value: newKey("option"), label: "Новый вариант" }] })}>Добавить вариант</Button>
     </fieldset>}

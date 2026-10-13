@@ -5,6 +5,56 @@ from tickets.request_scenario_runtime import ScenarioInputError, ScenarioRuntime
 from tickets.request_scenario_session import project_step
 
 
+def derive_scenario_form(definition, state):
+    """Project only the current retained route into canonical FormSchema fields."""
+    from tickets.request_scenario_conditions import evaluate_condition
+    blocks = {block.id: block for block in definition.blocks}
+    fields = []
+    for identifier in state.history:
+        for item in getattr(blocks[identifier], "fields", ()):
+            if not evaluate_condition(item.visible_when, state.answers):
+                continue
+            if item.validation.optional_when_legacy_missing and item.key not in state.answers:
+                continue
+            raw = item.model_dump(mode="json")
+            raw["key"] = item.process_mapping.fact_key or item.key
+            raw["required"] = bool(item.required or (item.required_when and evaluate_condition(item.required_when, state.answers)))
+            if item.allow_unknown and state.answers.get(item.key) is None:
+                raw["required"] = False
+            # Entity pickers were resolved and authorized by the session runtime.
+            if item.type.endswith("_picker") and item.key in state.answers:
+                raw["options"] = [{"value": state.answers[item.key], "label": str(state.answers[item.key])}]
+            fields.append(raw)
+    return {"title": definition.title, "version": str(state.revision), "fields": fields}
+
+
+def processing_facts(definition, state):
+    from tickets.request_scenario_processing import FACT_VALUES
+    from tickets.request_scenario_conditions import selected_transition, evaluate_condition
+    blocks = {block.id: block for block in definition.blocks}
+    facts = {}
+    def contribute(values):
+        for kind, value in values.model_dump(exclude_none=True).items():
+            if kind not in facts or FACT_VALUES[kind].index(value) > FACT_VALUES[kind].index(facts[kind]):
+                facts[kind] = value
+    for identifier in state.history:
+        block = blocks[identifier]
+        for item in getattr(block, "fields", ()):
+            if item.key not in state.answers or not evaluate_condition(item.visible_when, state.answers):
+                continue
+            value = state.answers[item.key]
+            for effect in item.process_mapping.effects:
+                if (type(value) is type(effect.value) and value == effect.value) or (isinstance(value, list) and effect.value in value):
+                    contribute(effect.facts)
+        result = state.results.get(identifier)
+        if isinstance(result, dict):
+            result = result.get("result") or result.get("status")
+        edge = selected_transition(block, state.answers, result)
+        if edge and edge.processing_facts:
+            contribute(edge.processing_facts)
+    return facts
+
+
 def build_scenario_submission(definition, state, *, session_id, version_id):
     runtime = ScenarioRuntime(definition)
     if state.state != "active" or runtime.blocks[state.current_block_id].kind != "submit_ticket":
@@ -42,6 +92,9 @@ def build_scenario_submission(definition, state, *, session_id, version_id):
         "diagnostics": {key: value for key, value in state.results.items() if key in runtime.blocks and runtime.blocks[key].kind == "diagnostic"},
         "reported_context": deepcopy(state.results.get("_entry_point")),
     }
+    if definition.schema_version == 2:
+        snapshot["form_schema"] = derive_scenario_form(definition, projected)
+        snapshot["processing_facts"] = processing_facts(definition, projected)
     return payload, snapshot
 
 

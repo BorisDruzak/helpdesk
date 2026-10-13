@@ -82,10 +82,22 @@ AllAny.model_rebuild()
 Negation.model_rebuild()
 
 
+class ProcessingFacts(StrictModel):
+    impact: Literal["single_user", "multiple_users", "department"] | None = None
+    urgency: Literal["can_work", "degraded", "blocked"] | None = None
+    importance: Literal["normal", "important", "critical"] | None = None
+
+
+class AnswerEffect(StrictModel):
+    value: Scalar
+    facts: ProcessingFacts
+
+
 class Transition(StrictModel):
     to: Key
     when: Condition | None = None
     priority: int | None = Field(default=None, ge=1, le=10000)
+    processing_facts: ProcessingFacts | None = None
 
 
 class FieldOption(StrictModel):
@@ -96,9 +108,11 @@ class FieldOption(StrictModel):
 class ProcessMapping(StrictModel):
     roles: Annotated[list[Role], Field(max_length=11)] = Field(default_factory=list)
     fact_key: Key | None = None
+    effects: Annotated[list[AnswerEffect], Field(max_length=100)] = Field(default_factory=list)
 
 
 class FieldValidation(StrictModel):
+    optional_when_legacy_missing: bool = False
     min_length: int | None = Field(default=None, ge=0, le=10000)
     max_length: int | None = Field(default=None, ge=1, le=10000)
     min_value: float | int | None = None
@@ -223,7 +237,7 @@ class ScenarioEditorLayout(StrictModel):
 
 
 class ScenarioDraftDefinition(StrictModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     scenario_key: Key
     service_code: CatalogCode
     offering_full_code: Annotated[str, Field(max_length=220, pattern=r"^[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9_-]*$")]
@@ -248,6 +262,11 @@ class ScenarioDraftDefinition(StrictModel):
             raise ValueError("offering must belong to the selected service")
         if type(self.schema_version) is not int:
             raise ValueError("schema_version must be an integer")
+        if self.schema_version == 1 and any(
+            edge.processing_facts is not None or any(field.process_mapping.effects for field in getattr(block, "fields", ()))
+            for block in self.blocks for edge in (block.transitions or [Transition(to=block.id)])
+        ):
+            raise ValueError("processing effects require schema_version 2")
         return self
 
 

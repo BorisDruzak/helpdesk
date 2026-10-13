@@ -5,6 +5,28 @@ import { afterEach, expect, it, vi } from "vitest";
 import { useScenarioEditor } from "./use-scenario-editor";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("merges server bindings into edits made during first creation and saves the next revision", async () => {
+  let resolve!: (value: Response) => void;
+  const fetcher = vi.fn((_url: unknown, init?: RequestInit) => init?.method === "POST"
+    ? new Promise<Response>(done => { resolve = done; })
+    : Promise.resolve(new Response(JSON.stringify({ status: "success", data: { scenario: { id: "s1" }, draft: { revision: 2, definition: JSON.parse(String(init?.body)).definition } } }), { headers: { "content-type": "application/json" } })));
+  vi.stubGlobal("fetch", fetcher);
+  const client = new QueryClient();
+  function Wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={client}>{children}</QueryClientProvider>; }
+  const hook = renderHook(useScenarioEditor, { wrapper: Wrapper });
+  act(() => hook.result.current.create());
+  const snapshot = hook.result.current.definition!;
+  let saving!: Promise<unknown>;
+  act(() => { saving = hook.result.current.save.mutateAsync(); });
+  await act(async () => { await Promise.resolve(); });
+  act(() => hook.result.current.change({ ...snapshot, title: "Edited while saving" }));
+  const bound = { ...snapshot, schema_version: 2 as const, publish_offering: true, offering_full_code: "it.generated", process_binding: { request_template_key: "printer" } };
+  await act(async () => { resolve(new Response(JSON.stringify({ status: "success", data: { scenario: { id: "s1" }, draft: { revision: 1, definition: bound } } }), { headers: { "content-type": "application/json" } })); await saving; });
+  expect(hook.result.current.definition).toMatchObject({ title: "Edited while saving", publish_offering: true, schema_version: 2, offering_full_code: "it.generated", process_binding: { request_template_key: "printer" } });
+  await act(async () => { await hook.result.current.save.mutateAsync(); });
+  expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toMatchObject({ revision: 1, definition: { title: "Edited while saving", offering_full_code: "it.generated" } });
+  expect(hook.result.current.dirty).toBe(false);
+});
 it("debounces autosave and sends the last local edit with the known server revision", async () => {
   vi.useFakeTimers();
   const fetcher = vi.fn(async (_url: unknown, init?: RequestInit) => new Response(JSON.stringify({ status: "success", data: { scenario: { id: "s1" }, draft: { revision: 8, definition: JSON.parse(String(init?.body)).definition } } }), { headers: { "content-type": "application/json" } }));

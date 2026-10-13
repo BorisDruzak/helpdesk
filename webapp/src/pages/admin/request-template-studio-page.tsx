@@ -1,4 +1,4 @@
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useState, useEffect, useRef } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { OfferingDetails } from "../../features/request-template-studio/offering-details";
 import type { AdminServiceCatalogOffering } from "../../features/service-catalog/api";
@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/button";
 import { PageShell, PageHeader, PageActions, ErrorState, LoadingState } from "../../components/ui-page/page-components";
 import { useSession } from "../../features/auth/session-provider";
-import { fetchScenarioCatalog, type ScenarioCatalog } from "../../features/request-template-studio/scenario-api";
+import { fetchScenarioCatalog, convertForms, type ScenarioCatalog } from "../../features/request-template-studio/scenario-api";
 import { ScenarioCatalogExplorer } from "../../features/request-template-studio/scenario-catalog";
 import { ScenarioCategoryForm } from "../../features/request-template-studio/scenario-category-form";
 import { ScenarioWizard } from "../../features/request-template-studio/scenario-wizard";
@@ -15,7 +15,8 @@ import { useScenarioContext } from "../../features/request-template-studio/use-s
 import { useScenarioDirtyGuard } from "../../features/request-template-studio/use-scenario-dirty-guard";
 import { ScenarioActionBar } from "../../features/request-template-studio/scenario-action-bar";
 import { catalogEntries } from "../../features/request-template-studio/offering-card";
-import { ScenarioCreateDialog } from "../../features/request-template-studio/scenario-create-dialog";
+import { createScenarioStarter } from "../../features/request-template-studio/scenario-starter";
+import { ScenarioDocumentPanel } from "../../features/request-template-studio/scenario-document-panel";
 
 export function AdminRequestTemplateStudioPage() {
   const { offeringCode } = useParams();
@@ -46,20 +47,35 @@ function StudioWorkspace() {
   const [selectionNotice, setSelectionNotice] = useState("");
   const [chooserData, setChooserData] = useState<ScenarioCatalog | null>(null);
   const [editorCatalog, setEditorCatalog] = useState<ScenarioCatalog | null>(null);
-  const [newMap, setNewMap] = useState<{ offering?: AdminServiceCatalogOffering } | null>(null);
   const deferredQuery = useDeferredValue(query);
   const catalog = useQuery({ queryKey: ["scenario-catalog", offeringCode, deferredQuery, status, offset, category], queryFn: () => offeringCode ? fetchScenarioCatalog("", "all", 0, null, offeringCode) : fetchScenarioCatalog(deferredQuery, status, offset, category), placeholderData: previous => previous });
-  const editor = useScenarioEditor(canEdit && !categoryDirty && !inlineCategoryOpen && !selecting && !confirm && !newMap, false);
+  const editor = useScenarioEditor(canEdit && !categoryDirty && !inlineCategoryOpen && !selecting && !confirm, false);
   const contextNotice = useScenarioContext(catalog.data, editor, canEdit, createForOffering);
   useScenarioDirtyGuard(editor.dirty || categoryDirty || catalogDirty);
+  const createdFromLink=useRef(false);
+  useEffect(()=>{if(params.get("create")==="1"&&catalog.data&&canEdit&&!createdFromLink.current){createdFromLink.current=true;newService();}},[catalog.data,canEdit,params]);
   const editing = !!editor.definition;
   const offering = catalog.data?.offerings.find(item => item.full_code === offeringCode);
-  function createForOffering(item: AdminServiceCatalogOffering) {
-    setNewMap({ offering: item });
+  function newService() {
+    const data = catalog.data;
+    if (!data) return;
+    const folder = data.categories.find(item=>item.id===category);
+    const code = folder?.service_code ?? (category?.startsWith("service:") ? category.slice(8) : data.services.find(item=>item.lifecycle_status==="published"&&item.visibility==="public")?.code ?? "");
+    editor.create({...createScenarioStarter("Новая услуга","empty",code,folder?.id??null),schema_version:2},false);
+    setExplorerTab("blocks");
+  }
+  async function createForOffering(item:AdminServiceCatalogOffering) {
+    setSelecting(true); setSelectionNotice("");
+    try {
+      const result=(await convertForms(true,item.full_code)).items[0];
+      if(result.detail){editor.accept(result.detail);setExplorerTab("blocks");void cache.invalidateQueries({queryKey:["scenario-catalog"]});}
+      else setSelectionNotice(result.issues?.map(issue=>issue.message).join(" ")||"Форму нельзя перенести автоматически. Исходная услуга сохранена.");
+    } catch {setSelectionNotice("Не удалось перенести форму. Действующая услуга сохранена; повторите проверку.");}
+    finally {setSelecting(false);}
   }
   async function select(selection: Selection) {
     setSelectionNotice(""); setChooserData(null);
-    if (selection.kind === "new") { setNewMap({}); return; }
+    if (selection.kind === "new") { newService(); return; }
     if (selection.kind === "scenario") { await editor.open(selection.id); setExplorerTab("blocks"); return; }
     setSelecting(true);
     try {
@@ -70,7 +86,7 @@ function StudioWorkspace() {
       const maps = data.scenarios.filter(map => map.offering_full_code === item.full_code && !map.archived);
       if (maps.length === 1) { await editor.open(maps[0].id); setExplorerTab("blocks"); }
       else if (maps.length > 1) { setChooserData(data); setExplorerTab("catalog"); setSelectionNotice("Для услуги есть несколько карт. Выберите нужную в левой панели."); }
-      else if (canEdit && item.request_template_key && item.service_code) { createForOffering(item); setExplorerTab("blocks"); }
+      else if (canEdit && item.request_template_key && item.service_code) { await createForOffering(item); setExplorerTab("blocks"); }
       else { setSelectionNotice(canEdit ? "Для этой услуги сначала нужен шаблон обработки. Откройте настройки услуги в каталоге." : "У услуги пока нет карты. Создание доступно администратору."); setExplorerTab("catalog"); }
     } catch { setSelectionNotice("Не удалось открыть услугу. Повторите выбор в каталоге."); }
     finally { setSelecting(false); }
@@ -87,7 +103,7 @@ function StudioWorkspace() {
   return <PageShell width="full" className="studio-workspace">
     <div className={editing ? "studio-workspace-heading bg-white/95" : "bg-white/95 pb-3"}>
       <PageHeader title={editing ? "Студия обращений" : "Каталог услуг"} description={editing ? undefined : offeringCode ? "Форма, сценарий и история одной услуги." : "Настраивайте услуги, которые видят сотрудники, и способы помощи для них."} actions={<ScenarioActionBar><PageActions>
-        {editing ? <>{offeringCode && <Button variant="ghost" disabled={editor.busy || selecting || !!confirm || inlineCategoryOpen} onClick={leave}>Вернуться к услуге</Button>}{canEdit && !offeringCode && <Button variant="ghost" disabled={editor.busy || selecting || !!confirm || inlineCategoryOpen} onClick={() => requestSelection({ kind: "new" })}>Новая карта</Button>}{canEdit && !editor.detail?.scenario.archived && <Button disabled={editor.busy || selecting || !!confirm || inlineCategoryOpen || !editor.dirty || !editor.definition?.title.trim() || !editor.definition.offering_full_code} onClick={() => editor.save.mutate()}>Сохранить черновик</Button>}</> : offeringCode ? <Link className="inline-flex min-h-11 items-center px-4 text-sm font-semibold underline" to="/app/admin/request-template-studio">Вернуться в каталог</Link> : null}
+        {editing ? <>{offeringCode && <Button variant="ghost" disabled={editor.busy || selecting || !!confirm || inlineCategoryOpen} onClick={leave}>Вернуться к услуге</Button>}{canEdit && !offeringCode && <Button variant="ghost" disabled={editor.busy || selecting || !!confirm || inlineCategoryOpen} onClick={() => requestSelection({ kind: "new" })}>Создать услугу</Button>}{canEdit && !editor.detail?.scenario.archived && <Button disabled={editor.busy || selecting || !!confirm || inlineCategoryOpen || !editor.dirty || !editor.definition?.title.trim() || !editor.definition.service_code} onClick={() => editor.save.mutate()}>Сохранить черновик</Button>}</> : offeringCode ? <Link className="inline-flex min-h-11 items-center px-4 text-sm font-semibold underline" to="/app/admin/request-template-studio">Вернуться в каталог</Link> : null}
       </PageActions></ScenarioActionBar>} />
     </div>
     {!canEdit && <p className="text-sm text-slate-500">Режим чтения: изменения доступны администратору.</p>}
@@ -102,9 +118,9 @@ function StudioWorkspace() {
       {categoryEditor ? <ScenarioCategoryForm key={categoryEditor} catalog={catalog.data} category={catalog.data.categories.find(item => item.id === categoryEditor)} onDirty={setCategoryDirty} onCancel={() => setCategoryEditor(null)} onDone={async () => { await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); setCategoryEditor(null); }} /> : editing && editor.definition ? <>
         <ScenarioWizard entryFocus={entryFocus} key={editor.definition.scenario_key} definition={editor.definition} detail={editor.detail} catalog={workbenchCatalog} disabled={!canEdit || editor.loading || selecting || !!confirm || editor.archive.isPending || !!editor.detail?.scenario.archived} simulationDisabled={editor.busy || selecting || !!editor.detail?.scenario.archived || !(canEdit || session?.actor_role === "auditor")} dirty={editor.dirty} onChange={editor.change} onAccept={editor.accept} onCatalog={leave} explorerTab={explorerTab} onExplorerTab={setExplorerTab} catalogPanel={{ data: chooserData ?? catalog.data, query, category, status, canEdit, busy: editor.busy || selecting || !!confirm || inlineCategoryOpen, selectedOffering: editor.definition.offering_full_code, onQuery: value => { setChooserData(null); setQuery(value); setOffset(0); }, onStatus: value => { setChooserData(null); setStatus(value); setOffset(0); }, onCategory: value => { setChooserData(null); setCategory(value); setOffset(0); }, onOffering: item => requestSelection({ kind: "offering", offering: item }), onScenario: item => requestSelection({ kind: "scenario", id: item.id }), onNew: () => requestSelection({ kind: "new" }), onNewCategory: () => setCategoryEditor("new"), onPage: setOffset, onBack: chooserData ? () => setChooserData(null) : undefined }} onCategoryDirty={setCategoryDirty} onCategoryOpen={setInlineCategoryOpen} onCategoryCreated={async () => { await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }} />
         {canEdit && editor.detail && <div className="flex flex-wrap gap-2"><Button variant="ghost" disabled={editor.busy || selecting || !!confirm || editor.dirty || inlineCategoryOpen} onClick={() => editor.create(editor.definition!)}>Создать копию</Button>{!editor.detail.scenario.archived && <Button variant="ghost" disabled={editor.busy || selecting || !!confirm || editor.dirty || inlineCategoryOpen} onClick={() => setConfirm("archive")}>Архивировать сценарий</Button>}</div>}
-      </> : <ScenarioCatalogExplorer data={chooserData ?? catalog.data} query={query} status={status} category={category} canEdit={canEdit} onQuery={value => { setQuery(value); setOffset(0); }} onStatus={value => { setStatus(value); setOffset(0); }} onCategory={value => { setCategory(value); setOffset(0); }} initialOffering={offeringCode} onDirty={setCatalogDirty} onNewMap={() => setNewMap({})} onOpen={(item,blockId) => { setEntryFocus(blockId); void editor.open(item.id); }} onCreateForOffering={createForOffering} onEditCategory={setCategoryEditor} onPage={setOffset} />}
+      </> : <ScenarioCatalogExplorer data={chooserData ?? catalog.data} query={query} status={status} category={category} canEdit={canEdit} onQuery={value => { setQuery(value); setOffset(0); }} onStatus={value => { setStatus(value); setOffset(0); }} onCategory={value => { setCategory(value); setOffset(0); }} initialOffering={offeringCode} onDirty={setCatalogDirty} onNewMap={newService} onOpen={(item,blockId) => { setEntryFocus(blockId); void editor.open(item.id); }} onCreateForOffering={createForOffering} onEditCategory={setCategoryEditor} onPage={setOffset} />}
     </>}
-    {newMap && workbenchCatalog && <ScenarioCreateDialog catalog={workbenchCatalog} offering={newMap.offering} onClose={() => setNewMap(null)} onCreate={draft => { editor.create(draft, false); setExplorerTab("blocks"); setNewMap(null); }} onOfferingCreated={saved => { setEditorCatalog(previous => ({ ...(previous ?? workbenchCatalog), offerings: [...(previous ?? workbenchCatalog).offerings.filter(item => item.full_code !== saved.full_code), saved] })); void cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }} />}
+    {editing && editor.definition && <ScenarioDocumentPanel definition={editor.definition} detail={editor.detail} dirty={editor.dirty} disabled={!canEdit||editor.busy||!!editor.detail?.scenario.archived} onChange={editor.change}/>}
     {confirm && <div role="alert" className="rounded-xl border border-amber-300 p-4"><p>{confirm === "leave" ? "Уйти без сохранения локальных изменений?" : confirm === "switch" ? "Переключить карту без сохранения локальных изменений?" : "Архивировать сценарий? Новые пользовательские сеансы будут недоступны."}</p><div className="mt-3 flex flex-wrap gap-2"><Button disabled={editor.busy || selecting} onClick={() => { if (confirm === "leave") editor.close(); else if (confirm === "switch" && pending) { editor.close(); void select(pending); } else editor.archive.mutate(); setPending(null); setConfirm(null); }}>{confirm === "leave" ? "Уйти без сохранения" : confirm === "switch" ? "Переключить без сохранения" : "Подтвердить архивирование"}</Button><Button variant="ghost" onClick={() => { setPending(null); setConfirm(null); }}>Отмена</Button></div></div>}
   </PageShell>;
 }

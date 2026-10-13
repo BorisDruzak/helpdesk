@@ -1,0 +1,9 @@
+import { useState } from "react";
+import { Button } from "../../components/ui/button";
+import { convertForms, type ConversionItem } from "./scenario-api";
+import { useQueryClient } from "@tanstack/react-query";
+export function ScenarioConversionPanel(){
+ const [items,setItems]=useState<ConversionItem[]|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState("");const cache=useQueryClient();
+ async function run(apply:boolean){setBusy(true);setError("");try{setItems((await convertForms(apply)).items);if(apply)await cache.invalidateQueries({queryKey:["scenario-catalog"]});}catch{setError("Перенос не выполнен. Проверьте соединение и повторите; действующие услуги не переключались.");}finally{setBusy(false);}}
+ return <details className="rounded border p-3"><summary>Перенос существующих форм</summary><div className="space-y-3 mt-3"><p className="text-sm">Перенос сохраняет услуги и создаёт карты в черновике. Действующие версии продолжают работать до проверки и публикации.</p><Button variant="outline" disabled={busy} onClick={()=>void run(false)}>Проверить перенос</Button>{items&&<><p role="status">Готово к переносу: {items.filter(item=>item.status==="ready").length}. Уже есть карта: {items.filter(item=>item.status==="existing").length}. Перенесено: {items.filter(item=>item.status==="converted").length}. Требуется разбор: {items.filter(item=>item.status==="blocked").length}.</p><ul className="max-h-64 overflow-auto space-y-2 text-sm">{items.map(item=><li key={item.offering_full_code}>{item.title??item.offering_full_code}: {({ready:"готова",existing:"карта уже существует",converted:"черновик создан",blocked:"не перенесена"})[item.status]}{item.issues?.map((issue,index)=><p key={index}>{issue.message}</p>)}</li>)}</ul>{items.some(item=>item.status==="ready")&&<Button disabled={busy} onClick={()=>void run(true)}>Создать проверенные черновики сценариев</Button>}</>}{error&&<p role="alert">{error}</p>}</div></details>;
+}

@@ -1,0 +1,17 @@
+import { useState } from "react";
+import { Button } from "../../components/ui/button";
+import { Select } from "../../components/ui/select";
+import { exportScenarioDocument, validateScenarioDocument, type ScenarioDetail } from "./scenario-api";
+import type { ScenarioDraftDefinition } from "./scenario-contract";
+
+export function ScenarioDocumentPanel({definition,detail,dirty,disabled,onChange}:{definition:ScenarioDraftDefinition;detail:ScenarioDetail|null;dirty:boolean;disabled:boolean;onChange:(next:ScenarioDraftDefinition)=>void}){
+ const [format,setFormat]=useState<"json"|"yaml">("json"),[content,setContent]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
+ const [preview,setPreview]=useState<Awaited<ReturnType<typeof validateScenarioDocument>>|null>(null);
+ async function run(action:()=>Promise<void>){setBusy(true);setError("");try{await action();}catch{setPreview(null);setError("Документ не принят. Проверьте формат, версию и привязку к этой услуге. Карта не изменена.");}finally{setBusy(false);}}
+ return <details className="rounded border p-3"><summary>Импорт и экспорт JSON / YAML</summary><div className="space-y-3 mt-3"><p className="text-xs text-slate-500">Файлы описывают эту же карту. Импорт сначала проверяется и заменяет только локальный черновик; публикация выполняется отдельно.</p><label>Формат<Select value={format} disabled={busy} onChange={event=>{setFormat(event.target.value as "json"|"yaml");setPreview(null);}}><option value="json">JSON</option><option value="yaml">YAML</option></Select></label>
+ <Button variant="outline" disabled={busy||!detail||dirty} onClick={()=>void run(async()=>{const exported=await exportScenarioDocument(detail!.scenario.id,format);setContent(exported.content);setPreview(null);const url=URL.createObjectURL(new Blob([exported.content],{type:"text/plain;charset=utf-8"}));const link=document.createElement("a");link.href=url;link.download=`${definition.scenario_key}.${format}`;link.click();URL.revokeObjectURL(url);})}>Скачать карту</Button>{dirty&&<p className="text-xs">Сохраните черновик перед экспортом.</p>}
+ <label className="block">Загрузить файл<input type="file" accept=".json,.yaml,.yml" disabled={disabled||busy} onChange={event=>{const file=event.target.files?.[0];if(!file)return;if(file.size>1048576){setError("Размер файла должен быть не больше 1 МиБ.");return;}void file.text().then(text=>{setContent(text);setFormat(file.name.endsWith(".json")?"json":"yaml");setPreview(null);});}}/></label>
+ <label className="block">Документ карты<textarea className="field-base w-full min-h-40 font-mono text-xs" disabled={disabled||busy} value={content} onChange={event=>{setContent(event.target.value);setPreview(null);}}/></label><Button variant="secondary" disabled={disabled||busy||!content||!detail} onClick={()=>void run(async()=>setPreview(await validateScenarioDocument(content,format,detail?.scenario.id)))}>Проверить импорт</Button>
+ {preview&&<div className="space-y-2" role="status"><p>Изменений: {preview.diff.length}. Ошибок маршрута: {preview.issues.length}.</p>{preview.issues.map((issue,index)=><p key={index}>{issue.message}</p>)}<ul className="max-h-40 overflow-auto text-xs">{preview.diff.slice(0,20).map((change,index)=><li key={index}>{change.path}</li>)}</ul><Button disabled={disabled||busy||!!preview.issues.length} onClick={()=>{onChange(preview.definition);setPreview(null);}}>Применить к черновику</Button></div>}{error&&<p role="alert">{error}</p>}
+ </div></details>;
+}

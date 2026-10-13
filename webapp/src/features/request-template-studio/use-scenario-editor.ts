@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RequestStudioApiError } from "./api";
-import { archiveScenario, createScenario, fetchScenarioDetail, saveScenario, type ScenarioDetail } from "./scenario-api";
+import { archiveScenario, createScenario, createServiceScenario, fetchScenarioDetail, saveScenario, type ScenarioDetail } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
 function blankScenario(): ScenarioDraftDefinition { return { schema_version: 1, scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: "Новый сценарий", description: "", service_code: "", offering_full_code: "", category_id: null, entry_block_id: null, blocks: [], process_binding: { request_template_key: "" } }; }
@@ -26,17 +26,23 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
     const snapshot = definition;
     const sequence = requestSequence.current;
     saveSequence.current = sequence;
-    const value = await (detail ? saveScenario(detail.scenario.id, snapshot, detail.draft.revision) : createScenario(snapshot));
+    const value = await (detail ? saveScenario(detail.scenario.id, snapshot, detail.draft.revision) : snapshot.offering_full_code ? createScenario(snapshot) : createServiceScenario(snapshot));
     return { value, snapshot, sequence };
   }, onSuccess: async ({ value, snapshot, sequence }) => {
     if (sequence !== requestSequence.current) return;
     setDetail(value); setConflict(false); setError("");
     if (JSON.stringify(latestDefinition.current) === JSON.stringify(snapshot)) setDefinition(value.draft.definition);
+    else if (!snapshot.offering_full_code && latestDefinition.current) setDefinition({
+      ...latestDefinition.current, offering_full_code: value.draft.definition.offering_full_code,
+      service_code: value.draft.definition.service_code,
+      schema_version: value.draft.definition.schema_version, publish_offering: value.draft.definition.publish_offering,
+      process_binding: { ...latestDefinition.current.process_binding, request_template_key: value.draft.definition.process_binding.request_template_key },
+    });
     cache.setQueryData(["scenario-detail", value.scenario.id], value);
     setMessage(`Черновик сохранён. Ревизия ${value.draft.revision}.`); await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }, onError: value => {
     if (saveSequence.current !== requestSequence.current) return;
     const isConflict = value instanceof RequestStudioApiError && value.status === 409;
-    setConflict(isConflict); setMessage(""); setError(isConflict ? "Черновик изменён другим администратором. Локальные изменения сохранены в редакторе; загрузка серверной версии заменит их." : "Черновик не сохранён. Проверьте название, услугу и настройки, затем повторите.");
+    setConflict(isConflict); setMessage(""); setError(value instanceof RequestStudioApiError && value.errorCode === "SERVICE_PROCESSING_DEFAULT_REQUIRED" ? "Для раздела не определена обработка новых услуг. Укажите настройки обработки по умолчанию в разделе каталога. Карта сохранена в редакторе." : isConflict ? "Черновик изменён другим администратором. Локальные изменения сохранены в редакторе; загрузка серверной версии заменит их." : "Черновик не сохранён. Проверьте название, раздел и настройки, затем повторите.");
   } });
   useEffect(() => {
     if (!autosaveEnabled || !detail || detail.scenario.archived || !dirty || loading || save.isPending || conflict || error || !definition?.title.trim() || !definition.offering_full_code) return;
@@ -58,7 +64,7 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
   function create(copy?: ScenarioDraftDefinition, asCopy = true) {
     requestSequence.current += 1; setLoadId(null); setLoading(false);
     setDetail(null); setMessage(""); setError(""); setConflict(false);
-    const next = copy ? { ...structuredClone(copy), scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: asCopy ? `${copy.title} — копия` : copy.title } : blankScenario();
+    const next = copy ? { ...structuredClone(copy), ...(asCopy ? { schema_version: 2 as const, offering_full_code: "", process_binding: { ...copy.process_binding, request_template_key: "" } } : {}), scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: asCopy ? `${copy.title} — копия` : copy.title } : blankScenario();
     pristine.current = copy ? null : next;
     setDefinition(next);
   }

@@ -17,6 +17,7 @@ from web_api.dto.request_scenario import CatalogCode, StrictModel
 from web_api.dto.request_scenario_admin import CategoryInput, Identifier, RevisionInput, ScenarioCreate, ScenarioSave, SimulationInput, ScenarioPublish, ScenarioRollback
 from tickets.request_scenario_publication import ScenarioPublicationService
 from tickets.request_studio_publication import RequestStudioConfirmationError
+from web_api.dto.request_scenario_admin import ScenarioDocumentInput, ServiceScenarioCreate, ScenarioConversionInput
 
 
 class CatalogQuery(StrictModel):
@@ -109,6 +110,58 @@ async def handle_scenario_create(request):
         payload = await _payload(request, ScenarioCreate)
         return await repo.create(payload.definition)
     return await _run(request, operation, write=True)
+
+
+@require_auth("admin")
+async def handle_scenario_service_create(request):
+    async def operation(repo):
+        return await repo.create_service((await _payload(request, ServiceScenarioCreate)).definition)
+    return await _run(request, operation, write=True)
+
+
+@require_auth("admin")
+async def handle_scenario_convert_forms(request):
+    async def operation(repo):
+        payload = await _payload(request, ScenarioConversionInput)
+        codes = [payload.offering_full_code] if payload.offering_full_code else sorted(
+            item["full_code"] for item in await repo.catalog.list_offerings() if item["lifecycle_status"] != "retired")
+        if len(codes) > 500:
+            raise ScenarioAdminError("CONVERSION_LIMIT", 400)
+        return {"items": [await repo.convert_offering(code, apply=payload.apply) for code in codes]}
+    return await _run(request, operation, write=True)
+
+
+@require_auth("admin", "auditor")
+async def handle_scenario_document_validate(request):
+    async def operation(repo):
+        from tickets.request_scenario_document import parse_scenario_document, document_issues
+        from tickets.request_scenario_publication import scenario_diff
+        payload = await _payload(request, ScenarioDocumentInput)
+        definition = parse_scenario_document(payload.content, payload.format)
+        identifier = request.query.get("scenario_id")
+        before = {}
+        if identifier:
+            identifier = TypeAdapter(Identifier).validate_python(identifier)
+            row, draft = await repo.detail(identifier)
+            incoming = definition
+            if (incoming.scenario_key, incoming.service_code, incoming.offering_full_code, incoming.process_binding.request_template_key) != (
+                row.scenario_key, row.service_code, row.offering_full_code, draft.definition["process_binding"]["request_template_key"]):
+                raise ScenarioAdminError("CATALOG_BINDING_IMMUTABLE", 409)
+            from web_api.dto.request_scenario import ScenarioDraftDefinition
+            before = ScenarioDraftDefinition.model_validate(draft.definition).model_dump(mode="json")
+        return {"definition": definition.model_dump(mode="json"), "issues": [asdict(issue) for issue in document_issues(definition)],
+                "diff": scenario_diff(before, definition.model_dump(mode="json"))}
+    return await _run(request, operation)
+
+
+@require_auth("admin", "auditor")
+async def handle_scenario_document_export(request):
+    async def operation(repo):
+        from tickets.request_scenario_document import export_scenario_document
+        _, draft = await repo.detail(_id(request))
+        format = request.query.get("format", "json")
+        return {"format": format, "content": export_scenario_document(draft.definition, format)}
+    return await _run(request, operation)
 
 
 @require_auth("admin", "auditor")

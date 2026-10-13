@@ -53,3 +53,17 @@ class ScenarioPublish(RevisionInput):
 
 class ScenarioRollback(RevisionInput):
     version_id: Identifier
+
+
+class ScenarioDocumentInput(StrictModel):
+    format: Literal["json", "yaml"]
+    content: str = Field(max_length=1048576)
+
+
+class ServiceScenarioCreate(StrictModel):
+    definition: dict
+
+
+class ScenarioConversionInput(StrictModel):
+    offering_full_code: str | None = Field(default=None, max_length=220)
+    apply: bool = False

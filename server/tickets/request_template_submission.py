@@ -154,9 +154,16 @@ async def resolve_create_form_submission(
     request_template_key: str,
     raw_values: Any,
     include_setup_assistance: bool = False,
+    scenario_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate a ticket creation form payload from either legacy packs or standalone registry templates."""
 
+    if scenario_schema is not None:
+        # Only server-loaded pinned scenario callers supply this projection.
+        # The processing bridge remains canonical; its independent questions
+        # are replaced by the fields derived from the current map route.
+        return await _resolve_scenario_submission(session, pack_key, pack_version, form_key,
+                                                   request_template_key, raw_values, scenario_schema)
     try:
         form_pack = await resolve_ticket_form_pack(
             TicketFormPacksRepo(session),
@@ -228,3 +235,37 @@ async def resolve_create_form_submission(
             resolved_form_schema_id=form_schema.get("schema_id"),
             resolved_form_schema_version=form_schema.get("version"),
         )
+
+
+async def _resolve_scenario_submission(session, pack_key, pack_version, form_key, template_key, raw_values, schema):
+    source = None
+    try:
+        pack = await resolve_ticket_form_pack(TicketFormPacksRepo(session), pack_key=pack_key, version=pack_version)
+        source = next((deepcopy(item) for item in pack["forms"] if item["key"] == form_key or item.get("request_template_key") == template_key), None)
+    except ValueError:
+        pass
+    if source is None:
+        effective = await HelpdeskPolicyRepo(session).resolve_effective_request_template(template_code=template_key, raise_if_missing=False)
+        if not effective.get("request_template"):
+            raise ValueError({"processing": "Настройки обработки услуги недоступны"})
+        pack = _registry_pack_from_template(effective_template=effective,
+            form_schema={"title": schema["title"], "version": schema["version"], "fields": schema["fields"]}, form_key=form_key)
+        source = pack["forms"][0]
+    source = deepcopy(source)
+    source.update(key=form_key, title=schema["title"], fields=[_field_from_schema(field) for field in schema["fields"]],
+                  field_roles={field["key"]: field.get("process_mapping", {}).get("roles", []) for field in schema["fields"]})
+    projected = validate_form_pack_schema({"pack_key": pack_key, "version": str(schema["version"]),
+                                          "title": schema["title"], "forms": [source]})
+    keys = {field["key"] for field in schema["fields"]}
+    projected["forms"][0]["fields"] = [field for field in projected["forms"][0]["fields"] if field["key"] in keys]
+    validated = validate_form_submission(projected, form_key=form_key, raw_values=raw_values or {})
+    # Legacy checkbox normalization treats None as false. A map may explicitly
+    # permit UNKNOWN; keep that trusted, runtime-validated answer distinct.
+    for field in schema["fields"]:
+        key = field["key"]
+        if field.get("allow_unknown") and key in (raw_values or {}) and raw_values[key] is None:
+            validated["submitted_values"][key] = None
+    return _with_resolution_metadata(validated, resolved_from="scenario_map", resolved_pack_key=pack_key,
+        resolved_pack_version=str(schema["version"]), resolved_template_key=template_key,
+        resolved_template_version=source.get("request_template_version"), resolved_form_schema_id=None,
+        resolved_form_schema_version=str(schema["version"]))

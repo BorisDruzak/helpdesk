@@ -39,6 +39,102 @@ class RequestScenarioRepo:
         self.session, self.auth = session, auth
         self.catalog = ServiceCatalogRepo(session)
 
+    async def create_service(self, raw):
+        """Create the internal catalog binding with the map, in one transaction."""
+        from web_api.dto.request_scenario import ScenarioDraftDefinition, CatalogCode, _bounded_input
+        from pydantic import TypeAdapter
+        _bounded_input(raw)
+        code = TypeAdapter(CatalogCode).validate_python(raw.get("service_code"))
+        service = await self._service_lock(code)
+        prior = await self.session.scalar(select(RequestStudioScenario).where(RequestStudioScenario.scenario_key == raw.get("scenario_key")))
+        if prior:
+            row, draft = await self.detail(prior.id)
+            comparable = deepcopy(draft.definition)
+            comparable.update(offering_full_code="", process_binding={"request_template_key": ""}, publish_offering=False)
+            incoming = deepcopy(raw)
+            incoming.setdefault("publish_offering", False)
+            if comparable != ScenarioDraftDefinition.model_validate({**incoming, "offering_full_code": row.offering_full_code,
+                "process_binding": draft.definition["process_binding"]}).model_dump(mode="json") | {"offering_full_code": "", "process_binding": {"request_template_key": ""}, "publish_offering": False}:
+                raise ScenarioAdminError("REVISION_CONFLICT", 409)
+            return {"scenario": serialize(row), "draft": serialize(draft)}
+        if raw.get("offering_full_code") or (raw.get("process_binding") or {}).get("request_template_key"):
+            raise ScenarioAdminError("CATALOG_BINDING_INVALID")
+        configured = (service.get("metadata") or {}).get("studio_default_template")
+        offerings = await self.catalog.list_offerings(service_code=code)
+        candidates = sorted({item["request_template_key"] for item in offerings
+            if item.get("request_template_key") and item.get("lifecycle_status") == "published"})
+        template_key = configured or (code if code in candidates else candidates[0] if len(candidates) == 1 else None)
+        if not template_key:
+            # Compare processing, not question schemas. Equivalent bridges are
+            # interchangeable for v2 and section policy overrides remain canonical.
+            from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+            fingerprints = {}
+            for candidate in candidates:
+                effective = await HelpdeskPolicyRepo(self.session).resolve_effective_request_template(template_code=candidate, raise_if_missing=False)
+                template = effective.get("request_template") or {}
+                if template.get("published_at") and template.get("ticket_type") == (service.get("default_ticket_type_code") or "incident"):
+                    fingerprints[candidate] = definition_hash({"type": template.get("ticket_type"), "policies": effective.get("resolved_policies"), "workflow": template.get("workflow_profile_id")})
+            if fingerprints and len(set(fingerprints.values())) == 1:
+                template_key = sorted(fingerprints)[0]
+        if not template_key:
+            raise ScenarioAdminError("SERVICE_PROCESSING_DEFAULT_REQUIRED", 409)
+        from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+        effective = await HelpdeskPolicyRepo(self.session).resolve_effective_request_template(template_code=template_key, raise_if_missing=False)
+        template = effective.get("request_template") or {}
+        if not template.get("published_at") or not template.get("is_active"):
+            raise ScenarioAdminError("SERVICE_PROCESSING_DEFAULT_REQUIRED", 409)
+        offering_code = "map_" + hashlib.sha256(str(raw.get("scenario_key")).encode()).hexdigest()[:32]
+        bound = {**raw, "schema_version": 2, "offering_full_code": code + "." + offering_code,
+                 "process_binding": {**(raw.get("process_binding") or {}), "request_template_key": template_key}, "publish_offering": True}
+        definition = ScenarioDraftDefinition.model_validate(bound)
+        await self._category(definition.category_id, code)
+        await self.catalog.upsert_offering_draft({"service_code": code, "code": offering_code,
+            "public_title": definition.title, "short_description": definition.description, "lifecycle_status": "draft",
+            "visibility": "public", "request_template_key": template_key, "ticket_type_code": template["ticket_type"],
+            "request_type": "request", "metadata": {"studio_catalog": {"category_id": definition.category_id}, "studio_map_source": definition.scenario_key}},
+            actor_id=self.auth.actor_id, actor_role=self.auth.actor_role)
+        return await self.create(definition)
+
+    async def convert_offering(self, code, *, apply=False):
+        from tickets.request_scenario_conversion import convert_form, ConversionBlocked
+        from tickets.form_catalog import resolve_ticket_form_pack
+        from app.repos import TicketFormPacksRepo
+        offering = await self.catalog.get_offering_by_full_code(code)
+        if not offering:
+            raise ScenarioAdminError("OFFERING_NOT_FOUND", 404)
+        await self._service_lock(offering["service_code"])
+        current = await self.session.scalar(select(RequestStudioScenario).where(
+            RequestStudioScenario.offering_full_code == code).order_by(RequestStudioScenario.archived, RequestStudioScenario.created_at))
+        if current:
+            row, draft = await self.detail(current.id)
+            return {"offering_full_code": code, "title": offering.get("public_title") or offering.get("name") or code,
+                    "status": "existing", "archived": bool(current.archived),
+                    "issues": [{"code": "archived_map", "message": "Карта находится в архиве. Повторное преобразование не выполняется."}] if current.archived else [],
+                    "detail": {"scenario": serialize(row), "draft": serialize(draft)}}
+        form = None
+        pack = await resolve_ticket_form_pack(TicketFormPacksRepo(self.session))
+        key = offering.get("request_template_key")
+        form = next((item for item in pack["forms"] if item["key"] == key or item.get("request_template_key") == key), None)
+        if form is None:
+            from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+            from tickets.request_template_submission import _find_registry_form_schema, _registry_pack_from_template
+            policies = HelpdeskPolicyRepo(self.session)
+            effective = await policies.resolve_effective_request_template(template_code=key, raise_if_missing=False)
+            schema = _find_registry_form_schema(await policies.list_form_schemas(include_inactive=False),
+                template_code=key, requested_form_key=key, preferred_schema_id=(effective.get("request_template") or {}).get("form_schema_id"))
+            if schema:
+                form = _registry_pack_from_template(effective_template=effective, form_schema=schema, form_key=key)["forms"][0]
+        if form is None:
+            return {"offering_full_code": code, "status": "blocked", "issues": [{"code": "form_unavailable", "message": "Исходная форма недоступна."}]}
+        try:
+            definition = convert_form(offering, form)
+        except ConversionBlocked as exc:
+            return {"offering_full_code": code, "status": "blocked", "issues": exc.issues}
+        result = {"offering_full_code": code, "title": offering.get("public_title") or offering.get("name") or code, "status": "ready", "definition": definition.model_dump(mode="json"), "issues": []}
+        if apply:
+            result.update(status="converted", detail=await self.create(definition))
+        return result
+
     async def _service_lock(self, code):
         # Same lock as the SQL tree guard; serialize moves/archives with children.
         await self.session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:code, 0))"), {"code": code})
@@ -311,6 +407,7 @@ class RequestScenarioRepo:
                 entry_point_count=len(draft.definition.get("entry_points", [])),
                 issues=issues, category_title=category_names.get(row.category_id, ""))
             item["entry_points"] = deepcopy(draft.definition.get("entry_points", []))
+            item["schema_version"] = draft.definition.get("schema_version", 1)
             item["published_entry_points"] = deepcopy((published_definition or {}).get("entry_points", []))
             if len(record) > 4:
                 from tickets.request_scenario_catalog import project_catalog_entries

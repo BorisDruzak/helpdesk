@@ -76,6 +76,16 @@ def validate_scenario(definition):
                     add("invalid_validation", fp, "Length bounds require a string field")
                 if field.options and field.type not in {"select", "radio", "multi_select"}:
                     add("invalid_options", fp, "Options require a choice field")
+                if field.process_mapping.effects:
+                    values = [option.value for option in field.options] if field.type in {"select", "radio", "multi_select"} else [True, False] if field.type == "checkbox" else []
+                    if field.allow_unknown:
+                        values.append(None)
+                    used = set()
+                    for effect in field.process_mapping.effects:
+                        signature = (type(effect.value).__name__, str(effect.value))
+                        if not any(type(value) is type(effect.value) and value == effect.value for value in values) or signature in used:
+                            add("invalid_processing_effect", fp, "Влияние на обработку должно соответствовать существующему варианту ответа.")
+                        used.add(signature)
         if block.kind == "diagnostic" and block.capability not in DIAGNOSTIC_CAPABILITIES:
             add("unknown_capability", path, "Pre-ticket capability is not supported")
         if block.kind == "instruction" and block.content.format == "markdown":
@@ -84,6 +94,10 @@ def validate_scenario(definition):
 
     if definition.entry_block_id not in blocks:
         add("unknown_entry", "entry_block_id", "Entry block does not exist")
+    if definition.schema_version == 2 and (not definition.entry_points or not any(
+        entry.enabled and entry.target_block_id == definition.entry_block_id for entry in definition.entry_points
+    )):
+        add("catalog_entry_required", "entry_points", "Соедините «Начало» с первым шагом: услуге нужен вход из каталога.")
     entries = [definition.entry_block_id]
     entry_keys = set()
     for entry in definition.entry_points:

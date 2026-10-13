@@ -28,6 +28,7 @@ describe("atomic map edits", () => {
 });
 
 describe("start connections", () => {
+ it("moves the primary entrance together with its last catalog connection",()=>{const d={...draft(),schema_version:2 as const};const next=reconnectStart(d,"jam","review");expect(next.entry_block_id).toBe("review");expect(next.entry_points?.[0].target_block_id).toBe("review");});
  it("adds an entrance atomically without adding a runtime block or changing the main entrance",()=>{const d=draft();const next=connectStart(d,"review");expect(next.entry_points).toHaveLength(2);expect(next.entry_points?.[1]).toMatchObject({title:"Сводка",target_block_id:"review",enabled:true});expect(next.blocks).toEqual(d.blocks);expect(next.entry_block_id).toBe("q");expect(connectStart(next,"review")).toBe(next);});
  it("preserves entrance metadata during reconnect and validates targets and limits",()=>{const d=draft();d.entry_points![0].synonyms=["бумага"];expect(reconnectStart(d,"jam","review").entry_points?.[0]).toMatchObject({key:"jam",synonyms:["бумага"],target_block_id:"review"});expect(reconnectStart(d,null,"review").entry_block_id).toBe("review");expect(()=>connectStart(d,"missing")).toThrow();d.entry_points=Array.from({length:64},(_,i)=>({key:`e${i}`,title:"Вход",target_block_id:"q"}));expect(()=>connectStart(d,"review")).toThrow(/64/);});
  it("chooses the first start only when no main entrance exists",()=>{const d=draft();d.entry_block_id=null;expect(connectStart(d,"review").entry_block_id).toBe("review");});

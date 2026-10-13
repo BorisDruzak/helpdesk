@@ -12,9 +12,9 @@ it("lets a read-only user open an archived map without edit permission",()=>{
  const onOpen=vi.fn();
  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ScenarioCatalogExplorer data={data} query="" status="all" category={null} canEdit={false} onCategory={vi.fn()} onQuery={vi.fn()} onStatus={vi.fn()} onOpen={onOpen} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()}/></MemoryRouter></QueryClientProvider>);
  fireEvent.click(screen.getByRole("button",{name:"Настроить услугу Печать"}));
- expect(screen.getByLabelText("Название услуги")).toBeDisabled();
+ expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
  expect(screen.queryByRole("button",{name:"Открыть карту сценария"})).not.toBeInTheDocument();
- fireEvent.click(screen.getByRole("tab",{name:"Помощь сотруднику"}));fireEvent.click(screen.getByText("Архив карт услуги"));
+ fireEvent.click(screen.getByText("Архив карт услуги"));
  expect(screen.getByRole("button",{name:"Открыть архивную карту"})).toBeEnabled();fireEvent.click(screen.getByRole("button",{name:"Открыть архивную карту"}));expect(onOpen).toHaveBeenCalledWith(map);
 });
 
@@ -25,10 +25,10 @@ it("keeps services together and opens settings in place, map action directly in 
   const onOpen=vi.fn();
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ScenarioCatalogExplorer data={data} query="" status="all" category={null} canEdit onCategory={vi.fn()} onQuery={vi.fn()} onStatus={vi.fn()} onOpen={onOpen} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()} /></MemoryRouter></QueryClientProvider>);
   expect(screen.queryByRole("region", { name: "Карты сценариев" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Настроить услугу VPN не подключается" }));
+  fireEvent.click(screen.getByRole("button", { name: "Настроить услугу Диагностика VPN" }));
   expect(screen.getByRole("complementary", { name: "Настройки услуги" })).toBeVisible();
-  expect(screen.getByLabelText("Название услуги")).toHaveValue("VPN не подключается");
-  expect(screen.getByRole("button",{name:"Услуга VPN не подключается · Обычная форма"})).toBeVisible();
+  expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
+  expect(screen.getByRole("button",{name:"Услуга Диагностика VPN · Сценарий"})).toBeVisible();
   expect(screen.queryByRole("tab", { name: "Карты сценариев" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Открыть карту сценария" }));
   expect(onOpen).toHaveBeenCalledWith(map,undefined);
@@ -41,9 +41,9 @@ it("keeps an unfiltered hierarchy and opens a nested form from a filtered list",
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:full}),{headers:{"content-type":"application/json"}})));
  const onQuery=vi.fn(),onStatus=vi.fn(),onCategory=vi.fn();
  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ScenarioCatalogExplorer data={data} query="Первая" status="all" category={null} canEdit onCategory={onCategory} onQuery={onQuery} onStatus={onStatus} onOpen={vi.fn()} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()}/></MemoryRouter></QueryClientProvider>);
- const leaf=await screen.findByRole("button",{name:"Услуга Вторая · Обычная форма"});
+ const leaf=await screen.findByRole("button",{name:"Услуга Вторая · Ожидает переноса"});
  expect(screen.queryByRole("button",{name:"Настроить услугу Вторая"})).not.toBeInTheDocument();
- fireEvent.click(leaf);expect(screen.getByLabelText("Название услуги")).toHaveValue("Вторая");
+ fireEvent.click(leaf);expect(screen.getByRole("heading",{name:"Вторая"})).toBeVisible();
  expect(onQuery).toHaveBeenCalledWith("");expect(onStatus).toHaveBeenCalledWith("all");expect(onCategory).toHaveBeenCalledWith("c");
- fireEvent.click(screen.getByRole("button",{name:"Свернуть категорию VPN"}));expect(screen.queryByRole("button",{name:"Услуга Вторая · Обычная форма"})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button",{name:"Свернуть категорию VPN"}));expect(screen.queryByRole("button",{name:"Услуга Вторая · Ожидает переноса"})).not.toBeInTheDocument();
 });

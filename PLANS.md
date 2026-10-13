@@ -1,3 +1,19 @@
+# In progress: 2026-10-14 Unified service scenario authoring
+
+Approved model: direct Create service -> v2 map, one editable source, typed
+processing facts into existing policies, JSON/YAML interchange, safe conversion
+without deleting old forms or automatically publishing. Staging only; production
+and Endpoint excluded. Spec/plan under docs/superpowers dated 2026-10-13.
+Canonical server projection replaces independent template questions for v2;
+historic v1 versions and pinned sessions remain executable. Migration 149 expands
+the immutable version CHECK without rewriting rows. PyYAML 6 added for YAML.
+Local regression: backend151 and frontend151 pass; build and workspace sanity
+pass. Isolated staging PostgreSQL API4 pass, including actual ticket submission,
+v1 session preservation, document no-side-effects and archived conversion replay.
+Readonly review completed; material findings corrected with regression tests.
+Pending: exact-commit staging install, real browser authoring and conversion report.
+Current guide: docs/UNIFIED_SERVICE_SCENARIOS.md.
+
 # In progress: 2026-10-13 Studio entrance connections and employee preview
 
 Actor admin/auditor; primary job author one map in the existing workbench.

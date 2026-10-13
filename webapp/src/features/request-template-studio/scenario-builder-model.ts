@@ -29,7 +29,14 @@ export function changeFieldType(field: ScenarioField, type: ScenarioFieldType): 
   if (type !== "number") { delete validation.min_value; delete validation.max_value; }
   if (["number", "checkbox", "multi_select"].includes(type)) { delete validation.min_length; delete validation.max_length; }
   return { ...field, type, validation, options: isChoice(type) ? field.options?.length ? field.options : [{ value: "yes", label: "Да" }, { value: "no", label: "Нет" }] : [],
-    process_mapping: { ...field.process_mapping, roles: (field.process_mapping?.roles ?? []).filter(role => compatibleRole(type, role)) } };
+    process_mapping: { ...field.process_mapping, roles: (field.process_mapping?.roles ?? []).filter(role => compatibleRole(type, role)),
+      effects: field.type === type || isChoice(field.type) && isChoice(type) ? field.process_mapping?.effects : [] } };
+}
+export function editFieldOption(field: ScenarioField, index: number, value: string | null): ScenarioField {
+  const old = field.options?.[index];
+  if (!old) return field;
+  return { ...field, options: value === null ? field.options!.filter((_, i) => i !== index) : field.options!.map((option, i) => i === index ? { ...option, value } : option),
+    process_mapping: { ...field.process_mapping, effects: (field.process_mapping?.effects ?? []).flatMap(effect => effect.value !== old.value ? [effect] : value === null ? [] : [{ ...effect, value }]) } };
 }
 export function newBlock(kind: ScenarioBlock["kind"]): ScenarioBlock {
   const base = { id: newKey("block"), title: blockLabels[kind], transitions: [] };

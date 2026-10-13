@@ -7,8 +7,6 @@ const choices: { kind: ScenarioBlock["kind"]; title: string; hint: string }[] = 
   { kind: "instruction", title: "Показать инструкцию", hint: "Помочь выполнить действие" },
   { kind: "resolution_check", title: "Проверить результат", hint: "Да, нет или не знаю" },
   { kind: "decision", title: "Добавить условие", hint: "Выбрать маршрут по ответу" },
-  { kind: "diagnostic", title: "Выполнить диагностику", hint: "С действующим безопасным запасным маршрутом" },
-  { kind: "review", title: "Показать сводку", hint: "Проверка собранных ответов" },
   { kind: "submit_ticket", title: "Создать обращение", hint: "Передать в поддержку" },
   { kind: "finish", title: "Завершить без обращения", hint: "Только после подтверждения решения" },
 ];

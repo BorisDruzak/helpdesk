@@ -16,22 +16,21 @@ it("opens deletion in a visible dialog and keeps errors next to confirmation",()
 it("edits decision conditions directly in the selected block",()=>{
  const d:ScenarioDraftDefinition={...definition,entry_block_id:"branch",blocks:[{id:"q",kind:"form_page",title:"Вопрос",fields:[{key:"vpn",type:"checkbox",label:"Нужен VPN?"}],transitions:[{to:"branch"}]},{id:"branch",kind:"decision",title:"Маршрут",transitions:[{to:"done",when:{op:"eq",source:"answer",field:"vpn",value:true}}]},definition.blocks![1]]};
  render(<MemoryRouter><ScenarioMapWorkbench definition={{...d,blocks:[d.blocks![1],d.blocks![0],d.blocks![2]]}} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
+ fireEvent.click(screen.getByText("Подключение и ветки с клавиатуры"));
  expect(screen.getByLabelText("Значение условия")).toBeVisible();
  expect(screen.getByLabelText("Если ни одно условие не выполнено")).toBeVisible();
 });
-it("an unbound empty-map hint reveals and focuses its canonical type picker",()=>{
- vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
- render(<MemoryRouter><ScenarioMapWorkbench definition={{...definition,offering_full_code:"",blocks:[],entry_block_id:null,entry_points:[]}} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
- fireEvent.click(screen.getByRole("button",{name:/^Выберите тип обращения/}));
- fireEvent.click(screen.getByRole("button",{name:/Исправить: Выберите тип обращения/}));
- expect(screen.getByLabelText("Тип обращения")).toBeVisible();expect(screen.getByLabelText("Тип обращения")).toHaveFocus();
+it("an unbound v2 map needs no canonical type picker",()=>{
+ render(<MemoryRouter><ScenarioMapWorkbench definition={{...definition,schema_version:2,offering_full_code:"",blocks:[],entry_block_id:null,entry_points:[]}} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
+ expect(screen.queryByLabelText("Тип обращения")).not.toBeInTheDocument();
+ expect(screen.getByLabelText("Название услуги")).toBeVisible();
 });
 it("policy remediation leaves preview and entrance selection for metadata settings",()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
  const change=vi.fn();const view=render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change}/></MemoryRouter>);
  fireEvent.click(screen.getByRole("button",{name:"Выбрать связь входа"}));fireEvent.click(screen.getByRole("tab",{name:"Как у сотрудника"}));
  view.rerender(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change} issuePolicy="routing"/></MemoryRouter>);
- expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");expect(screen.getByLabelText("Название карты")).toBeVisible();expect(screen.queryByRole("heading",{name:"Связь с началом"})).not.toBeInTheDocument();expect(change).not.toHaveBeenCalled();
+ expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");expect(screen.getByLabelText("Название услуги")).toBeVisible();expect(screen.queryByRole("heading",{name:"Связь с началом"})).not.toBeInTheDocument();expect(change).not.toHaveBeenCalled();
 });
 it("a missing-route hint reveals editing controls from employee preview",()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));

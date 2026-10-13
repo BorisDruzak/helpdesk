@@ -20,7 +20,7 @@ export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy
   }, [attempt]);
   return <div className="min-w-0 space-y-4">
     <h2 className="text-lg font-semibold">Обработка обращения</h2>
-    <p>Выберите действующие политики. Их проверяет и выполняет существующий серверный механизм Helpdesk. Наследование сохраняет настройки услуги и шаблона.</p>
+    <p>Выберите действующие политики. Их проверяет и выполняет существующий серверный механизм Helpdesk. Наследование сохраняет правила раздела.</p>
     {error ? <div role="alert"><p>Не удалось загрузить политики обработки.</p><Button variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку политик</Button></div> : !policies ? <p role="status">Загрузка политик обработки…</p> : <div className="grid min-w-0 gap-4 md:grid-cols-2">
       {(Object.keys(labels) as ScenarioPolicyKind[]).map(kind => {
         const choices = (policies[kind] || []).filter((item, index, items) => item.is_active && !!item.published_at && items.findIndex(other => other.code === item.code && other.is_active && !!other.published_at) === index);
@@ -30,12 +30,12 @@ export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy
             const refs = { ...definition.process_binding.policy_refs };
             if (event.target.value) refs[kind] = event.target.value; else delete refs[kind];
             onChange({ ...definition, process_binding: { ...definition.process_binding, policy_refs: refs } });
-          }}><option value="">Наследовать настройки услуги и шаблона</option>
+          }}><option value="">Наследовать правила раздела</option>
             {code && !choices.some(item => item.code === code) && <option value={code}>Выбранная политика недоступна</option>}
             {choices.map(item => <option key={item.code} value={item.code}>{item.title}</option>)}
           </Select></label>
           {code && !choices.some(item => item.code === code) && <p role="alert">Выберите опубликованную политику перед публикацией сценария.</p>}
-          <AdvancedDisclosure title="Расширенные настройки"><p className="break-all">Ссылка политики: {code || "наследование"}</p><p className="break-all">Шаблон: {definition.process_binding.request_template_key}</p></AdvancedDisclosure>
+
         </div>;
       })}
     </div>}

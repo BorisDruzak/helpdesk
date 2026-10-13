@@ -9,36 +9,18 @@ export type CatalogService = {
 };
 function entrySettings(entry: ScenarioEntryPoint) { return { key:entry.key,title:entry.title,description:entry.description??"",category_id:entry.category_id??null,synonyms:entry.synonyms??[],visibility:entry.visibility??"public",enabled:entry.enabled??true,target_block_id:entry.target_block_id,reported_symptom:entry.reported_symptom??"" }; }
 export function catalogServices(data: ScenarioCatalog): CatalogService[] {
-  return catalogEntries(data).flatMap(card => {
-    const maps = card.scenarios.filter(map => !map.archived && map.status !== "archived");
-    const active = maps.find(map => map.id === card.active_scenario_id);
-    const metadata = card.offering.metadata?.studio_catalog;
-    const rows: CatalogService[] = [];
-    const editingMap=active??maps[0];
-    const matchingDraft=!editingMap?.published_entry_points?.length?editingMap?.entry_points?.find(entry=>entry.title.trim().toLocaleLowerCase()===card.offering.public_title.trim().toLocaleLowerCase()):undefined;
-    // The ordinary form remains a real service while new entrances are only drafts.
-    if (!active?.published_entry_points?.length) rows.push({ key: matchingDraft?`${editingMap!.id}:${matchingDraft.key}`:card.offering.full_code, card, title: card.offering.public_title,
-      description: card.offering.short_description ?? "", categoryId: metadata && "category_id" in metadata ? metadata.category_id ?? null : card.category_ids[0] ?? null,
-      synonyms: [...(metadata?.synonyms ?? []),...(matchingDraft?.synonyms??[])], available: card.requester_available !== false, mode: card.active_mode,
-      scenario: editingMap, entry:matchingDraft, draft:!!matchingDraft });
-    for (const map of maps) {
-      const points = new Map((map.published_entry_points ?? []).map(entry => [entry.key, entry]));
-      for (const entry of map.entry_points ?? []) points.set(entry.key, entry);
-      for (const entry of points.values()) {
-        if(matchingDraft&&map.id===editingMap!.id&&entry.key===matchingDraft.key)continue;
-        const published = map.published_entry_points?.find(item => item.key === entry.key);
-        const draftEntry = map.entry_points?.find(item => item.key === entry.key);
-        const available = card.requester_available !== false && card.active_scenario_id === map.id && !!published && (map.published_public_entry_keys ?? []).includes(entry.key);
-        const shown = available ? published! : entry;
-        rows.push({ key: `${map.id}:${entry.key}`, card, title: shown.title, description: shown.description ?? "",
-          categoryId: shown.category_id ?? map.category_id ?? null, synonyms: [...(shown.synonyms ?? []), ...(entry.synonyms ?? [])],
-          scenario: map, entry, activeEntry: published, available, mode: "scenario", removedInDraft:!!published&&!draftEntry,
-          draft: !published || !draftEntry || JSON.stringify(entrySettings(entry)) !== JSON.stringify(entrySettings(published)) });
-      }
-    }
-    return rows;
+  return catalogEntries(data).map(card => {
+    const maps=card.scenarios.filter(map=>!map.archived&&map.status!=="archived");
+    const scenario=maps.find(map=>map.id===card.active_scenario_id)??maps[0];
+    const metadata=card.offering.metadata?.studio_catalog;
+    return {key:card.offering.full_code,card,title:scenario?.title??card.offering.public_title,
+      description:scenario?.description??card.offering.short_description??"",categoryId:scenario?.category_id??metadata?.category_id??card.category_ids[0]??null,
+      synonyms:[...(metadata?.synonyms??[]),...(scenario?.entry_points??[]).flatMap(entry=>[entry.title,...(entry.synonyms??[])])],
+      available:card.requester_available!==false,mode:scenario?"scenario" as const:"form" as const,
+      scenario,draft:!!scenario&&(scenario.status!=="published"||!!scenario.issues?.length||JSON.stringify((scenario.entry_points??[]).map(entrySettings))!==JSON.stringify((scenario.published_entry_points??[]).map(entrySettings)))};
   });
 }
+
 export function catalogServiceLocation(data: ScenarioCatalog, row: CatalogService) {
   const titles: string[] = [], seen = new Set<string>();
   let id = row.categoryId;

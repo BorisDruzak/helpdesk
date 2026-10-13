@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
-import { addBlock, duplicateBlock, moveBlock, removeBlock, fieldUses, changeFieldType, conditionFields } from "./scenario-builder-model";
+import { addBlock, duplicateBlock, moveBlock, removeBlock, fieldUses, changeFieldType, editFieldOption, conditionFields } from "./scenario-builder-model";
 
 const draft = (): ScenarioDraftDefinition => ({
   scenario_key: "test", title: "Тест", service_code: "it", offering_full_code: "it.test",
@@ -13,6 +13,13 @@ const draft = (): ScenarioDraftDefinition => ({
 });
 
 describe("safe scenario builder operations", () => {
+  it("reconciles typed effects when choices are renamed, removed or replaced by a different answer type", () => {
+    const field = { key: "scope", label: "Scope", type: "radio" as const, options: [{ value: "all", label: "All" }, { value: "one", label: "One" }], process_mapping: { effects: [{ value: "all", facts: { impact: "department" as const } }] } };
+    expect(editFieldOption(field, 0, "team").process_mapping?.effects?.[0].value).toBe("team");
+    expect(editFieldOption(field, 0, null).process_mapping?.effects).toEqual([]);
+    expect(changeFieldType(field, "text").process_mapping?.effects).toEqual([]);
+    expect(changeFieldType(field, "multi_select").process_mapping?.effects).toEqual(field.process_mapping.effects);
+  });
   it("offers answers only from the current page and upstream blocks", () => {
     const definition = addBlock(draft(), "form_page", "done");
     expect(conditionFields(definition, "questions").map(field => field.key)).toEqual(["answer"]);

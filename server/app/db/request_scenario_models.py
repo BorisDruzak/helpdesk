@@ -84,7 +84,7 @@ class RequestStudioScenarioVersion(Base):
         sa.UniqueConstraint("scenario_id", "id", name="uq_studio_version_scenario_id"),
         sa.Index("uq_studio_version_active_offering", "offering_full_code", unique=True, postgresql_where=sa.text("state = 'published'")),
         sa.CheckConstraint("state IN ('published','retired','revoked')", name="ck_studio_version_state"),
-        sa.CheckConstraint("version > 0 AND schema_version = 1", name="ck_studio_version_schema"),
+        sa.CheckConstraint("version > 0 AND schema_version IN (1,2)", name="ck_studio_version_schema"),
         sa.CheckConstraint("content_hash ~ '^[a-f0-9]{64}$'", name="ck_studio_version_hash"),
     )
 

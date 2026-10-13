@@ -22,14 +22,15 @@ export type ScenarioField = {
   options?: { value: string; label: string }[];
   visible_when?: ScenarioCondition | null;
   required_when?: ScenarioCondition | null;
-  validation?: { min_length?: number | null; max_length?: number | null; min_value?: number | null; max_value?: number | null };
-  process_mapping?: { roles?: ScenarioRole[]; fact_key?: string | null };
+  validation?: { min_length?: number | null; max_length?: number | null; min_value?: number | null; max_value?: number | null; optional_when_legacy_missing?:boolean };
+  process_mapping?: { roles?: ScenarioRole[]; fact_key?: string | null; effects?: {value:ScenarioScalar;facts:ScenarioProcessingFacts}[] };
   allow_unknown?: boolean;
   group?: string | null;
   group_title?: string | null;
   aliases?: string[];
 };
-export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null };
+export type ScenarioProcessingFacts = {impact?:"single_user"|"multiple_users"|"department"|null;urgency?:"can_work"|"degraded"|"blocked"|null;importance?:"normal"|"important"|"critical"|null};
+export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null; processing_facts?:ScenarioProcessingFacts|null };
 type BlockBase = { id: string; title: string; transitions?: ScenarioTransition[] };
 export type ScenarioBlock = BlockBase & (
   | { kind: "form_page"; layout?: "single" | "group" | "section"; fields: ScenarioField[] }
@@ -49,7 +50,7 @@ export type ScenarioEntryPoint = {
 };
 export type ScenarioEditorLayout = { positions?: Record<string, { x: number; y: number }> };
 export type ScenarioDraftDefinition = {
-  schema_version?: 1;
+  schema_version?: 1 | 2;
   scenario_key: string;
   service_code: string;
   offering_full_code: string;

@@ -11,7 +11,9 @@ it("retains a trailing newline while entering multiple search phrases", () => {
     return <ScenarioEntryInspector definition={definition} blockId="block" catalog={{ categories: [], services: [], offerings: [], scenarios: [], total: 0, offset: 0, limit: 100 }} disabled={false} onChange={next => { saved = next.entry_points?.[0].synonyms; setDefinition(next); }} />;
   }
   render(<Editor />);
-  const input = screen.getByLabelText("Синонимы и поисковые фразы");
+  fireEvent.click(screen.getByText("Поиск в каталоге"));
+  const input = screen.getByLabelText("Дополнительные поисковые слова");
+  fireEvent.focus(input);
   fireEvent.change(input, { target: { value: "замятие\n" } });
   expect(input).toHaveValue("замятие\n");
   fireEvent.change(input, { target: { value: "замятие\nбумага застряла" } });

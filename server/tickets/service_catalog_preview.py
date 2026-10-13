@@ -83,6 +83,7 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
             form_key=form_key,
             request_template_key=template_key,
             raw_values=form_payload,
+            **({"scenario_schema": scenario_snapshot["form_schema"]} if scenario_snapshot and "form_schema" in scenario_snapshot else {}),
         )
         if scenario_snapshot is not None:
             from tickets.request_scenario_submission import augment_scenario_submission
@@ -92,6 +93,8 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
         if scenario_snapshot is not None:
             from tickets.request_scenario_processing import apply_scenario_policy_refs
             validated = await apply_scenario_policy_refs(session, validated, scenario_snapshot.get("policy_refs"))
+            from tickets.request_scenario_processing import apply_scenario_processing_facts
+            validated = apply_scenario_processing_facts(validated, scenario_snapshot.get("processing_facts"))
     except ValueError as exc:
         details = exc.args[0] if exc.args else "invalid form payload"
         raise ServiceCatalogPreviewError({"form_payload": details}) from exc

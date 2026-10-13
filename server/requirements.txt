@@ -3,6 +3,7 @@ alembic
 asyncpg
 loguru
 pydantic>=2.12,<3
+PyYAML>=6.0.2,<7
 python-dateutil
 python-dotenv
 SQLAlchemy[asyncio]>=2.0,<2.1

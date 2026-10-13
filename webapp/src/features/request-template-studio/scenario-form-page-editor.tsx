@@ -13,7 +13,7 @@ export function ScenarioFormPageEditor({ block, definition, disabled, onChange }
   const [message, setMessage] = useState("");
   const field = block.fields.find(item => item.key === selected) ?? block.fields[0];
   const index = block.fields.findIndex(item => item.key === field?.key);
-  const update = (fields: ScenarioField[]) => { setMessage(""); onChange({ ...block, fields }); };
+  const update = (fields: ScenarioField[]) => { setMessage(""); onChange({ ...block, title:fields.length===1?fields[0].label:block.title, fields }); };
   function insert(copy = false) {
     const next = copy && field ? { ...structuredClone(field), key: newKey("field"), aliases: [], label: `${field.label.slice(0, 290)} — копия`, process_mapping: { ...field.process_mapping, fact_key: field.process_mapping?.fact_key ? newKey("fact") : null } } : newField();
     if (copy && field) {

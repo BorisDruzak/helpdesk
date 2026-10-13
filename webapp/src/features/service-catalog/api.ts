@@ -2,6 +2,7 @@ export type CatalogLifecycle = "draft" | "published" | "retired";
 export type CatalogVisibility = "public" | "internal" | "restricted";
 
 export type AdminServiceCatalogService = {
+  metadata?:Record<string,unknown>;
   service_id?: string;
   code: string;
   name?: string | null;

@@ -2052,6 +2052,7 @@ async def create_requester_ticket_in_session(request, data, session, *, request_
                 form_key=form_key,
                 request_template_key=request_template_key,
                 raw_values=form_payload,
+                **({"scenario_schema": scenario_snapshot["form_schema"]} if scenario_snapshot and "form_schema" in scenario_snapshot else {}),
                 include_setup_assistance=True,
             )
             if scenario_snapshot is not None:
@@ -2066,6 +2067,8 @@ async def create_requester_ticket_in_session(request, data, session, *, request_
             if scenario_snapshot is not None:
                 from tickets.request_scenario_processing import apply_scenario_policy_refs
                 validated_submission = await apply_scenario_policy_refs(session, validated_submission, scenario_snapshot.get("policy_refs"))
+                from tickets.request_scenario_processing import apply_scenario_processing_facts
+                validated_submission = apply_scenario_processing_facts(validated_submission, scenario_snapshot.get("processing_facts"))
             extra_custom_fields.update(build_form_custom_fields(validated_submission))
             catalog_process_fields = (
                 validated_submission.get("catalog_fields")

@@ -126,6 +126,8 @@ class ScenarioRuntime:
             visited.add(key)
             if not evaluate_condition(item.visible_when, normalized):
                 return
+            if item.validation.optional_when_legacy_missing and key not in supplied:
+                return
             try:
                 value = self._normalize(item, supplied.get(key))
             except (ValueError, TypeError):

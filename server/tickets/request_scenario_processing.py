@@ -4,6 +4,27 @@ from copy import deepcopy
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from web_api.dto.request_scenario import ProcessBinding
 
+FACT_VALUES = {"impact": ("single_user", "multiple_users", "department"),
+               "urgency": ("can_work", "degraded", "blocked"), "importance": ("normal", "important", "critical")}
+POLICY_VALUES = {"impact": {"single_user": "single_user", "multiple_users": "several_people", "department": "department"},
+                 "urgency": {"can_work": "workaround_available", "degraded": "strongly_degraded", "blocked": "work_stopped_no_workaround"},
+                 "importance": {"normal": "normal", "important": "high", "critical": "critical"}}
+
+
+def apply_scenario_processing_facts(validated, facts):
+    """Adapt trusted typed facts to existing policy inputs; never set a priority."""
+    from web_api.dto.request_scenario import ProcessingFacts
+    facts = ProcessingFacts.model_validate(facts or {}).model_dump(exclude_none=True)
+    result = deepcopy(validated)
+    policy = result.get("template_context", {}).get("priority_policy") or {}
+    inputs = policy.get("input_fields") or {}
+    for kind, value in facts.items():
+        key = policy.get(kind + "_field") or inputs.get(kind + "_field")
+        if not isinstance(key, str) or not key:
+            raise ValueError({"processing_facts." + kind: "Действующая политика не принимает это значение"})
+        result.setdefault("submitted_values", {})[key] = POLICY_VALUES[kind][value]
+    return result
+
 
 async def apply_scenario_policy_refs(session, validated, references):
     if not references:

@@ -50,7 +50,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
     <AdvancedDisclosure title="Расширенные настройки" description="Стабильные параметры выбранного шага">
       <div className="min-w-0 space-y-4">
         <p className="break-all text-sm">Стабильный ключ: {block.id}</p>
-        <p>{definition.entry_block_id === block.id ? "Первый блок сценария" : "Начало можно изменить кнопкой «Начать с этого блока»."}</p>
+        <p>{definition.entry_block_id === block.id ? "Первый блок сценария" : "Вход создаётся линией от «Начала» к этому блоку."}</p>
         {block.kind === "diagnostic" && <>
           <label className="block">Возможность диагностики<Select disabled value={block.capability ?? "endpoint.context.diagnostic.collect"}><option value="endpoint.context.diagnostic.collect">Контекст устройства (пока недоступно)</option></Select></label>
           <label className="block">Ожидание, секунд<Input disabled={disabled} type="number" min={1} max={120} value={block.timeout_seconds ?? 30} onChange={event => onChange({ ...block, timeout_seconds: Number(event.target.value) })} /></label>

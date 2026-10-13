@@ -17,7 +17,7 @@ function MapBlock({ id, data, selected }: NodeProps<MapNode>) {
   return <div className={`studio-map-node ${selected ? "is-selected" : ""} ${data.system ? "is-system" : ""} ${data.issue ? "has-issue" : ""} ${data.current ? "is-current" : ""} ${data.visited ? "is-visited" : ""}`}>
     {!data.system && !data.entrance && <Handle type="target" position={Position.Left} aria-label={`Вход блока «${data.title}»`} title="Перетащите сюда связь другого блока" />}
     {data.entrance && <Handle type="source" position={Position.Bottom} aria-label={`Начало «${data.title}»: соединить с первым шагом`} />}
-    {data.system && <Handle id="entrance" type="source" position={Position.Bottom} aria-label="Начало: создать связь с точкой входа" />}
+    {data.system && <Handle id="entrance" type="source" position={Position.Right} aria-label="Начало: создать связь с точкой входа" />}
     <div className="studio-map-node__kind">{data.subtitle}</div><strong>{data.title}</strong>
     {data.entries.map((title, index) => <span key={index} className="studio-map-node__entry">↳ {title}</span>)}
     {data.hint && <span className="studio-map-node__hint">{data.hint}</span>}
@@ -29,7 +29,7 @@ const nodeTypes = { scenario: MapBlock };
 const edgeTypes = { scenario: ScenarioMapEdge };
 const emptyPath: string[] = [];
 export const transitionId = (source: string, index: number) => `${source}:${index}`;
-export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled, issueBlockId, path = emptyPath, current, onSelect, onEdge, onMove, onConnect, onReconnect, onDropBlock, onReady, onEntrance, onEntranceReconnect, onAdd }: {
+export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled, issueBlockId, path = emptyPath, current, onSelect, onEdge, onMove, onConnect, onReconnect, onDropBlock, onReady, onEntrance, onEntranceReconnect, onEntranceTitle, onAdd }: {
   definition: ScenarioDraftDefinition; selected: string; selectedEdge: string | null; disabled: boolean; issueBlockId?: string; path?: string[]; current?: string;
   onSelect: (id: string) => void; onEdge: (source: string, index: number) => void;
   onMove: (id: string, position: { x: number; y: number }) => void;
@@ -39,18 +39,16 @@ export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled
   onEntrance: (key: string | null, target: string) => void;
   onEntranceReconnect: (key: string | null, target: string) => void;
   onReady: (instance: ReactFlowInstance<MapNode>) => void;
+  onEntranceTitle?: (key:string,title:string)=>void;
   onAdd?: (source: string | null, index?: number) => void;
 }) {
   const hints = scenarioMapHints(definition);
   const positions = stableMapPositions(definition);
   const entrances = [...(definition.entry_points ?? []).map(entry => ({ key: entry.key as string | null, title: entry.title, target: entry.target_block_id, enabled: entry.enabled !== false })), ...(!definition.entry_points?.some(entry => entry.target_block_id === definition.entry_block_id) ? [{ key: null, title: "Начало маршрута", target: definition.entry_block_id ?? "", enabled: true }] : [])];
-  const initial = useMemo<MapNode[]>(() => [{ id: metadataNodeId, type: "scenario", hidden: true, position: definition.editor_layout?.positions?.system_start ?? { x: -320, y: 0 }, selected: selected === metadataNodeId, data: { title: "Настройки карты", subtitle: "Системные настройки", entries: [], transitions: 0, terminal: true, system: true, issue: false, current: false, visited: false } }, ...(definition.blocks ?? []).map((block): MapNode => ({
+  const initial = useMemo<MapNode[]>(() => [{ id: metadataNodeId, type: "scenario", position: definition.editor_layout?.positions?.system_start ?? { x: -320, y: 0 }, selected: selected === metadataNodeId, data: { title: "Начало", subtitle: "Входы из каталога", entries: [], transitions: 0, terminal: true, system: true, issue: false, current: false, visited: false } }, ...(definition.blocks ?? []).map((block): MapNode => ({
     id: block.id, type: "scenario", position: positions[block.id], selected: selected === block.id,
     data: { title: block.kind === "form_page" && block.fields.length === 1 ? block.fields[0].label : block.title, subtitle: mapKindLabel(block.kind), entries: [], transitions: block.transitions?.length ?? 0, terminal: terminal(block.kind), system: false, issue: issueBlockId === block.id || hints.some(hint => hint.blockId === block.id && hint.level === "required"), hint: hints.find(hint => hint.blockId === block.id)?.text, current: current === block.id, visited: path.includes(block.id), add: !disabled && !terminal(block.kind) && onAdd ? () => onAdd(block.id) : undefined },
-  })), ...entrances.map((entry, index): MapNode => {
-    const targetIndex = definition.blocks?.findIndex(block => block.id === entry.target) ?? -1;
-    return { id: `${entranceEdgeId(entry.key)}:node`, type: "scenario", position: { x: positions.system_start.x - index * 260, y: positions.system_start.y }, draggable: false, selected: selectedEdge === entranceEdgeId(entry.key), data: { title: entry.title, subtitle: entry.enabled ? (entry.key === null ? "Начало · точка входа" : "Пункт каталога · точка входа") : "Пункт каталога · отключён", entries: [], transitions: 0, terminal: true, system: false, entrance: true, issue: targetIndex < 0, hint: targetIndex < 0 ? "Соедините с первым шагом или выберите его в настройках карты" : undefined, current: false, visited: false } };
-  })], [definition, selected, selectedEdge, issueBlockId, path, current, disabled, onAdd]);
+  }))], [definition, selected, selectedEdge, issueBlockId, path, current, disabled, onAdd]);
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>(initial);
   const dragging = useRef(false);
   const flow = useRef<ReactFlowInstance<MapNode> | null>(null);
@@ -61,12 +59,12 @@ export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled
     id: transitionId(block.id, index), source: block.id, target: edge.to, sourceHandle: `route-${index}`, type: "scenario", reconnectable: "target", selected: selectedEdge === transitionId(block.id, index), markerEnd: { type: MarkerType.ArrowClosed }, label: edge.when && "source" in edge.when && edge.when.source === "current_result" && "value" in edge.when ? ({ yes: "Да", no: "Нет", unknown: "Не знаю" }[String(edge.when.value)] ?? `Условие ${index + 1}`) : edge.when ? `Условие ${index + 1}` : block.kind === "resolution_check" ? "Не знаю / иначе" : block.kind === "decision" ? "Иначе" : "Продолжить", data: { labelOffset: (index - ((block.transitions?.length ?? 1) - 1) / 2) * 46, select: () => onEdge(block.id, index), add: !disabled && onAdd ? () => onAdd(block.id, index) : undefined, addLabel: `Добавить шаг между «${block.title}» и «${definition.blocks?.find(target => target.id === edge.to)?.title ?? "следующим блоком"}»` }, style: { stroke: selectedEdge === transitionId(block.id, index) ? "#087443" : "#94a3b8", strokeWidth: 2 },
   }))), [definition.blocks, selectedEdge, disabled, onAdd, onEdge]);
   const entranceEdges: Edge[] = (definition.entry_points ?? []).filter(entry => nodes.some(node => node.id === entry.target_block_id)).map(entry => ({
-    id: entranceEdgeId(entry.key), source: `${entranceEdgeId(entry.key)}:node`, target: entry.target_block_id, type: "smoothstep", reconnectable: "target",
-    data: { entrance: true, key: entry.key }, selected: selectedEdge === entranceEdgeId(entry.key), markerEnd: { type: MarkerType.ArrowClosed },
+    id: entranceEdgeId(entry.key), source: metadataNodeId, sourceHandle: "entrance", target: entry.target_block_id, type: "scenario", reconnectable: "target",
+    data: { entrance: true, key: entry.key, labelOffset: (definition.entry_points!.indexOf(entry))*30, select:()=>onEntrance(entry.key,entry.target_block_id), rename: !disabled && onEntranceTitle ? (title:string)=>onEntranceTitle(entry.key,title) : undefined }, selected: selectedEdge === entranceEdgeId(entry.key), markerEnd: { type: MarkerType.ArrowClosed },
     label: entry.title, style: { stroke: "#0d9488", strokeWidth: 2, strokeDasharray: "6 4", opacity: entry.enabled === false ? 0.45 : 1 },
   }));
-  if (definition.entry_block_id && !definition.entry_points?.some(entry => entry.target_block_id === definition.entry_block_id) && nodes.some(node => node.id === definition.entry_block_id)) entranceEdges.push({
-    id: entranceEdgeId(null), source: `${entranceEdgeId(null)}:node`, target: definition.entry_block_id, type: "smoothstep", reconnectable: "target",
+  if (definition.schema_version !== 2 && definition.entry_block_id && !definition.entry_points?.some(entry => entry.target_block_id === definition.entry_block_id) && nodes.some(node => node.id === definition.entry_block_id)) entranceEdges.push({
+    id: entranceEdgeId(null), source: metadataNodeId, sourceHandle: "entrance", target: definition.entry_block_id, type: "smoothstep", reconnectable: "target",
     data: { entrance: true, key: null }, selected: selectedEdge === entranceEdgeId(null), label: "Основной вход", style: { stroke: "#0d9488", strokeDasharray: "6 4" },
   });
   const edges = [...routeEdges, ...entranceEdges];

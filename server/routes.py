@@ -360,6 +360,7 @@ from web_api.request_studio_handlers import (
 from web_api.request_scenario_admin_handlers import (
     handle_scenario_catalog, handle_scenario_category_create, handle_scenario_category_update,
     handle_scenario_category_archive, handle_scenario_create, handle_scenario_detail,
+    handle_scenario_service_create, handle_scenario_convert_forms, handle_scenario_document_validate, handle_scenario_document_export,
     handle_scenario_draft_save, handle_scenario_archive, handle_scenario_versions, handle_scenario_simulate,
     handle_scenario_readiness, handle_scenario_publish_preview, handle_scenario_publish, handle_scenario_rollback_draft,
 )
@@ -729,6 +730,10 @@ def setup_routes(app: web.Application) -> None:
         web.put('/api/web/admin/request-studio/categories/{identifier}', handle_scenario_category_update),
         web.delete('/api/web/admin/request-studio/categories/{identifier}', handle_scenario_category_archive),
         web.post('/api/web/admin/request-studio/scenarios', handle_scenario_create),
+        web.post('/api/web/admin/request-studio/services', handle_scenario_service_create),
+        web.post('/api/web/admin/request-studio/convert-forms', handle_scenario_convert_forms),
+        web.post('/api/web/admin/request-studio/documents/validate', handle_scenario_document_validate),
+        web.get('/api/web/admin/request-studio/scenarios/{identifier}/document', handle_scenario_document_export),
         web.get('/api/web/admin/request-studio/scenarios/{identifier}', handle_scenario_detail),
         web.put('/api/web/admin/request-studio/scenarios/{identifier}/draft', handle_scenario_draft_save),
         web.post('/api/web/admin/request-studio/scenarios/{identifier}/archive', handle_scenario_archive),

@@ -153,7 +153,7 @@ class ScenarioPublicationService:
                     add("entry_category_unavailable", "Категория точки входа и её родители должны быть опубликованы и доступны сотруднику.", f"entry_points.{entry.key}.category_id")
             actual_fields = _policy_fields(effective) | _policy_fields(source["policies"])
             process_fields = {field.key for block in definition.blocks for field in getattr(block, "fields", ())
-                              if (field.process_mapping.fact_key or field.key) in actual_fields}
+                              if (field.process_mapping.fact_key or field.key) in actual_fields or field.process_mapping.effects}
             states = submission_variants(definition, process_fields=process_fields)
         except ValidationError:
             add("incomplete_graph", "Добавьте вопросы, начальный шаг и допустимые завершения.", "blocks")
@@ -241,7 +241,7 @@ class ScenarioPublicationService:
             await self.session.flush()
         number = await self.session.scalar(select(func.max(RequestStudioScenarioVersion.version)).where(RequestStudioScenarioVersion.scenario_id == row.id))
         version = RequestStudioScenarioVersion(scenario_id=row.id, offering_full_code=row.offering_full_code, version=(number or 0) + 1,
-            schema_version=1, definition=deepcopy(draft.definition), content_hash=definition_hash(draft.definition), source_snapshot=source, published_by=self.repo.auth.actor_id)
+            schema_version=draft.definition.get("schema_version", 1), definition=deepcopy(draft.definition), content_hash=definition_hash(draft.definition), source_snapshot=source, published_by=self.repo.auth.actor_id)
         self.session.add(version)
         await self.session.flush()
         row.published_version_id, row.enabled, row.updated_by = version.id, True, self.repo.auth.actor_id

@@ -133,7 +133,7 @@ def test_new_scenario_is_not_silently_accepted_by_legacy_studio():
 
 
 @pytest.mark.parametrize("path,value", [
-    ("schema_version", 2), ("schema_version", "1"), ("scenario_key", "bad/key"),
+    ("schema_version", 3), ("schema_version", "1"), ("scenario_key", "bad/key"),
     ("offering_full_code", "other.printer_issue"),
 ])
 def test_domain_rejects_schema_and_binding_mismatch(path, value):

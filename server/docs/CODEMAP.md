@@ -101,18 +101,24 @@
   `results._entry_point`, preserving it on Back; submission `reported_context`
   cannot supply facts. Validation/readiness cover all entrances under one bounded
   coverage budget. No new migration or external Endpoint contract is introduced.
-- React admin catalog/map: `webapp/src/pages/admin/request-template-studio-page.tsx`
-  orchestrates the scenario-api/catalog/purpose/category/wizard components and
-  editor/context/dirty-guard hooks under `features/request-template-studio`. The root
-  opens the catalog; `scenario-create-dialog` and `scenario-starter` prepare editable
-  local starter routes. The map uses `scenario-workbench-catalog`, browser-only
-  resizable/collapsible panels and actionable `scenario-map-hints`/guidance.
-  `scenario-step-menu` and `scenario-map-edge` add connected steps atomically;
-  `scenario-result-binding` presents the canonical offering/template at the result.
-  Real entrance nodes link to executable blocks; settings have no route edge. Inspector/full-page
-  `scenario-requester-preview` shares requester `scenario-step-content`; lifecycle
-  APIs remain owned by `scenario-session` and server simulation.
-  See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
+- Unified service Studio: `webapp/src/pages/admin/request-template-studio-page.tsx`
+  opens the catalog and creates an empty v2 map directly. Five palette kinds and a
+  unique Start node use `scenario-map-*`; dashed Start edges create named catalog
+  entrances, never executable transitions. `scenario-purpose` owns placement;
+  `scenario-processing-facts` sends typed facts to existing server policies.
+  `request_scenario_submission.derive_scenario_form` projects visited visible map
+  fields into canonical validation; `request_template_submission` keeps processing
+  bindings but ignores independent template questions for v2. V1 pinned sessions
+  and historic definitions remain compatible; layout edits preserve their schema.
+  `request_scenario_conversion` safely creates drafts from supported old forms;
+  existing/archived maps are never overwritten and conversion never publishes.
+  `request_scenario_document` validates/export JSON/YAML against the same DTO;
+  `scenario-document-panel` applies imports through existing revision/CAS saving.
+  Admin routes add POST `/request-studio/services`, `/convert-forms`,
+  `/documents/validate`, GET `/scenarios/{id}/document`. Migration 149 permits
+  version 1/2 without rewriting rows; downgrade refuses persisted v2 versions.
+  See `docs/UNIFIED_SERVICE_SCENARIOS.md` for current click-by-click authoring.
+  Existing session, policy, audit and confirmed-publication owners remain canonical.
   Catalog metadata uses the immutable version referenced by the active pointer
   (not the greatest historical version), and the latest scenario/draft timestamp.
   `app/repos/request_scenario_repo.py` searches offering request types and Studio

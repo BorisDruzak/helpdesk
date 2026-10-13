@@ -12,6 +12,7 @@ export type ScenarioCategory = {
 };
 export type CategoryInput = Omit<ScenarioCategory, "id" | "effective_visibility" | "revision"> & { revision?: number | null };
 export type ScenarioItem = {
+  schema_version?:1|2;
   id: string; scenario_key: string; service_code: string; offering_full_code: string;
   category_id: string | null; title: string; description: string; archived: boolean; enabled: boolean;
   published_version_id: string | null; status?: ScenarioStatus; revision?: number;
@@ -71,6 +72,11 @@ export function fetchScenarioCatalog(q = "", status = "all", offset = 0, categor
 }
 export function fetchScenarioDetail(id: string) { return request<ScenarioDetail>(`/scenarios/${encodeURIComponent(id)}`); }
 export function createScenario(definition: ScenarioDraftDefinition) { return request<ScenarioDetail>("/scenarios", "POST", { definition }); }
+export function createServiceScenario(definition:ScenarioDraftDefinition){return request<ScenarioDetail>("/services","POST",{definition});}
+export type ConversionItem={offering_full_code:string;title?:string;archived?:boolean;status:"existing"|"ready"|"converted"|"blocked";detail?:ScenarioDetail;issues?:{code:string;message:string}[]};
+export function convertForms(apply=false,offering_full_code?:string){return request<{items:ConversionItem[]}>("/convert-forms","POST",{apply,offering_full_code:offering_full_code??null});}
+export function validateScenarioDocument(content:string,format:"json"|"yaml",id?:string){return request<{definition:ScenarioDraftDefinition;issues:{code:string;path:string;message:string}[];diff:{path:string;before:unknown;after:unknown}[]}>(`/documents/validate${id?`?scenario_id=${encodeURIComponent(id)}`:""}`,"POST",{content,format});}
+export function exportScenarioDocument(id:string,format:"json"|"yaml"){return request<{format:string;content:string}>(`/scenarios/${encodeURIComponent(id)}/document?format=${format}`);}
 export function saveScenario(id: string, definition: ScenarioDraftDefinition, revision: number) {
   return request<ScenarioDetail>(`/scenarios/${encodeURIComponent(id)}/draft`, "PUT", { definition, revision });
 }

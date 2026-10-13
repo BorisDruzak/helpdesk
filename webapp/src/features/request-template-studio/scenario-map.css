@@ -81,3 +81,5 @@
 .studio-map-guidance { max-height:35%; }
 .studio-map-empty { inset:8% 8% auto; }
 .studio-delete-dialog { width:min(580px,calc(100vw - 32px)); }
+.studio-entry-name { background: white; color: #065f46; border: 1px solid #b8dcc9; border-radius: 6px; padding: 4px 8px; width: 180px; font-size: 12px; }
+.studio-entry-name:focus { outline: 2px solid #087443; outline-offset: 2px; }

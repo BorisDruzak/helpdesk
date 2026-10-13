@@ -14,12 +14,12 @@ export function scenarioMapHints(definition: ScenarioDraftDefinition): MapHint[]
   const hints: MapHint[] = [], blocks = definition.blocks ?? [], ids = new Set(blocks.map(block => block.id));
   const add = (code: string, text: string, blockId?: string) => hints.push({ code, text, blockId, level: "required" });
   const result = blocks.find(block => block.kind === "submit_ticket");
-  if (!definition.offering_full_code) add("offering", "Выберите тип обращения, чтобы сохранить черновик.", result?.id);
-  else if (!definition.process_binding.request_template_key) add("template", "Для обращения не выбран шаблон заявки.", result?.id);
+  if (definition.schema_version !== 2 && !definition.offering_full_code) add("offering", "Выберите тип обращения, чтобы сохранить черновик.", result?.id);
+  else if (definition.schema_version !== 2 && !definition.process_binding.request_template_key) add("template", "Для обращения не выбран шаблон заявки.", result?.id);
   if (!definition.title.trim()) add("title", "Укажите название в настройках карты.");
   if (!blocks.length) hints.push({ code: "blocks", text: "Добавьте первый шаг: вопрос или инструкцию.", target: "blocks", level: "required" });
   else {
-    if (!definition.entry_block_id || !ids.has(definition.entry_block_id)) add("start", "Выберите начальный блок в настройках карты.");
+    if (!definition.entry_block_id || !ids.has(definition.entry_block_id)) add("start", "Соедините «Начало» с первым вопросом или инструкцией.");
     for (const entry of definition.entry_points ?? []) if (!ids.has(entry.target_block_id)) add("entry_target", `«${entry.title}»: пункт каталога не связан с блоком.`, entry.target_block_id);
     if (!blocks.some(block => terminal(block.kind))) hints.push({ code: "result", text: "Добавьте «Результат»: создание обращения или завершение без обращения.", target: "blocks", level: "required" });
     const reached = new Set<string>(), pending = [definition.entry_block_id, ...(definition.entry_points ?? []).map(entry => entry.target_block_id)].filter((id): id is string => !!id);
@@ -40,6 +40,6 @@ export function scenarioMapHints(definition: ScenarioDraftDefinition): MapHint[]
       for (const edge of block.transitions ?? []) routes.push({ id: edge.to, confirmed: state.confirmed || (block.kind === "resolution_check" && confirmsResolution(edge.when)) });
     }
   }
-  if (!(definition.entry_points ?? []).length) hints.push({ code: "catalog_entrances", text: "Для отдельных пунктов каталога добавьте точки входа в инспекторе блока. Основной вход карты продолжает работать.", level: "suggestion" });
+  if (!(definition.entry_points ?? []).length) hints.push({ code: "catalog_entrances", text: "Проведите линию от «Начала» к блоку, чтобы создать пункт каталога.", level: "suggestion" });
   return hints;
 }
