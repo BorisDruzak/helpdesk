@@ -10,6 +10,16 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function mount(dirty = false) {
   return render(<MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}><ScenarioPublication id="scenario" revision={2} dirty={dirty} disabled={false} definition={definition} offeringTitle="Проблемы с печатью" /></QueryClientProvider></MemoryRouter>);
 }
+it("describes publication changes without exposing internal paths and template keys", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: {
+    health: { health_status: "ok" }, readiness: { can_publish: true, variants_checked: 1, issues: [] },
+    diff: [{ path: "blocks.instruction.transitions", before: null, after: [{ to: "internal_block_123" }] },
+      { path: "process_binding.request_template_key", before: null, after: "internal_template_456" }], confirmation_token: null,
+  } }), { headers: { "Content-Type": "application/json" } })));
+  mount(); fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  await screen.findByText("Проверено исходов: 1.");
+  expect(screen.queryByText(/internal_block_123|internal_template_456|blocks\.instruction\.transitions/)).not.toBeInTheDocument();
+});
 it("requires reviewed diff and explicit confirmation before publishing saved revision", async () => {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));

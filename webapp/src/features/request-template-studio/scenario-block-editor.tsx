@@ -47,7 +47,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
     {block.kind === "review" && <p>Перед продолжением сотрудник увидит собранные ответы и сможет вернуться к вопросам.</p>}
     {block.kind === "submit_ticket" && <p>Обращение создаёт сервер с применением политик услуги. Этот блок завершает сценарий.</p>}
     {block.kind === "finish" && <label className="block">Сообщение о решении<textarea disabled={disabled} maxLength={2000} className="field-base min-h-24 w-full" value={block.message ?? ""} onChange={event => onChange({ ...block, message: event.target.value })} /></label>}
-    <AdvancedDisclosure title="Расширенные настройки" description="Стабильные параметры выбранного шага">
+    {(definition.schema_version !== 2 || block.kind === "diagnostic") && <AdvancedDisclosure title="Расширенные настройки" description="Совместимость исторического шага">
       <div className="min-w-0 space-y-4">
         <p className="break-all text-sm">Стабильный ключ: {block.id}</p>
         <p>{definition.entry_block_id === block.id ? "Первый блок сценария" : "Вход создаётся линией от «Начала» к этому блоку."}</p>
@@ -56,7 +56,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
           <label className="block">Ожидание, секунд<Input disabled={disabled} type="number" min={1} max={120} value={block.timeout_seconds ?? 30} onChange={event => onChange({ ...block, timeout_seconds: Number(event.target.value) })} /></label>
         </>}
       </div>
-    </AdvancedDisclosure>
+    </AdvancedDisclosure>}
     {!hideTransitions && <section aria-label="Следующий шаг" className="space-y-4 rounded-lg border p-3">
         <h3 className="font-medium">Что делать дальше</h3>
         {!terminal && <p className="text-sm text-slate-600">Выберите следующий шаг. Порядок шагов в списке сам по себе не задаёт переходы. Последний переход без условия — запасной путь.</p>}

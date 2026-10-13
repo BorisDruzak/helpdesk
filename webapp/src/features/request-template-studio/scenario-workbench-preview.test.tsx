@@ -7,6 +7,16 @@ vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitio
 const definition:ScenarioDraftDefinition={scenario_key:"s",title:"Карта",service_code:"it",offering_full_code:"it.p",process_binding:{request_template_key:"p"},entry_block_id:"q",entry_points:[{key:"named",title:"Вход",target_block_id:"q"}],blocks:[{id:"q",kind:"instruction",title:"Проверка",content:{body:"Шаг"},transitions:[]},{id:"done",kind:"finish",title:"Готово"}]};
 const catalog={services:[],offerings:[],categories:[],scenarios:[],total:0,offset:0,limit:100};
 afterEach(()=>vi.unstubAllGlobals());
+it("keeps historical questions read-only until an explicit source migration",()=>{
+ vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
+ const change=vi.fn();const view=render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing disabled={false} onChange={change}/></MemoryRouter>);
+ fireEvent.click(screen.getByRole("button",{name:"Выбрать вопрос"}));
+ expect(screen.getByLabelText("Текст инструкции")).toBeDisabled();
+ fireEvent.click(screen.getByRole("button",{name:"Перевести карту на единую модель"}));
+ const migrated=change.mock.calls[0][0];expect(migrated.schema_version).toBe(2);expect(migrated.blocks).toEqual(definition.blocks);
+ view.rerender(<MemoryRouter><ScenarioMapWorkbench definition={migrated} catalog={catalog} existing disabled={false} onChange={change}/></MemoryRouter>);
+ expect(screen.getByLabelText("Текст инструкции")).toBeEnabled();
+});
 it("opens deletion in a visible dialog and keeps errors next to confirmation",()=>{
  render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
  fireEvent.click(screen.getByRole("button",{name:"Удалить блок"}));

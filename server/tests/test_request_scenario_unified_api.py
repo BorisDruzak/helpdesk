@@ -26,6 +26,8 @@ async def test_direct_service_creation_is_atomic_idempotent_and_admin_only(test_
     again = await test_client_light.post(BASE + "/services", headers=ADMIN, json={"definition": source})
     assert again.status == 200, await again.text()
     assert (await again.json())["data"]["scenario"]["id"] == value["scenario"]["id"]
+    modified = {**source, "process_binding": {"request_template_key": "", "policy_refs": {"priority": "different_policy"}}}
+    assert (await test_client_light.post(BASE + "/services", headers=ADMIN, json={"definition": modified})).status == 409
     source["title"] = "Concurrent different data"
     assert (await test_client_light.post(BASE + "/services", headers=ADMIN, json={"definition": source})).status == 409
 

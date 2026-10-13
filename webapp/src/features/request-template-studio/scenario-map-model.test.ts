@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
-import { connectStart, reconnectStart, connectBlocks, insertOnTransition, positionBlock, reconnectTransition, deleteMapBlock } from "./scenario-map-model";
+import { connectStart, reconnectStart, connectBlocks, insertOnTransition, positionBlock, reconnectTransition, deleteMapBlock, freeMapPosition } from "./scenario-map-model";
 
 const draft = (): ScenarioDraftDefinition => ({ scenario_key: "test", title: "Карта", service_code: "it", offering_full_code: "it.print", entry_block_id: "q", process_binding: { request_template_key: "print" },
   entry_points: [{ key: "jam", title: "Замятие", target_block_id: "q" }], blocks: [
@@ -8,6 +8,13 @@ const draft = (): ScenarioDraftDefinition => ({ scenario_key: "test", title: "К
     { id: "done", kind: "finish", title: "Готово" }, { id: "review", kind: "review", title: "Сводка", transitions: [{ to: "ticket" }] }, { id: "ticket", kind: "submit_ticket", title: "Обращение" },
   ] });
 describe("atomic map edits", () => {
+  it("places palette additions clear of a route assembled with the step plus buttons", () => {
+    const d = draft();
+    d.blocks = d.blocks!.slice(0, 3);
+    d.editor_layout = { positions: { q: { x: 0, y: 0 }, done: { x: 0, y: 170 }, review: { x: 0, y: 340 } } };
+    expect(freeMapPosition(d)).toEqual({ x: 310, y: 200 });
+    expect(d.editor_layout.positions?.done).toEqual({ x: 0, y: 170 });
+  });
   it("freezes legacy default positions before deletion so other blocks do not follow", () => {
     const next = deleteMapBlock(draft(), "done", null, undefined, "detach");
     expect(next.blocks![0].transitions).toEqual([{ to: "review" }]);

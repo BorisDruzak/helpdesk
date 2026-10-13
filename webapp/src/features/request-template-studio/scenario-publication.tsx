@@ -7,17 +7,21 @@ import type { ScenarioDraftDefinition } from "./scenario-contract";
 import { ScenarioPublicationSummary } from "./scenario-publication-summary";
 import { scenarioIssueDestination, type ScenarioIssueDestination } from "./scenario-issue-navigation";
 
-function humanValue(value: unknown): string {
-  if (value === null || value === undefined) return "Не задано";
-  if (typeof value === "boolean") return value ? "Да" : "Нет";
-  if (Array.isArray(value)) return value.map(item => {
-    if (item && typeof item === "object" && "title" in item) return String(item.title);
-    return humanValue(item);
-  }).join(", ");
-  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${humanValue(item)}`).join("; ");
-  return String(value);
+function changeLabel(path: string, definition?: ScenarioDraftDefinition): string {
+  const parts = path.split(".");
+  if (parts[0] === "blocks") {
+    if (parts[1] === "order") return "Порядок шагов";
+    const block = definition?.blocks?.find(item => item.id === parts[1]);
+    const field = block?.kind === "form_page" ? block.fields.find(item => item.key === parts[3]) : undefined;
+    return field ? `Вопрос «${field.label}»` : block ? `Шаг «${block.title}»` : "Состав шагов и вопросов";
+  }
+  if (parts[0] === "entry_points") {
+    const entry = definition?.entry_points?.find(item => item.key === parts[1]);
+    return entry ? `Пункт каталога «${entry.title}»` : "Состав пунктов каталога";
+  }
+  return ({ editor_layout: "Расположение блоков", process_binding: "Правила обработки", category_id: "Категория услуги",
+    service_code: "Раздел каталога", entry_block_id: "Вход в маршрут", publish_offering: "Публикация услуги", offering: "Доступность услуги" } as Record<string, string>)[parts[0]] ?? "Настройки услуги";
 }
-const labels: Record<string, string> = { title: "Название", description: "Описание", blocks: "Шаги и вопросы", entry_block_id: "Первый шаг", category_id: "Категория", process_binding: "Обработка обращения", service_code: "Раздел", offering_full_code: "Услуга", scenario_key: "Сценарий", schema_version: "Формат", publish_offering: "Опубликовать новую услугу со сценарием", "offering.lifecycle_status": "Публикация новой услуги" };
 
 export function ScenarioPublication({ id, revision, dirty, disabled, definition, offeringTitle, onIssue }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; offeringTitle?: string; onIssue?: (destination: ScenarioIssueDestination) => void }) {
   const cache = useQueryClient();
@@ -68,16 +72,18 @@ export function ScenarioPublication({ id, revision, dirty, disabled, definition,
     {published && <a className="inline-block text-brand-700 underline" target="_blank" rel="noopener noreferrer" href={`/app/requester/new?${new URLSearchParams({ offering: published.offering_full_code })}`}>Открыть сценарий сотрудника</a>}
     {(published || definition) && <ScenarioPublicationSummary definition={(published || definition)!} offeringTitle={offeringTitle} />}
     {preview && <>
-      <p>Policy Health: {preview.health.health_status}. Готовность: {preview.readiness.can_publish ? "проверена" : "есть препятствия"}.</p>
+      <p>Проверка правил обработки: {preview.health.health_status === "ok" ? "пройдена" : "есть замечания"}. Готовность: {preview.readiness.can_publish ? "проверена" : "есть препятствия"}.</p>
       <p>Проверено исходов: {preview.readiness.variants_checked}.</p>
       {preview.readiness.issues.map((issue, index) => {
         const destination = definition ? scenarioIssueDestination(issue, definition) : null;
         return <div key={`${issue.code}-${index}`} className="space-y-2"><p role="alert">{issue.message}</p>{destination && onIssue && <Button variant="outline" onClick={() => onIssue(destination)}>Исправить: {destination.label}</Button>}</div>;
       })}
       <h3 className="font-semibold">Изменения относительно опубликованной версии</h3>
-      {preview.diff.length ? <dl className="min-w-0 space-y-3">{preview.diff.map(change => <div key={change.path} className="min-w-0 break-words rounded border p-3">
-        <dt className="font-medium">{labels[change.path] || change.path}</dt><dd className="grid gap-1"><span>{humanValue(change.before)}</span><span>{humanValue(change.after)}</span></dd>
-      </div>)}</dl> : <p>Содержимое сценария не изменилось. Будет создана новая версия с проверенной обработкой.</p>}
+      {preview.diff.length ? <div className="space-y-3">
+        {preview.diff.filter(change => ["title", "description"].includes(change.path)).map(change => <div key={change.path} className="rounded border p-3"><p className="font-medium">{change.path === "title" ? "Название услуги" : "Описание"}</p><p>{String(change.before ?? "Не задано")}</p><p>{String(change.after ?? "Не задано")}</p></div>)}
+        <ul className="list-disc pl-5">{[...new Set(preview.diff.filter(change => !["title", "description", "scenario_key", "offering_full_code", "schema_version", "process_binding.request_template_key"].includes(change.path)).map(change => changeLabel(change.path, definition)))].map(label => <li key={label}>{label}</li>)}</ul>
+        <p className="text-sm text-slate-500">Проверьте вопросы, пункты каталога и пути на карте. Декларацию целиком можно получить через экспорт JSON / YAML.</p>
+      </div> : <p>Содержимое сценария не изменилось. Будет создана новая версия с проверенной обработкой.</p>}
       {preview.readiness.can_publish && preview.confirmation_token && <div className="sticky bottom-0 z-10 grid gap-3 border-t bg-white py-3">
         <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} disabled={busy || dirty || disabled} onChange={event => setConfirmed(event.target.checked)} />Изменения проверены, подтверждаю публикацию</label>
         <Button disabled={!confirmed || busy || dirty || disabled} onClick={() => void publish()}>Опубликовать сценарий</Button>

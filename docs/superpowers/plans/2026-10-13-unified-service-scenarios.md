@@ -61,5 +61,5 @@ Files: docs/GUIDED_REQUEST_STUDIO_ADMIN.md; server/docs/CODEMAP.md; PLANS.md;
 focused browser tests and staging evidence under tmp/.
 - [x] Run workspace sanity, regression checks and diff check; expected PASS.
 - [x] Review complete task diff once, fix material findings with regression tests.
-- [ ] Commit task files only, deploy through reviewed staging procedure, verify browser creation/publication/interchange and conversion report.
-- [ ] Update guide for the actual delivered flow and report exact SHA, tests and remaining unsupported conversions.
+- [x] Commit task files only, deploy through reviewed staging procedure, verify browser creation/publication/interchange and conversion report.
+- [x] Update guide for the actual delivered flow and report exact SHA, tests and remaining unsupported conversions.

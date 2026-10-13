@@ -53,6 +53,7 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
             <label>Максимум символов<Input type="number" min={1} max={10000} value={field.validation?.max_length ?? ""} onChange={event => bound("max_length", event.target.value)} /></label>
           </div>}
         </fieldset>
+        {definition.schema_version !== 2 && <>
         <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="font-medium">Назначения ответа</legend>
           {Object.entries(roleLabels).map(([role, title]) => <label key={role} className="text-sm"><input type="checkbox" disabled={disabled || !compatibleRole(field.type, role as ScenarioRole)} checked={roles.includes(role as ScenarioRole)} onChange={event => onChange({ ...field, process_mapping: { ...field.process_mapping, roles: event.target.checked ? [...roles, role as ScenarioRole] : roles.filter(item => item !== role) } })} /> {title}</label>)}
         </fieldset>
@@ -61,6 +62,7 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
         {field.group && <p className="break-all">Ключ раздела: {field.group}</p>}
         <ScenarioSeparatedInput label="Прежние ключи (через запятую)" values={field.aliases ?? []} separator="," disabled={disabled} limit={8} onChange={aliases => onChange({ ...field, aliases })} />
         <p className="break-all text-sm">Стабильный ключ: {field.key}</p>
+        </>}
         <div><p className="font-medium">Используется в условиях</p>{uses.length ? <ul>{uses.map((use, index) => <li key={index}>{use}</li>)}</ul> : <p className="text-sm">Зависимостей нет</p>}</div>
       </div>
     </AdvancedDisclosure>

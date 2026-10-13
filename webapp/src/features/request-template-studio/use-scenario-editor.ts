@@ -4,6 +4,10 @@ import { RequestStudioApiError } from "./api";
 import { archiveScenario, createScenario, createServiceScenario, fetchScenarioDetail, saveScenario, type ScenarioDetail } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
+function semanticJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+}
 function blankScenario(): ScenarioDraftDefinition { return { schema_version: 1, scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: "Новый сценарий", description: "", service_code: "", offering_full_code: "", category_id: null, entry_block_id: null, blocks: [], process_binding: { request_template_key: "" } }; }
 export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
   const cache = useQueryClient();
@@ -19,7 +23,7 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
   const latestDefinition = useRef(definition);
   latestDefinition.current = definition;
   const [loadId, setLoadId] = useState<string | null>(null);
-  const dirty = !!definition && (detail ? JSON.stringify(definition) !== JSON.stringify(detail.draft.definition) : !mapFirst || JSON.stringify(definition) !== JSON.stringify(pristine.current));
+  const dirty = !!definition && (detail ? semanticJson(definition) !== semanticJson(detail.draft.definition) : !mapFirst || semanticJson(definition) !== semanticJson(pristine.current));
   function accept(value: ScenarioDetail) { setDetail(value); setDefinition(value.draft.definition); setConflict(false); setError(""); cache.setQueryData(["scenario-detail", value.scenario.id], value); }
   const save = useMutation({ mutationFn: async () => {
     if (!definition) throw new Error("Нет черновика");
@@ -31,7 +35,7 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
   }, onSuccess: async ({ value, snapshot, sequence }) => {
     if (sequence !== requestSequence.current) return;
     setDetail(value); setConflict(false); setError("");
-    if (JSON.stringify(latestDefinition.current) === JSON.stringify(snapshot)) setDefinition(value.draft.definition);
+    if (semanticJson(latestDefinition.current) === semanticJson(snapshot)) setDefinition(value.draft.definition);
     else if (!snapshot.offering_full_code && latestDefinition.current) setDefinition({
       ...latestDefinition.current, offering_full_code: value.draft.definition.offering_full_code,
       service_code: value.draft.definition.service_code,

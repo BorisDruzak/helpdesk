@@ -5,6 +5,16 @@ import { afterEach, expect, it, vi } from "vitest";
 import { useScenarioEditor } from "./use-scenario-editor";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("does not mark a round-trip definition dirty when only object key order changes", () => {
+  const client = new QueryClient();
+  function Wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={client}>{children}</QueryClientProvider>; }
+  const hook = renderHook(useScenarioEditor, { wrapper: Wrapper });
+  act(() => hook.result.current.create());
+  const definition = hook.result.current.definition!;
+  act(() => hook.result.current.accept({ scenario: { id: "s1" }, draft: { revision: 1, definition } } as Parameters<typeof hook.result.current.accept>[0]));
+  act(() => hook.result.current.change(Object.fromEntries(Object.entries(definition).reverse()) as typeof definition));
+  expect(hook.result.current.dirty).toBe(false);
+});
 it("merges server bindings into edits made during first creation and saves the next revision", async () => {
   let resolve!: (value: Response) => void;
   const fetcher = vi.fn((_url: unknown, init?: RequestInit) => init?.method === "POST"

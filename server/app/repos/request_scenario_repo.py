@@ -50,11 +50,15 @@ class RequestScenarioRepo:
         if prior:
             row, draft = await self.detail(prior.id)
             comparable = deepcopy(draft.definition)
-            comparable.update(offering_full_code="", process_binding={"request_template_key": ""}, publish_offering=False)
+            comparable.update(offering_full_code="", publish_offering=False)
+            comparable["process_binding"]["request_template_key"] = ""
             incoming = deepcopy(raw)
             incoming.setdefault("publish_offering", False)
-            if comparable != ScenarioDraftDefinition.model_validate({**incoming, "offering_full_code": row.offering_full_code,
-                "process_binding": draft.definition["process_binding"]}).model_dump(mode="json") | {"offering_full_code": "", "process_binding": {"request_template_key": ""}, "publish_offering": False}:
+            incoming = ScenarioDraftDefinition.model_validate({**incoming, "offering_full_code": row.offering_full_code,
+                "process_binding": {**incoming.get("process_binding", {}), "request_template_key": draft.definition["process_binding"]["request_template_key"]}}).model_dump(mode="json")
+            incoming.update(offering_full_code="", publish_offering=False)
+            incoming["process_binding"]["request_template_key"] = ""
+            if comparable != incoming:
                 raise ScenarioAdminError("REVISION_CONFLICT", 409)
             return {"scenario": serialize(row), "draft": serialize(draft)}
         if raw.get("offering_full_code") or (raw.get("process_binding") or {}).get("request_template_key"):
@@ -73,7 +77,7 @@ class RequestScenarioRepo:
                 effective = await HelpdeskPolicyRepo(self.session).resolve_effective_request_template(template_code=candidate, raise_if_missing=False)
                 template = effective.get("request_template") or {}
                 if template.get("published_at") and template.get("ticket_type") == (service.get("default_ticket_type_code") or "incident"):
-                    fingerprints[candidate] = definition_hash({"type": template.get("ticket_type"), "policies": effective.get("resolved_policies"), "workflow": template.get("workflow_profile_id")})
+                    fingerprints[candidate] = definition_hash({"type": template.get("ticket_type"), "policies": effective.get("resolved_policies"), "workflow": template.get("workflow_profile_id"), "config": template.get("config")})
             if fingerprints and len(set(fingerprints.values())) == 1:
                 template_key = sorted(fingerprints)[0]
         if not template_key:
@@ -125,11 +129,11 @@ class RequestScenarioRepo:
             if schema:
                 form = _registry_pack_from_template(effective_template=effective, form_schema=schema, form_key=key)["forms"][0]
         if form is None:
-            return {"offering_full_code": code, "status": "blocked", "issues": [{"code": "form_unavailable", "message": "Исходная форма недоступна."}]}
+            return {"offering_full_code": code, "title": offering.get("public_title") or offering.get("name") or code, "status": "blocked", "issues": [{"code": "form_unavailable", "message": "Исходная форма недоступна."}]}
         try:
             definition = convert_form(offering, form)
         except ConversionBlocked as exc:
-            return {"offering_full_code": code, "status": "blocked", "issues": exc.issues}
+            return {"offering_full_code": code, "title": offering.get("public_title") or offering.get("name") or code, "status": "blocked", "issues": exc.issues}
         result = {"offering_full_code": code, "title": offering.get("public_title") or offering.get("name") or code, "status": "ready", "definition": definition.model_dump(mode="json"), "issues": []}
         if apply:
             result.update(status="converted", detail=await self.create(definition))

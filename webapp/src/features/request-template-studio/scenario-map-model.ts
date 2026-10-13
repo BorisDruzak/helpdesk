@@ -35,6 +35,15 @@ export function positionBlock(definition: ScenarioDraftDefinition, id: string, p
 export function stableMapPositions(definition: ScenarioDraftDefinition): Record<string, { x: number; y: number }> {
   return { system_start: { x: -320, y: 0 }, ...Object.fromEntries((definition.blocks ?? []).map((block, index) => [block.id, { x: (index % 3) * 310, y: Math.floor(index / 3) * 200 }])), ...definition.editor_layout?.positions };
 }
+export function freeMapPosition(definition: ScenarioDraftDefinition) {
+  const occupied = Object.values(stableMapPositions(definition));
+  let slot = definition.blocks?.length ?? 0;
+  let point = { x: (slot % 3) * 310, y: Math.floor(slot / 3) * 200 };
+  while (occupied.some(old => Math.abs(old.x - point.x) < 260 && Math.abs(old.y - point.y) < 170)) {
+    slot += 1; point = { x: (slot % 3) * 310, y: Math.floor(slot / 3) * 200 };
+  }
+  return point;
+}
 export function requireAcyclic(definition: ScenarioDraftDefinition) {
   const blocks = new Map((definition.blocks ?? []).map(block => [block.id, block]));
   const active = new Set<string>(), visited = new Set<string>();
