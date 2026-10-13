@@ -19,13 +19,13 @@ function ResizeHandle({ axis, value, min, max, onChange }: { axis: keyof Geometr
 }
 export function useWorkbenchGeometry(grid: RefObject<HTMLDivElement | null>) {
   const [geometry,setGeometry]=useState(readGeometry);
-  const [bounds,setBounds]=useState({width:1200,height:600,desktop:true});
-  function measure(){const element=grid.current;if(!element)return;const next={width:element.getBoundingClientRect().width||window.innerWidth,height:Math.max(280,window.innerHeight-element.getBoundingClientRect().top-32),desktop:window.innerWidth>1100};setBounds(old=>old.width===next.width&&old.height===next.height&&old.desktop===next.desktop?old:next);}
+  const [bounds,setBounds]=useState({width:1200,height:600,desktop:true,measured:false});
+  function measure(){const element=grid.current;if(!element)return;const next={width:element.getBoundingClientRect().width||window.innerWidth,height:Math.max(280,window.innerHeight-element.getBoundingClientRect().top-32),desktop:window.innerWidth>1100,measured:true};setBounds(old=>old.measured&&old.width===next.width&&old.height===next.height&&old.desktop===next.desktop?old:next);}
   useLayoutEffect(measure);
   useEffect(()=>{window.addEventListener("resize",measure);const observer=new ResizeObserver(measure);if(grid.current)observer.observe(grid.current);return()=>{window.removeEventListener("resize",measure);observer.disconnect();};},[grid]);
   useEffect(()=>{try{localStorage.setItem(storageKey,JSON.stringify(geometry));}catch{/* Usable without browser storage. */}},[geometry]);
   const left=clamp(geometry.left,180,bounds.width-280-320-16),right=clamp(geometry.right,280,bounds.width-left-320-16),height=clamp(geometry.height??Math.min(720,bounds.height),280,bounds.height);
   const style={"--studio-explorer-width":`${left}px`,"--studio-inspector-width":`${right}px`,...(bounds.desktop?{height}:{} )} as CSSProperties;
   const handle=(axis:keyof Geometry)=><ResizeHandle axis={axis} value={axis==="left"?left:axis==="right"?right:height} min={axis==="left"?180:280} max={axis==="left"?Math.min(480,bounds.width-right-320-16):axis==="right"?Math.min(640,bounds.width-left-320-16):bounds.height} onChange={value=>setGeometry(old=>({...old,[axis]:value}))}/>;
-  return {style,handle,reset:()=>setGeometry({...defaults})};
+  return {style,handle,measured:bounds.measured,reset:()=>setGeometry({...defaults})};
 }

@@ -3,8 +3,9 @@
 The admin/auditor entry is `/app/admin/request-template-studio`. It opens the
 visual map workbench immediately, with **Каталог / Блоки** in the left explorer.
 The initial empty map is local and untouched; opening Studio does not create or
-save a server draft. Select an offering to open its existing map or prepare a new
-map in the same workspace. Multiple maps require an explicit choice. A fresh
+save a server draft. The canvas mounts after the workbench measures its actual
+viewport so the initial start element fits inside the available height. Select an
+offering to open its existing map or prepare a new map in the same workspace. Multiple maps require an explicit choice. A fresh
 offering-scoped catalog lookup prevents creation based on incomplete search results.
 Switching maps with unsaved edits requires explicit discard; autosave is paused
 during that confirmation and while the next offering loads. Confirmed discard

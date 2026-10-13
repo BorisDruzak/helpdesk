@@ -80,11 +80,11 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
       {geometry.handle("left")}
       <div className="studio-map-main">
       <ScenarioMapGuidance key={definition.scenario_key} definition={definition} onCheck={onCheck} onHint={hint=>{onInspect?.();if(hint.target)onExplorerTab?.(hint.target);else choose(hint.blockId??metadataNodeId);}} />
-      <ScenarioMapCanvas definition={definition} disabled={disabled} selected={edge ? "" : selected} selectedEdge={edge ? transitionId(edge.source, edge.index) : null} issueBlockId={issueBlockId} path={path} current={current} onReady={instance => { flow.current = instance; }} onSelect={choose} onEdge={(source, index) => { setEdge({ source, index }); setRemoving(false); }}
+      {geometry.measured && <ScenarioMapCanvas definition={definition} disabled={disabled} selected={edge ? "" : selected} selectedEdge={edge ? transitionId(edge.source, edge.index) : null} issueBlockId={issueBlockId} path={path} current={current} onReady={instance => { flow.current = instance; }} onSelect={choose} onEdge={(source, index) => { setEdge({ source, index }); setRemoving(false); }}
         onMove={(id, point) => perform(() => positionBlock(definition, id === metadataNodeId ? "system_start" : id, point))}
         onConnect={(source, target, handle) => perform(() => handle?.startsWith("route-") ? reconnectTransition(definition, source, Number(handle.slice(6)), target) : connectBlocks(definition, source, target))}
         onReconnect={(source, index, target) => perform(() => reconnectTransition(definition, source, index, target))}
-        onDropBlock={(value, point, edgeId) => { const kind = mapPalette.find(item => item.kind === value)?.kind; if (!kind) return; const position = flow.current?.screenToFlowPosition(point) ?? point; if (edgeId) { const [source, index] = edgeId.split(":"); setPendingInsert({ kind, source, index: Number(index), position }); } else add(kind, position); }} />
+        onDropBlock={(value, point, edgeId) => { const kind = mapPalette.find(item => item.kind === value)?.kind; if (!kind) return; const position = flow.current?.screenToFlowPosition(point) ?? point; if (edgeId) { const [source, index] = edgeId.split(":"); setPendingInsert({ kind, source, index: Number(index), position }); } else add(kind, position); }} />}
       </div>
       {geometry.handle("right")}
       <aside className="studio-map-inspector space-y-4" aria-label="Контекстный инспектор">

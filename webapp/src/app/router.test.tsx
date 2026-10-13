@@ -331,7 +331,8 @@ describe("appRoutes", () => {
         throw new Error(`Unexpected fetch: ${url}`);
       });
       const { router } = renderApp([initialPath], fetchMock as typeof fetch);
-      expect(await screen.findByRole("region", { name: "Каталог в редакторе" })).toBeInTheDocument();
+      // The lazy Studio module may transform slowly while other test workers run.
+      expect(await screen.findByRole("region", { name: "Каталог в редакторе" }, { timeout: 5000 })).toBeInTheDocument();
       expect(router.state.location.pathname).toBe("/app/admin/request-template-studio");
       expect(screen.queryByRole("button", { name: "Создать сценарий" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Создать категорию" })).not.toBeInTheDocument();

@@ -17,7 +17,15 @@ including pointer resizing, browser preference persistence, hint inspection and
 viewport containment. Screenshots at 1366/1920 inspected; scoped workspace sanity
 and diff check passed. No backend change: previous full CI evidence remains tied
 to the prior merge revision, not this refinement.
-Staging update will use the canonical scoped release process after verification.
+The canonical installer deployed 031f7e33 to isolated staging; backup/schema148,
+exact bundle identity and authenticated real browser smoke at1366/1920 passed.
+Live cold-load inspection additionally found the start node clipped after initial
+height measurement at1280/1366. A measured-before-canvas mount fix reproduces
+RED then GREEN at1280/1366/1920; focused10 units and fresh build pass. Extended
+123 browser fixtures passed; independent scoped re-review has no findings.
+Final full unit run725 passed; a cold lazy-module test timeout was diagnosed and
+its bounded wait corrected without relaxing role/read-only assertions. Build,
+workspace sanity and diff checks passed. Follow-up staging update remains next.
 
 # In progress: 2026-10-13 Guided Request Studio v3
 

@@ -1,5 +1,15 @@
 import { expect, type Page, test } from "playwright/test";
 
+for (const [width,height] of [[1280,720],[1366,768],[1920,1080]]) {
+ test(`guided cold map contains start node ${width}`,async({page})=>{
+  await page.setViewportSize({width,height});const state=await fixture(page);
+  await page.goto("/app/admin/request-template-studio");
+  const canvas=page.getByLabel("Визуальная карта сценария",{exact:true});await expect(canvas).toBeVisible();
+  await expect.poll(async()=>{const frame=(await canvas.boundingBox())!;const node=await page.locator('.react-flow__node[data-id="studio:metadata"]').boundingBox();return !!node&&node.x>=frame.x&&node.y>=frame.y&&node.x+node.width<=frame.x+frame.width&&node.y+node.height<=frame.y+frame.height;}).toBe(true);
+  expect(state.mutations).toHaveLength(0);
+ });
+}
+
 for (const width of [1366,1920]) {
  test(`guided map first screen catalog resizing and hints ${width}`, async({page},info)=>{
   const height=width===1366?768:1080;await page.setViewportSize({width,height});
