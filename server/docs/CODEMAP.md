@@ -130,7 +130,10 @@
 - Studio v3 `scenario-wizard` composes map/testing/publication/version panels.
   `scenario-map-workbench`, `scenario-map-canvas` and `scenario-map-model` own
   React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
-  and cycle guards. `scenario-entry-inspector` edits catalog entrances on blocks;
+  and cycle guards. `scenario-delete-dialog` keeps destructive draft edits and errors
+  visible; `scenario-block-routes` exposes decision/check conditions and fallback
+  routes without adding a client evaluator. Stable geometry keeps entrances
+  independent of their targets. `scenario-entry-inspector` edits catalog entrances on blocks;
   `scenario-edge-inspector` edits canonical transitions using the existing typed
   condition editor. Настройки карты is visual metadata, never a runtime node. Seven visual
   types reuse the eight existing runtime kinds. `scenario-approvals` reuses the

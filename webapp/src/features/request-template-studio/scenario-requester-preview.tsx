@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
+import { Select } from "../../components/ui/select";
 import { Button as RequesterButton } from "../requester/ui/form-controls";
 import { ScenarioStepContent, type ScenarioStepDisplay } from "../requester/scenario-step-content";
 import type { DynamicFormValues } from "../requester/dynamic-form";
@@ -27,14 +28,18 @@ export function ScenarioRequesterPreview({ definition, block }: { definition:Sce
   {block.kind==="form_page"&&block.fields.some(field=>field.visible_when||field.required_when)&&<p className="text-xs text-slate-500">Для проверки оформления показаны все вопросы. Условия видимости и обязательности проверяются сервером в «Тестировать».</p>}
  </section>;
 }
-export function ScenarioPagePreview({ definition, block, offeringTitle, onClose }: {definition:ScenarioDraftDefinition;block?:ScenarioBlock;offeringTitle:string;onClose:()=>void}) {
+export function ScenarioPagePreview({ definition, block, offeringTitle, onClose, onTest }: {definition:ScenarioDraftDefinition;block?:ScenarioBlock;offeringTitle:string;onClose:()=>void;onTest?:()=>void}) {
  const dialog=useRef<HTMLDialogElement>(null);
+ const [selected,setSelected]=useState(block?.id??"");
+ const previewBlock=definition.blocks?.find(item=>item.id===selected)??block;
  useEffect(()=>{const element=dialog.current;if(element&&!element.open)element.showModal();return()=>{if(element?.open)element.close();};},[]);
  return <dialog ref={dialog} className="studio-requester-page-preview" aria-label="Предпросмотр полной страницы" onCancel={onClose} onClose={onClose} onKeyDown={event=>event.stopPropagation()}>
   <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-white p-4"><h2 className="font-semibold">Предпросмотр страницы сотрудника</h2><Button autoFocus onClick={onClose}>Вернуться к карте</Button></div>
   <main className="mx-auto grid w-full max-w-4xl gap-5 p-4 md:p-8"><div><p className="text-sm text-slate-500">Помощь → {offeringTitle||"Услуга не выбрана"}</p><h1 className="mt-2 text-2xl font-semibold">{offeringTitle||definition.title}</h1>{definition.description&&<p className="mt-2">{definition.description}</p>}</div>
    <p className="text-sm text-slate-500">Предпросмотр черновика. Ответы не сохраняются, обращение не создаётся.</p>
-   <ScenarioRequesterPreview key={block?.id??"empty"} definition={definition} block={block}/>
+   <label>Страница для предпросмотра<Select value={previewBlock?.id??""} onChange={event=>setSelected(event.target.value)}>{definition.blocks?.map(item=><option key={item.id} value={item.id}>{item.title}{item.id===definition.entry_block_id?" · начало":""}</option>)}</Select></label>
+   <ScenarioRequesterPreview key={previewBlock?.id??"empty"} definition={definition} block={previewBlock}/>
+   {onTest && <div className="space-y-2"><p className="text-sm">Чтобы пройти маршрут с ответами и проверить условия, запустите серверную проверку черновика.</p><Button onClick={onTest}>Пройти маршрут с начала</Button></div>}
   </main>
  </dialog>;
 }

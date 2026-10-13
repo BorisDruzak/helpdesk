@@ -449,8 +449,9 @@ for (const width of [1366, 1920]) {
     await page.screenshot({ path: info.outputPath(`${width}-pointer-routes.png`) });
     await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Проверка бумаги", exact: true }).click();
     await page.getByRole("button", { name: "Удалить блок", exact: true }).click();
+    await page.getByRole("combobox", { name: "Что сделать со связями?", exact: true }).selectOption("redirect");
     await page.getByRole("combobox", { name: "Перенаправить на", exact: true }).selectOption("b");
-    await page.getByRole("combobox", { name: "Привязанные точки входа", exact: true }).selectOption("reassign");
+    await page.getByRole("combobox", { name: "Пункты каталога", exact: true }).selectOption("reassign");
     await page.getByRole("button", { name: "Подтвердить удаление блока", exact: true }).click();
     await expect(page.locator('.react-flow__node[data-id="q"]')).toHaveCount(0);
     await page.getByRole("button", { name: "Отменить изменение", exact: true }).click();

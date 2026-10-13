@@ -69,13 +69,22 @@ step, selects the new block and opens its settings. Branching and terminal
 insertion never silently discard an existing route: the editor explains the
 constraint and offers separate creation with explicit branch configuration.
 Library drag/drop, manual connections, arrow editing, undo/redo, copy/delete and
-free positioning remain available. Moving a block changes only geometry.
+free positioning remain available. Larger, labeled connection handles support manual
+connections. Decision/resolution-check inspectors show conditional branches and
+an explicit **Если ни одно условие не выполнено** selector directly on the block;
+the server still evaluates conditions. Delete opens a centered confirmation dialog
+with explicit detach/redirect and entrance remove/reassign choices. Field dependency
+errors stay visible; deleting/undoing remains one atomic draft edit. Legacy fallback
+positions are frozen before deleting a block so other blocks retain their layout.
+Moving a question no longer moves its catalog entrance. The start marker also stays
+visible when the main entrance is unset, with an explicit target hint.
 Panels can collapse or resize. Ordinary edits/autosave/initial save retain the
 viewport; **Вся карта** explicitly fits the graph again.
 
 The inspector has **Настройки / Как у сотрудника**. Preview reuses the employee
 step content and field controls for the current draft. **Предпросмотр страницы**
-(or **Открыть полную страницу**) opens the selected block in a full-page modal;
+(or **Открыть полную страницу**) opens the initial block in a full-page modal with
+a **Страница для предпросмотра** selector and **Пройти маршрут с начала** action;
 Escape and **Вернуться к карте** return to the same workbench. Preview answers
 stay local; it does not create requester sessions, tickets or diagnostic operations.
 Conditional questions are all shown for layout inspection with a disclosure;

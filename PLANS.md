@@ -2163,3 +2163,20 @@ before Guided Request Studio merges. Dedicated codex/endpoint-tools-staging-prev
 combines the installed Guided2f2a2ec with the reviewed tools candidate; unreleased148
 follows147. Preserve staging data and services for inspection. Main/production
 publication and live Agent execution remain separate acceptance steps.
+
+
+# 2026-10-13 Studio live authoring bug fixes
+
+Reproduced on installed staging in a separate browser tab without changing the
+user's map: deletion confirmation hidden below the inspector, decision rules
+only accessible via arrows, entrance following its question, and first-step
+controls obscured by expanded guidance. Added visible deletion dialog with
+explicit detach/redirect, inline decision/check branches and fallback, independent
+entrance geometry, stable legacy layout on deletion, visible unset start marker,
+start navigation, larger labeled connection handles, first-step fit and a page
+selector in preview with a link to canonical server simulation. No client evaluator.
+RED regression checks for deletion/conditions became GREEN. Focused Studio unit
+checks: 114 PASS. Browser authoring/geometry/preview/simulation-focus checks: 22 PASS
+at 1366/1920/820 and 1440 where applicable. TypeScript/Vite build, scoped workspace
+verification and diff check PASS. Live staging verification remains required
+following the reviewed staging installation; production/publication excluded.

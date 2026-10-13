@@ -8,6 +8,16 @@ const draft = (): ScenarioDraftDefinition => ({ scenario_key: "test", title: "К
     { id: "done", kind: "finish", title: "Готово" }, { id: "review", kind: "review", title: "Сводка", transitions: [{ to: "ticket" }] }, { id: "ticket", kind: "submit_ticket", title: "Обращение" },
   ] });
 describe("atomic map edits", () => {
+  it("freezes legacy default positions before deletion so other blocks do not follow", () => {
+    const next = deleteMapBlock(draft(), "done", null, undefined, "detach");
+    expect(next.blocks![0].transitions).toEqual([{ to: "review" }]);
+    expect(next.editor_layout?.positions?.review).toEqual({ x: 620, y: 0 });
+    expect(next.editor_layout?.positions?.ticket).toEqual({ x: 0, y: 200 });
+  });
+  it("removes an entrance and its main start explicitly without requiring a replacement", () => {
+    const next = deleteMapBlock(draft(), "q", null, "remove", "detach");
+    expect(next.entry_block_id).toBeNull(); expect(next.entry_points).toEqual([]);
+  });
   it("moves geometry without changing runtime graph", () => { const d = draft(); const next = positionBlock(d, "q", { x: 700, y: 200 }); expect(next.blocks).toEqual(d.blocks); expect(next.entry_points).toEqual(d.entry_points); expect(next.editor_layout?.positions?.q).toEqual({ x: 700, y: 200 }); });
   it("reconnects only the selected transition and retains its condition", () => { const d = draft(); const next = reconnectTransition(d, "q", 0, "review"); expect(next.blocks?.[0].transitions?.[0]).toEqual({ ...d.blocks![0].transitions![0], to: "review" }); expect(next.blocks?.[0].transitions?.[1]).toEqual(d.blocks![0].transitions![1]); });
   it("inserts a normal continuation and preserves the original condition", () => { const d = draft(); const next = insertOnTransition(d, "q", 0, "instruction"); const added = next.blocks!.find(b => !d.blocks!.some(old => old.id === b.id))!; expect(next.blocks![0].transitions![0]).toEqual({ ...d.blocks![0].transitions![0], to: added.id }); expect(added.transitions).toEqual([{ to: "done" }]); expect(d.blocks).toHaveLength(4); });

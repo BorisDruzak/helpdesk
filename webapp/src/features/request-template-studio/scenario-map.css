@@ -44,7 +44,7 @@
 .studio-map-canvas { position:relative; background:#f7fbf9; }
 .studio-map-settings { position:absolute; top:10px; right:10px; z-index:5; border:1px solid #dbe5df; background:white; border-radius:8px; padding:8px 12px; font-size:12px; color:#2e6249; }
 .studio-map-guidance { top:auto; bottom:12px; }
-.studio-route-label { position:absolute; pointer-events:all; display:flex; align-items:center; gap:6px; background:#fff; padding:2px 5px; border-radius:8px; font-size:11px; color:#475569; }
+.studio-route-label { position:absolute; pointer-events:all; display:flex; flex-direction:column; align-items:center; gap:3px; background:#fff; padding:2px 5px; border-radius:8px; font-size:11px; color:#475569; }
 .studio-step-plus { width:30px; height:30px; border:3px solid #fff; border-radius:50%; background:#087443; color:white; font-size:22px; line-height:20px; box-shadow:0 2px 5px #0f172a30; }
 .studio-node-add { display:block; width:100%; border-top:1px solid #e5ede9; margin-top:10px; padding-top:8px; text-align:left; color:#087443; font-size:11px; font-weight:600; }
 .studio-map-node.is-selected { border-color:#087443; }
@@ -75,3 +75,9 @@
 .studio-map-inspector h2 { font-size:18px; }
 .studio-map-inspector label { font-size:13px; }
 .studio-map-inspector details > summary { font-size:12px; }
+
+.studio-map-node .react-flow__handle { width:14px; height:14px; border:2px solid white; }
+.studio-map-node .studio-handle-new { width:18px; height:18px; background:#087443; }
+.studio-map-guidance { max-height:35%; }
+.studio-map-empty { inset:8% 8% auto; }
+.studio-delete-dialog { width:min(580px,calc(100vw - 32px)); }

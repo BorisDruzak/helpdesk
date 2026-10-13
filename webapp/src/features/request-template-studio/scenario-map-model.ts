@@ -28,7 +28,11 @@ export function reconnectStart(definition: ScenarioDraftDefinition, key: string 
 
 export function positionBlock(definition: ScenarioDraftDefinition, id: string, position: { x: number; y: number }): ScenarioDraftDefinition {
   if (![position.x, position.y].every(value => Number.isFinite(value) && Math.abs(value) <= 100000)) throw new Error("Координаты должны быть конечными числами от −100000 до 100000");
-  return { ...definition, editor_layout: { ...definition.editor_layout, positions: { ...definition.editor_layout?.positions, [id]: position } } };
+  return { ...definition, editor_layout: { ...definition.editor_layout, positions: { ...stableMapPositions(definition), [id]: position } } };
+}
+// Freeze the fallback layout before changing block order. Geometry never follows graph links.
+export function stableMapPositions(definition: ScenarioDraftDefinition): Record<string, { x: number; y: number }> {
+  return { system_start: { x: 0, y: -170 }, ...Object.fromEntries((definition.blocks ?? []).map((block, index) => [block.id, { x: (index % 3) * 310, y: Math.floor(index / 3) * 200 }])), ...definition.editor_layout?.positions };
 }
 export function requireAcyclic(definition: ScenarioDraftDefinition) {
   const blocks = new Map((definition.blocks ?? []).map(block => [block.id, block]));
@@ -92,12 +96,13 @@ export function appendMapStep(definition: ScenarioDraftDefinition, source: strin
   else if (!definition.blocks?.length) { next = connectStart(next, added.id); next = { ...next, entry_points: [{ ...next.entry_points![0], title: definition.title, category_id: definition.category_id }] }; }
   return next;
 }
-export function deleteMapBlock(definition: ScenarioDraftDefinition, id: string, replacement: string | null, entranceAction?: "remove" | "reassign") {
+export function deleteMapBlock(definition: ScenarioDraftDefinition, id: string, replacement: string | null, entranceAction?: "remove" | "reassign", referenceAction: "redirect" | "detach" = "redirect") {
   const entrances = definition.entry_points ?? [];
   if (entrances.some(entry => entry.target_block_id === id) && !entranceAction) throw new Error("Блок используется точкой входа. Выберите явное переназначение или удаление привязок из черновика.");
   if (entranceAction === "reassign" && (!replacement || replacement === id || !definition.blocks?.some(block => block.id === replacement))) throw new Error("Выберите другой начальный блок для точек входа");
   const entry_points = entranceAction === "remove" ? entrances.filter(entry => entry.target_block_id !== id) : entrances.map(entry => entry.target_block_id === id ? { ...entry, target_block_id: replacement! } : entry);
-  const next = removeBlock({ ...definition, entry_points }, id, replacement);
-  const positions = { ...next.editor_layout?.positions }; delete positions[id];
+  const prepared = referenceAction === "detach" ? { ...definition, entry_block_id: definition.entry_block_id === id ? (entranceAction === "reassign" ? replacement : null) : definition.entry_block_id, blocks: definition.blocks?.map(block => ({ ...block, transitions: block.transitions?.filter(edge => edge.to !== id) })) } : definition;
+  const next = removeBlock({ ...prepared, entry_points }, id, referenceAction === "detach" ? null : replacement);
+  const positions = stableMapPositions(definition); delete positions[id];
   return requireAcyclic({ ...next, editor_layout: { ...next.editor_layout, positions } });
 }

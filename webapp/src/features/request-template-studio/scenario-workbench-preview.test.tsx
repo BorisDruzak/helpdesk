@@ -7,9 +7,22 @@ vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitio
 const definition:ScenarioDraftDefinition={scenario_key:"s",title:"Карта",service_code:"it",offering_full_code:"it.p",process_binding:{request_template_key:"p"},entry_block_id:"q",entry_points:[{key:"named",title:"Вход",target_block_id:"q"}],blocks:[{id:"q",kind:"instruction",title:"Проверка",content:{body:"Шаг"},transitions:[]},{id:"done",kind:"finish",title:"Готово"}]};
 const catalog={services:[],offerings:[],categories:[],scenarios:[],total:0,offset:0,limit:100};
 afterEach(()=>vi.unstubAllGlobals());
+it("opens deletion in a visible dialog and keeps errors next to confirmation",()=>{
+ render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
+ fireEvent.click(screen.getByRole("button",{name:"Удалить блок"}));
+ expect(screen.getByRole("dialog",{name:"Удалить блок «Проверка»?"})).toBeVisible();
+ expect(screen.getByLabelText("Что сделать со связями?")).toBeVisible();
+});
+it("edits decision conditions directly in the selected block",()=>{
+ const d:ScenarioDraftDefinition={...definition,entry_block_id:"branch",blocks:[{id:"q",kind:"form_page",title:"Вопрос",fields:[{key:"vpn",type:"checkbox",label:"Нужен VPN?"}],transitions:[{to:"branch"}]},{id:"branch",kind:"decision",title:"Маршрут",transitions:[{to:"done",when:{op:"eq",source:"answer",field:"vpn",value:true}}]},definition.blocks![1]]};
+ render(<MemoryRouter><ScenarioMapWorkbench definition={{...d,blocks:[d.blocks![1],d.blocks![0],d.blocks![2]]}} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
+ expect(screen.getByLabelText("Значение условия")).toBeVisible();
+ expect(screen.getByLabelText("Если ни одно условие не выполнено")).toBeVisible();
+});
 it("an unbound empty-map hint reveals and focuses its canonical type picker",()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
  render(<MemoryRouter><ScenarioMapWorkbench definition={{...definition,offering_full_code:"",blocks:[],entry_block_id:null,entry_points:[]}} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
+ fireEvent.click(screen.getByRole("button",{name:/^Выберите тип обращения/}));
  fireEvent.click(screen.getByRole("button",{name:/Исправить: Выберите тип обращения/}));
  expect(screen.getByLabelText("Тип обращения")).toBeVisible();expect(screen.getByLabelText("Тип обращения")).toHaveFocus();
 });

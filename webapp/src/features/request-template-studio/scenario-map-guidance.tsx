@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 import { scenarioMapHints, type MapHint } from "./scenario-map-hints";
 export function ScenarioMapGuidance({ definition, onHint, onCheck }: { definition: ScenarioDraftDefinition; onHint: (hint: MapHint) => void; onCheck?: () => void }) {
-  const [open, setOpen] = useState(!definition.blocks?.length);
+  const [open, setOpen] = useState(false);
   const hints = scenarioMapHints(definition);
   return <section className="studio-map-guidance" aria-label="Подсказки по карте">
     <button type="button" className="w-full p-3 text-left text-xs font-semibold" aria-expanded={open} onClick={() => setOpen(!open)}>{hints.find(hint => hint.level === "required")?.text ?? "Маршрут настроен · проверить перед публикацией"} {open ? "▴" : "▾"}</button>

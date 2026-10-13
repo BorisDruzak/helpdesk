@@ -24,8 +24,8 @@ export function useWorkbenchGeometry(grid: RefObject<HTMLDivElement | null>) {
   useLayoutEffect(measure);
   useEffect(()=>{window.addEventListener("resize",measure);const observer=new ResizeObserver(measure);if(grid.current)observer.observe(grid.current);return()=>{window.removeEventListener("resize",measure);observer.disconnect();};},[grid]);
   useEffect(()=>{try{localStorage.setItem(storageKey,JSON.stringify(geometry));}catch{/* Usable without browser storage. */}},[geometry]);
-  const left=clamp(geometry.left,180,bounds.width-280-320-16),right=clamp(geometry.right,280,bounds.width-left-320-16),height=clamp(geometry.height??Math.min(720,bounds.height),280,bounds.height);
+  const left=clamp(geometry.left,180,bounds.width-280-480-16),right=clamp(geometry.right,280,bounds.width-left-480-16),height=clamp(geometry.height??Math.min(720,bounds.height),280,bounds.height);
   const style={"--studio-explorer-width":`${left}px`,"--studio-inspector-width":`${right}px`,...(bounds.desktop?{height}:{} )} as CSSProperties;
-  const handle=(axis:keyof Geometry)=><ResizeHandle axis={axis} value={axis==="left"?left:axis==="right"?right:height} min={axis==="left"?180:280} max={axis==="left"?Math.min(480,bounds.width-right-320-16):axis==="right"?Math.min(640,bounds.width-left-320-16):bounds.height} onChange={value=>setGeometry(old=>({...old,[axis]:value}))}/>;
+  const handle=(axis:keyof Geometry)=><ResizeHandle axis={axis} value={axis==="left"?left:axis==="right"?right:height} min={axis==="left"?180:280} max={axis==="left"?Math.min(480,bounds.width-right-480-16):axis==="right"?Math.min(640,bounds.width-left-480-16):bounds.height} onChange={value=>setGeometry(old=>({...old,[axis]:value}))}/>;
   return {style,handle,measured:bounds.measured,reset:()=>setGeometry({...defaults})};
 }
