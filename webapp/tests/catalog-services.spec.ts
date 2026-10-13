@@ -86,3 +86,14 @@ test("ordinary forms have no map button and expose the existing template creatio
  await expect(page.getByRole("link",{name:"Создать шаблон",exact:true})).toHaveAttribute("href","/app/admin/forms/new");
  expect(state.writes).toHaveLength(0);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
 });
+
+test("auditor can open an archived map from service help without edit controls",async({page})=>{
+ const state=await fixture(page);
+ await page.route("**/api/web/session/me",route=>route.fulfill({json:{status:"success",data:{user_login:"audit@example.test",actor_role:"auditor",auth_type:"web_session",default_workspace:"admin",available_workspaces:["admin"],permissions:["workspace.admin.view"]}}}));
+ const offering={full_code:"work.print",code:"print",service_code:"work",public_title:"Печать",request_template_key:"printer"},map={id:"s1",title:"Архив печати",offering_full_code:"work.print",archived:true,status:"archived"};
+ await page.route("**/api/web/admin/request-studio/catalog?**",route=>route.fulfill({json:{status:"success",data:{services:[{code:"work",public_title:"Рабочее место"}],categories:[],offerings:[offering],entries:[{offering,scenarios:[map],active_mode:"form",category_ids:[]}],scenarios:[map],total:1,offset:0,limit:100}}}));
+ await page.goto("/app/admin/request-template-studio");await page.getByRole("button",{name:"Настроить услугу Печать",exact:true}).click();
+ await expect(page.getByLabel("Название услуги",{exact:true})).toBeDisabled();await page.getByRole("tab",{name:"Помощь сотруднику",exact:true}).click();await page.getByText("Архив карт услуги",{exact:true}).click();await page.getByRole("button",{name:"Открыть архивную карту",exact:true}).click();
+ await expect(page.getByRole("heading",{name:"Библиотека блоков",exact:true})).toBeVisible();await expect(page.getByRole("button",{name:"Сохранить черновик",exact:true})).toHaveCount(0);
+ expect(state.writes).toHaveLength(0);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
+});

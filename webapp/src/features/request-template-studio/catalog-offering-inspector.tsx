@@ -65,7 +65,6 @@ export function CatalogOfferingInspector({row,data,canEdit,onOpen,onCreate,onClo
           {maps.map(map=><div className="catalog-binding" key={map.id}><strong>{map.title}</strong><p>{map.published_version?`Опубликованная версия ${map.published_version}`:"Черновик · ещё не опубликован"}{map.issues?.length?" · есть ошибки черновика":""}</p><Button variant="outline" onClick={()=>guarded(()=>onOpen(map,entry?.target_block_id))}>Открыть карту</Button></div>)}
           {canEdit&&!maps.length&&offering.request_template_key&&<Button variant="outline" onClick={()=>guarded(()=>onCreate(offering))}>Создать карту</Button>}
           {!!maps.length&&<p className="catalog-field-help">Связь с общей картой сохраняется. Новые пункты можно добавить в эту же карту.</p>}
-          {row.card.scenarios.some(map=>map.archived||map.status==="archived")&&<details><summary>Архив карт услуги</summary>{row.card.scenarios.filter(map=>map.archived||map.status==="archived").map(map=><div className="catalog-binding" key={map.id}><strong>{map.title}</strong><Button variant="outline" onClick={()=>guarded(()=>onOpen(map))}>Открыть архивную карту</Button></div>)}</details>}
         </>}
         {tab==="processing"&&<>
           <h3 className="font-semibold">Каноническая обработка Helpdesk</h3><p className="catalog-field-help">Общий тип обращения может обслуживать несколько услуг и входов сценария.</p>
@@ -88,6 +87,7 @@ export function CatalogOfferingInspector({row,data,canEdit,onOpen,onCreate,onClo
           {!!row.scenario?.issues?.length&&<details><summary>Ошибки черновика · {row.scenario.issues.length}</summary><ul className="mt-2 space-y-2">{row.scenario.issues.map((issue,index)=><li key={index}>{issue.message}</li>)}</ul></details>}
         </>}
       </fieldset>
+      {tab==="help"&&row.card.scenarios.some(map=>map.archived||map.status==="archived")&&<details><summary>Архив карт услуги</summary>{row.card.scenarios.filter(map=>map.archived||map.status==="archived").map(map=><div className="catalog-binding" key={map.id}><strong>{map.title}</strong><Button variant="outline" disabled={mutation.isPending} onClick={()=>guarded(()=>onOpen(map))}>Открыть архивную карту</Button></div>)}</details>}
       {!phrasesValid&&<p role="alert">Допускается до 20 поисковых фраз, каждая — до 100 символов.</p>}
       {notice&&<p role="status">{notice}</p>}
       {mutation.isError&&<p role="alert">Настройки не сохранены. Обновите серверную версию и повторите. Изменения остаются в полях.</p>}

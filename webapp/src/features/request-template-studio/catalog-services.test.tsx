@@ -6,6 +6,18 @@ import { ScenarioCatalogExplorer } from "./scenario-catalog";
 import type { ScenarioCatalog } from "./scenario-api";
 afterEach(()=>vi.unstubAllGlobals());
 
+it("lets a read-only user open an archived map without edit permission",()=>{
+ const offering={full_code:"it.a",service_code:"it",public_title:"Печать"},map={id:"s",title:"Архив печати",offering_full_code:"it.a",archived:true};
+ const data={services:[{code:"it",public_title:"ИТ"}],categories:[],offerings:[offering],scenarios:[map],entries:[{offering,scenarios:[map],active_mode:"form",category_ids:[]}],total:1,offset:0,limit:100} as unknown as ScenarioCatalog;
+ const onOpen=vi.fn();
+ render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ScenarioCatalogExplorer data={data} query="" status="all" category={null} canEdit={false} onCategory={vi.fn()} onQuery={vi.fn()} onStatus={vi.fn()} onOpen={onOpen} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()}/></MemoryRouter></QueryClientProvider>);
+ fireEvent.click(screen.getByRole("button",{name:"Настроить услугу Печать"}));
+ expect(screen.getByLabelText("Название услуги")).toBeDisabled();
+ expect(screen.queryByRole("button",{name:"Открыть карту сценария"})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole("tab",{name:"Помощь сотруднику"}));fireEvent.click(screen.getByText("Архив карт услуги"));
+ expect(screen.getByRole("button",{name:"Открыть архивную карту"})).toBeEnabled();fireEvent.click(screen.getByRole("button",{name:"Открыть архивную карту"}));expect(onOpen).toHaveBeenCalledWith(map);
+});
+
 it("keeps services together and opens settings in place, map action directly in the inspector", () => {
   const offering = { code: "vpn", full_code: "network.vpn", service_code: "network", public_title: "VPN не подключается", lifecycle_status: "published", visibility: "public", request_template_key: "network" };
   const map = { id: "s", title: "Диагностика VPN", offering_full_code: offering.full_code, status: "draft", archived: false, issues: [] };

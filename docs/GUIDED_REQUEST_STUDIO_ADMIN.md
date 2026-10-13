@@ -50,7 +50,8 @@ Offering, RequestTemplate and map. **Создать услугу → Вход в
 revision. The map picker has search and pagination. **Открыть карту сценария**
 is directly below the inspector heading only when a map is linked; multiple maps
 have separate named buttons. Archived maps remain under **Помощь сотруднику →
-Архив карт услуги**. The map action selects
+Архив карт услуги**. Archive navigation stays enabled for read-only auditors;
+service edits and publication remain disabled. The map action selects
 the corresponding first step. Map-toolbar **Каталог** returns to the general
 catalog through the unsaved-change guard. There is no duplicate Catalog tab in
 the block library.
