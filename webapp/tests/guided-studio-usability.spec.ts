@@ -14,6 +14,7 @@ async function setup(page: Page) {
     let data: any = {};
     if (path.endsWith("/session/me")) data = { user_login: "studio-fixture@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view"] };
     else if (path.endsWith("/request-studio/catalog")) data = { categories: [{ id: "10000000-0000-0000-0000-000000000001", service_code: "access", title: "Запросы доступа", lifecycle_status: "published", parent_id: null }], services: [{ code: "access", public_title: "Доступы", lifecycle_status: "published", visibility: "public" }], offerings: [offering], scenarios: [], entries: [{ offering, scenarios: [], active_mode: "form", category_ids: [] }], total: 1, offset: 0, limit: 100 };
+    else if (path.endsWith("/forms/current")) data={forms:[{key:"access",fields:[{key:"impact_scope",label:"Кого затронула проблема?",type:"select",required:true,options:[{value:"one_person",label:"Только меня"}],process_mapping:{roles:["priority_impact"]}},{key:"work_continuity",label:"Можно продолжать работу?",type:"select",required:true,options:[{value:"work_continues",label:"Да"}],process_mapping:{roles:["priority_urgency"]}}]}]};
     else if (path.endsWith("/helpdesk-model/policies")) data = { policies: {}, request_templates: [{ template_code: "access", public_title: "Заявка на доступ", is_active: true, published_at: "2026-10-13T00:00:00Z" }] };
     else if (path.endsWith("/simulate")) {
       const body = route.request().postDataJSON(); writes.push({ path, body });
@@ -179,4 +180,17 @@ test("manual route authoring isolates geometry, edits conditions and deletes con
   await expect(page.locator(`.react-flow__node[data-id="${ticket}"]`)).toHaveCount(1);
   await writeFile(info.outputPath('manual-draft.json'),JSON.stringify(draft));
   expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
+});
+
+
+test("canonical mandatory questions are inserted before the selected result",async({page})=>{
+ await page.setViewportSize({width:1366,height:900});const state=await setup(page);await page.goto("/app/admin/request-template-studio");
+ await page.getByRole("button",{name:"Новая карта",exact:true}).click();await page.getByLabel("Название карты").fill("Проверка обязательных данных");await page.getByLabel("Раздел каталога").selectOption("service:access");await page.getByRole("button",{name:"Создать карту →"}).click();
+ await page.getByRole("list",{name:"Блоки сценария"}).getByRole("button",{name:"Создать обращение",exact:true}).click();await page.getByLabel("Тип создаваемого обращения").selectOption("access.grant");
+ await page.getByRole("button",{name:"Добавить обязательные вопросы типа обращения",exact:true}).click();
+ await expect(page.getByRole("heading",{name:"Данные для обращения",exact:true})).toBeVisible();
+ await page.getByRole("button",{name:"Сохранить черновик",exact:true}).click();await expect(page.getByText("Черновик сохранён. Ревизия 1.")).toBeVisible();
+ const draft=state.draft(),added=draft.blocks.at(-1),ticket=draft.blocks.find((b:any)=>b.kind==="submit_ticket"),review=draft.blocks.find((b:any)=>b.kind==="review");
+ expect(added.fields.map((f:any)=>f.process_mapping.fact_key)).toEqual(["impact_scope","work_continuity"]);expect(added.fields.every((f:any)=>f.required)).toBe(true);expect(review.transitions).toEqual([{to:added.id}]);expect(added.transitions).toEqual([{to:ticket.id}]);
+ expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
 });

@@ -2180,3 +2180,11 @@ checks: 114 PASS. Browser authoring/geometry/preview/simulation-focus checks: 22
 at 1366/1920/820 and 1440 where applicable. TypeScript/Vite build, scoped workspace
 verification and diff check PASS. Live staging verification remains required
 following the reviewed staging installation; production/publication excluded.
+
+
+Live server follow-up: a true decision branch reached a ticket result but the
+canonical template required impact_scope/work_continuity. The old handler hid
+this behind generic VALIDATION_ERROR. Simulation now separates reached route
+from blocked processing; explicit canonical required-question import preserves
+conditions and still requires the existing server form/policy checks. No
+requester/publication guard changes, catalog writes or real ticket creation.

@@ -102,6 +102,7 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       {["form_page", "instruction", "review"].includes(block.kind) && <Button disabled={block.acknowledgment_required && !acknowledged} onClick={() => answer(block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить проверку</Button>}
       {block.kind === "finish" && <p role="status">{block.message || "Решено без обращения"}</p>}
       {result?.processing && <ScenarioProcessingResult result={result} definition={definition} />}
+      {result?.processing_error && <div role="alert" className="space-y-2 rounded border border-amber-300 p-3"><p>Маршрут дошёл до создания обращения, но действующий шаблон или политики обработки требуют дополнительных данных. Проверьте обязательные вопросы типа обращения и настройки обработки.</p>{onIssue&&<Button variant="outline" onClick={()=>onIssue({step:1,label:block.title,blockId:block.id})}>Настроить данные обращения</Button>}</div>}
       {!!Object.keys(result?.state.results || {}).length && <p>Результаты инструкций и проверок сохранены только в этой симуляции.</p>}
       {!!steps.length && <Button variant="outline" onClick={() => void run(steps.slice(0, -1))}>Назад в проверке</Button>}
     </fieldset>}

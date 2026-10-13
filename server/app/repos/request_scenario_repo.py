@@ -257,15 +257,21 @@ class RequestScenarioRepo:
         from tickets.request_scenario_session import project_step
         projected = engine.preview_answers(state, payload.preview) if payload.preview else state
         processing = None
+        processing_error = None
         if engine.blocks[state.current_block_id].kind == "submit_ticket":
             from tickets.request_scenario_submission import build_scenario_submission
-            from tickets.service_catalog_preview import simulate_service_catalog_processing
+            from tickets.service_catalog_preview import ServiceCatalogPreviewError, simulate_service_catalog_processing
             data, snapshot = build_scenario_submission(engine.definition, state, session_id="simulation", version_id="draft")
-            _, processing = await simulate_service_catalog_processing(self.session, data, scenario_snapshot=snapshot,
-                **({"allow_draft_offering": True} if draft.definition.get("publish_offering") is True else {}))
+            try:
+                _, processing = await simulate_service_catalog_processing(self.session, data, scenario_snapshot=snapshot,
+                    **({"allow_draft_offering": True} if draft.definition.get("publish_offering") is True else {}))
+            except ServiceCatalogPreviewError:
+                # The graph reached its result. Canonical form/policy validation is
+                # still blocked; disclose it separately without echoing raw inputs.
+                processing_error = {"code": "PROCESSING_INPUT_INVALID"}
         return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"),
                 "current_step": project_step(engine.definition, projected)["block"], "processing": processing, "revision": draft.revision,
-                "simulation_scope": scope}
+                "simulation_scope": scope, "processing_error": processing_error}
 
     async def catalog_view(self, *, query="", status="all", offset=0, limit=100, category_id=None, service_code=None, offering_code=None):
         categories = await self.categories()

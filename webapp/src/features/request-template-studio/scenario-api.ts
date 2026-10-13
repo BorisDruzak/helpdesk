@@ -30,6 +30,7 @@ export type OfferingCard = { offering: AdminServiceCatalogOffering; scenarios: S
   active_mode: "form" | "scenario"; requester_available?: boolean; active_scenario_id?: string | null; category_ids: string[] };
 export type SimulationState = { current_block_id: string; revision: number; state: string; answers: Record<string, unknown>; history: string[]; results: Record<string, unknown> };
 export type ScenarioSimulation = { revision: number; current_block: ScenarioBlock; state: SimulationState;
+  processing_error?: { code: "PROCESSING_INPUT_INVALID" } | null;
   simulation_scope?: { limited_scope: boolean; excluded_block_ids: string[]; issues: { code: string; path: string; message: string }[] };
   current_step?: { id: string; kind: string; title: string; fields?: (RequestFormField & { value?: unknown; allow_unknown?: boolean; group?: string | null; group_title?: string | null })[]; layout?: "single" | "group" | "section";
     has_dynamic_fields?: boolean; content?: { body: string }; acknowledgment_required?: boolean; can_request_ticket?: boolean; message?: string;

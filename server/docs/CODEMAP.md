@@ -132,7 +132,11 @@
   React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
   and cycle guards. `scenario-delete-dialog` keeps destructive draft edits and errors
   visible; `scenario-block-routes` exposes decision/check conditions and fallback
-  routes without adding a client evaluator. Stable geometry keeps entrances
+  routes without adding a client evaluator. `scenario-template-questions` imports
+  mandatory canonical form answers before a selected ticket result. Admin
+  `RequestScenarioRepo.simulate` retains the reached route on form/policy preview
+  failure, returning optional `processing_error` and null `processing`; this never
+  changes requester creation or publication guards. Stable geometry keeps entrances
   independent of their targets. `scenario-entry-inspector` edits catalog entrances on blocks;
   `scenario-edge-inspector` edits canonical transitions using the existing typed
   condition editor. Настройки карты is visual metadata, never a runtime node. Seven visual

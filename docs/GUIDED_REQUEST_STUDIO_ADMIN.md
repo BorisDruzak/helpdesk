@@ -394,3 +394,15 @@ produce a literal group marker, while decisions require exact authenticated acto
 identity and do not expand group membership. Existing configurations are preserved.
 Explicit approvers are selected by human names from active support/admin accounts
 in the existing Registry; requester-supplied IDs do not define managerial authority.
+
+
+When the route reaches a ticket result but canonical form/policy preview is
+blocked, simulation retains the reached step and exposes `processing_error`
+(`PROCESSING_INPUT_INVALID`) separately from `processing`. It never certifies
+processing or creates a ticket. **Настроить данные обращения** opens the result.
+**Добавить обязательные вопросы типа обращения** reads the existing forms/model
+registry and inserts a page before that result, preserving incoming conditions,
+priorities and other geometry. Required fields retain canonical fact keys and
+roles; unsupported special/conditional fields require explicit form editing.
+Import is explicit, undoable and subject to normal CAS save and server validation.
+Requester submission and publication validation remain unchanged.
