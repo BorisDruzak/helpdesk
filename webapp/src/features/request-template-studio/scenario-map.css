@@ -1,4 +1,11 @@
-.studio-map-workbench { display:grid; grid-template-columns:180px minmax(0,1fr) 340px; min-width:0; gap:12px; height: min(720px, calc(100vh - 430px)); min-height:280px; }
+.studio-map-workbench { display:grid; grid-template-columns:var(--studio-explorer-width,240px) 8px minmax(0,1fr) 8px var(--studio-inspector-width,360px); min-width:0; gap:0; height: min(720px, calc(100vh - 430px)); min-height:280px; }
+.studio-map-main { position:relative; min-width:0; min-height:0; }
+.studio-map-guidance { position:absolute; top:10px; left:10px; z-index:5; max-width:min(290px,calc(100% - 20px)); max-height:50%; overflow:auto; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 3px 10px #0f172a08; }
+.studio-map-resizer { cursor:col-resize; touch-action:none; position:relative; border-radius:4px; min-width:8px; outline-offset:1px; }
+.studio-map-resizer::after { content:""; position:absolute; left:3px; top:15%; bottom:15%; width:2px; background:#cbd5e1; border-radius:2px; }
+.studio-map-resizer:hover,.studio-map-resizer:focus-visible { background:#dbeafe; }
+.studio-map-resizer.is-height { cursor:row-resize; height:12px; margin-top:4px; }
+.studio-map-resizer.is-height::after { height:2px; width:80px; left:calc(50% - 40px); top:5px; bottom:auto; }
 .studio-map-explorer,.studio-map-inspector { min-width:0; overflow:auto; border:1px solid #e2e8f0; border-radius:16px; background:white; padding:14px; }
 .studio-map-canvas { min-width:0; height:100%; min-height:280px; border:1px solid #e2e8f0; border-radius:16px; background:#f8fafc; overflow:hidden; }
 .studio-map-node { width:230px; min-height:90px; padding:16px 18px; border:1px solid #cbd5e1; border-radius:14px; background:white; box-shadow:0 4px 12px #0f172a08; color:#0f172a; }
@@ -14,6 +21,5 @@
 .studio-map-inspector input,.studio-map-inspector select,.studio-map-inspector textarea { max-width:100%; min-width:0; }
 .studio-map-inspector .md\:grid-cols-2,.studio-map-inspector .lg\:grid-cols-2 { grid-template-columns:minmax(0,1fr); }
 .studio-map-panel { min-width:0; border:1px solid #e2e8f0; border-radius:16px; padding:20px; background:white; }
-@media (min-width:1700px) { .studio-map-workbench { grid-template-columns:200px minmax(0,1fr) 390px; } }
-@media (max-width:1100px) { .studio-map-workbench { grid-template-columns:150px minmax(0,1fr); height:auto; } .studio-map-inspector { grid-column:1/-1; max-height:540px; } }
+@media (max-width:1100px) { .studio-map-workbench { grid-template-columns:180px minmax(0,1fr); height:auto; gap:8px; } .studio-map-main { min-height:380px; } .studio-map-inspector { grid-column:1/-1; max-height:540px; } .studio-map-resizer { display:none; } }
 @media (max-width:650px) { .studio-map-workbench { grid-template-columns:minmax(0,1fr); } .studio-map-explorer { max-height:240px; } }

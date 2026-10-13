@@ -29,8 +29,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("link", { name: "Принтер", exact: true }).click();
-    await page.getByRole("button", { name: "Не печатает", exact: true }).click();
+    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Карта сценария", exact: true }).click();
     await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Проверка принтера", exact: true }).click();
     await expect(page.getByText("Согласие хранится как настройка. В симуляции реального разрешения нет.", { exact: true })).toBeVisible();

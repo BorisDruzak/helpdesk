@@ -4,10 +4,12 @@ import { RequestStudioApiError } from "./api";
 import { archiveScenario, createScenario, fetchScenarioDetail, saveScenario, type ScenarioDetail } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
-export function useScenarioEditor(autosaveEnabled = false) {
+function blankScenario(): ScenarioDraftDefinition { return { schema_version: 1, scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: "Новый сценарий", description: "", service_code: "", offering_full_code: "", category_id: null, entry_block_id: null, blocks: [], process_binding: { request_template_key: "" } }; }
+export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
   const cache = useQueryClient();
   const [detail, setDetail] = useState<ScenarioDetail | null>(null);
-  const [definition, setDefinition] = useState<ScenarioDraftDefinition | null>(null);
+  const [definition, setDefinition] = useState<ScenarioDraftDefinition | null>(() => mapFirst ? blankScenario() : null);
+  const pristine = useRef<ScenarioDraftDefinition | null>(definition);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
@@ -17,7 +19,7 @@ export function useScenarioEditor(autosaveEnabled = false) {
   const latestDefinition = useRef(definition);
   latestDefinition.current = definition;
   const [loadId, setLoadId] = useState<string | null>(null);
-  const dirty = !!definition && (!detail || JSON.stringify(definition) !== JSON.stringify(detail.draft.definition));
+  const dirty = !!definition && (detail ? JSON.stringify(definition) !== JSON.stringify(detail.draft.definition) : !mapFirst || JSON.stringify(definition) !== JSON.stringify(pristine.current));
   function accept(value: ScenarioDetail) { setDetail(value); setDefinition(value.draft.definition); setConflict(false); setError(""); cache.setQueryData(["scenario-detail", value.scenario.id], value); }
   const save = useMutation({ mutationFn: async () => {
     if (!definition) throw new Error("Нет черновика");
@@ -56,11 +58,11 @@ export function useScenarioEditor(autosaveEnabled = false) {
   function create(copy?: ScenarioDraftDefinition, asCopy = true) {
     requestSequence.current += 1; setLoadId(null); setLoading(false);
     setDetail(null); setMessage(""); setError(""); setConflict(false);
-    setDefinition(copy ? { ...structuredClone(copy), scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: asCopy ? `${copy.title} — копия` : copy.title } : {
-      schema_version: 1, scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: "Новый сценарий", description: "", service_code: "", offering_full_code: "", category_id: null, entry_block_id: null, blocks: [], process_binding: { request_template_key: "" },
-    });
+    const next = copy ? { ...structuredClone(copy), scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: asCopy ? `${copy.title} — копия` : copy.title } : blankScenario();
+    pristine.current = copy ? null : next;
+    setDefinition(next);
   }
-  function close() { requestSequence.current += 1; setLoadId(null); setLoading(false); setDefinition(null); setDetail(null); setError(""); setMessage(""); setConflict(false); }
+  function close() { if (mapFirst) { create(); return; } requestSequence.current += 1; setLoadId(null); setLoading(false); setDefinition(null); setDetail(null); setError(""); setMessage(""); setConflict(false); }
   function change(value: ScenarioDraftDefinition) { setDefinition(value); setMessage(""); }
   return { definition, detail, dirty, message, error, conflict, loading, loadId, save, archive, open, create, close, change, accept, busy: loading || save.isPending || archive.isPending };
 }

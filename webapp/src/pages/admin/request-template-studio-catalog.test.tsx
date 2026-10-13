@@ -21,25 +21,28 @@ function mockFetch() {
 }
 afterEach(() => { vi.unstubAllGlobals(); role = "admin"; });
 describe("Guided Studio catalog", () => {
-  it("opens catalog first with search, categories and primary create", async () => {
+  it("opens the map first with a catalog explorer and primary create", async () => {
     mockFetch(); mount();
     expect(await screen.findByRole("button", { name: "Создать сценарий" })).toBeVisible();
-    expect(await screen.findByRole("link", { name: "Принтер" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Принтер" })).toBeVisible();
     expect(screen.getByLabelText("Поиск услуг")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Оборудование" })).toBeVisible();
+    expect(screen.getByLabelText("Раздел и категория")).toBeVisible();
+    expect(screen.getByLabelText("Визуальная карта сценария")).toBeVisible();
     expect(screen.queryByText("Экспертный")).not.toBeInTheDocument();
   });
   it("opens one wizard step and saves with the server revision", async () => {
-    const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("link", { name: "Принтер" })); fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
+    const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
+    await waitFor(() => expect(screen.getByLabelText("Название сценария")).toHaveValue("Не печатает"));
     fireEvent.change(await screen.findByLabelText("Название сценария"), { target: { value: "Проверка принтера" } });
-    expect(screen.queryByText("Блоки сценария")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Визуальная карта сценария")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     expect(await screen.findByText("Черновик сохранён. Ревизия 4.")).toBeVisible();
     const saved = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
     expect(JSON.parse(String(saved?.[1]?.body))).toMatchObject({ revision: 3, definition: { title: "Проверка принтера" } });
   });
   it("keeps local edits on conflict until explicit reload", async () => {
-    const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("link", { name: "Принтер" })); fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
+    const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
+    await waitFor(() => expect(screen.getByLabelText("Название сценария")).toHaveValue("Не печатает"));
     fireEvent.change(await screen.findByLabelText("Название сценария"), { target: { value: "Локальная правка" } });
     fetcher.mockImplementation(async (_, init) => init?.method === "PUT" ? response(null, 409) : response(detail));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
@@ -50,9 +53,8 @@ describe("Guided Studio catalog", () => {
   });
   it("auditor can inspect but cannot mutate", async () => {
     role = "auditor"; mockFetch(); mount();
-    expect(await screen.findByRole("link", { name: "Принтер" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Принтер" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Создать сценарий" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: "Принтер" }));
     fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
     expect(await screen.findByLabelText("Название сценария")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Сохранить черновик" })).not.toBeInTheDocument();

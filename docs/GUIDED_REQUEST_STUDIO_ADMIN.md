@@ -1,7 +1,15 @@
 # Guided Request Studio administration
 
 The admin/auditor entry is `/app/admin/request-template-studio`. It opens the
-catalog by default. An auditor without an admin/support workspace opens Studio
+visual map workbench immediately, with **Каталог / Блоки** in the left explorer.
+The initial empty map is local and untouched; opening Studio does not create or
+save a server draft. Select an offering to open its existing map or prepare a new
+map in the same workspace. Multiple maps require an explicit choice. A fresh
+offering-scoped catalog lookup prevents creation based on incomplete search results.
+Switching maps with unsaved edits requires explicit discard; autosave is paused
+during that confirmation and while the next offering loads. Confirmed discard
+clears the old local draft before loading, including the multiple-map chooser.
+An auditor without an admin/support workspace opens Studio
 directly; other workspace routes still require their own grants. Auditor testing
 uses pure server simulation while editing and publication stay disabled.
 Search and status filters run on the server. Searching for a request
@@ -9,8 +17,9 @@ type by its machine code or Russian name also finds scenarios and form-only
 offerings; software installation is searchable through its saved Studio profile.
 Selecting a category includes all its descendants before pagination. The catalog shows
 the full human category path, description, active published version number and
-last scenario/draft modification time. Individual category branches can be
-collapsed with keyboard-accessible buttons independently of service branches.
+last scenario/draft modification time. The compact explorer has a section/category
+picker; server category filtering still includes descendants. Offering lookup
+context is separate from visible filtered/paginated catalog entries.
 The catalog has one card per offering, including offerings with only a canonical
 form. Requester mode (**Для сотрудника: обычная форма** or **Для сотрудника:
 пошаговый сценарий**) is separate from draft validation/publication status.
@@ -34,13 +43,32 @@ one catalog entry. Settings guard unsaved changes on navigation/unload; mutation
 requests disable editing until their response updates the saved baseline. Existing
 plain-form consumers keep their canonical forms.
 
-**Создать карту сценария** opens the map workbench. The primary sections are
+**Новая карта** prepares another local map. The primary sections are
 **Каталог**, **Карта сценария** and **Согласования**. Testing, publication and
 version history open in the contextual inspector from header actions; the map
 remains visible. The single system **Начало** holds title, description, category,
 Service/Offering/RequestTemplate binding and inherited policies. It is metadata,
 not a runtime step. Existing bindings cannot be replaced on a saved scenario.
 Inline category creation preserves unsaved map values.
+
+Drag the boundaries beside the explorer/inspector to change their widths and the
+bottom boundary to change editor height. Focused separators also support arrow
+keys, Home and End. Sizes are bounded to keep the canvas usable and stored as
+browser preferences; they do not modify scenario geometry, draft revision or
+published versions. **Сбросить размеры панелей** restores defaults. Tablet/mobile
+layouts stack the inspector and do not expose desktop resize handles.
+
+**Что ещё настроить** lists actionable authoring hints for service/start/result,
+unfinished routes and disconnected steps. A hint selects its block or the needed
+explorer tab and closes testing/publication panels so the relevant inspector is
+visible. These hints do not certify publication readiness; **Проверить готовность**
+opens the canonical full publication check. Legacy single entrances remain valid.
+
+**Конструктор форм** and **Проверка политик** are temporarily hidden from sidebar
+and domain navigation. Their permission-checked routes remain available for
+ordinary forms/template creation and expert policy diagnostics. Existing offering
+settings remain reachable through secondary **Настройки услуги** links in the
+catalog explorer, with the normal unsaved-navigation guard.
 
 **Создать услугу** opens `/app/admin/request-template-studio/services/new`, an
 independent creation page. Choose a published/public section and an active,
@@ -78,8 +106,9 @@ approvals, notifications or Endpoint operations.
 Saving creates or updates a disabled draft and displays its server revision.
 A conflict preserves local edits. **Загрузить серверную версию** explicitly
 replaces them. Unsaved scenario/category changes are protected on router
-navigation and browser unload. Return-to-catalog and category cancellation also
-require an explicit discard decision. Copy/archive require a saved, unchanged
+navigation and browser unload. Opening the embedded catalog retains the current
+map; replacing it requires an explicit discard decision. Category cancellation
+retains its existing discard guard. Copy/archive require a saved, unchanged
 draft; archive has a separate confirmation.
 
 **Создать категорию** edits title, service and parent. Each category has its own

@@ -49,6 +49,7 @@ export type AppDomainId =
   | "system";
 
 export type AppNavItem = {
+  hidden?: boolean;
   activePatterns?: string[];
   description: string;
   domainId: AppDomainId;
@@ -348,6 +349,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Конструктор форм",
+    hidden: true,
     description: "Экспертный раздел",
     icon: Workflow,
     section: "admin",
@@ -359,6 +361,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Проверка политик",
+    hidden: true,
     description: "Экспертная диагностика",
     icon: ClipboardCheck,
     section: "admin",
@@ -546,6 +549,7 @@ export function getVisibleNavigationItems(
     appNavigation.filter(
       (item) =>
         item.workspace === workspace &&
+        !item.hidden &&
         canShowItem(item, permissions) &&
         (includeWorkspaceHome || !item.isWorkspaceHome),
     ),
@@ -574,7 +578,7 @@ export function getActiveNavItem(path: string, permissions?: string[]): AppNavIt
   const items =
     permissions === undefined
       ? sortByOrder(appNavigation.filter((item) => item.workspace === workspace))
-      : getVisibleNavigationItems(workspace, permissions, { includeWorkspaceHome: true });
+      : sortByOrder(appNavigation.filter((item) => item.workspace === workspace && canShowItem(item, permissions)));
 
   return [...items].reverse().find((item) => isNavItemActive(item, path)) ?? null;
 }
@@ -614,8 +618,8 @@ export function canAccessNavigationPath(path: string, permissions: string[] = []
     return true;
   }
 
-  return getVisibleNavigationItems(workspace, permissions, { includeWorkspaceHome: true }).some((item) =>
-    isNavItemActive(item, path),
+  return appNavigation.some((item) =>
+    item.workspace === workspace && canShowItem(item, permissions) && isNavItemActive(item, path),
   );
 }
 

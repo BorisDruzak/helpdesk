@@ -27,13 +27,12 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("link", { name: "Не печатает", exact: true }).click();
-    await page.getByRole("button", { name: "Не печатает", exact: true }).click();
+    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
     await page.getByLabel("Название сценария", { exact: true }).fill("Мой сценарий принтера");
     await page.getByRole("button", { name: "Создать категорию здесь", exact: true }).click();
     await expect(page.getByRole("button", { name: "Карта сценария", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Вернуться к услуге", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Новая карта", exact: true })).toBeDisabled();
     await expect(page.getByRole("combobox", { name: "Сервис", exact: true })).toBeDisabled();
     await page.getByLabel("Название категории", { exact: true }).fill("Принтеры и МФУ");
     const save = page.getByRole("button", { name: "Сохранить категорию", exact: true });

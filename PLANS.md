@@ -1,3 +1,24 @@
+# In progress: 2026-10-13 Studio map-first workbench refinements
+
+User browser feedback: root Studio opens the visual workbench immediately;
+left Catalog/Blocks selects an offering/map in place; resizable explorer,
+inspector and editor height; actionable missing-configuration hints; temporarily
+hidden Forms/Policy Health navigation with canonical routes and permissions retained.
+Actor: admin/auditor. Primary job: author the map. Secondary: select service and
+check readiness. Workbench archetype remains explorer/canvas/inspector.
+Base: 97902413e5fa114a81943009f358ebb6dc6cd52c, existing PR42 branch.
+No API/schema/dependency change. No production or scenario/policy publication.
+Sizes are browser preferences, not graph/draft/version mutations. Independent
+review found catalog projection and selection/autosave/mutation races plus hint
+navigation/settings access; all five corrected and independently re-reviewed.
+Cold-load and multi-map discard RED reproduced. Final frontend unit: 131 files /
+725 passed; TypeScript/Vite build passed; all 120 browser fixture tests passed,
+including pointer resizing, browser preference persistence, hint inspection and
+viewport containment. Screenshots at 1366/1920 inspected; scoped workspace sanity
+and diff check passed. No backend change: previous full CI evidence remains tied
+to the prior merge revision, not this refinement.
+Staging update will use the canonical scoped release process after verification.
+
 # In progress: 2026-10-13 Guided Request Studio v3
 
 Branch `codex/guided-request-studio-v3`, baseline `bb8c521faaf76eea01119f314f68fecdeb34cefb`.

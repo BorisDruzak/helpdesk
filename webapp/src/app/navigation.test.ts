@@ -41,6 +41,12 @@ const fullSession = {
 };
 
 describe("navigation helpers", () => {
+  it("hides expert form and policy entry points while retaining permission-checked deep links", () => {
+    const visible = getVisibleNavigationItems("admin", fullAdminPermissions);
+    expect(visible.some(item => ["/app/admin/forms", "/app/admin/policy-health"].includes(item.to))).toBe(false);
+    expect(getActiveNavItem("/app/admin/forms",fullAdminPermissions)?.label).toBe("Конструктор форм");
+    expect(getActiveNavItem("/app/admin/forms",[])?.label).toBeUndefined();
+  });
   it("detects workspace and active nav item for nested routes without query/hash noise", () => {
     expect(getActiveWorkspace("/app/tickets/T-1/passport/print?mode=full#top")).toBe("support");
     expect(getActiveWorkspace("/app/admin/inventory?panel=requests")).toBe("admin");

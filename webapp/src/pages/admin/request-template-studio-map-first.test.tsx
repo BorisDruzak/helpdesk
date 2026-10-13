@@ -1,0 +1,78 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { afterEach, expect, it, vi } from "vitest";
+import { AdminRequestTemplateStudioPage } from "./request-template-studio-page";
+vi.mock("../../features/auth/session-provider", () => ({ useSession: () => ({ session: { actor_role: "admin" } }) }));
+const offering = { full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" };
+const catalog = { categories: [], services: [{ code: "it", public_title: "ИТ" }], offerings: [offering], entries: [{ offering, scenarios: [], active_mode: "form", category_ids: [] }], scenarios: [], total: 1, offset: 0, limit: 100 };
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear(); });
+it("opens the canvas immediately and chooses an offering in the left catalog without creating server data", async () => {
+ const fetcher = vi.fn(async (_url: unknown, _init?: RequestInit) => new Response(JSON.stringify({ status: "success", data: catalog }), { headers: { "content-type": "application/json" } }));
+ vi.stubGlobal("fetch", fetcher);
+ const router = createMemoryRouter([{ path: "*", element: <AdminRequestTemplateStudioPage /> }]);
+ render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>);
+ expect(await screen.findByLabelText("Визуальная карта сценария")).toBeVisible();
+ fireEvent.click(screen.getByRole("button", { name: "Принтер" }));
+ await waitFor(() => expect(screen.getByLabelText("Название сценария")).toHaveValue("Принтер"));
+ expect(screen.getByLabelText("Визуальная карта сценария")).toBeVisible();
+ expect(fetcher.mock.calls.every(call => !call[1] || !["POST", "PUT", "DELETE"].includes(call[1]?.method ?? ""))).toBe(true);
+ expect(screen.getByRole("tab", { name: "Блоки" })).toHaveAttribute("aria-selected", "true");
+});
+it("renders only filtered catalog entries while retaining the full offering lookup for inspectors", async () => {
+ const vpn = { ...offering, full_code: "it.vpn", public_title: "VPN" };
+ vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { ...catalog, offerings: [offering,vpn] } }), { headers: { "content-type": "application/json" } })));
+ const router=createMemoryRouter([{path:"*",element:<AdminRequestTemplateStudioPage/>}]);
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RouterProvider router={router}/></QueryClientProvider>);
+ expect(await screen.findByRole("button",{name:"Принтер"})).toBeVisible();
+ expect(screen.queryByRole("button",{name:"VPN"})).not.toBeInTheDocument();
+});
+it.each([0, 2])("discards edits before a delayed offering selection with %i maps", async (mapCount) => {
+ const other={...offering,full_code:"it.vpn",public_title:"VPN",request_template_key:"vpn"};
+ const definition={scenario_key:"existing",title:"Карта принтера",service_code:"it",offering_full_code:offering.full_code,blocks:[],process_binding:{request_template_key:"printer"}};
+ const item={...definition,id:"s1",archived:false};
+ const data={...catalog,offerings:[offering,other],scenarios:[item],entries:[{offering,scenarios:[item],active_mode:"form",category_ids:[]},{offering:other,scenarios:[],active_mode:"form",category_ids:[]}]};
+ let resolve!: (response:Response)=>void;
+ const fetcher=vi.fn(async(url:unknown,init?:RequestInit)=>{
+  if(String(url).includes("offering_code=it.vpn"))return new Promise<Response>(done=>{resolve=done;});
+  return new Response(JSON.stringify({status:"success",data:String(url).includes("/scenarios/s1")?{scenario:item,draft:{revision:3,definition}}:data}),{headers:{"content-type":"application/json"}});
+ });
+ vi.stubGlobal("fetch",fetcher);
+ const router=createMemoryRouter([{path:"*",element:<AdminRequestTemplateStudioPage/>}]);
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RouterProvider router={router}/></QueryClientProvider>);
+ fireEvent.click(await screen.findByRole("button",{name:"Карта принтера"}));
+ await waitFor(()=>expect(screen.getByLabelText("Название сценария")).toHaveValue("Карта принтера"));
+ vi.useFakeTimers();
+ fireEvent.change(screen.getByLabelText("Название сценария"),{target:{value:"Отброшенная правка"}});
+ fireEvent.click(screen.getByRole("button",{name:"Каталог"}));
+ fireEvent.click(screen.getByRole("button",{name:"VPN"}));
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});
+ expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
+ fireEvent.click(screen.getByRole("button",{name:"Переключить без сохранения"}));
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});
+ expect(screen.getByRole("button",{name:"Сохранить черновик"})).toBeDisabled();
+ expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
+ const maps=Array.from({length:mapCount},(_,index)=>({...item,id:`vpn-${index}`,title:`VPN ${index}`,offering_full_code:other.full_code}));
+ await act(async()=>{resolve(new Response(JSON.stringify({status:"success",data:{...catalog,offerings:[offering,other],entries:[{offering:other,scenarios:maps,active_mode:"form",category_ids:[]}],scenarios:maps}}),{headers:{"content-type":"application/json"}}));await vi.advanceTimersByTimeAsync(0);});
+ if(mapCount===0) expect(screen.getByLabelText("Название сценария")).toHaveValue("VPN");
+ else { expect(screen.getByRole("button",{name:"VPN 0"})).toBeVisible(); expect(screen.getByLabelText("Название сценария")).not.toHaveValue("Отброшенная правка"); }
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});
+ expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
+});
+it("blocks archive and copy of the visible old map while another offering is loading", async()=>{
+ const other={...offering,full_code:"it.vpn",public_title:"VPN",request_template_key:"vpn"};
+ const definition={scenario_key:"existing",title:"Карта принтера",service_code:"it",offering_full_code:offering.full_code,blocks:[],process_binding:{request_template_key:"printer"}};
+ const item={...definition,id:"s1",archived:false};
+ const data={...catalog,offerings:[offering,other],scenarios:[item],entries:[{offering,scenarios:[item],active_mode:"form",category_ids:[]},{offering:other,scenarios:[],active_mode:"form",category_ids:[]}]};
+ let resolve!:(response:Response)=>void;
+ const fetcher=vi.fn(async(url:unknown,_init?:RequestInit)=>String(url).includes("offering_code=it.vpn")?new Promise<Response>(done=>{resolve=done;}):new Response(JSON.stringify({status:"success",data:String(url).includes("/scenarios/s1")?{scenario:item,draft:{revision:3,definition}}:data}),{headers:{"content-type":"application/json"}}));
+ vi.stubGlobal("fetch",fetcher);
+ const router=createMemoryRouter([{path:"*",element:<AdminRequestTemplateStudioPage/>}]);render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RouterProvider router={router}/></QueryClientProvider>);
+ fireEvent.click(await screen.findByRole("button",{name:"Карта принтера"}));await waitFor(()=>expect(screen.getByLabelText("Название сценария")).toHaveValue("Карта принтера"));
+ expect(screen.getByRole("button",{name:"Архивировать сценарий"})).toBeEnabled();
+ fireEvent.click(screen.getByRole("button",{name:"Каталог"}));fireEvent.click(screen.getByRole("button",{name:"VPN"}));
+ expect(screen.getByRole("button",{name:"Архивировать сценарий"})).toBeDisabled();expect(screen.getByRole("button",{name:"Создать копию"})).toBeDisabled();
+ fireEvent.click(screen.getByRole("button",{name:"Архивировать сценарий"}));expect(screen.queryByRole("button",{name:"Подтвердить архивирование"})).not.toBeInTheDocument();
+ await act(async()=>{resolve(new Response(JSON.stringify({status:"success",data:{...data,entries:[{offering:other,scenarios:[],active_mode:"form",category_ids:[]}],scenarios:[]}}),{headers:{"content-type":"application/json"}}));});
+ expect(fetcher.mock.calls.some(([url])=>String(url).endsWith("/archive"))).toBe(false);
+});

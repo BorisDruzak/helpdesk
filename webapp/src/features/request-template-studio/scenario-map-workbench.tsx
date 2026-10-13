@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ReactFlowInstance } from "@xyflow/react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -13,9 +13,12 @@ import { ScenarioEntryInspector } from "./scenario-entry-inspector";
 import { ScenarioEdgeInspector } from "./scenario-edge-inspector";
 import { ScenarioMapCanvas, transitionId, metadataNodeId, type MapNode } from "./scenario-map-canvas";
 import { addMapBlock, connectBlocks, deleteMapBlock, insertOnTransition, mapPalette, positionBlock, reconnectTransition, requireAcyclic, terminal } from "./scenario-map-model";
+import { useWorkbenchGeometry } from "./scenario-workbench-geometry";
+import { ScenarioMapGuidance } from "./scenario-map-guidance";
+import { ScenarioWorkbenchCatalog, type WorkbenchCatalogProps } from "./scenario-workbench-catalog";
 
-type Props = { definition: ScenarioDraftDefinition; catalog: ScenarioCatalog; existing: boolean; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void; issueBlockId?: string; issueTransitions?: boolean; issuePolicy?: ScenarioPolicyKind; path?: string[]; current?: string; inspectorPanel?: ReactNode; onCategoryDirty?: (dirty: boolean) => void; onCategoryOpen?: (open: boolean) => void; onCategoryCreated?: () => Promise<void> };
-export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, onChange, issueBlockId, issueTransitions, issuePolicy, path, current, inspectorPanel, ...categoryProps }: Props) {
+type Props = { definition: ScenarioDraftDefinition; catalog: ScenarioCatalog; existing: boolean; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void; issueBlockId?: string; issueTransitions?: boolean; issuePolicy?: ScenarioPolicyKind; path?: string[]; current?: string; inspectorPanel?: ReactNode; catalogPanel?: WorkbenchCatalogProps; explorerTab?: "catalog" | "blocks"; onExplorerTab?: (tab: "catalog" | "blocks") => void; onCheck?: () => void; onInspect?: () => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryOpen?: (open: boolean) => void; onCategoryCreated?: () => Promise<void> };
+export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, onChange, issueBlockId, issueTransitions, issuePolicy, path, current, inspectorPanel, catalogPanel, explorerTab = "blocks", onExplorerTab, onCheck, onInspect, ...categoryProps }: Props) {
   const [selected, setSelected] = useState(metadataNodeId);
   const [edge, setEdge] = useState<{ source: string; index: number } | null>(null);
   const [search, setSearch] = useState("");
@@ -26,15 +29,12 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
   const [pendingInsert, setPendingInsert] = useState<{ kind: ScenarioBlock["kind"]; source: string; index: number; position: { x: number; y: number } } | null>(null);
   const flow = useRef<ReactFlowInstance<MapNode> | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState<number>();
-  function measureHeight() { const grid = gridRef.current; if (grid) setHeight(window.innerWidth > 1100 ? Math.max(280, Math.min(720, window.innerHeight - grid.getBoundingClientRect().top - 16)) : undefined); }
-  useLayoutEffect(measureHeight);
-  useEffect(() => { window.addEventListener("resize", measureHeight); return () => window.removeEventListener("resize", measureHeight); }, []);
+  const geometry = useWorkbenchGeometry(gridRef);
   const emitted = useRef(definition);
   const blocks = definition.blocks ?? [];
   const block = blocks.find(item => item.id === selected);
   useEffect(() => { if (issueBlockId) { setSelected(issueBlockId); setEdge(issueTransitions && definition.blocks?.find(item => item.id === issueBlockId)?.transitions?.length ? { source: issueBlockId, index: 0 } : null); } else if (issuePolicy) { setSelected(metadataNodeId); setEdge(null); } }, [issueBlockId, issueTransitions, issuePolicy]);
-  useEffect(() => { if (emitted.current.scenario_key !== definition.scenario_key) { setPast([]); setFuture([]); } emitted.current = definition; }, [definition]);
+  useEffect(() => { if (emitted.current.scenario_key !== definition.scenario_key) { setPast([]); setFuture([]); setSelected(metadataNodeId); setEdge(null); setPendingInsert(null); setRemoving(false); setError(""); } emitted.current = definition; }, [definition]);
   function choose(id: string) { setSelected(id); setEdge(null); setRemoving(false); setError(""); }
   function change(next: ScenarioDraftDefinition) {
     if (disabled || JSON.stringify(next) === JSON.stringify(definition)) return;
@@ -60,11 +60,13 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
       if (event.key.toLowerCase() === "y") { event.preventDefault(); history(true); }
     }
   }}>
-    <div className="flex flex-wrap gap-2"><Button disabled={disabled || !past.length} variant="ghost" onClick={() => history(false)}>Отменить изменение</Button><Button disabled={disabled || !future.length} variant="ghost" onClick={() => history(true)}>Повторить изменение</Button><Button variant="ghost" onClick={() => void flow.current?.fitView({ padding: 0.2 })}>Вся карта</Button><p className="self-center text-xs text-slate-500">Перемещение меняет только геометрию. Связи определяют маршрут.</p></div>
+    <div className="flex flex-wrap gap-2"><Button disabled={disabled || !past.length} variant="ghost" onClick={() => history(false)}>Отменить изменение</Button><Button disabled={disabled || !future.length} variant="ghost" onClick={() => history(true)}>Повторить изменение</Button><Button variant="ghost" onClick={() => void flow.current?.fitView({ padding: 0.2 })}>Вся карта</Button><Button variant="ghost" onClick={geometry.reset}>Сбросить размеры панелей</Button><p className="self-center text-xs text-slate-500">Связи определяют маршрут. Границы панелей можно перетаскивать.</p></div>
     {error && <p role="alert" className="rounded border border-amber-300 bg-amber-50 p-3">{error}</p>}
     {pendingInsert && <div className="rounded border p-3"><p>Вставить новый блок между выбранными шагами, сохранив условие?</p><Button disabled={disabled} onClick={() => { perform(() => insertOnTransition(definition, pendingInsert.source, pendingInsert.index, pendingInsert.kind, pendingInsert.position)); setPendingInsert(null); }}>Вставить между шагами</Button><Button variant="ghost" onClick={() => setPendingInsert(null)}>Отмена вставки</Button></div>}
-    <div ref={gridRef} className="studio-map-workbench" style={height ? { height } : undefined}>
+    <div ref={gridRef} className="studio-map-workbench" style={geometry.style}>
       <aside className="studio-map-explorer space-y-4" aria-label="Библиотека блоков">
+        {catalogPanel && <div role="tablist" aria-label="Содержимое левой панели" className="flex gap-1">{(["catalog", "blocks"] as const).map(tab=><button key={tab} type="button" role="tab" aria-selected={explorerTab===tab} className={`rounded px-3 py-2 text-sm ${explorerTab===tab?"bg-blue-50 font-semibold":"hover:bg-slate-100"}`} onClick={()=>onExplorerTab?.(tab)}>{tab==="catalog"?"Каталог":"Блоки"}</button>)}</div>}
+        {catalogPanel && explorerTab === "catalog" ? <ScenarioWorkbenchCatalog {...catalogPanel} /> : <>
         <h3 className="font-semibold">Блоки</h3>
         <div className="space-y-1">{mapPalette.map(item => <button key={item.kind} type="button" className="w-full rounded-lg border px-3 py-2 text-left text-sm hover:bg-blue-50 disabled:opacity-50" disabled={disabled || blocks.length >= 256} draggable={!disabled} onDragStart={event => event.dataTransfer.setData("application/x-scenario-kind", item.kind)} onClick={() => add(item.kind)}>+ {item.label}</button>)}</div>
         <label className="block text-sm">Найти блок<Input value={search} onChange={event => setSearch(event.target.value)} /></label>
@@ -73,14 +75,20 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
         <h3 className="font-semibold">Точки входа · {entrances.length}</h3>
         {entrances.map(entry => <button className="block w-full break-words rounded p-2 text-left text-xs text-blue-700 hover:bg-blue-50" key={entry.key} onClick={() => choose(entry.target_block_id)}>{entry.title}</button>)}
         {!entrances.length && <p className="text-xs text-slate-500">Совместимый вход: {blocks.find(item => item.id === definition.entry_block_id)?.title ?? "не выбран"}. Добавьте пункты через инспектор блока.</p>}
+        </>}
       </aside>
+      {geometry.handle("left")}
+      <div className="studio-map-main">
+      <ScenarioMapGuidance key={definition.scenario_key} definition={definition} onCheck={onCheck} onHint={hint=>{onInspect?.();if(hint.target)onExplorerTab?.(hint.target);else choose(hint.blockId??metadataNodeId);}} />
       <ScenarioMapCanvas definition={definition} disabled={disabled} selected={edge ? "" : selected} selectedEdge={edge ? transitionId(edge.source, edge.index) : null} issueBlockId={issueBlockId} path={path} current={current} onReady={instance => { flow.current = instance; }} onSelect={choose} onEdge={(source, index) => { setEdge({ source, index }); setRemoving(false); }}
         onMove={(id, point) => perform(() => positionBlock(definition, id === metadataNodeId ? "system_start" : id, point))}
         onConnect={(source, target, handle) => perform(() => handle?.startsWith("route-") ? reconnectTransition(definition, source, Number(handle.slice(6)), target) : connectBlocks(definition, source, target))}
         onReconnect={(source, index, target) => perform(() => reconnectTransition(definition, source, index, target))}
         onDropBlock={(value, point, edgeId) => { const kind = mapPalette.find(item => item.kind === value)?.kind; if (!kind) return; const position = flow.current?.screenToFlowPosition(point) ?? point; if (edgeId) { const [source, index] = edgeId.split(":"); setPendingInsert({ kind, source, index: Number(index), position }); } else add(kind, position); }} />
+      </div>
+      {geometry.handle("right")}
       <aside className="studio-map-inspector space-y-4" aria-label="Контекстный инспектор">
-        {inspectorPanel ? inspectorPanel : edge ? <ScenarioEdgeInspector key={`${edge.source}:${edge.index}`} definition={definition} source={edge.source} index={edge.index} disabled={disabled} onChange={next => perform(() => next)} /> : !block ? <><h2 className="text-lg font-semibold">Начало</h2><p className="text-xs text-slate-500">Общие настройки карты. Системный элемент не исполняется и не удаляется.</p><ScenarioPurpose definition={definition} catalog={catalog} disabled={disabled} existing={existing} onChange={change} {...categoryProps} /><details open={issuePolicy ? true : undefined}><summary className="cursor-pointer font-semibold">Политики и наследование</summary><ScenarioProcessing definition={definition} disabled={disabled} onChange={change} focusPolicy={issuePolicy} /></details></> : <>
+        {inspectorPanel ? inspectorPanel : edge ? <ScenarioEdgeInspector key={`${edge.source}:${edge.index}`} definition={definition} source={edge.source} index={edge.index} disabled={disabled} onChange={next => perform(() => next)} /> : !block ? <><h2 className="text-lg font-semibold">Начало</h2><p className="text-xs text-slate-500">Общие настройки карты. Системный элемент не исполняется и не удаляется.</p><ScenarioPurpose definition={definition} catalog={catalog} disabled={disabled} existing={existing} onChange={change} {...categoryProps} /><label className="block text-sm">Основной вход карты<Select disabled={disabled} value={definition.entry_block_id??""} onChange={event=>change({...definition,entry_block_id:event.target.value||null})}><option value="">Выберите начальный блок</option>{blocks.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</Select></label><details open={issuePolicy ? true : undefined}><summary className="cursor-pointer font-semibold">Политики и наследование</summary><ScenarioProcessing definition={definition} disabled={disabled} onChange={change} focusPolicy={issuePolicy} /></details></> : <>
           <h2 className="text-lg font-semibold">{block.title}</h2>
           {terminal(block.kind) && <><label className="block">Режим результата<Select disabled={disabled} value={block.kind} onChange={event => change({ ...definition, blocks: blocks.map(item => item.id === block.id ? { id: item.id, title: item.title, kind: event.target.value as "finish" | "submit_ticket", transitions: [], ...(event.target.value === "finish" ? { message: "Проблема решена без обращения" } : {}) } : item) })}><option value="submit_ticket">Создать обращение</option><option value="finish">Завершить без обращения</option></Select></label><p className="text-xs text-slate-500">Общий контекст услуги и шаблона. Приоритет и SLA рассчитывает сервер по собранным ответам.</p></>}
           {block.kind === "submit_ticket" && <details><summary>Политики обработки и согласование</summary><ScenarioProcessing definition={definition} disabled={disabled} onChange={change} /></details>}
@@ -93,5 +101,6 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
         </>}
       </aside>
     </div>
+    {geometry.handle("height")}
   </div>;
 }
