@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ScenarioCatalog } from "./scenario-api";
 import type { useScenarioEditor } from "./use-scenario-editor";
+import type { AdminServiceCatalogOffering } from "../service-catalog/api";
 
 /** Preserve entry links from Forms, Service Catalog and Policy Health. */
-export function useScenarioContext(catalog: ScenarioCatalog | undefined, editor: ReturnType<typeof useScenarioEditor>, canEdit: boolean) {
+export function useScenarioContext(catalog: ScenarioCatalog | undefined, editor: ReturnType<typeof useScenarioEditor>, canEdit: boolean, onCreate?: (offering: AdminServiceCatalogOffering) => void) {
   const [params] = useSearchParams();
   const applied = useRef(false);
   const [notice, setNotice] = useState("");
@@ -23,6 +24,7 @@ export function useScenarioContext(catalog: ScenarioCatalog | undefined, editor:
     const existing = catalog.scenarios.filter(item => item.offering_full_code === offering.full_code && !item.archived);
     if (existing.length === 1) { void editor.open(existing[0].id); return; }
     if (existing.length > 1 || !canEdit || !offering.request_template_key || !offering.service_code) { setNotice("Выберите существующий сценарий услуги в каталоге."); return; }
+    if (onCreate) { onCreate(offering); return; }
     editor.create({ scenario_key: "new_scenario", service_code: offering.service_code, offering_full_code: offering.full_code,
       title: offering.public_title, description: offering.short_description ?? "", category_id: null, blocks: [], entry_block_id: null,
       process_binding: { request_template_key: offering.request_template_key } }, false);

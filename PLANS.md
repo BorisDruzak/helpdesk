@@ -44,6 +44,24 @@ Final full unit run725 passed; a cold lazy-module test timeout was diagnosed and
 its bounded wait corrected without relaxing role/read-only assertions. Build,
 workspace sanity and diff checks passed. Follow-up staging update remains next.
 
+# 2026-10-13 Studio v3 usability refinement
+
+Implemented against the three provided visual references in the existing Studio.
+Compact new-map starter, executable simple/diagnostic/empty drafts, contextual +
+insertion, real entrance nodes, progressive inspectors, result-side canonical
+binding, readable viewport layout and actionable graph hints. Existing revision/CAS,
+policy runtime, publication confirmation and role guards preserved. No production
+deployment, real scenario publication, real tickets or Endpoint actions performed.
+New browser fixtures: access authoring and diagnostic shared graph at 1366/1920/820,
+6 PASS, including condition preservation, undo/redo and no zoom reset on save;
+browser console/network clean. Focused backend contracts/runtime/readiness/entrances:
+133 PASS. Final checks: 136 focused frontend/layout tests PASS; all 55 existing Studio
+browser cases plus 6 new usability cases PASS across targeted runs. Final
+TypeScript/Vite production build, scoped workspace sanity and diff check PASS.
+All 6 browser-authored saved drafts passed canonical server DTO and DAG validation.
+Local fixture servers stopped after checks. Evidence is local fixture evidence;
+installed staging acceptance is not claimed. Reference PNGs are not server contracts.
+
 # In progress: 2026-10-13 Guided Request Studio v3
 
 Branch `codex/guided-request-studio-v3`, baseline `bb8c521faaf76eea01119f314f68fecdeb34cefb`.

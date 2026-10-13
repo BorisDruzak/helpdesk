@@ -13,6 +13,11 @@ vi.mock("../../components/shell/app-topbar", () => ({ AppTopbar: () => <header>�
 afterEach(()=>localStorage.clear());
 
 describe("ticket workspace shell", () => {
+  it("reserves the viewport for Studio and defaults to compact navigation", () => {
+    render(<MemoryRouter initialEntries={["/app/admin/request-template-studio"]}><AppShell><p>Карта</p></AppShell></MemoryRouter>);
+    expect(screen.getByRole("button", { name: "Развернуть меню" })).toBeInTheDocument();
+    expect(screen.getByRole("main")).toHaveClass("min-h-0");
+  });
   it("retains the common navigation and header on ticket routes", () => {
     render(<MemoryRouter initialEntries={["/app/tickets/ticket-1"]}><AppShell><p>Переписка</p></AppShell></MemoryRouter>);
     expect(screen.getByText("Общая панель")).toBeInTheDocument();

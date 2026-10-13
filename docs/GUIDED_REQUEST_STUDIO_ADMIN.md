@@ -1,11 +1,18 @@
 # Guided Request Studio administration
 
 The admin/auditor entry is `/app/admin/request-template-studio`. It opens the
-visual map workbench immediately, with **Каталог / Блоки** in the left explorer.
-The initial empty map is local and untouched; opening Studio does not create or
-save a server draft. The canvas mounts after the workbench measures its actual
-viewport so the initial start element fits inside the available height. Select an
-offering to open its existing map or prepare a new map in the same workspace. Multiple maps require an explicit choice. A fresh
+catalog; **Новая карта** opens a compact starter with name, catalog section and
+**Простая заявка / Диагностика проблемы / Пустая карта**. Starters create real,
+editable schema-v1 blocks and transitions locally; they never save or publish
+automatically. A simple request has a catalog entrance, question, review and
+ticket result. Diagnostic completion requires a positive resolution check;
+negative and unknown answers lead to support. Empty maps expose **Добавить первый
+шаг**. Choose the canonical request type in the optional starter section or in
+**Создать обращение** before the first server save. Existing types/templates are
+reused; new offering creation is explicit and uses the existing draft API.
+The canvas mounts after the workbench measures its viewport and fits once at a
+readable zoom. Studio reserves the viewport and defaults to compact app navigation
+unless the user has saved a different preference. Multiple maps require an explicit choice. A fresh
 offering-scoped catalog lookup prevents creation based on incomplete search results.
 Switching maps with unsaved edits requires explicit discard; autosave is paused
 during that confirmation and while the next offering loads. Confirmed discard
@@ -44,28 +51,27 @@ one catalog entry. Settings guard unsaved changes on navigation/unload; mutation
 requests disable editing until their response updates the saved baseline. Existing
 plain-form consumers keep their canonical forms.
 
-**Новая карта** prepares another local map. The primary sections are
+**Новая карта** prepares another local map through the starter. The primary sections are
 **Каталог**, **Карта сценария** and **Согласования**. Testing, publication and
 version history open in the contextual inspector from header actions; the map
-remains visible. The single system **Начало** holds title, description, category,
-Service/Offering/RequestTemplate binding and inherited policies. It is metadata,
-not a runtime step. Existing bindings cannot be replaced on a saved scenario.
-Inline category creation preserves unsaved map values.
+remains visible. The single system **Настройки карты** is a single non-executable system element, accessible through
+the canvas button and library. It has no runtime edge to questions. Real catalog
+entrances appear as distinct nodes, linked only to their actual initial blocks;
+select the node or its dashed arrow to edit or retarget the entrance. Legacy
+primary entrances remain supported. The settings inspector groups technical
+keys and canonical binding under advanced settings; the ticket-result inspector
+shows the request type, bound template and inherited Helpdesk policies. Exact
+routing, priority, SLA and approval results come from server simulation.
 
-Drag the boundaries beside the explorer/inspector to change their widths and the
-bottom boundary to change editor height. Focused separators also support arrow
-keys, Home and End. Sizes are bounded to keep the canvas usable and stored as
-browser preferences; they do not modify scenario geometry, draft revision or
-published versions. **Сбросить размеры панелей** restores defaults. Tablet/mobile
-layouts stack the inspector and do not expose desktop resize handles.
-
-Connect the bottom handle of **Начало** to a block, or use **Связать начало с
-блоком** in its inspector, to assign a catalog entrance. Repeating the connection
-reuses the existing entrance; existing primary entrance and catalog metadata stay
-intact. Dashed green connections visualize entrances and can be retargeted; they
-are not runtime transitions or executable blocks. Legacy primary entrances also
-appear as a start connection. Selecting it opens entrance settings. Draft undo/redo
-includes these changes; full publication validation still applies to every entrance.
+The green **+** on a block or arrow opens **Что добавить дальше?**. Linear
+insertion preserves the original condition/priority and destination in one undo
+step, selects the new block and opens its settings. Branching and terminal
+insertion never silently discard an existing route: the editor explains the
+constraint and offers separate creation with explicit branch configuration.
+Library drag/drop, manual connections, arrow editing, undo/redo, copy/delete and
+free positioning remain available. Moving a block changes only geometry.
+Panels can collapse or resize. Ordinary edits/autosave/initial save retain the
+viewport; **Вся карта** explicitly fits the graph again.
 
 The inspector has **Настройки / Как у сотрудника**. Preview reuses the employee
 step content and field controls for the current draft. **Предпросмотр страницы**
@@ -77,11 +83,12 @@ server projection, navigation and policies must be checked with **Тестиро
 Decision blocks have no employee page; diagnostic state is disclosed as unexecuted.
 The modal isolates editor history shortcuts so preview cannot undo a draft edit.
 
-**Что ещё настроить** lists actionable authoring hints for service/start/result,
-unfinished routes and disconnected steps. A hint selects its block or the needed
-explorer tab and closes testing/publication panels so the relevant inspector is
-visible. These hints do not certify publication readiness; **Проверить готовность**
-opens the canonical full publication check. Legacy single entrances remain valid.
+Authoring guidance shows the first concrete problem, with an **Исправить** action
+for each issue. Missing routes, disconnected blocks and unconfirmed completion
+also appear on their graph nodes. Fixing a problem removes its hint. Hints do not
+certify publication readiness: **Проверить готовность** invokes the canonical
+server validation. Incomplete maps can remain drafts; revision conflicts retain
+local edits and stop autosave until explicitly resolved.
 
 **Конструктор форм** and **Проверка политик** are temporarily hidden from sidebar
 and domain navigation. Their permission-checked routes remain available for
@@ -89,7 +96,7 @@ ordinary forms/template creation and expert policy diagnostics. Existing offerin
 settings remain reachable through secondary **Настройки услуги** links in the
 catalog explorer, with the normal unsaved-navigation guard.
 
-**Создать услугу** opens `/app/admin/request-template-studio/services/new`, an
+**Создать тип обращения** in the catalog opens `/app/admin/request-template-studio/services/new`, an
 independent creation page. Choose a published/public section and an active,
 published processing template. Saving creates only an offering draft and opens
 its dedicated page; no scenario is created. Unsaved edits are protected, and save
@@ -109,8 +116,8 @@ permission checks, unsaved-navigation protection, loading/retry/error states and
 mutation locking remain in effect. After publication, return to the offering tab
 and choose **Обновить список шаблонов**; local service values remain intact.
 
-The Начало inspector links to separate service creation instead of embedding
-a second form. Existing offering drafts can still opt into source-bound atomic
+New request types can be created explicitly inside the starter or ticket-result
+inspector using the existing offering draft form; existing templates are reused. Existing offering drafts can still opt into source-bound atomic
 publication with their scenario; selection sets the explicit publication intent.
 Software installation retains its profile metadata and existing service_request
 type. A published service exposes a requester deep link on its dedicated page.

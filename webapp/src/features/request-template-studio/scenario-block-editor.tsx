@@ -28,7 +28,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
   const terminal = block.kind === "finish" || block.kind === "submit_ticket";
   const resultValues = ({ resolution_check: ["yes", "no", "unknown"], instruction: ["acknowledged", "request_ticket"], diagnostic: Object.keys(diagnosticFailureLabels) } as Partial<Record<ScenarioBlock["kind"], string[]>>)[block.kind] ?? [];
   return <div className="min-w-0 space-y-4">
-    <label className="block">Название блока<Input ref={titleRef} disabled={disabled} maxLength={300} value={block.title} onChange={event => onChange({ ...block, title: event.target.value })} /></label>
+    {block.kind === "form_page" && block.fields.length === 1 ? <details><summary className="cursor-pointer text-sm font-semibold">Название шага на карте</summary><label className="block">Название блока<Input ref={titleRef} disabled={disabled} maxLength={300} value={block.title} onChange={event => onChange({ ...block, title: event.target.value })} /></label></details> : <label className="block">Название блока<Input ref={titleRef} disabled={disabled} maxLength={300} value={block.title} onChange={event => onChange({ ...block, title: event.target.value })} /></label>}
     {block.kind === "form_page" && <ScenarioFormPageEditor block={block} definition={definition} disabled={disabled} onChange={onChange} />}
     {block.kind === "instruction" && <fieldset disabled={disabled} className="space-y-3">
       <label className="block">Текст инструкции<textarea className="field-base min-h-40 w-full" maxLength={10000} value={block.content.body} onChange={event => onChange({ ...block, content: { ...block.content, body: event.target.value } })} /></label>

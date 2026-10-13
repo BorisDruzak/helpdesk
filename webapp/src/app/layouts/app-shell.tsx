@@ -100,8 +100,9 @@ export function AppShell({ children }: AppShellProps) {
   const hasRequester = hasWorkspaceAccess(session, "requester");
   const isTicketWorkspaceRoute = /^\/app\/tickets(?:\/[^/]+)?\/?$/.test(location.pathname);
   const isRequesterChatRoute = /^\/app\/requester\/tickets\/[^/]+\/?$/.test(location.pathname);
-  const isFullHeightWorkspace = isTicketWorkspaceRoute || isRequesterChatRoute;
-  const isFormsBuilderRoute = /^\/app\/admin\/forms\/?$/.test(location.pathname);
+  const isStudioRoute = /^\/app\/admin\/request-template-studio\/?$/.test(location.pathname);
+  const isFullHeightWorkspace = isTicketWorkspaceRoute || isRequesterChatRoute || isStudioRoute;
+  const isFormsBuilderRoute = /^\/app\/admin\/forms\/?$/.test(location.pathname) || isStudioRoute;
   const currentWorkspace = getActiveWorkspace(location.pathname) ?? "support";
   const account=session?.user_login??"";
   const [adminSidebarCollapsed, setAdminSidebarCollapsed] = useState(() => loadPanelPreferences(account,currentWorkspace,{navigationCollapsed:isFormsBuilderRoute,ticketListCollapsed:false}).navigationCollapsed);
@@ -179,7 +180,7 @@ export function AppShell({ children }: AppShellProps) {
             />
           ) : null}
 
-          <main className={isFullHeightWorkspace ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : `min-w-0 flex-1 ${/^\/app\/requester\/new\/?$/.test(location.pathname) ? "overflow-x-clip" : "overflow-x-hidden"} px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6`}>
+          <main className={isFullHeightWorkspace ? `flex min-h-0 min-w-0 flex-1 flex-col ${isStudioRoute ? "overflow-y-auto overflow-x-hidden" : "overflow-hidden"}` : `min-w-0 flex-1 ${/^\/app\/requester\/new\/?$/.test(location.pathname) ? "overflow-x-clip" : "overflow-x-hidden"} px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6`}>
             {!isFullHeightWorkspace ? <DomainTabs permissions={session?.permissions ?? []} /> : null}
             {children}
           </main>

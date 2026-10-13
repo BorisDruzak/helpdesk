@@ -30,14 +30,14 @@ it("adds blocks, focuses the selected editor, adds a field and supports undo/red
   render(<Harness />);
   fireEvent.click(screen.getByRole("button", { name: "Добавить блок" }));
   expect(screen.getByLabelText("Название блока")).toHaveFocus();
-  expect(screen.getAllByLabelText("Название вопроса")).toHaveLength(1);
+  expect(screen.getAllByLabelText("Что спросить?")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Добавить вопрос" }));
-  expect(screen.getAllByLabelText("Название вопроса")).toHaveLength(1);
-  fireEvent.change(screen.getByLabelText("Название вопроса"), { target: { value: "Уточнение" } });
+  expect(screen.getAllByLabelText("Что спросить?")).toHaveLength(1);
+  fireEvent.change(screen.getByLabelText("Что спросить?"), { target: { value: "Уточнение" } });
   fireEvent.click(screen.getByRole("button", { name: "Отменить изменение" }));
-  expect(screen.getByLabelText("Название вопроса")).toHaveValue("Новый вопрос");
+  expect(screen.getByLabelText("Что спросить?")).toHaveValue("Новый вопрос");
   fireEvent.click(screen.getByRole("button", { name: "Повторить изменение" }));
-  expect(screen.getByLabelText("Название вопроса")).toHaveValue("Уточнение");
+  expect(screen.getByLabelText("Что спросить?")).toHaveValue("Уточнение");
 });
 it("keeps settings local, permits multiple roles and disables incompatible roles and files", () => {
   render(<Harness />);
@@ -56,13 +56,13 @@ it("changes the selected block with keyboard controls and shows only its editor"
   fireEvent.click(screen.getByRole("button", { name: "Добавить блок" }));
   fireEvent.change(screen.getByLabelText("Тип нового блока"), { target: { value: "instruction" } });
   fireEvent.click(screen.getByRole("button", { name: "Добавить блок" }));
-  expect(screen.queryByLabelText("Название вопроса")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Что спросить?")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Текст инструкции")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Переместить блок вверх" }));
   expect(within(screen.getByRole("list", { name: "Блоки сценария" })).getAllByRole("button")[0]).toHaveTextContent("Инструкция");
   fireEvent.click(screen.getByRole("button", { name: "Страница вопросов" }));
   expect(screen.queryByLabelText("Текст инструкции")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Название вопроса")).toBeInTheDocument();
+  expect(screen.getByLabelText("Что спросить?")).toBeInTheDocument();
 });
 it("keeps every mutation disabled for an auditor while selection remains readable", () => {
   const definition: ScenarioDraftDefinition = { scenario_key: "test", title: "Test", service_code: "it", offering_full_code: "it.test", process_binding: { request_template_key: "test" }, blocks: [{ id: "first", title: "Вопросы", kind: "form_page", fields: [{ key: "question", type: "text", label: "Вопрос" }] }] };
@@ -71,6 +71,6 @@ it("keeps every mutation disabled for an auditor while selection remains readabl
   expect(screen.getByRole("button", { name: "Удалить блок" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Добавить вопрос" })).toBeDisabled();
   expect(screen.getByLabelText("Название блока")).toBeDisabled();
-  expect(screen.getByLabelText("Название вопроса")).toBeDisabled();
+  expect(screen.getByLabelText("Что спросить?")).toBeDisabled();
   expect(screen.getByRole("button", { name: "Вопросы" })).toBeEnabled();
 });

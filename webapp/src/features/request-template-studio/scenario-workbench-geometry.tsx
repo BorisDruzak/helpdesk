@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 const storageKey = "pc_client.studio.workbench.geometry.v1";
 type Geometry = { left: number; right: number; height: number | null };
-const defaults: Geometry = { left: 240, right: 360, height: null };
+const defaults: Geometry = { left: 200, right: 360, height: null };
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, Math.max(min, max)));
 function readGeometry(): Geometry {
   try { const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null"); return { left: Number.isFinite(saved?.left) ? clamp(saved.left,180,480) : defaults.left, right: Number.isFinite(saved?.right) ? clamp(saved.right,280,640) : defaults.right, height: Number.isFinite(saved?.height) ? clamp(saved.height,280,1600) : null }; }

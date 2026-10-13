@@ -7,11 +7,11 @@ function Frame(){const ref=useRef<HTMLDivElement>(null);const layout=useWorkbenc
 it("resizes with the keyboard, restores browser preferences and resets without touching a draft",()=>{
  const first=render(<Frame/>);
  fireEvent.keyDown(screen.getByRole("separator",{name:"Ширина каталога и блоков"}),{key:"ArrowRight"});
- expect(screen.getByRole("separator",{name:"Ширина каталога и блоков"})).toHaveAttribute("aria-valuenow","260");
+ expect(screen.getByRole("separator",{name:"Ширина каталога и блоков"})).toHaveAttribute("aria-valuenow","220");
  first.unmount();render(<Frame/>);
- expect(screen.getByRole("separator",{name:"Ширина каталога и блоков"})).toHaveAttribute("aria-valuenow","260");
+ expect(screen.getByRole("separator",{name:"Ширина каталога и блоков"})).toHaveAttribute("aria-valuenow","220");
  fireEvent.keyDown(screen.getByRole("separator",{name:"Ширина инспектора"}),{key:"Home"});
  expect(screen.getByRole("separator",{name:"Ширина инспектора"})).toHaveAttribute("aria-valuenow","280");
  fireEvent.click(screen.getByRole("button",{name:"Сбросить размеры"}));
- expect(screen.getByRole("separator",{name:"Ширина каталога и блоков"})).toHaveAttribute("aria-valuenow","240");
+ expect(screen.getByRole("separator",{name:"Ширина каталога и блоков"})).toHaveAttribute("aria-valuenow","200");
 });

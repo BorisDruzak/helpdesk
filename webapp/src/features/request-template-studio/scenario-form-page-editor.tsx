@@ -29,7 +29,8 @@ export function ScenarioFormPageEditor({ block, definition, disabled, onChange }
     [fields[index], fields[target]] = [fields[target], fields[index]]; update(fields);
   }
   return <div className="min-w-0 space-y-4">
-    <label className="block">Расположение вопросов<Select disabled={disabled} value={block.layout ?? "group"} onChange={event => onChange({ ...block, layout: event.target.value as FormPage["layout"] })}>
+    {block.fields.length === 1 && field && <ScenarioFieldEditor key={field.key} field={field} definition={definition} disabled={disabled} onChange={next => update(block.fields.map(old => old.key === field.key ? next : old))} />}
+    <details open={block.fields.length !== 1 ? true : undefined}><summary className="cursor-pointer text-sm font-semibold">Вопросы на одной странице и порядок</summary><div className="mt-3 space-y-3"><label className="block">Расположение вопросов<Select disabled={disabled} value={block.layout ?? "group"} onChange={event => onChange({ ...block, layout: event.target.value as FormPage["layout"] })}>
       <option value="single" disabled={block.fields.length !== 1}>Один вопрос</option><option value="group">Группа вопросов</option><option value="section">Разделы</option>
     </Select></label>
     <ul aria-label="Вопросы страницы" className="max-h-48 space-y-1 overflow-y-auto">{block.fields.map(item => <li key={item.key}><Button className="max-w-full whitespace-normal text-left" variant={item.key === field?.key ? "secondary" : "ghost"} aria-pressed={item.key === field?.key} onClick={() => setSelected(item.key)}>{item.label}</Button></li>)}</ul>
@@ -44,8 +45,9 @@ export function ScenarioFormPageEditor({ block, definition, disabled, onChange }
         update(block.fields.filter(item => item.key !== field.key));
       }}>Удалить вопрос</Button>
     </div>
+    </div></details>
     {message && <p role="alert">{message}</p>}
     {field && block.layout === "section" && <ScenarioFieldGroup key={field.key} field={field} fields={block.fields} disabled={disabled} onChange={update} />}
-    {field && <ScenarioFieldEditor key={field.key} field={field} definition={definition} disabled={disabled} onChange={next => update(block.fields.map(old => old.key === field.key ? next : old))} />}
+    {block.fields.length !== 1 && field && <ScenarioFieldEditor key={field.key} field={field} definition={definition} disabled={disabled} onChange={next => update(block.fields.map(old => old.key === field.key ? next : old))} />}
   </div>;
 }

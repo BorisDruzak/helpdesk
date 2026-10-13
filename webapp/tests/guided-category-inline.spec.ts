@@ -28,7 +28,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     });
     await page.goto("/app/admin/request-template-studio");
     await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
-    await page.getByLabel("Название сценария", { exact: true }).fill("Мой сценарий принтера");
+    await page.getByLabel("Название карты", { exact: true }).fill("Мой сценарий принтера");
     await page.getByRole("button", { name: "Создать категорию здесь", exact: true }).click();
     await expect(page.getByRole("button", { name: "Карта сценария", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toBeDisabled();
@@ -37,8 +37,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.getByLabel("Название категории", { exact: true }).fill("Принтеры и МФУ");
     const save = page.getByRole("button", { name: "Сохранить категорию", exact: true });
     await save.focus(); await page.keyboard.press("Enter");
-    await expect(page.getByRole("combobox", { name: "Подкатегория", exact: true })).toHaveValue("printers");
-    await expect(page.getByLabel("Название сценария", { exact: true })).toHaveValue("Мой сценарий принтера");
+    await expect(page.getByRole("combobox", { name: "Раздел каталога", exact: true })).toHaveValue("printers");
+    await expect(page.getByLabel("Название карты", { exact: true })).toHaveValue("Мой сценарий принтера");
     await expect(page.getByRole("textbox", { name: "Описание", exact: true })).toHaveValue("Несохранённое описание");
     await expect(page.getByRole("button", { name: "Карта сценария", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

@@ -58,19 +58,39 @@ export function connectBlocks(definition: ScenarioDraftDefinition, source: strin
   return replaceTransitions(definition, source, [...block.transitions ?? [], { to: target }]);
 }
 export function insertOnTransition(definition: ScenarioDraftDefinition, source: string, index: number, kind: ScenarioBlock["kind"], position?: { x: number; y: number }) {
-  if (terminal(kind) || kind === "resolution_check" || kind === "decision") throw new Error("Для этого типа нужны явные маршруты; добавьте его отдельно и настройте связи");
+  if (terminal(kind) || kind === "resolution_check" || kind === "decision") throw new Error("Этот шаг завершает маршрут или требует отдельных ветвей. Добавьте его из библиотеки и явно настройте переходы.");
   const from = definition.blocks?.find(item => item.id === source);
   const edge = from?.transitions?.[index];
   if (!edge || (definition.blocks?.length ?? 0) >= 256) throw new Error("Переход не найден или достигнут лимит блоков");
   const block = newBlock(kind);
   block.transitions = [{ to: edge.to }];
   let next: ScenarioDraftDefinition = { ...definition, blocks: [...definition.blocks ?? [], block].map(old => old.id === source ? { ...old, transitions: old.transitions?.map((item, i) => i === index ? { ...item, to: block.id } : item) } : old) };
-  if (position) next = positionBlock(next, block.id, position);
+  const fromIndex = definition.blocks!.findIndex(item => item.id === source);
+  const origin = definition.editor_layout?.positions?.[source] ?? { x: (fromIndex % 3) * 310, y: Math.floor(fromIndex / 3) * 200 };
+  const point = position ? { ...position } : { x: origin.x, y: origin.y + 170 };
+  while (!position && definition.blocks!.some((item, i) => { const old = definition.editor_layout?.positions?.[item.id] ?? { x: (i % 3) * 310, y: Math.floor(i / 3) * 200 }; return Math.abs(old.x - point.x) < 260 && Math.abs(old.y - point.y) < 145; })) point.y += 170;
+  next = positionBlock(next, block.id, point);
   return requireAcyclic(next);
 }
 export function addMapBlock(definition: ScenarioDraftDefinition, kind: ScenarioBlock["kind"], position: { x: number; y: number }) {
+  if ((definition.blocks?.length ?? 0) >= 256) throw new Error("Достигнут лимит 256 шагов карты");
   const next = addBlock(definition, kind, null);
   return positionBlock(next, next.blocks![next.blocks!.length - 1].id, position);
+}
+/** Contextual addition is one undoable mutation. Existing branches are never guessed. */
+export function appendMapStep(definition: ScenarioDraftDefinition, source: string | null, kind: ScenarioBlock["kind"]): ScenarioDraftDefinition {
+  const from = definition.blocks?.find(block => block.id === source);
+  if (source && (!from || terminal(from.kind))) throw new Error("После результата маршрут завершён. Добавьте шаг перед результатом.");
+  if (from?.transitions?.length) {
+    if (from.transitions.length !== 1) throw new Error("У блока несколько ветвей. Нажмите «+» на нужной стрелке.");
+    return insertOnTransition(definition, from.id, 0, kind);
+  }
+  const point = source ? definition.editor_layout?.positions?.[source] ?? { x: 0, y: 0 } : { x: 0, y: -170 };
+  let next = addMapBlock(definition, kind, { x: point.x, y: point.y + 170 });
+  const added = next.blocks!.at(-1)!;
+  if (from) next = connectBlocks(next, from.id, added.id);
+  else if (!definition.blocks?.length) { next = connectStart(next, added.id); next = { ...next, entry_points: [{ ...next.entry_points![0], title: definition.title, category_id: definition.category_id }] }; }
+  return next;
 }
 export function deleteMapBlock(definition: ScenarioDraftDefinition, id: string, replacement: string | null, entranceAction?: "remove" | "reassign") {
   const entrances = definition.entry_points ?? [];

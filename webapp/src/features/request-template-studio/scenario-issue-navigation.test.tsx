@@ -25,8 +25,8 @@ it("opens the source of a broken transition and focuses its visible target", asy
   const change = mount("unknown_target", "blocks.broken.transitions");
   fireEvent.click(await screen.findByRole("button", { name: "Исправить: Проверка принтера" }));
   expect(screen.getByRole("group", { name: "Переход из «Проверка принтера»" })).toBeVisible();
-  await waitFor(() => expect(screen.getByLabelText("Целевой блок")).toHaveFocus());
-  expect(screen.getByLabelText("Целевой блок")).toBeVisible();
+  await waitFor(() => expect(screen.getByLabelText("Следующий блок")).toHaveFocus());
+  expect(screen.getByLabelText("Следующий блок")).toBeVisible();
 
   expect(change).not.toHaveBeenCalled();
 });

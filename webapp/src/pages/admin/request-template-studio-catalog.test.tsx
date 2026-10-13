@@ -21,19 +21,19 @@ function mockFetch() {
 }
 afterEach(() => { vi.unstubAllGlobals(); role = "admin"; });
 describe("Guided Studio catalog", () => {
-  it("opens the map first with a catalog explorer and primary create", async () => {
+  it("opens the catalog with a primary new-map action", async () => {
     mockFetch(); mount();
-    expect(await screen.findByRole("button", { name: "Создать сценарий" })).toBeVisible();
-    expect(await screen.findByRole("button", { name: "Принтер" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Новая карта" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: /Принтер/ })).toBeVisible();
     expect(screen.getByLabelText("Поиск услуг")).toBeVisible();
-    expect(screen.getByLabelText("Раздел и категория")).toBeVisible();
-    expect(screen.getByLabelText("Визуальная карта сценария")).toBeVisible();
+    expect(screen.queryByLabelText("Визуальная карта сценария")).not.toBeInTheDocument();
     expect(screen.queryByText("Экспертный")).not.toBeInTheDocument();
   });
   it("opens one wizard step and saves with the server revision", async () => {
     const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
-    await waitFor(() => expect(screen.getByLabelText("Название сценария")).toHaveValue("Не печатает"));
-    fireEvent.change(await screen.findByLabelText("Название сценария"), { target: { value: "Проверка принтера" } });
+    await waitFor(() => expect(screen.getByLabelText("Название карты")).toHaveValue("Не печатает"));
+    expect(screen.getByRole("tab", { name: "Блоки" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.change(await screen.findByLabelText("Название карты"), { target: { value: "Проверка принтера" } });
     expect(screen.getByLabelText("Визуальная карта сценария")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     expect(await screen.findByText("Черновик сохранён. Ревизия 4.")).toBeVisible();
@@ -42,21 +42,21 @@ describe("Guided Studio catalog", () => {
   });
   it("keeps local edits on conflict until explicit reload", async () => {
     const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
-    await waitFor(() => expect(screen.getByLabelText("Название сценария")).toHaveValue("Не печатает"));
-    fireEvent.change(await screen.findByLabelText("Название сценария"), { target: { value: "Локальная правка" } });
+    await waitFor(() => expect(screen.getByLabelText("Название карты")).toHaveValue("Не печатает"));
+    fireEvent.change(await screen.findByLabelText("Название карты"), { target: { value: "Локальная правка" } });
     fetcher.mockImplementation(async (_, init) => init?.method === "PUT" ? response(null, 409) : response(detail));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     expect(await screen.findByText(/Черновик изменён другим администратором/)).toBeVisible();
-    expect(screen.getByLabelText("Название сценария")).toHaveValue("Локальная правка");
+    expect(screen.getByLabelText("Название карты")).toHaveValue("Локальная правка");
     fireEvent.click(screen.getByRole("button", { name: "Загрузить серверную версию" }));
-    await waitFor(() => expect(screen.getByLabelText("Название сценария")).toHaveValue("Не печатает"));
+    await waitFor(() => expect(screen.getByLabelText("Название карты")).toHaveValue("Не печатает"));
   });
   it("auditor can inspect but cannot mutate", async () => {
     role = "auditor"; mockFetch(); mount();
-    expect(await screen.findByRole("button", { name: "Принтер" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Создать сценарий" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /Принтер/ })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Новая карта" })).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Не печатает" }));
-    expect(await screen.findByLabelText("Название сценария")).toBeDisabled();
+    expect(await screen.findByLabelText("Название карты")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Сохранить черновик" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Тестировать" }));
     expect(screen.getByRole("button", { name: "Начать проверку" })).toBeEnabled();

@@ -23,6 +23,6 @@ it("shows one offering link with actual requester mode and draft status, and sel
 it("explains category selection before offering selection instead of an empty selector", () => {
   const catalog = { categories: [], offerings: [], services: [] } as unknown as ScenarioCatalog;
   render(<MemoryRouter><ScenarioPurpose catalog={catalog} definition={{ title: "Новый", service_code: "", offering_full_code: "", blocks: [], scenario_key: "new", process_binding: { request_template_key: "" } }} disabled={false} existing={false} onChange={vi.fn()} /></MemoryRouter>);
-  expect(screen.getByLabelText("Подкатегория")).toBeDisabled();
-  expect(screen.getByText("Сначала выберите услугу — её раздел и подкатегории появятся здесь.")).toBeVisible();
+  expect(screen.getByLabelText("Раздел каталога")).toBeDisabled();
+  expect(screen.getByText("Раздел выбирается при создании карты. Привязку к типу обращения можно настроить в результате.")).toBeVisible();
 });

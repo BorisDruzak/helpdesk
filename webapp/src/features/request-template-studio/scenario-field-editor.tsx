@@ -17,7 +17,7 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
     onChange({ ...field, validation: { ...field.validation, [key]: text === "" ? null : Number(text) } });
   }
   return <fieldset aria-label="Редактор вопроса" disabled={disabled} className="min-w-0 space-y-4 rounded-lg border p-4">
-    <label className="block">Название вопроса<Input maxLength={300} value={field.label} onChange={event => onChange({ ...field, label: event.target.value })} /></label>
+    <label className="block">Что спросить?<Input maxLength={300} value={field.label} onChange={event => onChange({ ...field, label: event.target.value })} /></label>
     <label className="block">Тип ответа<Select value={field.type} onChange={event => onChange(changeFieldType(field, event.target.value as ScenarioFieldType))}>
       {Object.entries(fieldLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
       <option disabled value="file">Вложение — защищённый backend пока недоступен</option>
@@ -27,6 +27,7 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
       <label><input type="checkbox" checked={!!field.allow_unknown} onChange={event => onChange({ ...field, allow_unknown: event.target.checked })} /> Разрешить «Не знаю»</label>
     </div>
     <label className="block">Подсказка<Input maxLength={2000} value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label>
+    {roles.some(role => role.startsWith("priority_")) && <p className="studio-next-help">Ответ используется действующей политикой Helpdesk.</p>}
     <label className="block">Пример ответа<Input maxLength={500} value={field.placeholder ?? ""} onChange={event => onChange({ ...field, placeholder: event.target.value })} /></label>
     {isChoice(field.type) && <fieldset className="space-y-3"><legend className="font-medium">Варианты ответа</legend>
       {(field.options ?? []).map((option, index) => <div key={index} className="space-y-2 rounded-md border p-3">

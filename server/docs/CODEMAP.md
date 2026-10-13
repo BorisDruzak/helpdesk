@@ -104,9 +104,12 @@
 - React admin catalog/map: `webapp/src/pages/admin/request-template-studio-page.tsx`
   orchestrates the scenario-api/catalog/purpose/category/wizard components and
   editor/context/dirty-guard hooks under `features/request-template-studio`. The root
-  map opens first with `scenario-workbench-catalog`, browser-only resizable
-  `scenario-workbench-geometry` and actionable `scenario-map-hints`/guidance. Start
-  connections project existing entrances without runtime edges. Inspector/full-page
+  opens the catalog; `scenario-create-dialog` and `scenario-starter` prepare editable
+  local starter routes. The map uses `scenario-workbench-catalog`, browser-only
+  resizable/collapsible panels and actionable `scenario-map-hints`/guidance.
+  `scenario-step-menu` and `scenario-map-edge` add connected steps atomically;
+  `scenario-result-binding` presents the canonical offering/template at the result.
+  Real entrance nodes link to executable blocks; settings have no route edge. Inspector/full-page
   `scenario-requester-preview` shares requester `scenario-step-content`; lifecycle
   APIs remain owned by `scenario-session` and server simulation.
   See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
@@ -129,7 +132,7 @@
   React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
   and cycle guards. `scenario-entry-inspector` edits catalog entrances on blocks;
   `scenario-edge-inspector` edits canonical transitions using the existing typed
-  condition editor. Начало is visual metadata, never a runtime node. Seven visual
+  condition editor. Настройки карты is visual metadata, never a runtime node. Seven visual
   types reuse the eight existing runtime kinds. `scenario-approvals` reuses the
   policy registry and ticket approval lifecycle; no client SLA/workflow evaluator.
 - `tickets/request_scenario_validation.py` validates reachable acyclic graphs,

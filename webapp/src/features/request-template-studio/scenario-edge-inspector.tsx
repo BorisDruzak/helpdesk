@@ -20,9 +20,9 @@ export function ScenarioEdgeInspector({ definition, source, index, disabled, onC
   return <fieldset disabled={disabled} className="space-y-4">
     <legend className="text-lg font-semibold">Переход из «{block.title}»</legend>
     {error && <p role="alert">{error}</p>}
-    <label className="block">Целевой блок<Select autoFocus value={edge.to} onChange={event => update({ to: event.target.value })}><option value="" disabled>Выберите блок</option>{definition.blocks?.filter(item => item.id !== source).map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
+    <label className="block">Следующий блок<Select autoFocus value={edge.to} onChange={event => update({ to: event.target.value })}><option value="" disabled>Выберите блок</option>{definition.blocks?.filter(item => item.id !== source).map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
     <ScenarioConditionEditor label="Условие перехода" value={edge.when} fields={conditionFields(definition, source)} resultValues={results} disabled={disabled} onChange={when => update({ when })} />
-    <label className="block">Приоритет сопоставления<Input type="number" min={1} max={10000} value={edge.priority ?? ""} onChange={event => update({ priority: event.target.value ? Number(event.target.value) : null })} /></label>
+    <details><summary>Расширенные условия</summary><label className="block">Приоритет сопоставления<Input type="number" min={1} max={10000} value={edge.priority ?? ""} onChange={event => update({ priority: event.target.value ? Number(event.target.value) : null })} /></label></details>
     {!edge.when && <p className="text-sm text-slate-500">Резервный маршрут. Он должен идти после условных переходов.</p>}
     <Button variant="secondary" onClick={() => perform(() => replaceTransitions(definition, source, [...edges.filter((_, i) => i !== index), edge]))}>Переместить переход в конец</Button>
     <label className="block">Вставить блок на связь<Select value={kind} onChange={event => setKind(event.target.value as ScenarioBlock["kind"])}>{mapPalette.filter(item => !["decision", "resolution_check", "submit_ticket"].includes(item.kind)).map(item => <option key={item.kind} value={item.kind}>{item.label}</option>)}</Select></label>

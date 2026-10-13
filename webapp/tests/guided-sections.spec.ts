@@ -38,7 +38,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     const last = page.getByRole("button", { name: "Вопрос 32", exact: true });
     await last.focus(); await page.keyboard.press("Enter");
     await expect(page.getByRole("group", { name: "Редактор вопроса", exact: true })).toHaveCount(1);
-    await expect(page.getByRole("textbox", { name: "Название вопроса", exact: true })).toHaveValue("Вопрос 32");
+    await expect(page.getByRole("textbox", { name: "Что спросить?", exact: true })).toHaveValue("Вопрос 32");
     await page.getByRole("button", { name: "Тестировать", exact: true }).click();
     await expect(page.getByRole("button", { name: "Начать проверку", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Начать проверку", exact: true }).click();
