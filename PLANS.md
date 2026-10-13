@@ -1,3 +1,20 @@
+# In progress: 2026-10-13 Studio entrance connections and employee preview
+
+Actor admin/auditor; primary job author one map in the existing workbench.
+User asks Start-to-block connection = entrance, inspector employee-view tab and
+full-page preview toggle. Base cc07b594; same feature branch/PR42. No new API,
+schema, dependency or runtime evaluator. Preview is local and shares canonical
+requester controls/content; server testing/publication remains authoritative.
+Model creation/metadata/limit regressions reproduced RED then GREEN. Shared
+requester29 tests and build pass. Browser5 cases pass at1366/1920/820: pointer
+entrance creation, undo/redo, persisted contract, inspector/full-page preview,
+local answers, Escape and isolated Ctrl+Z/Y. Review found inspector-remediation
+and modal history defects; corrected with regressions and scoped re-review clear.
+Full unit730 passed plus remediation2 passed; all126 browser fixtures passed.
+Screenshots1366/1920 inspected; workspace sanity and diff check passed.
+Production/scenario/policy/ticket publication excluded; staging update follows
+canonical exact-commit installer once frozen and verified.
+
 # In progress: 2026-10-13 Studio map-first workbench refinements
 
 User browser feedback: root Studio opens the visual workbench immediately;

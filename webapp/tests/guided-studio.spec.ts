@@ -1,5 +1,35 @@
 import { expect, type Page, test } from "playwright/test";
 
+for(const [width,height] of [[1366,768],[1920,1080],[820,1180]]) {
+ test(`guided start entrances and employee previews ${width}`,async({page},info)=>{
+  await page.setViewportSize({width,height});
+  const definition={scenario_key:"preview",title:"Предпросмотр доступа",service_code:"it",offering_full_code:"it.printer",entry_block_id:"q",entry_points:[],process_binding:{request_template_key:"printer"},blocks:[{id:"q",kind:"form_page",title:"Запрос доступа",fields:[{key:"folder",type:"text",label:"Куда нужен доступ?",help_text:"Название папки"}],transitions:[{to:"done"}]},{id:"done",kind:"finish",title:"Завершено",message:"Готово"}]};
+  const state=await fixture(page,false,definition);await page.goto("/app/admin/request-template-studio");
+  await page.getByRole("region",{name:"Карты сценариев"}).getByRole("button",{name:definition.title}).click();await expect(page.getByLabel("Название сценария")).toHaveValue(definition.title);
+  await page.getByRole("button",{name:"Вся карта",exact:true}).click();
+  if(width>1100){
+   const from=page.locator('.react-flow__node[data-id="studio:metadata"] .react-flow__handle.source');const to=page.locator('.react-flow__node[data-id="q"] .react-flow__handle.target');
+   const a=(await from.boundingBox())!,b=(await to.boundingBox())!;await page.mouse.move(a.x+a.width/2,a.y+a.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2,b.y+b.height/2,{steps:15});await page.mouse.up();
+  }else await page.getByRole("combobox",{name:"Связать начало с блоком"}).selectOption("q");
+  await expect(page.locator('.react-flow__edge[data-id^="studio:entry-point:"]')).toHaveCount(1);
+  await expect(page.getByRole("heading",{name:"Точки входа · 1"})).toBeVisible();
+  await page.getByRole("button",{name:"Отменить изменение",exact:true}).click();await expect(page.locator('.react-flow__edge[data-id^="studio:entry-point:"]')).toHaveCount(0);
+  await page.getByRole("button",{name:"Повторить изменение",exact:true}).click();await expect(page.locator('.react-flow__edge[data-id^="studio:entry-point:"]')).toHaveCount(1);
+  const save=page.getByRole("button",{name:"Сохранить черновик",exact:true});if(await save.isEnabled())await save.click();await expect(page.getByText(/Черновик сохранён. Ревизия/)).toBeVisible();
+  const saved=(state.mutations.at(-1) as {definition:{blocks:unknown[];entry_points:{target_block_id:string}[]}}).definition;expect(saved.blocks).toEqual(definition.blocks);expect(saved.entry_points).toHaveLength(1);expect(saved.entry_points[0].target_block_id).toBe("q");const writes=state.mutations.length;
+  await page.getByRole("list",{name:"Блоки сценария"}).getByRole("button",{name:"Запрос доступа",exact:true}).click();
+  await page.getByRole("tab",{name:"Как у сотрудника",exact:true}).click();await page.getByLabel("Куда нужен доступ?").fill("Тестовая папка");await expect(page.getByLabel("Куда нужен доступ?")).toHaveValue("Тестовая папка");
+  await expect(page.getByRole("button",{name:"Продолжить",exact:true})).toBeDisabled();
+  await page.screenshot({path:info.outputPath(`${width}-inspector-preview.png`)});
+  await page.getByRole("button",{name:"Открыть полную страницу",exact:true}).click();const dialog=page.getByRole("dialog",{name:"Предпросмотр полной страницы"});await expect(dialog).toBeVisible();await expect(dialog.getByRole("heading",{name:"Запрос доступа",exact:true})).toBeVisible();
+  await dialog.getByRole("button",{name:"Вернуться к карте",exact:true}).focus();await page.keyboard.press("Control+z");await page.keyboard.press("Control+y");
+  await dialog.getByLabel("Куда нужен доступ?").fill("Локальный ответ");expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:info.outputPath(`${width}-full-page-preview.png`)});
+  await page.keyboard.press("Escape");await expect(dialog).not.toBeVisible();await expect(page.getByLabel("Куда нужен доступ?")).toHaveValue("Тестовая папка");await expect(page.locator('.react-flow__edge[data-id^="studio:entry-point:"]')).toHaveCount(1);
+  await page.getByRole("tab",{name:"Настройки",exact:true}).click();await expect(page.getByLabel("Название блока",{exact:true})).toHaveValue("Запрос доступа");
+  expect(state.mutations).toHaveLength(writes);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
+ });
+}
+
 for (const [width,height] of [[1280,720],[1366,768],[1920,1080]]) {
  test(`guided cold map contains start node ${width}`,async({page})=>{
   await page.setViewportSize({width,height});const state=await fixture(page);
@@ -36,12 +66,13 @@ for (const width of [1366,1920]) {
   expect(state.mutations).toHaveLength(0);
   await page.reload();await expect(left).toHaveAttribute("aria-valuenow",String(leftBefore+40));
   await page.getByRole("button",{name:"Принтер",exact:true}).click();await expect(page.getByLabel("Название сценария")).toHaveValue("Не печатает");
+  await page.getByRole("tab",{name:"Как у сотрудника",exact:true}).click();
   await page.getByRole("button",{name:"Опубликовать",exact:true}).click();
   await expect(page.getByRole("button",{name:"Закрыть панель",exact:true})).toBeVisible();
   await page.getByRole("button",{name:/Что ещё настроить/}).click();
   await page.getByRole("button",{name:/«Проверка бумаги»: укажите следующий шаг/}).click();
   await expect(page.getByRole("complementary",{name:"Контекстный инспектор"}).getByRole("heading",{name:"Проверка бумаги",exact:true})).toBeVisible();
-  await expect(page.getByRole("button",{name:"Закрыть панель",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Закрыть панель",exact:true})).toHaveCount(0);await expect(page.getByRole("tab",{name:"Настройки",exact:true})).toHaveAttribute("aria-selected","true");
   expect(state.mutations).toHaveLength(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   const canvas=(await page.getByLabel("Визуальная карта сценария",{exact:true}).boundingBox())!;expect(canvas.y+canvas.height).toBeLessThanOrEqual(height);

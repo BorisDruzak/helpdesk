@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { RequestFormFieldControl, type DynamicFormValues } from "./dynamic-form";
-import { ScenarioFields, type ScenarioProjectedField } from "./scenario-fields";
+import { type DynamicFormValues } from "./dynamic-form";
+import { ScenarioStepContent, type ScenarioStepDisplay } from "./scenario-step-content";
 import { Button } from "./ui/form-controls";
 
 type Step = {
@@ -11,17 +11,7 @@ type Step = {
   entry_point_key?: string | null;
   version_id?: string;
   back_targets: { id: string; title: string }[];
-  block: {
-    id: string; kind: string; title: string;
-    fields?: (ScenarioProjectedField & { value?: DynamicFormValues[string]; allow_unknown?: boolean })[];
-    layout?: "single" | "group" | "section";
-    has_dynamic_fields?: boolean;
-    content?: { body: string; format: string };
-    acknowledgment_required?: boolean;
-    can_request_ticket?: boolean;
-    message?: string;
-    answers?: { key: string; label: string; type: string; value: unknown; display_value: string }[];
-  };
+  block: ScenarioStepDisplay;
 };
 
 type TicketPreview = { ok: boolean; expected_first_response?: string; expected_resolution?: string; approval?: { text: string }; blockers: string[]; warnings: string[] };
@@ -150,21 +140,9 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
     {step ? <>
       <h2 ref={heading} tabIndex={-1} className="text-xl font-semibold text-slate-950">{step.block.title}</h2>
       <fieldset disabled={busy} className="grid min-w-0 gap-4" onBlur={() => void preview()}>
-        <ScenarioFields fields={step.block.fields || []} layout={step.block.layout} renderField={field => <>
-          <RequestFormFieldControl field={field} value={values[field.key]} error={error?.fields[field.key]} onChange={value => {
-            requestSequence.current++; setValues(current => ({ ...current, [field.key]: value })); setError(null);
-          }} />
-          {field.allow_unknown ? <label className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={values[field.key] === null} onChange={event => {
-            const value = event.currentTarget.checked ? null : undefined;
-            requestSequence.current++; setError(null);
-            setValues(current => ({ ...current, [field.key]: value }));
-          }} />Не знаю</label> : null}
-        </>} />
-        {step.block.content ? <p className="whitespace-pre-wrap break-words">{step.block.content.body}</p> : null}
-        {step.block.kind === "instruction" ? <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />Инструкция выполнена</label> : null}
-        {step.block.kind === "instruction" && step.block.can_request_ticket ? <Button type="button" variant="outline" onClick={() => void answer("request_ticket")}>Нужна помощь поддержки</Button> : null}
-        {step.block.answers ? <dl className="grid gap-3">{step.block.answers.map(item => <div key={item.key}><dt className="font-medium">{item.label}</dt><dd className="break-words text-sm">{item.display_value}</dd></div>)}</dl> : null}
-        {step.block.message ? <p>{step.block.message}</p> : null}
+        <ScenarioStepContent block={step.block} values={values} errors={error?.fields} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onValue={(key,value)=>{
+          requestSequence.current++; setValues(current=>({...current,[key]:value})); setError(null);
+        }} onRequestTicket={()=>void answer("request_ticket")} />
       </fieldset>
       <fieldset disabled={busy} className="sticky bottom-0 z-10 grid min-w-0 gap-3 border-t border-slate-200 bg-white py-3" aria-label="Действия шага">
         {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}

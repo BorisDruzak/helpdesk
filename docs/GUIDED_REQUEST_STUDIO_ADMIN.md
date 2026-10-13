@@ -59,6 +59,24 @@ browser preferences; they do not modify scenario geometry, draft revision or
 published versions. **Сбросить размеры панелей** restores defaults. Tablet/mobile
 layouts stack the inspector and do not expose desktop resize handles.
 
+Connect the bottom handle of **Начало** to a block, or use **Связать начало с
+блоком** in its inspector, to assign a catalog entrance. Repeating the connection
+reuses the existing entrance; existing primary entrance and catalog metadata stay
+intact. Dashed green connections visualize entrances and can be retargeted; they
+are not runtime transitions or executable blocks. Legacy primary entrances also
+appear as a start connection. Selecting it opens entrance settings. Draft undo/redo
+includes these changes; full publication validation still applies to every entrance.
+
+The inspector has **Настройки / Как у сотрудника**. Preview reuses the employee
+step content and field controls for the current draft. **Предпросмотр страницы**
+(or **Открыть полную страницу**) opens the selected block in a full-page modal;
+Escape and **Вернуться к карте** return to the same workbench. Preview answers
+stay local; it does not create requester sessions, tickets or diagnostic operations.
+Conditional questions are all shown for layout inspection with a disclosure;
+server projection, navigation and policies must be checked with **Тестировать**.
+Decision blocks have no employee page; diagnostic state is disclosed as unexecuted.
+The modal isolates editor history shortcuts so preview cannot undo a draft edit.
+
 **Что ещё настроить** lists actionable authoring hints for service/start/result,
 unfinished routes and disconnected steps. A hint selects its block or the needed
 explorer tab and closes testing/publication panels so the relevant inspector is

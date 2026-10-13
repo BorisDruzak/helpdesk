@@ -11,16 +11,20 @@ import { ScenarioPurpose } from "./scenario-purpose";
 import { ScenarioProcessing } from "./scenario-processing";
 import { ScenarioEntryInspector } from "./scenario-entry-inspector";
 import { ScenarioEdgeInspector } from "./scenario-edge-inspector";
-import { ScenarioMapCanvas, transitionId, metadataNodeId, type MapNode } from "./scenario-map-canvas";
-import { addMapBlock, connectBlocks, deleteMapBlock, insertOnTransition, mapPalette, positionBlock, reconnectTransition, requireAcyclic, terminal } from "./scenario-map-model";
+import { ScenarioMapCanvas, transitionId, entranceEdgeId, metadataNodeId, type MapNode } from "./scenario-map-canvas";
+import { addMapBlock, connectBlocks, connectStart, reconnectStart, deleteMapBlock, insertOnTransition, mapPalette, positionBlock, reconnectTransition, requireAcyclic, terminal } from "./scenario-map-model";
 import { useWorkbenchGeometry } from "./scenario-workbench-geometry";
 import { ScenarioMapGuidance } from "./scenario-map-guidance";
+import { ScenarioRequesterPreview, ScenarioPagePreview } from "./scenario-requester-preview";
 import { ScenarioWorkbenchCatalog, type WorkbenchCatalogProps } from "./scenario-workbench-catalog";
 
 type Props = { definition: ScenarioDraftDefinition; catalog: ScenarioCatalog; existing: boolean; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void; issueBlockId?: string; issueTransitions?: boolean; issuePolicy?: ScenarioPolicyKind; path?: string[]; current?: string; inspectorPanel?: ReactNode; catalogPanel?: WorkbenchCatalogProps; explorerTab?: "catalog" | "blocks"; onExplorerTab?: (tab: "catalog" | "blocks") => void; onCheck?: () => void; onInspect?: () => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryOpen?: (open: boolean) => void; onCategoryCreated?: () => Promise<void> };
 export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, onChange, issueBlockId, issueTransitions, issuePolicy, path, current, inspectorPanel, catalogPanel, explorerTab = "blocks", onExplorerTab, onCheck, onInspect, ...categoryProps }: Props) {
   const [selected, setSelected] = useState(metadataNodeId);
   const [edge, setEdge] = useState<{ source: string; index: number } | null>(null);
+  const [entranceLink,setEntranceLink]=useState<{key:string|null;target:string}|null>(null);
+  const [inspectorTab,setInspectorTab]=useState<"settings"|"preview">("settings");
+  const [fullPreview,setFullPreview]=useState(false);
   const [search, setSearch] = useState("");
   const [past, setPast] = useState<ScenarioDraftDefinition[]>([]), [future, setFuture] = useState<ScenarioDraftDefinition[]>([]);
   const [error, setError] = useState("");
@@ -33,9 +37,13 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
   const emitted = useRef(definition);
   const blocks = definition.blocks ?? [];
   const block = blocks.find(item => item.id === selected);
-  useEffect(() => { if (issueBlockId) { setSelected(issueBlockId); setEdge(issueTransitions && definition.blocks?.find(item => item.id === issueBlockId)?.transitions?.length ? { source: issueBlockId, index: 0 } : null); } else if (issuePolicy) { setSelected(metadataNodeId); setEdge(null); } }, [issueBlockId, issueTransitions, issuePolicy]);
-  useEffect(() => { if (emitted.current.scenario_key !== definition.scenario_key) { setPast([]); setFuture([]); setSelected(metadataNodeId); setEdge(null); setPendingInsert(null); setRemoving(false); setError(""); } emitted.current = definition; }, [definition]);
-  function choose(id: string) { setSelected(id); setEdge(null); setRemoving(false); setError(""); }
+  useEffect(() => { if (issueBlockId) { setSelected(issueBlockId); setEntranceLink(null); setInspectorTab("settings"); setEdge(issueTransitions && definition.blocks?.find(item => item.id === issueBlockId)?.transitions?.length ? { source: issueBlockId, index: 0 } : null); } else if (issuePolicy) { setSelected(metadataNodeId); setEdge(null); setEntranceLink(null); setInspectorTab("settings"); } }, [issueBlockId, issueTransitions, issuePolicy]);
+  useEffect(() => { if (emitted.current.scenario_key !== definition.scenario_key) { setPast([]); setFuture([]); setSelected(metadataNodeId); setEdge(null); setPendingInsert(null); setRemoving(false); setError(""); setEntranceLink(null); setFullPreview(false); setInspectorTab("settings"); } emitted.current = definition; }, [definition]);
+  useEffect(()=>{if(!entranceLink)return;const target=entranceLink.key===null?definition.entry_block_id:definition.entry_points?.find(entry=>entry.key===entranceLink.key)?.target_block_id;
+    if(!target||(entranceLink.key===null&&definition.entry_points?.some(entry=>entry.target_block_id===target))){setEntranceLink(null);return;}
+    if(target!==entranceLink.target){setEntranceLink({...entranceLink,target});setSelected(target);}
+  },[definition,entranceLink]);
+  function choose(id: string) { setSelected(id); setEdge(null); setEntranceLink(null); setRemoving(false); setError(""); }
   function change(next: ScenarioDraftDefinition) {
     if (disabled || JSON.stringify(next) === JSON.stringify(definition)) return;
     try { requireAcyclic(next); setPast(items => [...items.slice(-99), structuredClone(definition)]); setFuture([]); setError(""); emitted.current = next; onChange(next); }
@@ -55,12 +63,13 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
   const entrances = definition.entry_points ?? [];
   const linkedEntries = entrances.filter(entry => entry.target_block_id === selected);
   return <div className="min-w-0 space-y-3" onKeyDown={event => {
+    if (fullPreview) return;
     if ((event.ctrlKey || event.metaKey) && !/INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement).tagName)) {
       if (event.key.toLowerCase() === "z") { event.preventDefault(); history(event.shiftKey); }
       if (event.key.toLowerCase() === "y") { event.preventDefault(); history(true); }
     }
   }}>
-    <div className="flex flex-wrap gap-2"><Button disabled={disabled || !past.length} variant="ghost" onClick={() => history(false)}>Отменить изменение</Button><Button disabled={disabled || !future.length} variant="ghost" onClick={() => history(true)}>Повторить изменение</Button><Button variant="ghost" onClick={() => void flow.current?.fitView({ padding: 0.2 })}>Вся карта</Button><Button variant="ghost" onClick={geometry.reset}>Сбросить размеры панелей</Button><p className="self-center text-xs text-slate-500">Связи определяют маршрут. Границы панелей можно перетаскивать.</p></div>
+    <div className="flex flex-wrap gap-2"><Button disabled={disabled || !past.length} variant="ghost" onClick={() => history(false)}>Отменить изменение</Button><Button disabled={disabled || !future.length} variant="ghost" onClick={() => history(true)}>Повторить изменение</Button><Button variant="ghost" onClick={() => void flow.current?.fitView({ padding: 0.2 })}>Вся карта</Button><Button variant="outline" onClick={()=>setFullPreview(true)}>Предпросмотр страницы</Button><Button variant="ghost" onClick={geometry.reset}>Сбросить размеры панелей</Button><p className="self-center text-xs text-slate-500">Связи определяют маршрут. Границы панелей можно перетаскивать.</p></div>
     {error && <p role="alert" className="rounded border border-amber-300 bg-amber-50 p-3">{error}</p>}
     {pendingInsert && <div className="rounded border p-3"><p>Вставить новый блок между выбранными шагами, сохранив условие?</p><Button disabled={disabled} onClick={() => { perform(() => insertOnTransition(definition, pendingInsert.source, pendingInsert.index, pendingInsert.kind, pendingInsert.position)); setPendingInsert(null); }}>Вставить между шагами</Button><Button variant="ghost" onClick={() => setPendingInsert(null)}>Отмена вставки</Button></div>}
     <div ref={gridRef} className="studio-map-workbench" style={geometry.style}>
@@ -79,16 +88,18 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
       </aside>
       {geometry.handle("left")}
       <div className="studio-map-main">
-      <ScenarioMapGuidance key={definition.scenario_key} definition={definition} onCheck={onCheck} onHint={hint=>{onInspect?.();if(hint.target)onExplorerTab?.(hint.target);else choose(hint.blockId??metadataNodeId);}} />
-      {geometry.measured && <ScenarioMapCanvas definition={definition} disabled={disabled} selected={edge ? "" : selected} selectedEdge={edge ? transitionId(edge.source, edge.index) : null} issueBlockId={issueBlockId} path={path} current={current} onReady={instance => { flow.current = instance; }} onSelect={choose} onEdge={(source, index) => { setEdge({ source, index }); setRemoving(false); }}
+      <ScenarioMapGuidance key={definition.scenario_key} definition={definition} onCheck={onCheck} onHint={hint=>{setInspectorTab("settings");setEntranceLink(null);onInspect?.();if(hint.target)onExplorerTab?.(hint.target);else choose(hint.blockId??metadataNodeId);}} />
+      {geometry.measured && <ScenarioMapCanvas definition={definition} disabled={disabled} selected={edge||entranceLink ? "" : selected} selectedEdge={entranceLink?entranceEdgeId(entranceLink.key):edge ? transitionId(edge.source, edge.index) : null} issueBlockId={issueBlockId} path={path} current={current} onReady={instance => { flow.current = instance; }} onSelect={choose} onEdge={(source, index) => { choose(source); setEdge({ source, index }); setInspectorTab("settings"); }}
+        onEntrance={(key,target)=>{choose(target);setEntranceLink({key,target});setInspectorTab("settings");}} onEntranceReconnect={(key,target)=>perform(()=>reconnectStart(definition,key,target))}
         onMove={(id, point) => perform(() => positionBlock(definition, id === metadataNodeId ? "system_start" : id, point))}
-        onConnect={(source, target, handle) => perform(() => handle?.startsWith("route-") ? reconnectTransition(definition, source, Number(handle.slice(6)), target) : connectBlocks(definition, source, target))}
+        onConnect={(source, target, handle) => perform(() => source===metadataNodeId ? (()=>{const next=connectStart(definition,target);choose(target);setInspectorTab("settings");return next;})() : handle?.startsWith("route-") ? reconnectTransition(definition, source, Number(handle.slice(6)), target) : connectBlocks(definition, source, target))}
         onReconnect={(source, index, target) => perform(() => reconnectTransition(definition, source, index, target))}
-        onDropBlock={(value, point, edgeId) => { const kind = mapPalette.find(item => item.kind === value)?.kind; if (!kind) return; const position = flow.current?.screenToFlowPosition(point) ?? point; if (edgeId) { const [source, index] = edgeId.split(":"); setPendingInsert({ kind, source, index: Number(index), position }); } else add(kind, position); }} />}
+        onDropBlock={(value, point, edgeId) => { const kind = mapPalette.find(item => item.kind === value)?.kind; if (!kind) return; const position = flow.current?.screenToFlowPosition(point) ?? point; if(edgeId?.startsWith("studio:")){setError("Связь с началом назначает точку входа. Новый шаг добавьте на карту и соедините обычным переходом.");return;} if (edgeId) { const [source, index] = edgeId.split(":"); setPendingInsert({ kind, source, index: Number(index), position }); } else add(kind, position); }} />}
       </div>
       {geometry.handle("right")}
       <aside className="studio-map-inspector space-y-4" aria-label="Контекстный инспектор">
-        {inspectorPanel ? inspectorPanel : edge ? <ScenarioEdgeInspector key={`${edge.source}:${edge.index}`} definition={definition} source={edge.source} index={edge.index} disabled={disabled} onChange={next => perform(() => next)} /> : !block ? <><h2 className="text-lg font-semibold">Начало</h2><p className="text-xs text-slate-500">Общие настройки карты. Системный элемент не исполняется и не удаляется.</p><ScenarioPurpose definition={definition} catalog={catalog} disabled={disabled} existing={existing} onChange={change} {...categoryProps} /><label className="block text-sm">Основной вход карты<Select disabled={disabled} value={definition.entry_block_id??""} onChange={event=>change({...definition,entry_block_id:event.target.value||null})}><option value="">Выберите начальный блок</option>{blocks.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</Select></label><details open={issuePolicy ? true : undefined}><summary className="cursor-pointer font-semibold">Политики и наследование</summary><ScenarioProcessing definition={definition} disabled={disabled} onChange={change} focusPolicy={issuePolicy} /></details></> : <>
+        {!inspectorPanel && <div role="tablist" aria-label="Режим инспектора" className="flex flex-wrap gap-2">{(["settings","preview"] as const).map(tab=><button key={tab} type="button" role="tab" aria-selected={inspectorTab===tab} className={`rounded px-3 py-2 text-sm ${inspectorTab===tab?"bg-blue-50 font-semibold":"hover:bg-slate-100"}`} onClick={()=>setInspectorTab(tab)}>{tab==="settings"?"Настройки":"Как у сотрудника"}</button>)}</div>}
+        {inspectorPanel ? inspectorPanel : inspectorTab==="preview" ? <><p className="text-xs text-slate-500">Оформление текущего черновика. Введённые здесь ответы не сохраняются.</p><ScenarioRequesterPreview key={`${definition.scenario_key}:${block?.id??"empty"}`} definition={definition} block={block}/><Button variant="outline" onClick={()=>setFullPreview(true)}>Открыть полную страницу</Button></> : entranceLink ? <><h2 className="text-lg font-semibold">Связь с началом</h2><p>Блок «{blocks.find(item=>item.id===entranceLink.target)?.title}» назначен точкой входа. Эта связь не является шагом выполнения.</p>{entranceLink.key===null?<><p>Основной вход карты. Отдельный пункт каталога пока не создан.</p><Button disabled={disabled} onClick={()=>perform(()=>connectStart(definition,entranceLink.target))}>Создать пункт каталога для входа</Button><Button disabled={disabled} variant="ghost" onClick={()=>perform(()=>({...definition,entry_block_id:null}))}>Убрать основной вход из черновика</Button></>:<ScenarioEntryInspector definition={definition} blockId={entranceLink.target} catalog={catalog} disabled={disabled} onChange={change}/>}</> : edge ? <ScenarioEdgeInspector key={`${edge.source}:${edge.index}`} definition={definition} source={edge.source} index={edge.index} disabled={disabled} onChange={next => perform(() => next)} /> : !block ? <><h2 className="text-lg font-semibold">Начало</h2><p className="text-xs text-slate-500">Общие настройки карты. Системный элемент не исполняется и не удаляется.</p><label className="block text-sm">Связать начало с блоком<Select disabled={disabled} value="" onChange={event=>perform(()=>connectStart(definition,event.target.value))}><option value="">Выберите точку входа</option>{blocks.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</Select></label><ScenarioPurpose definition={definition} catalog={catalog} disabled={disabled} existing={existing} onChange={change} {...categoryProps} /><label className="block text-sm">Основной вход карты<Select disabled={disabled} value={definition.entry_block_id??""} onChange={event=>change({...definition,entry_block_id:event.target.value||null})}><option value="">Выберите начальный блок</option>{blocks.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</Select></label><details open={issuePolicy ? true : undefined}><summary className="cursor-pointer font-semibold">Политики и наследование</summary><ScenarioProcessing definition={definition} disabled={disabled} onChange={change} focusPolicy={issuePolicy} /></details></> : <>
           <h2 className="text-lg font-semibold">{block.title}</h2>
           {terminal(block.kind) && <><label className="block">Режим результата<Select disabled={disabled} value={block.kind} onChange={event => change({ ...definition, blocks: blocks.map(item => item.id === block.id ? { id: item.id, title: item.title, kind: event.target.value as "finish" | "submit_ticket", transitions: [], ...(event.target.value === "finish" ? { message: "Проблема решена без обращения" } : {}) } : item) })}><option value="submit_ticket">Создать обращение</option><option value="finish">Завершить без обращения</option></Select></label><p className="text-xs text-slate-500">Общий контекст услуги и шаблона. Приоритет и SLA рассчитывает сервер по собранным ответам.</p></>}
           {block.kind === "submit_ticket" && <details><summary>Политики обработки и согласование</summary><ScenarioProcessing definition={definition} disabled={disabled} onChange={change} /></details>}
@@ -102,5 +113,6 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
       </aside>
     </div>
     {geometry.handle("height")}
+    {fullPreview && <ScenarioPagePreview definition={definition} block={block??blocks.find(item=>item.id===definition.entry_block_id)??blocks[0]} offeringTitle={catalog.offerings.find(item=>item.full_code===definition.offering_full_code)?.public_title??""} onClose={()=>setFullPreview(false)}/>}
   </div>;
 }

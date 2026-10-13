@@ -23,3 +23,6 @@
 .studio-map-panel { min-width:0; border:1px solid #e2e8f0; border-radius:16px; padding:20px; background:white; }
 @media (max-width:1100px) { .studio-map-workbench { grid-template-columns:180px minmax(0,1fr); height:auto; gap:8px; } .studio-map-main { min-height:380px; } .studio-map-inspector { grid-column:1/-1; max-height:540px; } .studio-map-resizer { display:none; } }
 @media (max-width:650px) { .studio-map-workbench { grid-template-columns:minmax(0,1fr); } .studio-map-explorer { max-height:240px; } }
+
+.studio-requester-page-preview { width:100vw; height:100dvh; max-width:none; max-height:none; margin:0; padding:0; border:0; background:#f5f7fa; color:#0f172a; overflow:auto; }
+.studio-requester-page-preview::backdrop { background:#0f172a80; }

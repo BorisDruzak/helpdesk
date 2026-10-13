@@ -105,7 +105,10 @@
   orchestrates the scenario-api/catalog/purpose/category/wizard components and
   editor/context/dirty-guard hooks under `features/request-template-studio`. The root
   map opens first with `scenario-workbench-catalog`, browser-only resizable
-  `scenario-workbench-geometry` and actionable `scenario-map-hints`/guidance.
+  `scenario-workbench-geometry` and actionable `scenario-map-hints`/guidance. Start
+  connections project existing entrances without runtime edges. Inspector/full-page
+  `scenario-requester-preview` shares requester `scenario-step-content`; lifecycle
+  APIs remain owned by `scenario-session` and server simulation.
   See `docs/GUIDED_REQUEST_STUDIO_ADMIN.md` for UI stages and fixture browser gates.
   Catalog metadata uses the immutable version referenced by the active pointer
   (not the greatest historical version), and the latest scenario/draft timestamp.

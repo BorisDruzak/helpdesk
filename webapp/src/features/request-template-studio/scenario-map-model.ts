@@ -1,5 +1,5 @@
 import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioTransition } from "./scenario-contract";
-import { addBlock, newBlock, removeBlock } from "./scenario-builder-model";
+import { addBlock, newBlock, newKey, removeBlock } from "./scenario-builder-model";
 
 export const mapPalette: { kind: ScenarioBlock["kind"]; label: string }[] = [
   { kind: "form_page", label: "Вопрос" }, { kind: "instruction", label: "Инструкция" },
@@ -8,6 +8,23 @@ export const mapPalette: { kind: ScenarioBlock["kind"]; label: string }[] = [
 ];
 export const mapKindLabel = (kind: ScenarioBlock["kind"]) => kind === "finish" ? "Результат" : mapPalette.find(item => item.kind === kind)?.label ?? kind;
 export const terminal = (kind: ScenarioBlock["kind"]) => kind === "finish" || kind === "submit_ticket";
+
+export function connectStart(definition: ScenarioDraftDefinition, target: string) {
+  const block = definition.blocks?.find(item => item.id === target);
+  if (!block) throw new Error("Выберите существующий начальный блок");
+  const entries = definition.entry_points ?? [];
+  if (entries.some(entry => entry.target_block_id === target)) return definition.entry_block_id ? definition : { ...definition, entry_block_id: target };
+  if (entries.length >= 64) throw new Error("Достигнут лимит 64 точек входа");
+  return { ...definition, entry_block_id: definition.entry_block_id ?? target, entry_points: [...entries, {
+    key: newKey("entry"), title: block.title, target_block_id: target, category_id: null, visibility: "public" as const, enabled: true,
+  }] };
+}
+export function reconnectStart(definition: ScenarioDraftDefinition, key: string | null, target: string) {
+  if (!definition.blocks?.some(item => item.id === target)) throw new Error("Выберите существующий начальный блок");
+  if (key === null) return { ...definition, entry_block_id: target };
+  if (!definition.entry_points?.some(entry => entry.key === key)) throw new Error("Точка входа не найдена");
+  return { ...definition, entry_points: definition.entry_points.map(entry => entry.key === key ? { ...entry, target_block_id: target } : entry) };
+}
 
 export function positionBlock(definition: ScenarioDraftDefinition, id: string, position: { x: number; y: number }): ScenarioDraftDefinition {
   if (![position.x, position.y].every(value => Number.isFinite(value) && Math.abs(value) <= 100000)) throw new Error("Координаты должны быть конечными числами от −100000 до 100000");
