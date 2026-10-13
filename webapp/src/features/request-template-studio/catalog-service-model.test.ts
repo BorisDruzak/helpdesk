@@ -15,3 +15,10 @@ it("does not replace a published ordinary form with a draft entrance",()=>{
   const data={entries:[{offering:{full_code:"work.print",public_title:"Печать"},scenarios:[{id:"s",archived:false,entry_points:[{key:"paper",title:"Застряла бумага"}]}],active_mode:"form",requester_available:true,category_ids:[]}]} as unknown as ScenarioCatalog;
   const rows=catalogServices(data);expect(rows).toHaveLength(2);expect(rows[0]).toMatchObject({available:true,mode:"form"});expect(rows[1]).toMatchObject({available:false,mode:"scenario",draft:true});
 });
+it("shows a matching ordinary service and its draft entrance once without changing active mode",()=>{
+ const entry={key:"vpn",title:"VPN",target_block_id:"q"};
+ const data={entries:[{offering:{full_code:"net.vpn",public_title:"VPN"},scenarios:[{id:"s",archived:false,entry_points:[entry]}],active_mode:"form",requester_available:true,category_ids:[]}]} as unknown as ScenarioCatalog;
+ const rows=catalogServices(data);expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({key:"s:vpn",mode:"form",available:true,draft:true,entry});
+ data.entries![0].scenarios[0].entry_points![0]={...entry,title:"Другой вход"};
+ const edited=catalogServices(data);expect(edited).toHaveLength(2);expect(edited.find(row=>row.key==="s:vpn")?.entry?.title).toBe("Другой вход");
+});

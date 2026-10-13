@@ -14,15 +14,18 @@ export function catalogServices(data: ScenarioCatalog): CatalogService[] {
     const active = maps.find(map => map.id === card.active_scenario_id);
     const metadata = card.offering.metadata?.studio_catalog;
     const rows: CatalogService[] = [];
+    const editingMap=active??maps[0];
+    const matchingDraft=!editingMap?.published_entry_points?.length?editingMap?.entry_points?.find(entry=>entry.title.trim().toLocaleLowerCase()===card.offering.public_title.trim().toLocaleLowerCase()):undefined;
     // The ordinary form remains a real service while new entrances are only drafts.
-    if (!active?.published_entry_points?.length) rows.push({ key: card.offering.full_code, card, title: card.offering.public_title,
+    if (!active?.published_entry_points?.length) rows.push({ key: matchingDraft?`${editingMap!.id}:${matchingDraft.key}`:card.offering.full_code, card, title: card.offering.public_title,
       description: card.offering.short_description ?? "", categoryId: metadata && "category_id" in metadata ? metadata.category_id ?? null : card.category_ids[0] ?? null,
-      synonyms: metadata?.synonyms ?? [], available: card.requester_available !== false, mode: card.active_mode,
-      scenario: active ?? maps[0], draft: false });
+      synonyms: [...(metadata?.synonyms ?? []),...(matchingDraft?.synonyms??[])], available: card.requester_available !== false, mode: card.active_mode,
+      scenario: editingMap, entry:matchingDraft, draft:!!matchingDraft });
     for (const map of maps) {
       const points = new Map((map.published_entry_points ?? []).map(entry => [entry.key, entry]));
       for (const entry of map.entry_points ?? []) points.set(entry.key, entry);
       for (const entry of points.values()) {
+        if(matchingDraft&&map.id===editingMap!.id&&entry.key===matchingDraft.key)continue;
         const published = map.published_entry_points?.find(item => item.key === entry.key);
         const draftEntry = map.entry_points?.find(item => item.key === entry.key);
         const available = card.requester_available !== false && card.active_scenario_id === map.id && !!published && (map.published_public_entry_keys ?? []).includes(entry.key);

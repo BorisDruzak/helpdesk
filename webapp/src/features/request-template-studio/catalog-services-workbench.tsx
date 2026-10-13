@@ -33,7 +33,7 @@ export function ScenarioCatalogExplorer({data,query,status,category,canEdit,onQu
   const grid=useRef<HTMLDivElement>(null),geometry=useCatalogGeometry(grid),cache=useQueryClient();
   const rows=catalogServices(data);
   const serviceCode=category?.startsWith("service:")?category.slice(8):data.categories.find(item=>item.id===category)?.service_code;
-  const selectedRow=rows.find(row=>row.key===selected);
+  const selectedRow=rows.find(row=>row.key===selected)??(selected===initialOffering?rows.find(row=>row.card.offering.full_code===initialOffering&&row.title===row.card.offering.public_title):undefined);
   const folder=category&&!category.startsWith("service:")?data.categories.find(item=>item.id===category):null;
   const descendants=folder?categoryDescendants(data,folder.id):null;
   const visible=rows.filter(row=>(!serviceCode||row.card.offering.service_code===serviceCode)&&(!descendants||!!row.categoryId&&descendants.has(row.categoryId))&&(!query||[row.title,row.description,row.entry?.title??"",row.entry?.description??"",...row.synonyms,catalogServiceLocation(data,row),row.scenario?.title??"",row.card.offering.request_type??"",({incident:"Инцидент",request:"Общий запрос",service_request:"Запрос услуги",access:"Запрос доступа",consultation:"Консультация"} as Record<string,string>)[row.card.offering.request_type??""]??""].join(" ").toLocaleLowerCase().includes(query.toLocaleLowerCase()))&&
