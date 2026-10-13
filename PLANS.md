@@ -2203,3 +2203,13 @@ requester/publication guard changes, catalog writes or real ticket creation.
   in the task receipt after the canonical staging installer completes.
 - Staging only; no production/Endpoint changes, automatic catalog publication,
   schema migration, or real ticket submission.
+
+# Catalog navigation follow-up — 2026-10-13
+
+- Remove the separate maps tab; open linked maps directly from the service inspector.
+- Repeat ordinary forms and named scenario entrances in the section/category tree;
+  fetch unfiltered pages independently of center filters and retain CAS/dirty guards.
+- Keep form, new-map and shared-entrance creation under `Создать услугу`.
+- Validation: focused Studio unit/build/browser checks and staging UI checks;
+  exact results and installed identity recorded in the task receipt under `tmp`.
+- Scope: staging only; no requester ticket creation or catalog publication.

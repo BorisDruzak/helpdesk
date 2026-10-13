@@ -125,6 +125,9 @@
   full-width tree/list/inspector. `catalog-service-model` projects named entrances
   separately from their canonical Offering, preserving active published labels
   and draft differences. `catalog-geometry` owns pointer/keyboard resizing.
+  `catalog-structure-data` assembles unfiltered catalog pages for service leaves
+  in the hierarchy; inspector heading actions open linked maps without a separate
+  map catalog tab. Form/new-map/shared-entrance creation uses one service action.
   Admin catalog adds draft/published entrance summaries and public entry keys,
   plus `available`/`hidden` filters; existing offering pagination stays compatible.
   `ServiceCatalogRepo.upsert_offering_draft` validates bounded ordinary-form

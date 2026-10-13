@@ -39,8 +39,10 @@ export function CatalogOfferingInspector({row,data,canEdit,onOpen,onCreate,onClo
   useEffect(()=>{onBusy?.(mutation.isPending);return()=>onBusy?.(false);},[mutation.isPending,onBusy]);
   function guarded(action:()=>void){if(!dirty||window.confirm("Есть несохранённые настройки услуги. Продолжить без сохранения?"))action();}
   const maps=row.card.scenarios.filter(map=>!map.archived&&map.status!=="archived");
+  const linkedMaps=row.entry&&row.scenario?[row.scenario]:maps;
   return <section className="catalog-inspector-content">
     <header className="catalog-inspector-heading"><div><h2>{row.title}</h2><p>{row.available?"Доступна сотрудникам":"Недоступна сотрудникам"}</p></div><Button variant="ghost" size="sm" aria-label="Закрыть настройки услуги" onClick={()=>guarded(onClose)}>×</Button></header>
+    {!!linkedMaps.length&&<div className="catalog-map-actions">{linkedMaps.map(map=><Button key={map.id} variant="outline" disabled={mutation.isPending} onClick={()=>guarded(()=>onOpen(map,entry?.target_block_id))}>{linkedMaps.length===1?"Открыть карту сценария":`Открыть карту сценария: ${map.title}`}</Button>)}</div>}
     {row.draft&&<p className="catalog-draft-note">Есть изменения черновика. Действующая версия сохраняется до публикации.</p>}
     {row.removedInDraft&&<div className="catalog-draft-note"><p>Пункт удалён из черновика карты, но остаётся в действующей версии.</p>{row.scenario&&<Button variant="outline" onClick={()=>onOpen(row.scenario!,entry?.target_block_id)}>Открыть карту</Button>}</div>}
     <div role="tablist" aria-label="Настройки выбранной услуги" className="catalog-inspector-tabs">{Object.entries(tabs).map(([key,label])=><button type="button" role="tab" aria-selected={tab===key} key={key} onClick={()=>setTab(key as Tab)}>{label}</button>)}</div>
@@ -63,6 +65,7 @@ export function CatalogOfferingInspector({row,data,canEdit,onOpen,onCreate,onClo
           {maps.map(map=><div className="catalog-binding" key={map.id}><strong>{map.title}</strong><p>{map.published_version?`Опубликованная версия ${map.published_version}`:"Черновик · ещё не опубликован"}{map.issues?.length?" · есть ошибки черновика":""}</p><Button variant="outline" onClick={()=>guarded(()=>onOpen(map,entry?.target_block_id))}>Открыть карту</Button></div>)}
           {canEdit&&!maps.length&&offering.request_template_key&&<Button variant="outline" onClick={()=>guarded(()=>onCreate(offering))}>Создать карту</Button>}
           {!!maps.length&&<p className="catalog-field-help">Связь с общей картой сохраняется. Новые пункты можно добавить в эту же карту.</p>}
+          {row.card.scenarios.some(map=>map.archived||map.status==="archived")&&<details><summary>Архив карт услуги</summary>{row.card.scenarios.filter(map=>map.archived||map.status==="archived").map(map=><div className="catalog-binding" key={map.id}><strong>{map.title}</strong><Button variant="outline" onClick={()=>guarded(()=>onOpen(map))}>Открыть архивную карту</Button></div>)}</details>}
         </>}
         {tab==="processing"&&<>
           <h3 className="font-semibold">Каноническая обработка Helpdesk</h3><p className="catalog-field-help">Общий тип обращения может обслуживать несколько услуг и входов сценария.</p>

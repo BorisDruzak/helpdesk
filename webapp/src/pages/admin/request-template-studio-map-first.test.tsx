@@ -6,76 +6,37 @@ import { AdminRequestTemplateStudioPage } from "./request-template-studio-page";
 vi.mock("../../features/auth/session-provider", () => ({ useSession: () => ({ session: { actor_role: "admin" } }) }));
 const offering = { full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" };
 const catalog = { categories: [], services: [{ code: "it", public_title: "ИТ" }], offerings: [offering], entries: [{ offering, scenarios: [], active_mode: "form", category_ids: [] }], scenarios: [], total: 1, offset: 0, limit: 100 };
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear(); });
-it("opens a starter dialog before exposing a new map and makes no server writes", async () => {
- const fetcher = vi.fn(async (_url: unknown, _init?: RequestInit) => new Response(JSON.stringify({ status: "success", data: catalog }), { headers: { "content-type": "application/json" } }));
- vi.stubGlobal("fetch", fetcher);
- const router = createMemoryRouter([{ path: "*", element: <AdminRequestTemplateStudioPage /> }]);
- render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RouterProvider router={router}/></QueryClientProvider>);
- fireEvent.click(await screen.findByRole("button", {name:"Новая карта"}));
- expect(await screen.findByRole("dialog",{name:"С чего начнём?"})).toBeVisible();
- expect(screen.queryByLabelText("Визуальная карта сценария")).not.toBeInTheDocument();
- fireEvent.change(screen.getByLabelText("Название карты"),{target:{value:"Выдать доступ"}});
- fireEvent.change(screen.getByLabelText("Раздел каталога"),{target:{value:"service:it"}});
- fireEvent.click(screen.getByRole("button",{name:"Создать карту →"}));
- expect(await screen.findByLabelText("Визуальная карта сценария")).toBeVisible();
- expect(screen.getByLabelText("Что спросить?")).toBeVisible();
- expect(fetcher.mock.calls.every(([,init])=>!["POST","PUT","DELETE"].includes(init?.method ?? "GET"))).toBe(true);
- expect(screen.getByRole("tab",{name:"Блоки"})).toHaveAttribute("aria-selected","true");
+function response(data:unknown){return new Response(JSON.stringify({status:"success",data}),{headers:{"content-type":"application/json"}});}
+function mount(){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RouterProvider router={createMemoryRouter([{path:"*",element:<AdminRequestTemplateStudioPage/>}])}/></QueryClientProvider>);}
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); localStorage.clear(); });
+
+it("creates a local map from the service creation choice without server writes",async()=>{
+ const fetcher=vi.fn(async(_url:unknown,_init?:RequestInit)=>response(catalog));vi.stubGlobal("fetch",fetcher);mount();
+ fireEvent.click(await screen.findByRole("button",{name:"Создать услугу"}));fireEvent.change(screen.getByRole("combobox",{name:"Способ помощи"}),{target:{value:"map"}});fireEvent.click(screen.getByRole("button",{name:"Создать карту"}));
+ expect(await screen.findByRole("dialog",{name:"С чего начнём?"})).toBeVisible();expect(screen.queryByLabelText("Визуальная карта сценария")).not.toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText("Название карты"),{target:{value:"Выдать доступ"}});fireEvent.change(screen.getByLabelText("Раздел каталога"),{target:{value:"service:it"}});fireEvent.click(screen.getByRole("button",{name:"Создать карту →"}));
+ expect(await screen.findByRole("heading",{name:"Библиотека блоков"})).toBeVisible();expect(fetcher.mock.calls.every(([,init])=>!["POST","PUT","DELETE"].includes(init?.method??"GET"))).toBe(true);
 });
-it("renders only the filtered offering entries",async()=>{
- const vpn={...offering,full_code:"it.vpn",public_title:"VPN"};
- vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{...catalog,offerings:[offering,vpn]}}),{headers:{"content-type":"application/json"}})));
- render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={createMemoryRouter([{path:"*",element:<AdminRequestTemplateStudioPage/>}])}/></QueryClientProvider>);
- expect(await screen.findByRole("link",{name:/Принтер/})).toBeVisible();
- expect(screen.queryByRole("link",{name:/VPN/})).not.toBeInTheDocument();
+it("renders only offering cards supplied by the catalog projection",async()=>{
+ const vpn={...offering,full_code:"it.vpn",public_title:"VPN"};vi.stubGlobal("fetch",vi.fn(async()=>response({...catalog,offerings:[offering,vpn]})));mount();
+ expect(await screen.findByRole("button",{name:"Настроить услугу Принтер"})).toBeVisible();expect(screen.queryByRole("button",{name:"Настроить услугу VPN"})).not.toBeInTheDocument();
 });
-it.each([0, 2])("discards edits before a delayed offering selection with %i maps", async (mapCount) => {
+it.each([0,2])("discards old map edits before choosing a service with %i maps",async(mapCount)=>{
  const other={...offering,full_code:"it.vpn",public_title:"VPN",request_template_key:"vpn"};
- const definition={scenario_key:"existing",title:"Карта принтера",service_code:"it",offering_full_code:offering.full_code,blocks:[],process_binding:{request_template_key:"printer"}};
- const item={...definition,id:"s1",archived:false};
- const data={...catalog,offerings:[offering,other],scenarios:[item],entries:[{offering,scenarios:[item],active_mode:"form",category_ids:[]},{offering:other,scenarios:[],active_mode:"form",category_ids:[]}]};
- let resolve!: (response:Response)=>void;
- const fetcher=vi.fn(async(url:unknown,init?:RequestInit)=>{
-  if(String(url).includes("offering_code=it.vpn"))return new Promise<Response>(done=>{resolve=done;});
-  return new Response(JSON.stringify({status:"success",data:String(url).includes("/scenarios/s1")?{scenario:item,draft:{revision:3,definition}}:data}),{headers:{"content-type":"application/json"}});
- });
- vi.stubGlobal("fetch",fetcher);
- const router=createMemoryRouter([{path:"*",element:<AdminRequestTemplateStudioPage/>}]);
- render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RouterProvider router={router}/></QueryClientProvider>);
- fireEvent.click(await screen.findByRole("button",{name:"Карта принтера"}));
- await waitFor(()=>expect(screen.getByLabelText("Название карты")).toHaveValue("Карта принтера"));
- vi.useFakeTimers();
- fireEvent.change(screen.getByLabelText("Название карты"),{target:{value:"Отброшенная правка"}});
- fireEvent.click(screen.getByRole("button",{name:"Каталог"}));
- fireEvent.click(screen.getByRole("button",{name:"VPN"}));
- await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});
- expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
- fireEvent.click(screen.getByRole("button",{name:"Переключить без сохранения"}));
- await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});
- expect(screen.queryByRole("button",{name:"Сохранить черновик"})).not.toBeInTheDocument();
- expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
- const maps=Array.from({length:mapCount},(_,index)=>({...item,id:`vpn-${index}`,title:`VPN ${index}`,offering_full_code:other.full_code}));
- await act(async()=>{resolve(new Response(JSON.stringify({status:"success",data:{...catalog,offerings:[offering,other],entries:[{offering:other,scenarios:maps,active_mode:"form",category_ids:[]}],scenarios:maps}}),{headers:{"content-type":"application/json"}}));await vi.advanceTimersByTimeAsync(0);});
- if(mapCount===0) { expect(screen.getByRole("dialog",{name:"С чего начнём?"})).toBeVisible(); expect(screen.getByLabelText("Название карты")).toHaveValue("VPN"); }
- else { expect(screen.getByRole("button",{name:"VPN 0"})).toBeVisible(); expect(screen.queryByLabelText("Название карты")).not.toBeInTheDocument(); }
- await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});
- expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
+ const definition={scenario_key:"existing",title:"Карта принтера",service_code:"it",offering_full_code:offering.full_code,blocks:[],process_binding:{request_template_key:"printer"}};const item={...definition,id:"s1",archived:false};const maps=Array.from({length:mapCount},(_,index)=>({...item,id:`vpn-${index}`,title:`VPN ${index}`,offering_full_code:other.full_code}));
+ const data={...catalog,offerings:[offering,other],scenarios:[item,...maps],entries:[{offering,scenarios:[item],active_mode:"form",category_ids:[]},{offering:other,scenarios:maps,active_mode:"form",category_ids:[]}]};
+ const fetcher=vi.fn(async(url:unknown,_init?:RequestInit)=>response(String(url).includes("/scenarios/s1")?{scenario:item,draft:{revision:3,definition}}:data));vi.stubGlobal("fetch",fetcher);mount();
+ fireEvent.click(await screen.findByRole("button",{name:"Настроить услугу Принтер"}));fireEvent.click(screen.getByRole("button",{name:"Открыть карту сценария"}));await waitFor(()=>expect(screen.getByLabelText("Название карты")).toHaveValue("Карта принтера"));
+ vi.useFakeTimers();fireEvent.change(screen.getByLabelText("Название карты"),{target:{value:"Отброшенная правка"}});fireEvent.click(screen.getByRole("button",{name:"Каталог"}));
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
+ fireEvent.click(screen.getByRole("button",{name:"Уйти без сохранения"}));fireEvent.click(screen.getByRole("button",{name:"Настроить услугу VPN"}));
+ if(mapCount===0){expect(screen.queryByRole("button",{name:/Открыть карту сценария/})).not.toBeInTheDocument();fireEvent.click(screen.getByRole("tab",{name:"Помощь сотруднику"}));fireEvent.click(screen.getByRole("button",{name:"Создать карту"}));expect(screen.getByLabelText("Название карты")).toHaveValue("VPN");}
+ else{expect(screen.getByRole("button",{name:"Открыть карту сценария: VPN 0"})).toBeVisible();expect(screen.getByRole("button",{name:"Открыть карту сценария: VPN 1"})).toBeVisible();expect(screen.queryByLabelText("Название карты")).not.toBeInTheDocument();}
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
 });
-it("blocks archive and copy of the visible old map while another offering is loading", async()=>{
- const other={...offering,full_code:"it.vpn",public_title:"VPN",request_template_key:"vpn"};
- const definition={scenario_key:"existing",title:"Карта принтера",service_code:"it",offering_full_code:offering.full_code,blocks:[],process_binding:{request_template_key:"printer"}};
- const item={...definition,id:"s1",archived:false};
- const data={...catalog,offerings:[offering,other],scenarios:[item],entries:[{offering,scenarios:[item],active_mode:"form",category_ids:[]},{offering:other,scenarios:[],active_mode:"form",category_ids:[]}]};
- let resolve!:(response:Response)=>void;
- const fetcher=vi.fn(async(url:unknown,_init?:RequestInit)=>String(url).includes("offering_code=it.vpn")?new Promise<Response>(done=>{resolve=done;}):new Response(JSON.stringify({status:"success",data:String(url).includes("/scenarios/s1")?{scenario:item,draft:{revision:3,definition}}:data}),{headers:{"content-type":"application/json"}}));
- vi.stubGlobal("fetch",fetcher);
- const router=createMemoryRouter([{path:"*",element:<AdminRequestTemplateStudioPage/>}]);render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RouterProvider router={router}/></QueryClientProvider>);
- fireEvent.click(await screen.findByRole("button",{name:"Карта принтера"}));await waitFor(()=>expect(screen.getByLabelText("Название карты")).toHaveValue("Карта принтера"));
- expect(screen.getByRole("button",{name:"Архивировать сценарий"})).toBeEnabled();
- fireEvent.click(screen.getByRole("button",{name:"Каталог"}));fireEvent.click(screen.getByRole("button",{name:"VPN"}));
- expect(screen.getByRole("button",{name:"Архивировать сценарий"})).toBeDisabled();expect(screen.getByRole("button",{name:"Создать копию"})).toBeDisabled();
- fireEvent.click(screen.getByRole("button",{name:"Архивировать сценарий"}));expect(screen.queryByRole("button",{name:"Подтвердить архивирование"})).not.toBeInTheDocument();
- await act(async()=>{resolve(new Response(JSON.stringify({status:"success",data:{...data,entries:[{offering:other,scenarios:[],active_mode:"form",category_ids:[]}],scenarios:[]}}),{headers:{"content-type":"application/json"}}));});
- expect(fetcher.mock.calls.some(([url])=>String(url).endsWith("/archive"))).toBe(false);
+it("keeps archive and copy absent while a map selected from the inspector is loading",async()=>{
+ const definition={scenario_key:"existing",title:"Карта принтера",service_code:"it",offering_full_code:offering.full_code,blocks:[],process_binding:{request_template_key:"printer"}};const item={...definition,id:"s1",archived:false};
+ let resolve!:(value:Response)=>void;const fetcher=vi.fn(async(url:unknown,_init?:RequestInit)=>String(url).includes("/scenarios/s1")?new Promise<Response>(done=>{resolve=done;}):response({...catalog,scenarios:[item],entries:[{offering,scenarios:[item],active_mode:"form",category_ids:[]}]}));vi.stubGlobal("fetch",fetcher);mount();
+ fireEvent.click(await screen.findByRole("button",{name:"Настроить услугу Принтер"}));fireEvent.click(screen.getByRole("button",{name:"Открыть карту сценария"}));expect(screen.queryByRole("button",{name:"Архивировать сценарий"})).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"Создать копию"})).not.toBeInTheDocument();
+ await act(async()=>{resolve(response({scenario:item,draft:{revision:3,definition}}));});expect(await screen.findByRole("button",{name:"Архивировать сценарий"})).toBeEnabled();expect(fetcher.mock.calls.some(([url])=>String(url).endsWith("/archive"))).toBe(false);
 });

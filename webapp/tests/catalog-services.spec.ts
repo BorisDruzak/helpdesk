@@ -26,13 +26,15 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:8
  test(`unified catalog service settings and map return ${viewport.width}`,async({page},info)=>{
   await page.setViewportSize(viewport);const state=await fixture(page);await page.goto("/app/admin/request-template-studio");
   const create=page.getByRole("button",{name:"Создать услугу",exact:true});await expect(create).toBeVisible();expect((await create.boundingBox())!.y).toBeLessThan(viewport.height);
-  await expect(page.getByRole("region",{name:"Карты сценариев"})).toHaveCount(0);
+  await expect(page.getByRole("tab",{name:"Карты сценариев"})).toHaveCount(0);
+  await expect(page.getByRole("navigation",{name:"Категории услуг"}).getByRole("button",{name:"Услуга Проблемы с печатью · Обычная форма"})).toBeVisible();
+  await expect(page.getByRole("navigation",{name:"Категории услуг"}).getByRole("button",{name:"Услуга Застряла бумага · Пошаговый сценарий"})).toBeVisible();
   await page.getByRole("button",{name:"Настроить услугу Проблемы с печатью"}).click();
   const inspector=page.getByRole("complementary",{name:"Настройки услуги"});await expect(inspector.getByLabel("Название услуги")).toHaveValue("Проблемы с печатью");
   await inspector.getByLabel("Категория (необязательно)").selectOption("10000000-0000-0000-0000-000000000001");
   await inspector.getByLabel("Слова для поиска").fill("принтер\nпечать");await inspector.getByRole("button",{name:"Сохранить",exact:true}).click();await expect(inspector.getByText("Настройки услуги сохранены.")).toBeVisible();
   expect(state.writes[0].body.metadata).toEqual({private_note:"preserve",studio_catalog:{category_id:"10000000-0000-0000-0000-000000000001",synonyms:["принтер","печать"]}});
-  await inspector.getByRole("tab",{name:"Помощь сотруднику"}).click();await inspector.getByRole("button",{name:"Открыть карту",exact:true}).click();
+  await inspector.getByRole("button",{name:"Открыть карту сценария",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Библиотека блоков"})).toBeVisible();await expect(page.getByRole("tab",{name:"Каталог",exact:true})).toHaveCount(0);
   await page.getByRole("button",{name:"Каталог",exact:true}).click();await expect(page.getByRole("button",{name:"Создать услугу",exact:true})).toBeVisible();await expect(page.getByLabel("Визуальная карта сценария",{exact:true})).toHaveCount(0);
   await page.getByRole("button",{name:"Настроить услугу Застряла бумага"}).click();await inspector.getByLabel("Название услуги").fill("Бумага застряла в принтере");await inspector.getByRole("button",{name:"Сохранить",exact:true}).click();await expect(inspector.getByText(/Черновик пункта сохранён/)).toBeVisible();
@@ -52,9 +54,35 @@ test("cancel keeps edits and confirmed discard resets the inspector on a matchin
  const state=await fixture(page);await page.goto("/app/admin/request-template-studio");
  await page.getByRole("button",{name:"Настроить услугу Проблемы с печатью"}).click();
  await page.getByLabel("Название услуги",{exact:true}).fill("Несохранённое название");
- page.once("dialog",dialog=>dialog.dismiss());await page.getByRole("tab",{name:"Карты сценариев",exact:true}).click();
+ page.once("dialog",dialog=>dialog.dismiss());await page.getByRole("button",{name:"Открыть карту сценария",exact:true}).click();
  await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Несохранённое название");
  page.once("dialog",dialog=>dialog.accept());await page.getByLabel("Поиск услуг",{exact:true}).fill("Проблемы");
  await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Проблемы с печатью");
  expect(state.writes).toHaveLength(0);expect(state.errors).toEqual([]);
+});
+
+test("a tree entrance opens its own map at its target and asks before discarding changes",async({page})=>{
+ const state=await fixture(page);await page.goto("/app/admin/request-template-studio");
+ const tree=page.getByRole("navigation",{name:"Категории услуг"});
+ await tree.getByRole("button",{name:"Услуга Застряла бумага · Пошаговый сценарий",exact:true}).click();
+ const inspector=page.getByRole("complementary",{name:"Настройки услуги"});
+ await expect(inspector.getByLabel("Название услуги")).toHaveValue("Застряла бумага");
+ await expect(inspector.getByRole("tab",{name:"Основное"})).toHaveAttribute("aria-selected","true");
+ await inspector.getByLabel("Название услуги").fill("Несохранённая бумага");
+ page.once("dialog",dialog=>dialog.dismiss());await inspector.getByRole("button",{name:"Открыть карту сценария",exact:true}).click();
+ await expect(inspector.getByLabel("Название услуги")).toHaveValue("Несохранённая бумага");
+ page.once("dialog",dialog=>dialog.accept());await inspector.getByRole("button",{name:"Открыть карту сценария",exact:true}).click();
+ await expect(page.locator('.react-flow__node[data-id="q"] .studio-map-node')).toHaveClass(/is-selected/);
+ expect(state.writes).toHaveLength(0);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
+});
+
+test("ordinary forms have no map button and expose the existing template creation flow",async({page})=>{
+ const state=await fixture(page);
+ const offering={full_code:"work.form",code:"form",service_code:"work",public_title:"Обычная заявка",request_template_key:"printer",visibility:"public",lifecycle_status:"published"};
+ await page.route("**/api/web/admin/request-studio/catalog?**",route=>route.fulfill({json:{status:"success",data:{services:[{code:"work",public_title:"Рабочее место"}],categories:[],offerings:[offering],entries:[{offering,scenarios:[],active_mode:"form",category_ids:[]}],scenarios:[],total:1,offset:0,limit:100}}}));
+ await page.goto("/app/admin/request-template-studio");await page.getByRole("button",{name:"Услуга Обычная заявка · Обычная форма",exact:true}).click();
+ await expect(page.getByRole("button",{name:/Открыть карту сценария/})).toHaveCount(0);
+ await page.getByRole("button",{name:"Создать услугу",exact:true}).click();await expect(page.getByRole("combobox",{name:"Способ помощи",exact:true})).toHaveValue("form");
+ await expect(page.getByRole("link",{name:"Создать шаблон",exact:true})).toHaveAttribute("href","/app/admin/forms/new");
+ expect(state.writes).toHaveLength(0);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
 });

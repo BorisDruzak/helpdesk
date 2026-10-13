@@ -15,8 +15,8 @@ it("shows human location, description, published version and timestamp, with ind
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ScenarioCatalogExplorer data={data} query="" status="all" category="child" canEdit
     onQuery={vi.fn()} onStatus={vi.fn()} onCategory={vi.fn()} onOpen={vi.fn()} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()} /></MemoryRouter></QueryClientProvider>);
   expect(screen.getByText("ИТ → Оборудование → Принтеры")).toBeVisible();
-  fireEvent.click(screen.getByRole("tab",{name:"Карты сценариев"}));expect(screen.getAllByText("Помощь при остановке печати")[0]).toBeVisible();
-  expect(screen.getByText(/Опубликованная версия 7/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button",{name:"Настроить услугу Печать"}));
+  expect(screen.getByRole("button",{name:"Открыть карту сценария"})).toBeVisible();
   expect(document.querySelector("time")).toHaveAttribute("datetime", "2026-10-11T10:00:00Z");
   const toggle = screen.getByRole("button", { name: "Свернуть категорию Оборудование" });
   expect(toggle).toHaveAttribute("aria-expanded", "true");

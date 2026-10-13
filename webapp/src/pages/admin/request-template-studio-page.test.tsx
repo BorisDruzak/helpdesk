@@ -15,7 +15,7 @@ function mock() {
  vi.stubGlobal("fetch",fetcher);return fetcher;
 }
 async function start(kind="Простая заявка", bound=false) {
- await ready();fireEvent.click(screen.getByRole("tab",{name:"Карты сценариев"}));fireEvent.click(screen.getByRole("button",{name:"Новая карта"}));
+ await ready();fireEvent.click(await screen.findByRole("button",{name:"Создать услугу"}));fireEvent.change(screen.getByRole("combobox",{name:"Способ помощи"}),{target:{value:"map"}});fireEvent.click(screen.getByRole("button",{name:"Создать карту"}));
  fireEvent.change(screen.getByLabelText("Название карты"),{target:{value:"Выдать доступ"}});
  fireEvent.change(screen.getByLabelText("Раздел каталога"),{target:{value:"service:it"}});
  fireEvent.click(screen.getByRole("radio",{name:new RegExp(kind)}));

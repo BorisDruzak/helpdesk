@@ -1,9 +1,11 @@
 # Guided Request Studio administration
 
 The admin/auditor entry is `/app/admin/request-template-studio`. It opens the
-full-width **Каталог услуг** workbench. **Создать услугу** is the primary action;
-**Карты сценариев** is a separate administration tab where **Новая карта**
-opens a compact starter with name, catalog section and
+full-width **Каталог услуг** workbench. **Создать услугу** is the primary action.
+Choose **Обычная форма** for a direct form (reuse a published processing template
+or open **Создать шаблон**), **Вход в существующий сценарий** for a shared-map
+entrance, or **Новая услуга с пошаговым сценарием** to open the compact starter.
+There is no separate maps tab. The starter includes name, catalog section and
 **Простая заявка / Диагностика проблемы / Пустая карта**. Starters create real,
 editable schema-v1 blocks and transitions locally; they never save or publish
 automatically. A simple request has a catalog entrance, question, review and
@@ -34,6 +36,10 @@ The catalog has one compact service list: section/category tree on the left,
 services in the center, and a selected service inspector on the right. Panels
 resize by pointer/keyboard and retain their widths. Tablets stack the inspector;
 small screens also stack the tree. Selecting a service stays on the same page.
+The tree repeats services as leaves, with **Обычная форма / Пошаговый сценарий**
+labels under their section or optional category. It loads all unfiltered catalog
+pages independently of the center search/filter; incomplete loads expose retry.
+Selecting a tree leaf clears center filters and opens the same service inspector.
 The inspector groups **Основное / Помощь сотруднику / Обработка обращения /
 Доступность**. Sections and categories can be created/renamed inline; categories
 move within their section using the existing parent selector and revision guard.
@@ -41,7 +47,10 @@ An ordinary service uses its canonical Offering. Named entrances are separate
 service rows identified by scenario ID and entrance key; they retain one shared
 Offering, RequestTemplate and map. **Создать услугу → Вход в существующий
 сценарий** adds an entrance using the existing draft API with its current CAS
-revision. The map picker has search and pagination. **Открыть карту** selects
+revision. The map picker has search and pagination. **Открыть карту сценария**
+is directly below the inspector heading only when a map is linked; multiple maps
+have separate named buttons. Archived maps remain under **Помощь сотруднику →
+Архив карт услуги**. The map action selects
 the corresponding first step. Map-toolbar **Каталог** returns to the general
 catalog through the unsaved-change guard. There is no duplicate Catalog tab in
 the block library.
