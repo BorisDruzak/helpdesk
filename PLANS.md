@@ -14,6 +14,10 @@ Checks: frontend48 and backend38 pass; build/workspace/diff checks pass. Isolate
 PostgreSQL acceptance2 pass: admin no-agent actual create with foreign session/
 ticket rejection, and user setup-help projection/preview without profile or agent.
 Installer and real-browser acceptance follow the frozen commit.
+Installed eaf7549f on staging: repeated bootstrap200 keeps answers; setup-help
+fields match the map. Browser creates test T-000058 without profile/agent. Ticket
+page revealed remaining403 on own consent reads; add two owner-scope regressions
+and align those reads while retaining consent-decision role boundaries.
 
 # 2026-10-14 Unified service scenario authoring
 

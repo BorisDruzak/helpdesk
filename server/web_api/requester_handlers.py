@@ -1071,7 +1071,7 @@ async def handle_web_requester_ticket_detail(request: web.Request) -> web.Respon
     )
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_consents(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
@@ -1086,7 +1086,7 @@ async def handle_web_requester_consents(request: web.Request) -> web.Response:
     return _success({"consents": items, "count": len(items)})
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_consent_detail(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     consent_id = _clean(request.match_info.get("consent_id"), max_length=80)

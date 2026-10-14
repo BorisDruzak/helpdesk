@@ -181,7 +181,8 @@
   Requester form/bootstrap/profile/device reads and ticket creation/detail routes
   also admit the admin role already granted the requester workspace. Scenario
   commands accept that role while retaining the authenticated actor as owner;
-  admin requester routes have no cross-owner bypass. Device binding, consent
+  admin requester routes have no cross-owner bypass. Ticket pages can read the
+  owner's consent list/detail. Device binding, consent
   decisions and unrelated ticket actions retain their previous role boundaries.
   Persistent requester sessions and safe publication are documented above and
   in `GUIDED_REQUEST_SCENARIOS.md`.
