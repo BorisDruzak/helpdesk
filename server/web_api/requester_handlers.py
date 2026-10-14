@@ -839,7 +839,7 @@ def _status_filter(request: web.Request) -> list[str] | None:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_bootstrap(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
@@ -850,7 +850,7 @@ async def handle_web_requester_bootstrap(request: web.Request) -> web.Response:
     return _success(payload)
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_devices(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
@@ -925,7 +925,7 @@ async def handle_web_requester_device_link(request: web.Request) -> web.Response
         return response
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_profile(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
@@ -997,7 +997,7 @@ async def handle_web_requester_on_behalf_people(request: web.Request) -> web.Res
     return _success({"people": people})
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_profile_update(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     data = await _json_body(request)
@@ -1015,7 +1015,7 @@ async def handle_web_requester_profile_update(request: web.Request) -> web.Respo
     return _success(payload)
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_device_detail(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     device_id = _clean(request.match_info.get("device_id"), max_length=80)
@@ -1033,7 +1033,7 @@ async def handle_web_requester_device_detail(request: web.Request) -> web.Respon
     return _success(payload)
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_tickets(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     limit = int(request.query.get("limit") or 100)
@@ -1046,7 +1046,7 @@ async def handle_web_requester_tickets(request: web.Request) -> web.Response:
     return _success({"tickets": payload, "count": len(payload)})
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_ticket_detail(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
@@ -1586,7 +1586,7 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
     )
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_ticket_preview(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     try:
@@ -1851,7 +1851,7 @@ async def preview_requester_ticket_in_session(request, data, session, *, scenari
     return _success(preview)
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_ticket_create(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     try:

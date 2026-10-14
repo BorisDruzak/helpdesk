@@ -10,6 +10,7 @@ import {
   fetchRequesterTicket,
   fetchRequesterTickets,
   fetchServiceCatalogCurrent,
+  RequesterApiError,
 } from "./api";
 import type {
   AuthenticatedRequesterTicket,
@@ -256,7 +257,13 @@ export function useRequesterBootstrapQuery() {
     queryFn: fetchRequesterBootstrap,
     staleTime: REQUESTER_QUERY_STALE_TIME_MS,
     ...REQUESTER_LIVE_QUERY_OPTIONS,
+    retry: (failureCount, error) => !isRequesterAccessError(error) && failureCount < 1,
+    refetchInterval: (query) => isRequesterAccessError(query.state.error) ? false : REQUESTER_LIVE_QUERY_OPTIONS.refetchInterval,
   });
+}
+
+function isRequesterAccessError(error: unknown): boolean {
+  return error instanceof RequesterApiError && (error.status === 401 || error.status === 403);
 }
 
 export function useRequesterTicketsQuery() {

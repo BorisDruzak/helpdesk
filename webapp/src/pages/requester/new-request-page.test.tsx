@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -42,7 +42,7 @@ function renderPage(initialEntry = "/app/requester/new") {
       </MemoryRouter>
     );
   }
-  return render(<RequesterNewRequestPage />, { wrapper: Wrapper });
+  return { ...render(<RequesterNewRequestPage />, { wrapper: Wrapper }), queryClient };
 }
 
 async function chooseCategory(label: string) {
@@ -61,6 +61,51 @@ afterEach(() => {
 });
 
 describe("RequesterNewRequestPage", () => {
+  it("shows an initial context failure instead of fake profile restrictions and keeps it visible while retrying", async () => {
+    const fetchMock = installNewRequestMock({ setupHelpForm: true, withDevice: false });
+    const original = fetchMock.getMockImplementation()!;
+    let retryResponse: ((response: Response) => void) | undefined;
+    let retrying = false;
+    fetchMock.mockImplementation((input, init) => {
+      if (String(input) === "/api/web/requester/bootstrap") {
+        if (retrying) return new Promise<Response>((resolve) => { retryResponse = resolve; });
+        return Promise.resolve(jsonResponse({ status: "error", error_code: "FORBIDDEN", error: "Insufficient permissions" }, 403));
+      }
+      return original(input, init);
+    });
+    const { queryClient } = renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить форму");
+    expect(screen.queryByLabelText("Категория обращения")).not.toBeInTheDocument();
+    expect(screen.queryByText("Загружаем форму...")).not.toBeInTheDocument();
+    retrying = true;
+    fireEvent.click(screen.getByRole("button", { name: "Повторить загрузку" }));
+    await waitFor(() => expect(retryResponse).toBeDefined());
+    expect(screen.getByRole("alert")).toHaveTextContent("Не удалось загрузить форму");
+    expect(screen.queryByText("Загружаем форму...")).not.toBeInTheDocument();
+    await act(async () => { retryResponse!(jsonResponse({ status: "error", error_code: "FORBIDDEN" }, 403)); });
+    queryClient.clear();
+  });
+
+  it("keeps the chosen form and answers during a failing background context refresh", async () => {
+    const fetchMock = installNewRequestMock({ withDevice: false });
+    const { queryClient } = renderPage();
+    await fillLaptopForm("Сохранить этот ответ");
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) => String(input) === "/api/web/requester/bootstrap"
+      ? Promise.resolve(jsonResponse({ status: "error", error_code: "TEMPORARY_FAILURE" }, 503)) : original(input, init));
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ["requester", "bootstrap"] }); });
+    expect(screen.getByLabelText("Кратко")).toHaveValue("Сохранить этот ответ");
+    expect(screen.queryByText("Загружаем форму...")).not.toBeInTheDocument();
+    queryClient.clear();
+  });
+
+  it("honors the server disabled profile gate for normal forms without an agent", async () => {
+    installNewRequestMock({ profileComplete: false, profileRequired: false, withDevice: false });
+    renderPage();
+    await fillLaptopForm("Обращение без компьютера");
+    expect(screen.getByLabelText("Кратко")).toHaveValue("Обращение без компьютера");
+    expect(screen.queryByRole("heading", { name: "Сначала заполните профиль" })).not.toBeInTheDocument();
+  });
   it("isolates and restores each draft on same-router offering and normal URL navigation", async () => {
     installNewRequestMock({ withPrinterOffering: true });
     renderPage();
@@ -373,6 +418,7 @@ function installNewRequestMock(
     primaryDeviceResolution?: "available" | "missing" | "ambiguous";
     previewBlockers?: string[];
     profileComplete?: boolean;
+    profileRequired?: boolean;
     setupHelpForm?: boolean;
     withDistractorOffering?: boolean;
     withDevice?: boolean;
@@ -399,7 +445,8 @@ function installNewRequestMock(
             setup_path: "/app/requester/profile/setup",
             required_fields: [],
             missing_fields: profileComplete ? [] : ["department_id"],
-            blocks: { ticket_create: !profileComplete, ticket_preview: !profileComplete },
+            required: options.profileRequired ?? true,
+            blocks: { ticket_create: !profileComplete && options.profileRequired !== false, ticket_preview: !profileComplete && options.profileRequired !== false },
           },
           profile_schema: { schema_key: "requester_profile", fields: [], custom_fields: [], required_fields: [] },
           requester_context: {

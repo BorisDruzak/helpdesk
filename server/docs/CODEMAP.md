@@ -178,6 +178,11 @@
   defines strict bodies and bounded inputs. `app/repos/request_scenario_repo.py`
   binds existing catalog/template records, serializes edits by service/draft
   revision and writes the existing catalog audit in the same transaction.
+  Requester form/bootstrap/profile/device reads and ticket creation/detail routes
+  also admit the admin role already granted the requester workspace. Scenario
+  commands accept that role while retaining the authenticated actor as owner;
+  admin requester routes have no cross-owner bypass. Device binding, consent
+  decisions and unrelated ticket actions retain their previous role boundaries.
   Persistent requester sessions and safe publication are documented above and
   in `GUIDED_REQUEST_SCENARIOS.md`.
 
@@ -189,6 +194,9 @@
   submission validation; it depends on defaults. `form_schema_validation.py`
   owns field/schema/role/template normalization and imports the shared pattern
   validator from values. Neither module imports the facade.
+  Explicit empty `priority_policy` survives repeated normalization; setup-help
+  forms keep the same questions in the source, conversion and requester projection.
+  Missing legacy policies still receive compatibility fields/default processing.
 - Checkbox values use explicit aliases; ordinary text conditions remain case
   sensitive. Hidden values/errors are excluded without masking invalid visible
   dependencies. Required numeric zero is valid subject to min/max. Invalid regex

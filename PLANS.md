@@ -1,3 +1,20 @@
+# 2026-10-14 Requester form regression
+
+Actor: requester and admin using their own requester workspace. Primary job:
+select a service, answer its published questions and create a request without an
+agent when server policy permits. Separate debug tab preserves user drafts.
+Reproduced staging bootstrap403 for admin despite requester workspace permission:
+initial failures were hidden and periodic refetch showed the loading screen again.
+Repeated schema normalization discarded explicit empty priority policy, adding
+five questions to setup-help forms absent from converted maps. Also reproduce
+frontend ignoring server-disabled profile completion gate. Fix these boundaries
+with ownership, projection, loading/refetch and no-agent regression checks.
+Staging deployment only. No automatic publication or rewrite of existing maps.
+Checks: frontend48 and backend38 pass; build/workspace/diff checks pass. Isolated
+PostgreSQL acceptance2 pass: admin no-agent actual create with foreign session/
+ticket rejection, and user setup-help projection/preview without profile or agent.
+Installer and real-browser acceptance follow the frozen commit.
+
 # 2026-10-14 Unified service scenario authoring
 
 Approved model: direct Create service -> v2 map, one editable source, typed
@@ -16,7 +33,8 @@ inline naming, independent drag, conditions, resolution check/finish, delete/und
 two entries, server processing (P1/P3 and SLA), confirmed publication (11 outcomes),
 full-page preview and JSON/YAML zero-diff round-trip verified. Invalid YAML rejected.
 Converted9 forms to drafts; existing8 maps retained; one unavailable source blocked.
-No old published service auto-switched. Current admin requester UI is profile-gated;
+No old published service auto-switched. Prior admin requester UI returned bootstrap403;
+it was incorrectly interpreted as a profile gate (see requester regression above).
 actual submission is proven in the isolated PostgreSQL API test with complete owner.
 Browser revealed palette overlap, technical publication paths and key-order dirty
 state; corrected with regressions. Exact-SHA installer receipts and final browser evidence are recorded under tmp/.

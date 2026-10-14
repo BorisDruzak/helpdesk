@@ -341,6 +341,9 @@ function RequesterNewRequestContent() {
   const forms = formPackQuery.data?.forms ?? [];
   const services = catalogQuery.data?.services ?? [];
   const profileComplete = bootstrap?.profile_completion ? bootstrap.profile_completion.complete !== false : Boolean(bootstrap?.profile);
+  const profileAllowsCreate = bootstrap?.profile_completion?.blocks?.ticket_create !== undefined
+    ? !bootstrap.profile_completion.blocks.ticket_create
+    : profileComplete;
   const devices = bootstrap?.devices ?? [];
   const [deviceChoice, setSelectedDeviceId] = useState<string | null>(null);
   const defaultDeviceId = isResolvedPrimaryDeviceStatus(String(bootstrap?.primary_device_resolution?.status ?? ""))
@@ -371,8 +374,8 @@ function RequesterNewRequestContent() {
   const restoredDraftRef = useRef(false);
 
   const categoryOptions = useMemo(
-    () => buildCategoryOptions(services, forms, profileComplete, hasAgentContext),
-    [forms, hasAgentContext, profileComplete, services],
+    () => buildCategoryOptions(services, forms, profileAllowsCreate, hasAgentContext),
+    [forms, hasAgentContext, profileAllowsCreate, services],
   );
   const recommendation = useMemo(
     () => recommendOffering(services, requestSeed, forms, requestIntent),
@@ -771,12 +774,21 @@ function RequesterNewRequestContent() {
     };
   }
 
-  if (bootstrapQuery.isLoading || formPackQuery.isLoading) {
+  const failedLoad = [bootstrapQuery, formPackQuery, catalogQuery].find((query) => !query.data && query.errorUpdateCount > 0);
+  if (failedLoad) {
+    return <section className="mx-auto max-w-4xl px-4 py-8" role="alert">
+      <h1 className="text-2xl font-semibold text-slate-950">Не удалось загрузить форму</h1>
+      <p className="mt-2 text-sm text-slate-600">{requesterErrorMessage(failedLoad.error, "Не удалось получить данные для обращения. Повторите загрузку.")}</p>
+      <button type="button" className="mt-4 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+        disabled={failedLoad.isFetching} onClick={() => { void failedLoad.refetch(); }}>Повторить загрузку</button>
+    </section>;
+  }
+  if (bootstrapQuery.isLoading || formPackQuery.isLoading || catalogQuery.isLoading) {
     return <div className="mx-auto max-w-4xl px-4 py-8 text-sm text-slate-600">Загружаем форму...</div>;
   }
 
   if (!categoryOptions.length) {
-    if (!profileComplete) {
+    if (!profileAllowsCreate) {
       return (
         <div className="mx-auto max-w-4xl px-4 py-8">
           <h1 className="text-2xl font-semibold text-slate-950">Сначала заполните профиль</h1>
@@ -801,6 +813,9 @@ function RequesterNewRequestContent() {
         draftStatusLabel="Черновик"
         error={error}
       >
+        {!profileAllowsCreate ? <p className="rounded-panel border border-amber-200 bg-amber-50 p-3 text-sm text-slate-800">
+          Для обычных обращений заполните профиль. Формы помощи доступны ниже. <Link className="underline" to={bootstrap?.profile_completion?.setup_path || "/app/requester/profile/setup"}>Заполнить профиль</Link>
+        </p> : null}
         {createConflict ? (
           <div className="rounded-panel border border-amber-300 bg-amber-50 p-4 text-sm text-slate-900">
             <p>Предыдущий запрос мог создать обращение. Проверьте список перед созданием отдельного обращения.</p>

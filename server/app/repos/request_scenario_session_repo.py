@@ -24,7 +24,8 @@ class SessionAccessError(ValueError):
 class RequestScenarioSessionRepo:
     def __init__(self, session, actor):
         self.session, self.owner = session, actor.actor_id
-        if actor.actor_role != "user" or not self.owner:
+        self.actor_role = actor.actor_role
+        if actor.actor_role not in {"user", "admin"} or not self.owner:
             raise SessionAccessError("FORBIDDEN", 403)
 
     async def _visible(self, scenario):
@@ -122,7 +123,7 @@ class RequestScenarioSessionRepo:
     async def _audit(self, row, action):
         await ServiceCatalogRepo(self.session).append_audit(
             object_type="scenario_session", object_code=row.id, action=action,
-            actor_id=self.owner, actor_role="user", before=None,
+            actor_id=self.owner, actor_role=self.actor_role, before=None,
             after={"version_id": row.version_id, "block_id": row.current_block_id,
                    "revision": row.revision, "state": row.state},
         )

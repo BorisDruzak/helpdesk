@@ -503,7 +503,9 @@ def _build_template_context(raw_form: dict, normalized_fields: list, normalized_
 
     for dict_field in _TEMPLATE_DICT_FIELDS:
         value = _normalize_optional_dict(raw_form.get(dict_field), dict_field)
-        if value:
+        # An explicit empty priority policy disables compatibility questions.
+        # Preserve it so revalidation cannot silently install the default policy.
+        if value or dict_field == "priority_policy" and isinstance(raw_form.get(dict_field), dict):
             template_context[dict_field] = value
     normalized_policy_refs = (
         deepcopy(template_context.get("policy_refs"))

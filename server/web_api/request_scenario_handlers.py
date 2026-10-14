@@ -89,46 +89,46 @@ async def _run(request, kind):
         return _reply({"status": "error", "error_code": "SESSION_OPERATION_FAILED"}, status=500)
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_start(request):
     return await _run(request, "start")
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_session(request):
     return await _run(request, "read")
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_answer(request):
     return await _run(request, "answer")
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_advance(request):
     return await _run(request, "advance")
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_back(request):
     return await _run(request, "back")
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_finish(request):
     return await _run(request, "finish")
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_step_preview(request):
     return await _run(request, "preview")
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_ticket_preview(request):
     return await _run(request, "ticket_preview")
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_scenario_submit(request):
     return await _run(request, "submit")
