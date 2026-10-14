@@ -4,6 +4,7 @@ import { AdvancedDisclosure } from "../../components/ui-page/advanced-disclosure
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import type { ScenarioDraftDefinition, ScenarioPolicyKind } from "./scenario-contract";
+import { ScenarioPolicyEditor, type EditableScenarioPolicy } from "./scenario-policy-editor";
 
 const labels: Record<ScenarioPolicyKind, string> = { priority: "Приоритет по ответам", routing: "Маршрут и очередь", sla: "Сроки обслуживания", ola: "Внутренние сроки поддержки", approval: "Согласование", notification: "Уведомления", closure: "Закрытие обращения", visibility: "Видимость обращения" };
 const descriptions: Record<ScenarioPolicyKind, string> = {
@@ -21,6 +22,7 @@ export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy
   const [policies, setPolicies] = useState<Record<string, AdminHelpdeskPolicyItem[]> | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [editor, setEditor] = useState<{kind: EditableScenarioPolicy; source?: AdminHelpdeskPolicyItem} | null>(null);
   useEffect(() => { if (policies && focusPolicy) policyRef.current?.focus(); }, [policies, focusPolicy]);
   useEffect(() => {
     let active = true;
@@ -32,7 +34,7 @@ export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy
     <h2 className="text-lg font-semibold">Обработка услуги</h2>
     <p className="text-sm">Эти правила действуют для обращений, созданных через эту услугу. Выбирайте готовое опубликованное правило, только если нужно изменить действующую обработку.</p>
     <p className="text-sm text-slate-500">«Использовать действующие правила» сохраняет серверное наследование. Оно не создаёт недостающие правила: их наличие проверяется перед публикацией.</p>
-    {focusPolicy && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Проверьте настройку «{labels[focusPolicy]}» ниже, выберите опубликованное правило и сохраните черновик. Затем повторите проверку публикации.</p>}
+    {focusPolicy && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Проверьте настройку «{labels[focusPolicy]}» ниже: выберите готовое правило или создайте новое, затем сохраните черновик. Затем повторите проверку публикации.</p>}
     {error ? <div role="alert"><p>Не удалось загрузить политики обработки.</p><Button variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку политик</Button></div> : !policies ? <p role="status">Загрузка политик обработки…</p> : <div className="grid min-w-0 gap-4">
       {(Object.keys(labels) as ScenarioPolicyKind[]).sort((a, b) => Number(b === focusPolicy) - Number(a === focusPolicy)).map(kind => {
         const choices = (policies[kind] || []).filter((item, index, items) => item.is_active && !!item.published_at && items.findIndex(other => other.code === item.code && other.is_active && !!other.published_at) === index);
@@ -47,14 +49,20 @@ export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy
             {choices.map(item => <option key={item.code} value={item.code}>{item.title}</option>)}
           </Select></label>
           <p className="mt-2 text-sm text-slate-500">{descriptions[kind]}</p>
-          {!choices.length && <p className="mt-2 text-sm">Нет опубликованных правил для выбора. Если проверка сообщает об отсутствии правила, администратор должен сначала настроить и опубликовать его в Helpdesk.</p>}
+          {!choices.length && <p className="mt-2 text-sm">Нет опубликованных правил для выбора. {kind === "closure" || kind === "visibility" ? "Нажмите «Создать правило» ниже, настройте его и примените к услуге." : "Если проверка сообщает об отсутствии правила, администратор должен сначала настроить и опубликовать его в Helpdesk."}</p>}
           {code && !choices.some(item => item.code === code) && <p role="alert">Выберите опубликованную политику перед публикацией сценария.</p>}
-
+          {(kind === "closure" || kind === "visibility") && <div className="mt-3 flex flex-wrap gap-2">
+            <Button disabled={disabled} variant="outline" aria-label={`Создать правило: ${labels[kind]}`} onClick={() => setEditor({kind})}>Создать правило</Button>
+            <Button disabled={disabled || !choices.some(item => item.code === code)} variant="ghost" aria-label={`Настроить выбранное правило: ${labels[kind]}`} onClick={() => setEditor({kind, source: choices.find(item => item.code === code)})}>Настроить выбранное</Button>
+          </div>}
         </div>;
       })}
     </div>}
     <section aria-label="Ответы для обработки" className="space-y-2"><h3 className="font-semibold">Ответы для обработки</h3>
       {(definition.blocks || []).flatMap(block => block.kind === "form_page" ? block.fields : []).filter(field => field.process_mapping?.roles?.some(role => role !== "display_only")).map(field => <div key={field.key} className="rounded border p-3"><p>{field.label}</p><p>Ответ передаётся выбранным политикам и проверяется сервером в тестовом прогоне.</p><AdvancedDisclosure title="Расширенные настройки"><p className="break-all">Проверенный факт: {field.process_mapping?.fact_key || field.key}</p><p className="break-all">Роли: {field.process_mapping?.roles?.join(", ")}</p></AdvancedDisclosure></div>)}
     </section>
+    {editor && <ScenarioPolicyEditor key={editor.kind} kind={editor.kind} serviceTitle={definition.title} source={editor.source} disabled={disabled} onClose={() => setEditor(null)}
+      onRegistered={policy => setPolicies(current => ({...current, [policy.kind]: [policy, ...(current?.[policy.kind] ?? []).filter(item => item.code !== policy.code)]}))}
+      onApply={policy => { onChange({...definition, process_binding: {...definition.process_binding, policy_refs: {...definition.process_binding.policy_refs, [policy.kind]: policy.code}}}); setEditor(null); }} />}
   </div>;
 }

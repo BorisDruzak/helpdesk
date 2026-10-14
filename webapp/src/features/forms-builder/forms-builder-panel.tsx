@@ -1534,7 +1534,7 @@ function buildDiagnosticPreset(form: DraftForm): string {
   });
 }
 
-function buildClosurePreset(): string {
+export function buildClosurePreset(): string {
   return prettyJson({
     before_resolved: {
       require_resolution_code: true,
@@ -1555,7 +1555,7 @@ function buildClosurePreset(): string {
   });
 }
 
-function buildVisibilityPreset(): string {
+export function buildVisibilityPreset(): string {
   return prettyJson({
     public_status_mapping: {
       new: "Заявка принята",
@@ -2073,7 +2073,7 @@ function listToCsv(list: unknown): string {
   return Array.isArray(list) ? list.map((item) => String(item)).join(", ") : "";
 }
 
-function ClosurePolicyControls({
+export function ClosurePolicyControls({
   config,
   onChange,
 }: {
@@ -2264,7 +2264,7 @@ function DiagnosticPolicyControls({
   );
 }
 
-function VisibilityPolicyControls({
+export function VisibilityPolicyControls({
   config,
   onChange,
 }: {
@@ -2352,7 +2352,7 @@ function InlinePolicyList({ items, emptyLabel }: { items: string[]; emptyLabel: 
   );
 }
 
-function VisibilityPolicyPreview({ config }: { config: Record<string, unknown> }) {
+export function VisibilityPolicyPreview({ config }: { config: Record<string, unknown> }) {
   const mapping = nestedObject(config.public_status_mapping);
   const hidden = uniqueStrings([...DEFAULT_VISIBILITY_HIDDEN_PREVIEW, ...stringList(config.hide_from_requester)]);
   const requesterFields = stringList(config.show_to_requester);

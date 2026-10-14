@@ -149,6 +149,10 @@
   Processing readiness remediation opens the separate `scenario-processing`
   inspector with the requested policy first and focused; `Обработка услуги`
   opens the same draft-bound controls without selecting a runtime block.
+  `scenario-policy-editor` reuses Forms Builder closure/visibility controls and
+  the existing policy publish API. New copies have `request_template` scope with
+  no scope target, so inherited policies stay unchanged; only explicit map refs
+  activate them. Apply changes the draft only and retains normal publication gates.
   `scenario-map-workbench`, `scenario-map-canvas` and `scenario-map-model` own
   React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
   and cycle guards. `scenario-delete-dialog` keeps destructive draft edits and errors

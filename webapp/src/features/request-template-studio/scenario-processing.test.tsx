@@ -6,6 +6,17 @@ import type { ScenarioDraftDefinition } from "./scenario-contract";
 
 const definition: ScenarioDraftDefinition = { scenario_key: "p", title: "Печать", service_code: "it", offering_full_code: "it.print", process_binding: { request_template_key: "p", policy_refs: { routing: "route" } }, blocks: [] };
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it.each([["closure", "Закрытие обращения", "Код решения обязателен"], ["visibility", "Видимость обращения", "Новая публично"]])("opens a real %s editor without leaving or changing the service", async (_kind, label, control) => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: {} } }), { headers: { "content-type": "application/json" } })));
+  const change = vi.fn();
+  render(<ScenarioProcessing definition={definition} disabled={false} onChange={change} />);
+  fireEvent.click(await screen.findByRole("button", { name: `Создать правило: ${label}` }));
+  expect(screen.getByRole("dialog", { name: `Настройка правила: ${label}` })).toBeVisible();
+  expect(screen.getByLabelText(control)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Вернуться к услуге" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(change).not.toHaveBeenCalled();
+});
 it("selects only published rules while preserving other processing and map data", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: { closure: [
     { code: "close", title: "Завершение с подтверждением", is_active: true, published_at: "2026-10-14" },

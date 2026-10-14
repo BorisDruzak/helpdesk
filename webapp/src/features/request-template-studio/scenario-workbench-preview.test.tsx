@@ -1,4 +1,4 @@
-import { fireEvent,render,screen } from "@testing-library/react";
+import { fireEvent,render,screen,waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach,expect,it,vi } from "vitest";
 import { ScenarioMapWorkbench } from "./scenario-map-workbench";
@@ -40,7 +40,7 @@ it("policy remediation leaves preview and entrance selection for service process
  const change=vi.fn();const view=render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change}/></MemoryRouter>);
  fireEvent.click(screen.getByRole("button",{name:"Выбрать связь входа"}));fireEvent.click(screen.getByRole("tab",{name:"Как у сотрудника"}));
  view.rerender(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change} issuePolicy="routing"/></MemoryRouter>);
- expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");expect(await screen.findByLabelText("Маршрут и очередь")).toHaveFocus();expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();expect(screen.queryByRole("heading",{name:"Связь с началом"})).not.toBeInTheDocument();expect(change).not.toHaveBeenCalled();
+ expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");await screen.findByLabelText("Маршрут и очередь");await waitFor(()=>expect(screen.getByLabelText("Маршрут и очередь")).toHaveFocus());expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();expect(screen.queryByRole("heading",{name:"Связь с началом"})).not.toBeInTheDocument();expect(change).not.toHaveBeenCalled();
 });
 it("a missing-route hint reveals editing controls from employee preview",()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));

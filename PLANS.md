@@ -2270,3 +2270,15 @@ requester/publication guard changes, catalog writes or real ticket creation.
   Repeated remediation, preview exit, unavailable registry and selection are covered.
 - Staging only; no automatic policy selection, service publication or database change.
   Focused tests/build/workspace and installed browser results recorded in the task receipt.
+
+# Studio closure and visibility rule editing — 2026-10-14
+
+- Existing Forms workspace policy controls are a read-only preview; direct Studio
+  actions now open the reusable real closure/visibility fields in a modal.
+- Existing registry publish endpoint, generated internal code, no inherited scope
+  target; edited shared rules become separate copies, preserving extra config.
+- Explicit review, publish rule, apply to service draft, save/test/publish service.
+  No second policy store/engine or automatic service publication.
+- Checks cover both kinds, registration/assignment separation, error/dirty/read-only
+  behavior and canonical resolver proof that unbound rules do not alter inheritance.
+- Staging browser acceptance and exact release identity recorded in task receipt.
