@@ -51,10 +51,10 @@ export function ScenarioPolicyEditor({ kind, serviceTitle, source, disabled, onR
       {source && <p className="rounded border p-3 text-sm">Основа: «{source.title}». Изменения сохранятся отдельным правилом для этой услуги; исходное общее правило сохранится.</p>}
       <fieldset disabled={disabled || pending || review || !!published} className="space-y-4">
         <label className="block">Название правила<Input autoFocus maxLength={300} value={title} onChange={event => setTitle(event.target.value)} /></label>
-        {kind === "closure" ? <ClosurePolicyControls config={config} onChange={setConfig} /> : <><VisibilityPolicyControls config={config} onChange={setConfig} /><VisibilityPolicyPreview config={config} /></>}
+        {kind === "closure" ? <ClosurePolicyControls config={config} onChange={setConfig} runtimeDefaults /> : <><VisibilityPolicyControls config={config} onChange={setConfig} /><VisibilityPolicyPreview config={config} /></>}
       </fieldset>
       {review && !published && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm"><p>Настройки готовы к отправке. Сервер проверит правило при публикации.</p><p>После публикации нажмите «Применить к услуге», сохраните черновик карты и повторите проверку публикации услуги.</p></div>}
-      {published && <p role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm">Правило «{published.title}» опубликовано. Примените его к черновику услуги, затем сохраните и проверьте карту. Услуга ещё не опубликована.</p>}
+      {published && <p role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm">Правило «{published.title}» опубликовано. Примените его к черновику услуги, затем проверьте сохранение и карту. Автосохранение может сохранить черновик сразу после применения. Изменения услуги ещё не опубликованы.</p>}
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
       {discard && <div role="alert" className="space-y-2 rounded border border-amber-300 p-3"><p>Есть несохранённые изменения правила.</p><Button variant="outline" onClick={() => setDiscard(false)}>Продолжить настройку</Button><Button variant="ghost" onClick={onClose}>Закрыть без сохранения</Button></div>}
     </div>

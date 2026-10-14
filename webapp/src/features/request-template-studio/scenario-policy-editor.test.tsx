@@ -22,6 +22,7 @@ it.each([["closure", "Закрытие обращения"], ["visibility", "В�
   expect(request).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Опубликовать правило" }));
   await screen.findByRole("button", { name: "Применить к услуге" });
+  expect(screen.getByText(/Изменения услуги ещё не опубликованы/)).toHaveTextContent("Автосохранение");
   expect(payload).toMatchObject({ kind, title: "Правило печати", scope_level: "request_template", scope_ref: null });
   expect(request.mock.calls[1][0]).toBe("/api/web/admin/helpdesk-model/policies/publish");
   expect(change).not.toHaveBeenCalled();
@@ -40,6 +41,9 @@ it("preserves source policy extras and reports server errors without losing edit
   const change = vi.fn();
   render(<ScenarioProcessing definition={{...definition, process_binding: {...definition.process_binding, policy_refs: {closure: "shared"}}}} disabled={false} onChange={change} />);
   fireEvent.click(await screen.findByRole("button", { name: "Настроить выбранное правило: Закрытие обращения" }));
+  expect(screen.getByLabelText("Код решения обязателен")).not.toBeChecked();
+  expect(screen.getByLabelText("Подтверждение пользователя")).not.toBeChecked();
+  expect(screen.getByLabelText("Автозакрытие через дней")).toHaveValue(0);
   fireEvent.click(screen.getByLabelText("Публичный итог обязателен"));
   fireEvent.click(screen.getByRole("button", { name: "Проверить и продолжить" }));
   fireEvent.click(screen.getByRole("button", { name: "Опубликовать правило" }));
@@ -65,4 +69,19 @@ it("disables creation in read-only Studio and rejects a blank title before publi
   fireEvent.click(screen.getByRole("button", { name: "Проверить и продолжить" }));
   expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("Укажите название правила");
   await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+});
+it("shows legacy closure requirements using the same defaults as the runtime", async () => {
+  const source = { kind: "closure", code: "legacy", title: "Старое правило", is_active: true, published_at: "2026-10-14", config: { require_resolution_code: true, require_public_summary: false, auto_close_after_days: 7, require_evidence_for_priorities: ["p0"], evidence: { require_diagnostic_evidence_for_priorities: ["P1"] } } };
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: { closure: [source] } } }), { headers: { "content-type": "application/json" } })));
+  render(<ScenarioProcessing definition={{...definition, process_binding: {...definition.process_binding, policy_refs: {closure: "legacy"}}}} disabled={false} onChange={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Настроить выбранное правило: Закрытие обращения" }));
+  expect(screen.getByLabelText("Код решения обязателен")).toBeChecked();
+  expect(screen.getByLabelText("Публичный итог обязателен")).not.toBeChecked();
+  expect(screen.getByLabelText("Подтверждение пользователя")).toBeChecked();
+  expect(screen.getByLabelText("Автозакрытие через дней")).toHaveValue(7);
+  expect(screen.getByLabelText("Evidence для P0")).toBeChecked();
+  expect(screen.getByLabelText("Evidence для P1")).toBeChecked();
+  fireEvent.click(screen.getByLabelText("Evidence для P1"));
+  expect(screen.getByLabelText("Evidence для P1")).not.toBeChecked();
+  expect(screen.getByLabelText("Evidence для P0")).toBeChecked();
 });

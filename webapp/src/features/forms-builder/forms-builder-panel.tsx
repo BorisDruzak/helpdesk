@@ -2076,52 +2076,55 @@ function listToCsv(list: unknown): string {
 export function ClosurePolicyControls({
   config,
   onChange,
+  runtimeDefaults = false,
 }: {
   config: Record<string, unknown>;
   onChange: (config: Record<string, unknown>) => void;
+  runtimeDefaults?: boolean;
 }) {
   const before = nestedObject(config.before_resolved);
   const evidence = nestedObject(config.evidence);
   const confirmation = nestedObject(config.requester_confirmation);
+  const value = (section: Record<string, unknown>, key: string, fallback: unknown) =>
+    runtimeDefaults ? (Object.hasOwn(section, key) ? section[key] : config[key] ?? fallback) : section[key] ?? fallback;
+  const evidencePriorities = runtimeDefaults
+    ? [...stringList(value(evidence, "require_evidence_for_priorities", [])), ...stringList(evidence.require_diagnostic_evidence_for_priorities)].map(item => item.toUpperCase())
+    : Array.isArray(evidence.require_evidence_for_priorities) ? evidence.require_evidence_for_priorities.map(item => String(item)) : [];
   return (
     <div className="grid gap-3 lg:grid-cols-3">
       <JsonLinkedCheckbox
-        checked={Boolean(before.require_resolution_code ?? true)}
+        checked={Boolean(value(before, "require_resolution_code", !runtimeDefaults))}
         label="Код решения обязателен"
         onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_resolution_code: checked } })}
       />
       <JsonLinkedCheckbox
-        checked={Boolean(before.require_public_summary ?? true)}
+        checked={Boolean(value(before, "require_public_summary", !runtimeDefaults))}
         label="Публичный итог обязателен"
         onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_public_summary: checked } })}
       />
       <JsonLinkedCheckbox
-        checked={Boolean(before.require_internal_summary)}
+        checked={Boolean(value(before, "require_internal_summary", false))}
         label="Внутренний итог обязателен"
         onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_internal_summary: checked } })}
       />
       <JsonLinkedCheckbox
-        checked={Boolean(before.require_worklog)}
+        checked={Boolean(value(before, "require_worklog", false))}
         label="Worklog обязателен"
         onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_worklog: checked } })}
       />
       <JsonLinkedCheckbox
-        checked={Boolean(evidence.require_operation_log_if_module_used)}
+        checked={Boolean(value(evidence, "require_operation_log_if_module_used", false))}
         label="Evidence после модуля"
         onChange={(checked) => onChange({ ...config, evidence: { ...evidence, require_operation_log_if_module_used: checked } })}
       />
       <JsonLinkedCheckbox
-        checked={Boolean(evidence.require_approval_if_approval_policy_used)}
+        checked={Boolean(value(evidence, "require_approval_if_approval_policy_used", false))}
         label="Evidence по согласованию"
         onChange={(checked) => onChange({ ...config, evidence: { ...evidence, require_approval_if_approval_policy_used: checked } })}
       />
       {["P0", "P1", "P2"].map((priority) => (
         <JsonLinkedCheckbox
-          checked={
-            Array.isArray(evidence.require_evidence_for_priorities)
-              ? evidence.require_evidence_for_priorities.map((item) => String(item)).includes(priority)
-              : false
-          }
+          checked={evidencePriorities.includes(priority)}
           key={priority}
           label={`Evidence для ${priority}`}
           onChange={(checked) =>
@@ -2129,14 +2132,15 @@ export function ClosurePolicyControls({
               ...config,
               evidence: {
                 ...evidence,
-                require_evidence_for_priorities: toggleStringInList(evidence.require_evidence_for_priorities, priority, checked),
+                require_evidence_for_priorities: toggleStringInList(evidencePriorities, priority, checked),
+                ...(runtimeDefaults && Array.isArray(evidence.require_diagnostic_evidence_for_priorities) ? { require_diagnostic_evidence_for_priorities: toggleStringInList(evidence.require_diagnostic_evidence_for_priorities.map(item => String(item).toUpperCase()), priority, checked) } : {}),
               },
             })
           }
         />
       ))}
       <JsonLinkedCheckbox
-        checked={Boolean(confirmation.required ?? true)}
+        checked={Boolean(Object.hasOwn(confirmation, "required") ? confirmation.required : runtimeDefaults ? config.auto_close_after_days != null : true)}
         label="Подтверждение пользователя"
         onChange={(checked) => onChange({ ...config, requester_confirmation: { ...confirmation, required: checked } })}
       />
@@ -2149,7 +2153,7 @@ export function ClosurePolicyControls({
             onChange({ ...config, requester_confirmation: { ...confirmation, auto_close_after_days: Number(event.currentTarget.value || 0) } })
           }
           type="number"
-          value={Number(confirmation.auto_close_after_days ?? 3)}
+          value={Number(value(confirmation, "auto_close_after_days", runtimeDefaults ? 0 : 3))}
         />
       </label>
       <JsonLinkedCheckbox
