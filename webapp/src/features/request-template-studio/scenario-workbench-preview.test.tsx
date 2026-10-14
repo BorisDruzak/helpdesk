@@ -35,12 +35,12 @@ it("an unbound v2 map needs no canonical type picker",()=>{
  expect(screen.queryByLabelText("Тип обращения")).not.toBeInTheDocument();
  expect(screen.getByLabelText("Название услуги")).toBeVisible();
 });
-it("policy remediation leaves preview and entrance selection for metadata settings",()=>{
+it("policy remediation leaves preview and entrance selection for service processing",async()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
  const change=vi.fn();const view=render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change}/></MemoryRouter>);
  fireEvent.click(screen.getByRole("button",{name:"Выбрать связь входа"}));fireEvent.click(screen.getByRole("tab",{name:"Как у сотрудника"}));
  view.rerender(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change} issuePolicy="routing"/></MemoryRouter>);
- expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");expect(screen.getByLabelText("Название услуги")).toBeVisible();expect(screen.queryByRole("heading",{name:"Связь с началом"})).not.toBeInTheDocument();expect(change).not.toHaveBeenCalled();
+ expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");expect(await screen.findByLabelText("Маршрут и очередь")).toHaveFocus();expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();expect(screen.queryByRole("heading",{name:"Связь с началом"})).not.toBeInTheDocument();expect(change).not.toHaveBeenCalled();
 });
 it("a missing-route hint reveals editing controls from employee preview",()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));

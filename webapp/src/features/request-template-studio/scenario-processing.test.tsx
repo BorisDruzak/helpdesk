@@ -1,10 +1,39 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
 import { useState } from "react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioProcessing } from "./scenario-processing";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
-afterEach(() => vi.unstubAllGlobals());
+const definition: ScenarioDraftDefinition = { scenario_key: "p", title: "Печать", service_code: "it", offering_full_code: "it.print", process_binding: { request_template_key: "p", policy_refs: { routing: "route" } }, blocks: [] };
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("selects only published rules while preserving other processing and map data", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: { closure: [
+    { code: "close", title: "Завершение с подтверждением", is_active: true, published_at: "2026-10-14" },
+    { code: "draft", title: "Не опубликовано", is_active: true, published_at: null },
+  ] } } }), { headers: { "content-type": "application/json" } })));
+  const change = vi.fn();
+  const view = render(<ScenarioProcessing definition={definition} disabled={false} onChange={change} focusPolicy="closure" />);
+  const select = await screen.findByLabelText("Закрытие обращения");
+  expect(select).toHaveFocus();
+  expect(screen.queryByRole("option", { name: "Не опубликовано" })).not.toBeInTheDocument();
+  fireEvent.change(select, { target: { value: "close" } });
+  const next = change.mock.calls[0][0];
+  expect(next).toEqual({ ...definition, process_binding: { ...definition.process_binding, policy_refs: { routing: "route", closure: "close" } } });
+  view.rerender(<ScenarioProcessing definition={next} disabled={false} onChange={change} focusPolicy="closure" />);
+  fireEvent.change(screen.getByLabelText("Закрытие обращения"), { target: { value: "" } });
+  expect(change.mock.calls[1][0]).toEqual(definition);
+});
+it("shows a registry error and can retry without changing the map", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(new Response(JSON.stringify({ status: "success", data: { policies: {} } }), { headers: { "content-type": "application/json" } })));
+  const change = vi.fn();
+  render(<ScenarioProcessing definition={definition} disabled={false} onChange={change} focusPolicy="visibility" />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить политики обработки");
+  fireEvent.click(screen.getByRole("button", { name: "Повторить загрузку политик" }));
+  expect(await screen.findByLabelText("Видимость обращения")).toHaveFocus();
+  expect(screen.getAllByText(/Нет опубликованных правил/)).toHaveLength(8);
+  expect(change).not.toHaveBeenCalled();
+});
+
 it("selects only published registry policies and keeps references local to the draft", async () => {
   const request = vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: { routing: [
     { code: "printer_route", title: "Поддержка печати", version: "1", is_active: true, published_at: "2026-10-11" },

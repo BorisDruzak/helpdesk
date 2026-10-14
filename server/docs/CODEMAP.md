@@ -146,6 +146,9 @@
   Requester selection is validated against its existing public catalog; keyed
   request-page content keeps draft restoration isolated per intent/offering.
 - Studio v3 `scenario-wizard` composes map/testing/publication/version panels.
+  Processing readiness remediation opens the separate `scenario-processing`
+  inspector with the requested policy first and focused; `Обработка услуги`
+  opens the same draft-bound controls without selecting a runtime block.
   `scenario-map-workbench`, `scenario-map-canvas` and `scenario-map-model` own
   React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
   and cycle guards. `scenario-delete-dialog` keeps destructive draft edits and errors

@@ -2259,3 +2259,14 @@ requester/publication guard changes, catalog writes or real ticket creation.
 - Validation: focused Studio unit/build/browser checks and staging UI checks;
   exact results and installed identity recorded in the task receipt under `tmp`.
 - Scope: staging only; no requester ticket creation or catalog publication.
+
+# Studio processing navigation — 2026-10-14
+
+- Reproduced on staging service `123555`: policy remediation focused the right
+  selector inside general Start settings, making its purpose and destination unclear.
+- Separate service-processing inspector; requested control first, highlighted and
+  focused, explanatory text for eight kinds, accurate server-inheritance wording.
+- Preserve canonical policy references, server readiness checks and draft data.
+  Repeated remediation, preview exit, unavailable registry and selection are covered.
+- Staging only; no automatic policy selection, service publication or database change.
+  Focused tests/build/workspace and installed browser results recorded in the task receipt.

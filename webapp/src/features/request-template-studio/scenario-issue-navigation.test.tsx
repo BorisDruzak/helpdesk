@@ -30,9 +30,27 @@ it("opens the source of a broken transition and focuses its visible target", asy
 
   expect(change).not.toHaveBeenCalled();
 });
-it.each([["routing_unavailable", "Маршрут и очередь"], ["sla_unavailable", "Сроки обслуживания"], ["closure_missing", "Закрытие обращения"]])("jumps %s to its policy control after registry loading", async (code, label) => {
+it.each([["routing_unavailable", "Маршрут и очередь"], ["sla_unavailable", "Сроки обслуживания"], ["closure_missing", "Закрытие обращения"], ["visibility_missing", "Видимость обращения"]])("jumps %s to its policy control after registry loading", async (code, label) => {
   const change = mount(code, "process_binding");
   fireEvent.click(await screen.findByRole("button", { name: `Исправить: ${label}` }));
   await waitFor(() => expect(screen.getByLabelText(label)).toHaveFocus());
+  expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Обработка услуги" })).toBeVisible();
+  expect(screen.getAllByRole("combobox")[0]).toHaveAccessibleName(label);
+  fireEvent.click(screen.getByRole("button", { name: "К настройкам услуги" }));
+  expect(screen.getByLabelText("Название услуги")).toBeVisible();
+  // Repeating the same remediation must open processing again.
+  fireEvent.click(screen.getByRole("button", { name: "Опубликовать" }));
+  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  fireEvent.click(await screen.findByRole("button", { name: `Исправить: ${label}` }));
+  await waitFor(() => expect(screen.getByLabelText(label)).toHaveFocus());
+  expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
+  expect(change).not.toHaveBeenCalled();
+});
+it("opens processing for an unavailable policy without choosing a start block", async () => {
+  const change = mount("policy_reference_unavailable", "process_binding.policy_refs");
+  fireEvent.click(await screen.findByRole("button", { name: "Исправить: Обработка обращения" }));
+  expect(await screen.findByLabelText("Закрытие обращения")).toBeVisible();
+  expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
   expect(change).not.toHaveBeenCalled();
 });
