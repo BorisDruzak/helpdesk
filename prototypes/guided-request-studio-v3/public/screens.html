@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Девять экранов · Guided Request Studio v3</title><link rel="stylesheet" href="/fonts/fonts.css"><style>
+*{box-sizing:border-box}body{margin:0;background:#eef3ee;color:#142b24;font:14px Manrope,'Segoe UI',sans-serif}header{position:sticky;top:0;z-index:2;background:white;border-bottom:1px solid #dce5df;padding:14px 22px;display:flex;align-items:center;gap:15px;flex-wrap:wrap}strong{font-weight:750}select,button,a{font:inherit;border:1px solid #dce5df;border-radius:7px;background:white;padding:9px 12px;color:#0d6a3d;text-decoration:none;cursor:pointer}select{max-width:450px;min-width:220px}a{margin-left:auto;background:#0d6a3d;color:white;border-color:#0d6a3d}button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid #87b897;outline-offset:2px}.canvas{width:100%;overflow:auto;padding:20px 0;text-align:center}.canvas img{display:block;width:1440px;max-width:100%;height:auto;margin:0 auto;background:white}.canvas.actual img{max-width:none;margin:0}.caption{padding:3px 22px 20px;color:#748578;font-size:12px}small{color:#7c8e80}@media(max-width:700px){header{gap:8px;padding:12px}select{width:100%;max-width:none}a{margin-left:0}.canvas{padding-top:12px}}
+</style></head><body><header><strong>Guided Request Studio v3</strong><select id="screen" aria-label="Экран продукта"></select><button id="prev" aria-label="Предыдущий экран">← Назад</button><button id="next" aria-label="Следующий экран">Вперёд →</button><button id="scale">Размер 1:1</button><small id="count"></small><a id="open" href="/#catalog">Открыть в прототипе</a></header><div class="canvas" id="canvas"><img id="image" width="1440" height="1024" alt=""></div><div class="caption">Каждый экран показан отдельно. Исходные снимки — 1440×1024. Используйте стрелки клавиатуры для перехода.</div><script type="module">
+const frames=[
+ ['01-admin-catalog.jpg','1. Каталог администратора','catalog'],
+ ['02-entry-management.jpg','2. Категории, пункты и точки входа','entries'],
+ ['03-visual-builder.jpg','3. Визуальный Low-Code конструктор','builder'],
+ ['04-block-settings.jpg','4. Настройки вопросов и блоков','settings'],
+ ['05-processing-policies.jpg','5. Обработка, маршрутизация, SLA, согласования','processing'],
+ ['06-interactive-testing.jpg','6. Интерактивное тестирование','testing'],
+ ['07-publication-readiness.jpg','7. Публикация, версии и готовность','publication'],
+ ['08-employee-catalog.jpg','8. Каталог сотрудника','employee-catalog'],
+ ['09-employee-journey.jpg','9. Прохождение сотрудником','employee-session'],
+ ['10-create-point-modal.jpg','Создание пункта · диалог','catalog'],
+ ['11-empty-search.jpg','Поиск · пустое состояние','employee-catalog'],
+ ['12-publish-confirmation.jpg','Публикация · подтверждение','publication'],
+ ['13-condition-settings.jpg','Локальные условия и переходы','settings'],
+ ['14-employee-solved.jpg','Решение без обращения','employee-session'],
+ ['15-support-simulation.jpg','Передача в поддержку','employee-session'],
+ ['16-graph-overview.jpg','Вся карта без инспектора','builder'],
+ ['17-category-modal.jpg','Создание категории · диалог','entries'],
+ ['18-support-review.jpg','Проверка перед отправкой','employee-session'],
+ ['19-sla-policy.jpg','Выбор существующей политики SLA','processing'],
+ ['20-readiness-errors.jpg','Ошибки готовности и путь к исправлению','publication'],
+];
+const select=document.querySelector('#screen'),image=document.querySelector('#image'),count=document.querySelector('#count');
+frames.forEach((frame,i)=>{const option=document.createElement('option');option.value=i;option.textContent=frame[1];select.append(option);});
+let index=Math.max(0,Math.min(frames.length-1,Number(location.hash.slice(1)||1)-1));
+function show(i){index=(i+frames.length)%frames.length;select.value=index;image.src='/screens/'+frames[index][0];image.alt=frames[index][1];count.textContent=index<9?`${index+1} / 9 экранов`:'Дополнительное состояние';document.querySelector('#open').href='/#'+frames[index][2];location.hash=String(index+1);}
+select.addEventListener('change',()=>show(Number(select.value)));document.querySelector('#prev').addEventListener('click',()=>show(index-1));document.querySelector('#next').addEventListener('click',()=>show(index+1));document.querySelector('#scale').addEventListener('click',e=>{const actual=document.querySelector('#canvas').classList.toggle('actual');e.target.textContent=actual?'По ширине окна':'Размер 1:1';});document.addEventListener('keydown',e=>{if(e.target.tagName==='SELECT')return;if(e.key==='ArrowLeft')show(index-1);if(e.key==='ArrowRight')show(index+1);});show(index);
+</script></body></html>

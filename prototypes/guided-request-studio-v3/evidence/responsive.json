@@ -1,0 +1,346 @@
+[
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Каталог",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Каталог обращений"
+  },
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Пункты и входы 3",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Пункты каталога и точки входа"
+  },
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Карта сценария",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Проблемы с печатью"
+  },
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Настройки элементов",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Настройки элементов"
+  },
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Обработка",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Обработка обращений"
+  },
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Тестирование",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Тестирование сценария"
+  },
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Публикация",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Публикация и версии"
+  },
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Каталог сотрудника",
+    "bodyOverflow": 0
+  },
+  {
+    "size": {
+      "width": 1366,
+      "height": 768
+    },
+    "page": "Прохождение сотрудника",
+    "bodyOverflow": 0
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Каталог",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Каталог обращений"
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Пункты и входы 3",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Пункты каталога и точки входа"
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Карта сценария",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Проблемы с печатью"
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Настройки элементов",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Настройки элементов"
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Обработка",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Обработка обращений"
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Тестирование",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Тестирование сценария"
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Публикация",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Публикация и версии"
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Каталог сотрудника",
+    "bodyOverflow": 0
+  },
+  {
+    "size": {
+      "width": 1920,
+      "height": 1080
+    },
+    "page": "Прохождение сотрудника",
+    "bodyOverflow": 0
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Каталог",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Каталог обращений"
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Пункты и входы 3",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Пункты каталога и точки входа"
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Карта сценария",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Проблемы с печатью"
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Настройки элементов",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Настройки элементов"
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Обработка",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Обработка обращений"
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Тестирование",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Тестирование сценария"
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Публикация",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Публикация и версии"
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Каталог сотрудника",
+    "bodyOverflow": 0
+  },
+  {
+    "size": {
+      "width": 820,
+      "height": 1180
+    },
+    "page": "Прохождение сотрудника",
+    "bodyOverflow": 0
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Каталог",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Каталог обращений"
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Пункты и входы 3",
+    "bodyOverflow": -15,
+    "contentOverflow": 0,
+    "heading": "Пункты каталога и точки входа"
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Карта сценария",
+    "bodyOverflow": -15,
+    "contentOverflow": 0,
+    "heading": "Проблемы с печатью"
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Настройки элементов",
+    "bodyOverflow": -15,
+    "contentOverflow": 0,
+    "heading": "Настройки элементов"
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Обработка",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Обработка обращений"
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Тестирование",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Тестирование сценария"
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Публикация",
+    "bodyOverflow": 0,
+    "contentOverflow": 0,
+    "heading": "Публикация и версии"
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Каталог сотрудника",
+    "bodyOverflow": 0
+  },
+  {
+    "size": {
+      "width": 390,
+      "height": 844
+    },
+    "page": "Прохождение сотрудника",
+    "bodyOverflow": 0
+  }
+]
