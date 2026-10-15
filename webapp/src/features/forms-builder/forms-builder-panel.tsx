@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { PolicyFieldOptions, policyFieldName, resolutionChoices, visibilityChoices, publicStatusNames } from "./policy-field-options";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -2077,11 +2078,14 @@ export function ClosurePolicyControls({
   config,
   onChange,
   runtimeDefaults = false,
+  friendly = false,
 }: {
   config: Record<string, unknown>;
   onChange: (config: Record<string, unknown>) => void;
   runtimeDefaults?: boolean;
+  friendly?: boolean;
 }) {
+  const helpId = useId();
   const before = nestedObject(config.before_resolved);
   const evidence = nestedObject(config.evidence);
   const confirmation = nestedObject(config.requester_confirmation);
@@ -2091,42 +2095,49 @@ export function ClosurePolicyControls({
     ? [...stringList(value(evidence, "require_evidence_for_priorities", [])), ...stringList(evidence.require_diagnostic_evidence_for_priorities)].map(item => item.toUpperCase())
     : Array.isArray(evidence.require_evidence_for_priorities) ? evidence.require_evidence_for_priorities.map(item => String(item)) : [];
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
+    <div className={friendly ? "grid gap-4 sm:grid-cols-2" : "grid gap-3 lg:grid-cols-3"}>
       <JsonLinkedCheckbox
         checked={Boolean(value(before, "require_resolution_code", !runtimeDefaults))}
-        label="Код решения обязателен"
+        label={friendly ? "Результат решения обязателен" : "Код решения обязателен"}
+        helpText={friendly ? "Перед завершением поддержка должна выбрать, чем закончилось решение: например, исправлено удалённо или предложен обходной путь." : undefined}
         onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_resolution_code: checked } })}
       />
       <JsonLinkedCheckbox
         checked={Boolean(value(before, "require_public_summary", !runtimeDefaults))}
-        label="Публичный итог обязателен"
+        label={friendly ? "Описание решения для сотрудника обязательно" : "Публичный итог обязателен"}
+        helpText={friendly ? "Не позволит завершить обращение, пока поддержка не напишет итог, доступный сотруднику." : undefined}
         onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_public_summary: checked } })}
       />
       <JsonLinkedCheckbox
         checked={Boolean(value(before, "require_internal_summary", false))}
-        label="Внутренний итог обязателен"
+        label={friendly ? "Внутреннее описание решения обязательно" : "Внутренний итог обязателен"}
+        helpText={friendly ? "Поддержка должна заполнить служебный итог для коллег. Он не становится сообщением сотруднику." : undefined}
         onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_internal_summary: checked } })}
       />
       <JsonLinkedCheckbox
         checked={Boolean(value(before, "require_worklog", false))}
-        label="Worklog обязателен"
+        label={friendly ? "Запись о выполненной работе обязательна" : "Worklog обязателен"}
+        helpText={friendly ? "Перед завершением поддержка должна добавить запись о выполненной работе в журнал обращения." : undefined}
         onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_worklog: checked } })}
       />
       <JsonLinkedCheckbox
         checked={Boolean(value(evidence, "require_operation_log_if_module_used", false))}
-        label="Evidence после модуля"
+        label={friendly ? "Подтверждение выполнения диагностики" : "Evidence после модуля"}
+        helpText={friendly ? "Если использовался диагностический модуль, перед завершением потребуется запись о его выполнении." : undefined}
         onChange={(checked) => onChange({ ...config, evidence: { ...evidence, require_operation_log_if_module_used: checked } })}
       />
       <JsonLinkedCheckbox
         checked={Boolean(value(evidence, "require_approval_if_approval_policy_used", false))}
-        label="Evidence по согласованию"
+        label={friendly ? "Подтверждение согласования" : "Evidence по согласованию"}
+        helpText={friendly ? "Если обращение проходило согласование, перед завершением потребуется подтверждение согласования." : undefined}
         onChange={(checked) => onChange({ ...config, evidence: { ...evidence, require_approval_if_approval_policy_used: checked } })}
       />
       {["P0", "P1", "P2"].map((priority) => (
         <JsonLinkedCheckbox
           checked={evidencePriorities.includes(priority)}
           key={priority}
-          label={`Evidence для ${priority}`}
+          label={friendly ? `Подтверждение решения для приоритета ${priority}` : `Evidence для ${priority}`}
+          helpText={friendly ? `Для обращений с приоритетом ${priority} перед завершением потребуется подтверждающий материал. Сам приоритет рассчитывается сервером.` : undefined}
           onChange={(checked) =>
             onChange({
               ...config,
@@ -2141,13 +2152,16 @@ export function ClosurePolicyControls({
       ))}
       <JsonLinkedCheckbox
         checked={Boolean(Object.hasOwn(confirmation, "required") ? confirmation.required : runtimeDefaults ? config.auto_close_after_days != null : true)}
-        label="Подтверждение пользователя"
+        label={friendly ? "Сотрудник должен подтвердить решение" : "Подтверждение пользователя"}
+        helpText={friendly ? "После предложения решения сотрудник должен подтвердить, что проблема устранена. Срок ожидания задаётся ниже." : undefined}
         onChange={(checked) => onChange({ ...config, requester_confirmation: { ...confirmation, required: checked } })}
       />
       <label className="space-y-2 text-sm font-medium text-slate-800">
-        <span>Автозакрытие через дней</span>
+        <span>{friendly ? "Закрыть автоматически через (дней)" : "Автозакрытие через дней"}</span>
         <input
           className="field-base h-11 w-full px-4 text-sm"
+          aria-label={friendly ? "Закрыть автоматически через (дней)" : undefined}
+          aria-describedby={friendly ? `${helpId}-days` : undefined}
           min={0}
           onChange={(event) =>
             onChange({ ...config, requester_confirmation: { ...confirmation, auto_close_after_days: Number(event.currentTarget.value || 0) } })
@@ -2155,13 +2169,15 @@ export function ClosurePolicyControls({
           type="number"
           value={Number(value(confirmation, "auto_close_after_days", runtimeDefaults ? 0 : 3))}
         />
+        {friendly && <span id={`${helpId}-days`} className="block text-xs text-slate-600">Сколько дней ждать после предложения решения, прежде чем закрыть обращение автоматически. 0 отключает автозакрытие.</span>}
       </label>
       <JsonLinkedCheckbox
         checked={Boolean(confirmation.reopen_on_negative_feedback ?? true)}
-        label="Открывать при отрицательном отзыве"
+        label={friendly ? "Вернуть в работу, если решение не помогло" : "Открывать при отрицательном отзыве"}
+        helpText={friendly ? "Отрицательный ответ сотрудника на предложенное решение возобновит работу по обращению." : undefined}
         onChange={(checked) => onChange({ ...config, requester_confirmation: { ...confirmation, reopen_on_negative_feedback: checked } })}
       />
-      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+      {friendly ? <PolicyFieldOptions title="Допустимые результаты решения" help="Выберите, какие результаты сможет указать поддержка. Если ничего не выбрано, это правило не ограничивает список результатов." choices={resolutionChoices} value={value(before, "allowed_resolution_codes", [])} onChange={values => onChange(Object.hasOwn(before, "allowed_resolution_codes") ? { ...config, before_resolved: { ...before, allowed_resolution_codes: values } } : { ...config, allowed_resolution_codes: values })} /> : <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
         <span>Коды решения</span>
         <input
           className="field-base h-11 w-full px-4 text-sm"
@@ -2169,7 +2185,7 @@ export function ClosurePolicyControls({
           placeholder="fixed_remote, duplicate, cannot_reproduce"
           value={listToCsv(config.allowed_resolution_codes)}
         />
-      </label>
+      </label>}
     </div>
   );
 }
@@ -2271,13 +2287,16 @@ function DiagnosticPolicyControls({
 export function VisibilityPolicyControls({
   config,
   onChange,
+  friendly = false,
 }: {
+  friendly?: boolean;
   config: Record<string, unknown>;
   onChange: (config: Record<string, unknown>) => void;
 }) {
-  const mapping = nestedObject(config.public_status_mapping);
+  const helpId = useId();
+  const mapping = nestedObject(config.public_status_mapping || config.public_statuses);
   const updateMapping = (status: string, value: string) =>
-    onChange({ ...config, public_status_mapping: { ...mapping, [status]: value } });
+    onChange({ ...config, public_status_mapping: { ...mapping, [status]: typeof mapping[status] === "object" && mapping[status] !== null ? { ...nestedObject(mapping[status]), label: value } : value } });
   const statusControls = [
     ["new", "Новая публично"],
     ["queued", "В очереди публично"],
@@ -2291,18 +2310,25 @@ export function VisibilityPolicyControls({
   ];
 
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
+    <div className={friendly ? "grid gap-4 sm:grid-cols-2" : "grid gap-3 lg:grid-cols-3"}>
       {statusControls.map(([status, label]) => (
         <label className="space-y-2 text-sm font-medium text-slate-800" key={status}>
-          <span>{label}</span>
+          <span>{friendly ? `Статус «${publicStatusNames[status]}»` : label}</span>
           <input
             className="field-base h-11 w-full px-4 text-sm"
+            aria-label={friendly ? `Статус «${publicStatusNames[status]}»` : undefined}
+            aria-describedby={friendly ? `${helpId}-${status}` : undefined}
             onChange={(event) => updateMapping(status, event.currentTarget.value)}
-            value={String(mapping[status] ?? "")}
+            value={typeof mapping[status] === "object" ? String(nestedObject(mapping[status]).label ?? nestedObject(mapping[status]).title ?? "") : String(mapping[status] ?? "")}
           />
+          {friendly && <span id={`${helpId}-${status}`} className="block text-xs text-slate-600">Что увидит сотрудник на этапе «{publicStatusNames[status]}». Меняется только название, порядок работы сохраняется. Пустое поле оставляет резервное название, заданное сервером.</span>}
         </label>
       ))}
-      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+      {friendly ? <>
+        <PolicyFieldOptions title="Дополнительно скрывать от сотрудника" help="Выбранные поля скрываются дополнительно к обязательной защите внутренних данных." value={config.hide_from_requester} choices={visibilityChoices} onChange={values => onChange({ ...config, hide_from_requester: values })} />
+        <PolicyFieldOptions title="Показывать сотруднику" help="Список полей для представления сотрудника. Серверные права имеют приоритет: внутренние данные нельзя открыть этим списком. Если поле также скрыто, запрет имеет приоритет." value={config.show_to_requester} choices={visibilityChoices} onChange={values => onChange({ ...config, show_to_requester: values })} />
+        <p className="text-xs text-slate-600 lg:col-span-full">Внутренние заметки, сроки работы поддержки и подробная диагностика защищены сервером независимо от этих настроек.</p>
+      </> : <><label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
         <span>Скрыть от заявителя</span>
         <input
           className="field-base h-11 w-full px-4 text-sm"
@@ -2319,7 +2345,7 @@ export function VisibilityPolicyControls({
           placeholder="public_messages, public_status, expected_due_at"
           value={listToCsv(config.show_to_requester)}
         />
-      </label>
+      </label></>}
     </div>
   );
 }
@@ -2356,15 +2382,16 @@ function InlinePolicyList({ items, emptyLabel }: { items: string[]; emptyLabel: 
   );
 }
 
-export function VisibilityPolicyPreview({ config }: { config: Record<string, unknown> }) {
-  const mapping = nestedObject(config.public_status_mapping);
+export function VisibilityPolicyPreview({ config, friendly = false }: { config: Record<string, unknown>; friendly?: boolean }) {
+  const mapping = nestedObject(config.public_status_mapping || config.public_statuses);
   const hidden = uniqueStrings([...DEFAULT_VISIBILITY_HIDDEN_PREVIEW, ...stringList(config.hide_from_requester)]);
   const requesterFields = stringList(config.show_to_requester);
   const supportFields = stringList(config.show_to_support ?? config.support_fields);
   const statusPreview = ["new", "in_progress", "waiting_user", "waiting_approval", "resolved", "closed"]
     .map((status) => {
       const value = mapping[status];
-      return value ? `${status}: ${String(value)}` : "";
+      const label = typeof value === "object" ? nestedObject(value).label ?? nestedObject(value).title : value;
+      return label ? `${friendly ? publicStatusNames[status] : status}: ${String(label)}` : "";
     })
     .filter(Boolean);
 
@@ -2377,14 +2404,14 @@ export function VisibilityPolicyPreview({ config }: { config: Record<string, unk
           <p className="mt-2 text-xs text-slate-600">Публичные статусы</p>
           <InlinePolicyList items={statusPreview} emptyLabel="Используются статусы по умолчанию" />
           <p className="mt-3 text-xs text-slate-600">Доступные поля</p>
-          <InlinePolicyList items={requesterFields} emptyLabel="Явный список не задан" />
+          <InlinePolicyList items={friendly ? requesterFields.map(policyFieldName) : requesterFields} emptyLabel="Явный список не задан" />
         </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-          <p className="text-sm font-semibold text-slate-950">Support</p>
+          <p className="text-sm font-semibold text-slate-950">{friendly ? "Поддержка" : "Support"}</p>
           <p className="mt-2 text-xs text-slate-600">Скрыто от заявителя</p>
-          <InlinePolicyList items={hidden} emptyLabel="Нет скрытых полей" />
-          <p className="mt-3 text-xs text-slate-600">Support-visible поля</p>
-          <InlinePolicyList items={supportFields} emptyLabel="Support видит полный рабочий payload" />
+          <InlinePolicyList items={friendly ? hidden.map(policyFieldName) : hidden} emptyLabel="Нет скрытых полей" />
+          <p className="mt-3 text-xs text-slate-600">{friendly ? "Поля для поддержки" : "Support-visible поля"}</p>
+          <InlinePolicyList items={friendly ? supportFields.map(policyFieldName) : supportFields} emptyLabel={friendly ? "Поддержка видит рабочие данные в пределах своих прав" : "Support видит полный рабочий payload"} />
         </div>
       </div>
     </div>
@@ -2576,16 +2603,19 @@ function updateNotifyRecipient(actions: Record<string, unknown>, recipient: stri
 function JsonLinkedCheckbox({
   checked,
   label,
+  helpText,
   onChange,
 }: {
   checked: boolean;
   label: string;
+  helpText?: string;
   onChange: (checked: boolean) => void;
 }) {
+  const helpId = useId();
   return (
     <label className="flex items-center gap-2 rounded-[0.8rem] border border-border bg-white px-3 py-2 text-sm text-slate-700">
-      <input checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} type="checkbox" />
-      <span>{label}</span>
+      <input aria-label={label} aria-describedby={helpText ? helpId : undefined} checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} type="checkbox" />
+      <span>{label}{helpText && <span id={helpId} className="mt-1 block text-xs font-normal text-slate-600">{helpText}</span>}</span>
     </label>
   );
 }

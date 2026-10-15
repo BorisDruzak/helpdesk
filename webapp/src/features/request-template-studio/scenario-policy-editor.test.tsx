@@ -3,6 +3,19 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioProcessing } from "./scenario-processing";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 const definition: ScenarioDraftDefinition = { scenario_key: "p", title: "Печать", service_code: "it", offering_full_code: "it.print", process_binding: { request_template_key: "p", policy_refs: { routing: "route" } }, blocks: [] };
+it.each(["closure", "visibility"])("explains every %s field in Russian without exposing configuration keys", async kind => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: {} } }), { headers: { "content-type": "application/json" } })));
+  render(<ScenarioProcessing definition={definition} disabled={false} onChange={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: `Создать правило: ${kind === "closure" ? "Закрытие обращения" : "Видимость обращения"}` }));
+  const dialog = screen.getByRole("dialog");
+  expect(dialog).not.toHaveTextContent(/Evidence|Worklog|fixed_remote|internal_notes|public_messages|Support/);
+  for (const input of dialog.querySelectorAll("input")) {
+    expect(input).toHaveAccessibleName();
+    expect(input).toHaveAccessibleDescription();
+  }
+  if (kind === "closure") expect(screen.getByLabelText("Запись о выполненной работе обязательна")).toBeVisible();
+  else expect(screen.getByLabelText("Показывать сотруднику: Переписка с сотрудником")).toBeChecked();
+});
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it.each([["closure", "Закрытие обращения"], ["visibility", "Видимость обращения"]])("publishes %s through the registry and applies its reference only after explicit selection", async (kind, label) => {
   let payload: Record<string, unknown> = {};
@@ -41,10 +54,10 @@ it("preserves source policy extras and reports server errors without losing edit
   const change = vi.fn();
   render(<ScenarioProcessing definition={{...definition, process_binding: {...definition.process_binding, policy_refs: {closure: "shared"}}}} disabled={false} onChange={change} />);
   fireEvent.click(await screen.findByRole("button", { name: "Настроить выбранное правило: Закрытие обращения" }));
-  expect(screen.getByLabelText("Код решения обязателен")).not.toBeChecked();
-  expect(screen.getByLabelText("Подтверждение пользователя")).not.toBeChecked();
-  expect(screen.getByLabelText("Автозакрытие через дней")).toHaveValue(0);
-  fireEvent.click(screen.getByLabelText("Публичный итог обязателен"));
+  expect(screen.getByLabelText("Результат решения обязателен")).not.toBeChecked();
+  expect(screen.getByLabelText("Сотрудник должен подтвердить решение")).not.toBeChecked();
+  expect(screen.getByLabelText("Закрыть автоматически через (дней)")).toHaveValue(0);
+  fireEvent.click(screen.getByLabelText("Описание решения для сотрудника обязательно"));
   fireEvent.click(screen.getByRole("button", { name: "Проверить и продолжить" }));
   fireEvent.click(screen.getByRole("button", { name: "Опубликовать правило" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Сервер отклонил правило");
@@ -52,7 +65,7 @@ it("preserves source policy extras and reports server errors without losing edit
   expect(submitted.config).toEqual({...source.config, before_resolved: {...source.config.before_resolved, require_public_summary: false}});
   expect(change).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Изменить настройки" }));
-  expect(screen.getByLabelText("Публичный итог обязателен")).not.toBeChecked();
+  expect(screen.getByLabelText("Описание решения для сотрудника обязательно")).not.toBeChecked();
   fireEvent.click(screen.getByRole("button", { name: "Вернуться к услуге" }));
   expect(screen.getByText("Есть несохранённые изменения правила.")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Закрыть без сохранения" }));
@@ -75,13 +88,13 @@ it("shows legacy closure requirements using the same defaults as the runtime", a
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: { closure: [source] } } }), { headers: { "content-type": "application/json" } })));
   render(<ScenarioProcessing definition={{...definition, process_binding: {...definition.process_binding, policy_refs: {closure: "legacy"}}}} disabled={false} onChange={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "Настроить выбранное правило: Закрытие обращения" }));
-  expect(screen.getByLabelText("Код решения обязателен")).toBeChecked();
-  expect(screen.getByLabelText("Публичный итог обязателен")).not.toBeChecked();
-  expect(screen.getByLabelText("Подтверждение пользователя")).toBeChecked();
-  expect(screen.getByLabelText("Автозакрытие через дней")).toHaveValue(7);
-  expect(screen.getByLabelText("Evidence для P0")).toBeChecked();
-  expect(screen.getByLabelText("Evidence для P1")).toBeChecked();
-  fireEvent.click(screen.getByLabelText("Evidence для P1"));
-  expect(screen.getByLabelText("Evidence для P1")).not.toBeChecked();
-  expect(screen.getByLabelText("Evidence для P0")).toBeChecked();
+  expect(screen.getByLabelText("Результат решения обязателен")).toBeChecked();
+  expect(screen.getByLabelText("Описание решения для сотрудника обязательно")).not.toBeChecked();
+  expect(screen.getByLabelText("Сотрудник должен подтвердить решение")).toBeChecked();
+  expect(screen.getByLabelText("Закрыть автоматически через (дней)")).toHaveValue(7);
+  expect(screen.getByLabelText("Подтверждение решения для приоритета P0")).toBeChecked();
+  expect(screen.getByLabelText("Подтверждение решения для приоритета P1")).toBeChecked();
+  fireEvent.click(screen.getByLabelText("Подтверждение решения для приоритета P1"));
+  expect(screen.getByLabelText("Подтверждение решения для приоритета P1")).not.toBeChecked();
+  expect(screen.getByLabelText("Подтверждение решения для приоритета P0")).toBeChecked();
 });

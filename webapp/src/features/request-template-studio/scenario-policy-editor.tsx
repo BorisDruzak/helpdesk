@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { buildClosurePreset, buildVisibilityPreset, ClosurePolicyControls, VisibilityPolicyControls, VisibilityPolicyPreview } from "../forms-builder/forms-builder-panel";
@@ -13,6 +13,7 @@ export function ScenarioPolicyEditor({ kind, serviceTitle, source, disabled, onR
   kind: EditableScenarioPolicy; serviceTitle: string; source?: AdminHelpdeskPolicyItem; disabled: boolean;
   onRegistered: (policy: AdminHelpdeskPolicyItem) => void; onApply: (policy: AdminHelpdeskPolicyItem) => void; onClose: () => void;
 }) {
+  const helpId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const inFlight = useRef(false);
   const [code] = useState(() => `studio_${kind}_${crypto.randomUUID().replaceAll("-", "")}`);
@@ -50,8 +51,8 @@ export function ScenarioPolicyEditor({ kind, serviceTitle, source, disabled, onR
       <p className="text-sm">{kind === "closure" ? "Определите, что поддержка должна заполнить перед завершением и нужно ли подтверждение сотрудника. 0 дней отключает автозакрытие." : "Задайте названия статусов для сотрудника и доступные ему поля. Внутренние данные остаются защищены серверными правами."}</p>
       {source && <p className="rounded border p-3 text-sm">Основа: «{source.title}». Изменения сохранятся отдельным правилом для этой услуги; исходное общее правило сохранится.</p>}
       <fieldset disabled={disabled || pending || review || !!published} className="space-y-4">
-        <label className="block">Название правила<Input autoFocus maxLength={300} value={title} onChange={event => setTitle(event.target.value)} /></label>
-        {kind === "closure" ? <ClosurePolicyControls config={config} onChange={setConfig} runtimeDefaults /> : <><VisibilityPolicyControls config={config} onChange={setConfig} /><VisibilityPolicyPreview config={config} /></>}
+        <label className="block">Название правила<Input aria-label="Название правила" aria-describedby={helpId} autoFocus maxLength={300} value={title} onChange={event => setTitle(event.target.value)} /><span id={helpId} className="block text-xs text-slate-600">Название для администратора: поможет выбрать это правило при настройке услуги. На обработку обращения не влияет.</span></label>
+        {kind === "closure" ? <ClosurePolicyControls config={config} onChange={setConfig} runtimeDefaults friendly /> : <><VisibilityPolicyControls config={config} onChange={setConfig} friendly /><VisibilityPolicyPreview config={config} friendly /></>}
       </fieldset>
       {review && !published && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm"><p>Настройки готовы к отправке. Сервер проверит правило при публикации.</p><p>После публикации нажмите «Применить к услуге», сохраните черновик карты и повторите проверку публикации услуги.</p></div>}
       {published && <p role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm">Правило «{published.title}» опубликовано. Примените его к черновику услуги, затем проверьте сохранение и карту. Автосохранение может сохранить черновик сразу после применения. Изменения услуги ещё не опубликованы.</p>}

@@ -153,6 +153,9 @@
   the existing policy publish API. New copies have `request_template` scope with
   no scope target, so inherited policies stay unchanged; only explicit map refs
   activate them. Apply changes the draft only and retains normal publication gates.
+  Forms Builder `policy-field-options` supplies Russian field/result labels and
+  descriptions for Studio's friendly controls; canonical keys and unknown values
+  are preserved. No policy evaluator or second configuration store is introduced.
   `scenario-map-workbench`, `scenario-map-canvas` and `scenario-map-model` own
   React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
   and cycle guards. `scenario-delete-dialog` keeps destructive draft edits and errors

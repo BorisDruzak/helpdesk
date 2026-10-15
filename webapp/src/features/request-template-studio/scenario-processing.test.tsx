@@ -6,7 +6,7 @@ import type { ScenarioDraftDefinition } from "./scenario-contract";
 
 const definition: ScenarioDraftDefinition = { scenario_key: "p", title: "Печать", service_code: "it", offering_full_code: "it.print", process_binding: { request_template_key: "p", policy_refs: { routing: "route" } }, blocks: [] };
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-it.each([["closure", "Закрытие обращения", "Код решения обязателен"], ["visibility", "Видимость обращения", "Новая публично"]])("opens a real %s editor without leaving or changing the service", async (_kind, label, control) => {
+it.each([["closure", "Закрытие обращения", "Результат решения обязателен"], ["visibility", "Видимость обращения", "Статус «Обращение принято»"]])("opens a real %s editor without leaving or changing the service", async (_kind, label, control) => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: {} } }), { headers: { "content-type": "application/json" } })));
   const change = vi.fn();
   render(<ScenarioProcessing definition={definition} disabled={false} onChange={change} />);

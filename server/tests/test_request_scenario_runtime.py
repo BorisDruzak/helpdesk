@@ -15,6 +15,37 @@ def _modules():
     return import_module("tickets.request_scenario_validation"), import_module("tickets.request_scenario_runtime")
 
 
+@pytest.mark.parametrize("schema_version", [1, 2])
+@pytest.mark.parametrize("field_type", ["radio", "select"])
+@pytest.mark.parametrize("answer,expected", [("mail", "mail_help"), ("vpn", "vpn_help"), ("other", "review")])
+def test_choice_answer_selects_the_matching_instruction_or_fallback(schema_version, field_type, answer, expected):
+    raw = pilot()
+    raw["schema_version"] = schema_version
+    raw["entry_points"] = [{"key": "main", "title": "Помощь", "target_block_id": "questions"}]
+    page = raw["blocks"][0]
+    page["fields"] = [{"key": "issue", "type": field_type, "label": "Что не работает?", "required": True,
+                       "options": [{"value": value, "label": value} for value in ("mail", "vpn", "other")]}]
+    page["transitions"] = [{"to": "branch"}]
+    raw["blocks"] = [page, {"id": "branch", "kind": "decision", "title": "Выбор инструкции", "transitions": [
+        {"to": "mail_help", "when": {"op": "eq", "source": "answer", "field": "issue", "value": "mail"}},
+        {"to": "vpn_help", "when": {"op": "eq", "source": "answer", "field": "issue", "value": "vpn"}},
+        {"to": "review"},
+    ]}, *[{"id": block_id, "kind": "instruction", "title": block_id, "content": {"body": "Проверьте подключение"},
+           "transitions": [{"to": "review"}]} for block_id in ("mail_help", "vpn_help")], *raw["blocks"][4:6]]
+    validator, runtime = _modules()
+    assert not validator.validate_scenario(_definition(raw)), validator.validate_scenario(_definition(raw))
+    engine = runtime.ScenarioRuntime(_definition(raw))
+    initial = engine.initial_state()
+    state = engine.advance(initial, _answer(initial, {"issue": answer}))
+    assert state.current_block_id == expected
+    assert state.answers == {"issue": answer}
+    if expected != "review":
+        state = engine.advance(state, _answer(state, result="acknowledged"))
+        assert state.current_block_id == "review"
+    state = engine.advance(state, _answer(state))
+    assert state.current_block_id == "submit"  # Actual ticket creation remains a separate durable action.
+
+
 @pytest.mark.parametrize("group,title", [(None, "Section"), ("details", " ")])
 def test_named_section_requires_safe_group_and_human_title(group, title):
     raw = pilot()

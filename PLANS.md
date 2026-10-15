@@ -2282,3 +2282,15 @@ requester/publication guard changes, catalog writes or real ticket creation.
 - Checks cover both kinds, registration/assignment separation, error/dirty/read-only
   behavior and canonical resolver proof that unbound rules do not alter inheritance.
 - Staging browser acceptance and exact release identity recorded in task receipt.
+
+# 2026-10-15 Studio rule clarity and answer branches
+
+Scope: Russian names and per-field accessible explanations for inline closure/
+visibility rules, readable result/field choices preserving canonical values and
+legacy extras. Existing Forms Builder callers retain their prior controls.
+Decision/check branches open immediately; choice branches begin with equality
+against an answer, and map question cards show their type. Canonical runtime
+remains unchanged. Own staging draft only; user map drafts and active rules excluded.
+Checks: frontend181 and runtime53 pass, including v1/v2 select/radio routing to
+mail/VPN instructions and fallback. Final build/workspace and exact-SHA staging
+browser acceptance follow. No schema, policy engine or storage changes.
