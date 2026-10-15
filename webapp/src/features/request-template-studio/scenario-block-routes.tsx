@@ -2,7 +2,7 @@ import { useId, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { conditionFields, conditionFieldAvailability } from "./scenario-builder-model";
-import { ScenarioConditionEditor } from "./scenario-condition-editor";
+import { newAnswerCondition, ScenarioConditionEditor } from "./scenario-condition-editor";
 import { conditionSummary } from "./scenario-condition-summary";
 import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioTransition } from "./scenario-contract";
 import { replaceTransitions } from "./scenario-map-model";
@@ -64,7 +64,7 @@ export function ScenarioBlockRoutes({ definition, block, disabled, onChange }: {
     </BranchCard>)}
     <label className="block">Добавить условную ветвь<Select disabled={disabled || (!fields.length && block.kind !== "resolution_check") || transitions.length >= 30} value="" onChange={event => {
       const field = fields[0];
-      const when = block.kind === "resolution_check" ? { op: "eq" as const, source: "current_result" as const, value: "yes" } : field.type === "checkbox" || (["select", "radio"].includes(field.type) && field.options?.length) ? { op: "eq" as const, source: "answer" as const, field: field.key, value: field.type === "checkbox" ? true : field.options![0].value } : { op: "exists" as const, source: "answer" as const, field: field.key };
+      const when = block.kind === "resolution_check" ? { op: "eq" as const, source: "current_result" as const, value: "yes" } : newAnswerCondition(field);
       if (update([...transitions.filter(edge => edge.when), { to: event.target.value, when }, ...transitions.filter(edge => !edge.when)])) setExpanded([conditionalIndices.length]);
     }}><option value="">Выберите следующий блок</option>{options}</Select></label>
     {!fields.length && block.kind === "decision" && <p className="text-sm text-amber-700">Сначала соедините предыдущий вопрос с этим блоком. Его ответы появятся в условиях.</p>}

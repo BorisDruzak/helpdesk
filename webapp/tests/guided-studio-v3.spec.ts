@@ -3,8 +3,10 @@ import { installStudioV3Fixture } from "./fixtures/studio-v3";
 
 async function evidence(page: Page, info: TestInfo, name: string) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  const action = await page.getByRole("button", { name: "Сохранить черновик", exact: true }).boundingBox();
-  expect(action).not.toBeNull(); expect(action!.y).toBeGreaterThanOrEqual(0); expect(action!.y + action!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  await expect.poll(async () => {
+    const action = await page.getByRole("button", { name: "Сохранить черновик", exact: true }).boundingBox();
+    return !!action && action.y >= 0 && action.y + action.height <= page.viewportSize()!.height;
+  }).toBe(true);
   await page.screenshot({ path: info.outputPath(`${page.viewportSize()!.width}-${name}.png`) });
 }
 async function simulationAnswers(page: Page, scope: string) {
@@ -13,6 +15,38 @@ async function simulationAnswers(page: Page, scope: string) {
   await page.getByRole("radio", { name: "Нет", exact: true }).check(); await page.getByRole("button", { name: "Продолжить проверку", exact: true }).click();
 }
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
+ test(`schema v3 connected question choices initialize and follow source ${viewport.width}`, async ({ page }, info) => {
+  await page.setViewportSize(viewport);
+  const state = await installStudioV3Fixture(page);
+  const decision = state.definition().blocks!.find(block => block.id === "logic")!;
+  decision.transitions = [{ to: "end" }];
+  await page.goto("/app/admin/request-template-studio");
+  await page.getByRole("region", { name: "Каталог услуг", exact: true }).getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true }).click();
+  await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
+  await page.getByText("Иначе", { exact: true }).click();
+  const rule = page.getByRole("group", { name: "Условие перехода", exact: true });
+  await rule.getByRole("button", { name: "Добавить условие", exact: true }).click();
+  await expect(rule.getByRole("combobox", { name: "Правило", exact: true })).toHaveValue("eq");
+  const source = rule.getByRole("combobox", { name: "Источник", exact: true });
+  const value = rule.getByRole("combobox", { name: "Значение условия", exact: true });
+  await expect(source).toHaveValue("issue");
+  await expect(value.getByRole("option", { name: "Принтер", exact: true })).toHaveCount(1);
+  await expect(value.getByRole("option", { name: "Сеть", exact: true })).toHaveCount(1);
+  await value.selectOption("network");
+  await source.selectOption("scope");
+  await expect(rule.getByRole("combobox", { name: "Правило", exact: true })).toHaveValue("eq");
+  await expect(value.getByRole("option", { name: "Весь отдел", exact: true })).toHaveCount(1);
+  await expect(value.getByRole("option", { name: "Один сотрудник", exact: true })).toHaveCount(1);
+  await expect(value.getByRole("option", { name: "Сеть", exact: true })).toHaveCount(0);
+  await value.selectOption("single");
+  await source.selectOption("work");
+  await expect(value.getByRole("option", { name: "Да", exact: true })).toHaveCount(1);
+  await expect(value.getByRole("option", { name: "Нет", exact: true })).toHaveCount(1);
+  await evidence(page, info, "connected-question-choices");
+  expect(state.writes).toEqual([]);
+  expect(state.errors).toEqual([]);
+  expect(state.unexpected).toEqual([]);
+ });
  test(`schema v3 map processing rules and server comparison ${viewport.width}`, async ({ page }, info) => {
   test.setTimeout(90000); await page.setViewportSize(viewport); const state = await installStudioV3Fixture(page);
   await page.goto("/app/admin/request-template-studio");

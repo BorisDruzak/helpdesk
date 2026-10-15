@@ -1,3 +1,20 @@
+# 2026-10-15 Connected question choices in condition rules
+
+Actor/job: an administrator builds a question-to-condition route in the existing
+Studio workbench and chooses the question's answer without technical identifiers.
+Reproduced on staging in a separate unsaved synthetic map: the connected radio
+question was available, but Add condition and changing its source seeded `exists`,
+hiding the actual options. Selecting equality manually showed them immediately.
+Scope: choice-aware initialization only on explicit add/source-change actions,
+shared by edge and block-branch editors; preserve saved presence/nested rules and
+canonical runtime semantics. No schema/API/permission or registry changes.
+Verification: component and browser regressions reproduced RED. GREEN: Studio174,
+fresh build and four browser cases at1366/1920 passed, including source switching,
+typed booleans/multi-select and retained saved rules. Browser geometry assertions
+wait for the existing sticky action bar to settle without relaxing their bounds.
+Installed-staging acceptance and final CI belong to the candidate receipt.
+Keep the user's open map untouched and leave the requested staging service running.
+
 # 2026-10-15 Guided Request Studio schema v3
 
 Goal: map-owned SLA profiles/directions, composite branch authoring and explainable

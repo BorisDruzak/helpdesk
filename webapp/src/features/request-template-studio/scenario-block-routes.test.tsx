@@ -54,3 +54,20 @@ it("creates a branch for a selected answer and preserves the fallback last", () 
   fireEvent.change(screen.getByLabelText("Значение условия"), { target: { value: "vpn" } });
   expect(change.mock.calls[1][0].blocks[1].transitions[0].when.value).toBe("vpn");
 });
+it("creates a multi-select membership branch with immediate choices and preserves its fallback", () => {
+  const definition: ScenarioDraftDefinition = { schema_version: 2, scenario_key: "test", title: "Test", service_code: "it", offering_full_code: "it.test", process_binding: { request_template_key: "test" }, entry_block_id: "q", blocks: [
+    { id: "q", kind: "form_page", title: "Вопрос", fields: [{ key: "issues", type: "multi_select", label: "Что не работает?", options: [{ value: "printer", label: "Принтер" }, { value: "network", label: "Сеть" }] }], transitions: [{ to: "d" }] },
+    { id: "d", kind: "decision", title: "Условие", transitions: [{ to: "other" }] },
+    { id: "other", kind: "submit_ticket", title: "В поддержку" },
+  ] };
+  const unchanged = structuredClone(definition), change = vi.fn();
+  function Harness() { const [draft, setDraft] = useState(definition); return <ScenarioBlockRoutes definition={draft} block={draft.blocks![1]} disabled={false} onChange={next => { change(next); setDraft(next); }} />; }
+  render(<Harness />);
+  fireEvent.change(screen.getByLabelText("Добавить условную ветвь"), { target: { value: "other" } });
+  expect(change.mock.calls[0][0].blocks[1].transitions).toEqual([{ to: "other", when: { op: "in", source: "answer", field: "issues", value: ["printer"] } }, { to: "other" }]);
+  expect(screen.getByLabelText("Правило")).toHaveValue("in");
+  expect(screen.getByRole("checkbox", { name: "Принтер" })).toBeChecked();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Сеть" }));
+  expect(change.mock.calls.at(-1)![0].blocks[1].transitions).toEqual([{ to: "other", when: { op: "in", source: "answer", field: "issues", value: ["printer", "network"] } }, { to: "other" }]);
+  expect(definition).toEqual(unchanged);
+});
