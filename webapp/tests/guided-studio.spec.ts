@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "playwright/test";
-async function openCatalogMap(page:Page){await page.getByRole("button",{name:"Настроить услугу Принтер",exact:true}).click();await page.getByRole("button",{name:"Открыть карту сценария",exact:true}).click();}
-async function newCatalogMap(page:Page){await page.getByRole("button",{name:"Создать услугу",exact:true}).click();await page.getByRole("combobox",{name:"Способ помощи",exact:true}).selectOption("map");await page.getByRole("button",{name:"Создать карту",exact:true}).click();}
+async function openCatalogMap(page:Page){await page.getByRole("button",{name:/^Настроить услугу /}).click();await page.getByRole("button",{name:"Открыть карту сценария",exact:true}).click();await page.getByRole("button",{name:"Настройки карты",exact:true}).first().click();}
+async function newCatalogMap(page:Page){await page.getByRole("button",{name:"Создать услугу",exact:true}).click();}
 
 
 for(const [width,height] of [[1366,768],[1920,1080],[820,1180]]) {
@@ -8,9 +8,9 @@ for(const [width,height] of [[1366,768],[1920,1080],[820,1180]]) {
   await page.setViewportSize({width,height});
   const definition={scenario_key:"preview",title:"Предпросмотр доступа",service_code:"it",offering_full_code:"it.printer",entry_block_id:"q",entry_points:[],process_binding:{request_template_key:"printer"},blocks:[{id:"q",kind:"form_page",title:"Запрос доступа",fields:[{key:"folder",type:"text",label:"Куда нужен доступ?",help_text:"Название папки"}],transitions:[{to:"done"}]},{id:"done",kind:"finish",title:"Завершено",message:"Готово"}]};
   const state=await fixture(page,false,definition);await page.goto("/app/admin/request-template-studio");
-  await openCatalogMap(page);await expect(page.getByLabel("Название карты")).toHaveValue(definition.title);
+  await openCatalogMap(page);await expect(page.getByLabel("Название услуги")).toHaveValue(definition.title);
   await page.getByRole("button",{name:"Вся карта",exact:true}).click();
-  await page.getByRole("combobox",{name:"Добавить пункт каталога для блока"}).selectOption("q");
+  await page.getByText("Подключить вход с клавиатуры",{exact:true}).click(); await page.getByRole("combobox",{name:"Первый шаг",exact:true}).selectOption("q");
   await expect(page.locator('.react-flow__edge[data-id^="studio:entry-point:"]')).toHaveCount(1);
   await expect(page.getByRole("heading",{name:"Точки входа · 1"})).toBeVisible();
   await page.getByRole("button",{name:"Отменить изменение",exact:true}).click();await expect(page.locator('.react-flow__edge[data-id^="studio:entry-point:"]')).toHaveCount(0);
@@ -35,8 +35,10 @@ for (const [width,height] of [[1280,720],[1366,768],[1920,1080]]) {
   await page.setViewportSize({width,height});const state=await fixture(page);await page.goto("/app/admin/request-template-studio");
   await expect(page.getByLabel("Визуальная карта сценария",{exact:true})).toHaveCount(0);
   await newCatalogMap(page);
-  await expect(page.getByRole("dialog",{name:"С чего начнём?"})).toBeVisible();
-  await expect(page.getByRole("button",{name:"Создать карту →"})).toBeDisabled();
+  await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Новая услуга");
+  await expect(page.locator(".react-flow__node")).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("combobox",{name:"Способ помощи",exact:true})).toHaveCount(0);
   expect(state.mutations).toHaveLength(0);
  });
 }
@@ -52,7 +54,7 @@ for (const width of [1366,1920]) {
   await expect(page.getByRole("link",{name:"Конструктор форм",exact:true})).toHaveCount(0);
   await expect(page.getByRole("link",{name:"Проверка политик",exact:true})).toHaveCount(0);
   await openCatalogMap(page);
-  await expect(page.getByLabel("Название карты")).toHaveValue("Не печатает");
+  await expect(page.getByLabel("Название услуги")).toHaveValue("Не печатает");
   await expect(page).toHaveURL(/\/app\/admin\/request-template-studio$/);
   await expect(page.getByRole("heading",{name:"Библиотека блоков",exact:true})).toBeVisible();await expect(page.getByRole("tab",{name:"Каталог",exact:true})).toHaveCount(0);
   const left=page.getByRole("separator",{name:"Ширина каталога и блоков"});
@@ -66,7 +68,7 @@ for (const width of [1366,1920]) {
   if(before>310){const box=(await bottom.boundingBox())!;await page.mouse.move(box.x+box.width/2,box.y+6);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y-24,{steps:5});await page.mouse.up();await expect(bottom).toHaveAttribute("aria-valuenow",String(before-30));}
   expect(state.mutations).toHaveLength(0);
   await page.reload();await openCatalogMap(page);await expect(left).toHaveAttribute("aria-valuenow",String(leftBefore+40));
-  await expect(page.getByLabel("Название карты")).toHaveValue("Не печатает");
+  await expect(page.getByLabel("Название услуги")).toHaveValue("Не печатает");
   await page.getByRole("tab",{name:"Как у сотрудника",exact:true}).click();
   await page.getByRole("button",{name:"Опубликовать",exact:true}).click();
   await expect(page.getByRole("button",{name:"Закрыть панель",exact:true})).toBeVisible();
@@ -136,9 +138,9 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.goto("/app/admin/registry");
     await expect(page.getByRole("region", { name: "Каталог услуг", exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/app\/admin\/request-template-studio$/);
-    await expect(page.getByRole("button", { name: "Создать сценарий", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Создать услугу", exact: true })).toHaveCount(0);
     await openCatalogMap(page);
-    await expect(page.getByLabel("Название карты", { exact: true })).toBeDisabled();
+    await expect(page.getByLabel("Название услуги", { exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Тестировать", exact: true }).click();
     await expect(page.getByRole("button", { name: "Начать проверку", exact: true })).toBeEnabled();
@@ -150,47 +152,26 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
 }
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
-  test(`guided studio standalone offering ${viewport.width}`, async ({ page }, info) => {
+  test(`guided studio creates only a service map ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);
     const state = await fixture(page);
-    let offering: Record<string, unknown> | null = null;
-    await page.route("**/api/web/admin/request-studio/catalog?**", route => route.fulfill({ json: { status: "success", data: { services: [{ code: "it", public_title: "Рабочее место", lifecycle_status: "published", visibility: "public" }], offerings: offering ? [offering] : [], entries: offering ? [{ offering, scenarios: [], active_mode: "form", requester_available: false, category_ids: [] }] : [], categories: [], scenarios: [], total: offering ? 1 : 0, offset: 0, limit: 100 } } }));
-    await page.route("**/api/web/admin/helpdesk-model/policies", route => route.fulfill({ json: { status: "success", data: { request_templates: [{ template_code: "printer", version: "1", public_title: "Проблема печати", ticket_type: "incident", is_active: true, published_at: "2026-01-01" }] } } }));
-    await page.route("**/api/web/admin/service-catalog/offerings/save-draft", async route => {
-      const body = route.request().postDataJSON();
-      expect(body).toMatchObject({ service_code: "it", public_title: "Не печатает", lifecycle_status: "draft", visibility: "public", request_template_key: "printer", ticket_type_code: "incident" });
-      offering = { ...body, full_code: `it.${body.code}` };
-      await route.fulfill({ json: { status: "ok", offering } });
+    const created: any[] = [];
+    await page.route("**/api/web/admin/request-studio/services", async route => {
+      const body = route.request().postDataJSON(); created.push(body);
+      expect(body.definition).toMatchObject({schema_version:2,title:"Новая печать",service_code:"it",offering_full_code:"",blocks:[]});
+      await route.fulfill({json:{status:"success",data:{scenario:{id:"new",archived:false},draft:{revision:1,definition:{...body.definition,offering_full_code:"it.new",process_binding:{request_template_key:"printer"}}}}}});
     });
-    await page.route("**/api/web/admin/request-studio/scenarios", async route => {
-      const body = route.request().postDataJSON();
-      expect(body.definition.publish_offering).toBe(true);
-      expect(body.definition.offering_full_code).toBe(offering?.full_code);
-      await route.fulfill({ json: { status: "success", data: { scenario: { id: "new", archived: false }, draft: { revision: 1, definition: body.definition } } } });
-    });
-    await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("button", { name: "Создать услугу", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Новая услуга", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Карта сценария", exact: true })).toHaveCount(0);
-    await page.getByLabel("Название услуги", { exact: true }).fill("Не печатает");
-    await page.getByLabel("Краткое описание услуги", { exact: true }).fill("Помощь с печатью");
-    await page.getByRole("combobox", { name: "Шаблон обработки", exact: true }).selectOption("printer");
-    const create = page.getByRole("button", { name: "Создать черновик услуги", exact: true });
-    await create.scrollIntoViewIfNeeded(); await create.focus();
-    await expect(create).toBeInViewport({ ratio: 1 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.screenshot({ path: info.outputPath(`${viewport.width}-standalone-offering.png`) });
-    await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { name: "Новая услуга", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("complementary", { name: "Настройки услуги", exact: true })).toBeVisible();await page.getByRole("tab",{name:"Помощь сотруднику",exact:true}).click();
-    await page.getByRole("button", { name: "Создать карту", exact: true }).click();
-    await expect(page.getByRole("dialog",{name:"С чего начнём?"})).toBeVisible();
-    await page.getByRole("dialog",{name:"С чего начнём?"}).locator("summary").filter({hasText:"Тип обращения"}).click();
-    await expect(page.getByLabel("Тип создаваемого обращения",{exact:true})).toHaveValue(String(offering?.full_code));
-    await page.getByRole("button",{name:"Создать карту →"}).click();
-    await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Карта сценария", exact: true })).toBeEnabled();
-    expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
+    await page.goto("/app/admin/request-template-studio"); await newCatalogMap(page);
+    await page.getByLabel("Название услуги",{exact:true}).fill("Новая печать");
+    await expect(page.getByLabel("Шаблон обработки",{exact:true})).toHaveCount(0);
+    await expect(page.getByRole("combobox",{name:"Способ помощи",exact:true})).toHaveCount(0);
+    const save=page.getByRole("button",{name:"Сохранить черновик",exact:true});
+    await expect(save).toBeInViewport(); await save.click();
+    await expect(page.getByText("Черновик сохранён. Ревизия 1.")).toBeVisible();
+    expect(created).toHaveLength(1); expect(state.mutations).toHaveLength(0);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:info.outputPath(`${viewport.width}-service-map.png`)});
+    expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
   });
 }
 
@@ -199,7 +180,7 @@ async function fixture(page: Page, publication = false, customDefinition?: Recor
   const failures: string[] = [];
   const mutations: unknown[] = [];
   let revision = 3;
-  let definition: Record<string, unknown> = customDefinition ?? { schema_version: 1, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", description: "Сценарий помощи с печатью", category_id: "c1", blocks: publication ? [{ id: "instruction", kind: "instruction", title: "Проверьте бумагу", content: { body: "Добавьте бумагу в лоток" } }] : [], process_binding: { request_template_key: "printer" } };
+  let definition: Record<string, unknown> = { schema_version: 2, ...customDefinition ?? { schema_version: 2, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", description: "Сценарий помощи с печатью", category_id: "c1", blocks: publication ? [{ id: "instruction", kind: "instruction", title: "Проверьте бумагу", content: { body: "Добавьте бумагу в лоток" } }] : [], process_binding: { request_template_key: "printer" } } };
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
   page.on("requestfailed", request => failures.push(request.url()));
@@ -208,7 +189,7 @@ async function fixture(page: Page, publication = false, customDefinition?: Recor
     const path = new URL(route.request().url()).pathname;
     let data: unknown = {};
     if (path === "/api/web/session/me") data = { user_login: "studio-test@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view"] };
-    else if (path.includes("/request-studio/catalog")) data = { categories: [{ id: "c1", parent_id: null, service_code: "it", title: "Оборудование", slug: "hardware", revision: 1, visibility: "internal", lifecycle_status: "draft" }, { id: "c2", parent_id: "c1", service_code: "it", title: "Принтеры", slug: "printers", lifecycle_status: "draft" }], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [{ id: "s1", title: definition.title, description: definition.description, service_code: "it", status: "draft", published_version: 7, updated_at: "2026-10-11T10:00:00Z", offering_full_code: "it.printer", category_id: "c2", issues: [] }], total: 1, offset: 0, limit: 100 };
+    else if (path.includes("/request-studio/catalog")) data = { categories: [{ id: "c1", parent_id: null, service_code: "it", title: "Оборудование", slug: "hardware", revision: 1, visibility: "internal", lifecycle_status: "draft" }, { id: "c2", parent_id: "c1", service_code: "it", title: "Принтеры", slug: "printers", lifecycle_status: "draft" }], services: [{ code: "it", public_title: "ИТ", lifecycle_status: "published", visibility: "public" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [{ id: "s1", title: definition.title, description: definition.description, service_code: "it", status: "draft", published_version: 7, updated_at: "2026-10-11T10:00:00Z", offering_full_code: "it.printer", category_id: "c2", issues: [] }], total: 1, offset: 0, limit: 100 };
     else if (path.includes("/request-studio/scenarios/s1")) {
       if (route.request().method() === "PUT") { const body = route.request().postDataJSON(); mutations.push(body); definition = body.definition; revision += 1; }
       data = { scenario: { id: "s1", archived: false }, draft: { revision, definition } };
@@ -223,7 +204,7 @@ for (const width of [1366, 1440, 1920, 820]) {
     await page.setViewportSize({ width, height: 1080 });
     const state = await fixture(page, true);
     await page.route("**/api/web/admin/request-studio/scenarios/s1", route => route.fulfill({ json: { status: "success", data: { scenario: { id: "s1", archived: false }, draft: { revision: 3, definition: {
-      schema_version: 1, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", process_binding: { request_template_key: "printer" }, entry_block_id: "first",
+      schema_version: 2, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", process_binding: { request_template_key: "printer" }, entry_block_id: "first",
       blocks: [{ id: "first", kind: "finish", title: "Начало", message: "Готово" }, { id: "instruction", kind: "instruction", title: "Проверьте бумагу", content: { body: "Добавьте бумагу" }, transitions: [{ to: "first", when: null }, { to: "missing", when: null }] }],
     } } } } }));
     let issue = { code: "unknown_target", path: "blocks.instruction.transitions", message: "Целевой блок не найден" };
@@ -257,7 +238,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.route("**/api/web/admin/request-studio/scenarios/s1/rollback-draft", async route => {
       expect(route.request().postDataJSON()).toEqual({ revision: 3, version_id: "v1" });
       await route.fulfill({ json: { status: "success", data: { scenario: { id: "s1", archived: false }, draft: { revision: 4,
-        definition: { schema_version: 1, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Прежний сценарий печати", category_id: "c1", blocks: [], process_binding: { request_template_key: "printer" } } } } } });
+        definition: { schema_version: 2, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Прежний сценарий печати", category_id: "c1", blocks: [], process_binding: { request_template_key: "printer" } } } } } });
     });
     await page.route("**/api/web/admin/request-studio/scenarios/s1/publish*", async route => {
       const body = route.request().postDataJSON();
@@ -303,43 +284,36 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await expect(page.getByText("Версия скопирована в черновик. Перед публикацией проверьте её заново.", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Закрыть панель", exact: true }).click();
     await page.getByRole("button", { name: "Настройки карты", exact: true }).first().click();
-    await expect(page.getByLabel("Название карты", { exact: true })).toHaveValue("Прежний сценарий печати");
+    await expect(page.getByLabel("Название услуги", { exact: true })).toHaveValue("Прежний сценарий печати");
     expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
   });
 }
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
-  test(`guided studio catalog and wizard ${viewport.width}`, async ({ page }, info) => {
+  test(`guided studio catalog and unified map ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);
     const state = await fixture(page);
     await page.goto("/app/admin/request-template-studio");
     const create = page.getByRole("button", { name: "Создать услугу", exact: true });
     await expect(create).toBeInViewport(); await expect(create).toBeEnabled();
     await expect(page.getByLabel("Визуальная карта сценария",{exact:true})).toHaveCount(0);
-    await expect(page.getByRole("button",{name:"Настроить услугу Принтер",exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:/^Настроить услугу /})).toBeVisible();
     await page.getByRole("button",{name:"Принтеры",exact:true}).click();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath("catalog.png") });
     await openCatalogMap(page);
-    await expect(page.getByLabel("Название карты")).toHaveValue("Не печатает");
-    await page.getByLabel("Название карты").fill("Помощь с печатью");
+    await expect(page.getByLabel("Название услуги")).toHaveValue("Не печатает");
+    await page.getByLabel("Название услуги").fill("Помощь с печатью");
     const save = page.getByRole("button", { name: "Сохранить черновик", exact: true });
     await expect(save).toBeInViewport(); await save.click();
     await expect(page.getByText("Черновик сохранён. Ревизия 4.")).toBeVisible();
-    await page.getByRole("group",{name:"Название и раздел"}).getByText("Расширенные настройки", { exact: true }).click();
-    await expect(page.getByLabel("Ключ сценария")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toBeInViewport();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.screenshot({ path: info.outputPath("wizard-inline-settings.png") });
-    await page.getByRole("button", { name: "Карта сценария", exact: true }).click();
-    await expect(page.getByRole("complementary", { name: "Библиотека блоков" })).toBeVisible();
-    await expect(page.getByText("Экспертный", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Ключ сценария")).toHaveCount(0);
+    await expect(save).toBeInViewport();
     await page.getByRole("button", { name: "Настройки карты", exact: true }).first().click();
-    await page.getByLabel("Название карты").fill("Несохранённая правка");
-    page.once("dialog", dialog => dialog.dismiss());
-    if (viewport.width < 1024) { await page.getByRole("button", { name: "Новая карта", exact: true }).click(); await page.getByRole("button", { name: "Отмена", exact: true }).click(); }
-    else await page.getByRole("link", { name: /Центр администрирования/ }).click();
-    await expect(page).toHaveURL(/admin\/request-template-studio$/);
-    await expect(page.getByLabel("Название карты")).toHaveValue("Несохранённая правка");
+    await page.getByLabel("Название услуги").fill("Несохранённая правка");
+    await page.getByRole("button",{name:"Создать услугу",exact:true}).click();
+    await expect(page.getByRole("button",{name:"Переключить без сохранения",exact:true})).toBeVisible();
+    await page.getByRole("button",{name:"Отмена",exact:true}).click();
+    await expect(page.getByLabel("Название услуги")).toHaveValue("Несохранённая правка");
     expect(state.mutations).toHaveLength(1);
     expect(state.mutations[0]).toMatchObject({ revision: 3 });
     expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
@@ -354,20 +328,21 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await openCatalogMap(page);
     await page.getByRole("button", { name: "+ Вопрос", exact: true }).click();
     await page.getByText("Название шага на карте",{exact:true}).click();
-    await page.getByLabel("Название блока", { exact: true }).fill("Опишите проблему");
+    await page.getByLabel("Название блока", { exact: true }).fill("Что не работает?");
     await page.getByLabel("Что спросить?", { exact: true }).fill("Что не работает?");
     await page.getByRole("button", { name: "+ Инструкция", exact: true }).click();
     await page.getByRole("textbox", { name: "Текст инструкции", exact: true }).fill("Проверьте питание устройства.");
-    await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Опишите проблему", exact: true }).click();
-    await page.getByRole("combobox", { name: "Соединить с блоком", exact: true }).selectOption({ label: "Инструкция" });
-    await page.getByRole("button", { name: "Расположение и стабильные параметры", exact: true }).count().then(async count => { if (!count) await page.getByText("Расположение и стабильные параметры", { exact: true }).click(); });
-    await page.getByLabel("X", { exact: true }).fill("420");
-    await page.getByLabel("Y", { exact: true }).fill("160");
+    await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Что не работает?", exact: true }).click();
+    await page.getByText("Подключение с клавиатуры",{exact:true}).click(); await page.getByRole("combobox",{name:"Следующий шаг",exact:true}).selectOption({label:"Инструкция"});
+    const questionNode=page.locator('.react-flow__node').filter({hasText:"Что не работает?"});
+    const beforeMove=await questionNode.evaluate(element=>(element as HTMLElement).style.transform);
+    await questionNode.focus(); await page.keyboard.press("ArrowRight");
+    await expect.poll(()=>questionNode.evaluate(element=>(element as HTMLElement).style.transform)).not.toBe(beforeMove);
     await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
     await expect(page.getByText(/Черновик сохранён. Ревизия/)).toBeVisible();
     const saved = state.mutations.at(-1) as { definition: { blocks: { id: string; title: string; transitions: unknown[] }[]; editor_layout: { positions: Record<string, { x: number; y: number }> } } };
-    const question = saved.definition.blocks.find(block => block.title === "Опишите проблему")!;
-    expect(saved.definition.editor_layout.positions[question.id]).toEqual({ x: 420, y: 160 });
+    const question = saved.definition.blocks.find(block => block.title === "Что не работает?")!;
+    expect(saved.definition.editor_layout.positions[question.id].x).toEqual(expect.any(Number));
     expect(question.transitions).toHaveLength(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${viewport.width}-map-editor.png`) });
@@ -432,7 +407,8 @@ for (const width of [1366, 1920]) {
     await drag(firstEdge.locator('.react-flow__edgeupdater-target'), page.locator('.react-flow__node[data-id="c"] .react-flow__handle.target'));
     await expect(firstEdge).toHaveAttribute("aria-label", "Edge from q to c");
     await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Проверка бумаги", exact: true }).click();
-    await page.getByRole("button", { name: "Условие → Обращение", exact: true }).click();
+    // Parallel edges overlap after reconnecting; target the chosen edge's click handler.
+    await firstEdge.dispatchEvent("click");
     await expect(page.getByRole("combobox", { name: "Следующий блок", exact: true })).toHaveValue("c");
     const transfer = await page.evaluateHandle(() => new DataTransfer());
     await transfer.evaluate(data => data.setData("application/x-scenario-kind", "instruction"));
@@ -465,8 +441,19 @@ for (const width of [1366, 1920]) {
     expect(state.errors).toEqual([]); expect(state.failures).toEqual([]);
   });
 }
+for (const viewport of [{width:1366,height:768},{width:1440,height:900},{width:1920,height:1080},{width:820,height:1180}]) {
+ test(`legacy service creation opens the unified service editor ${viewport.width}`,async({page})=>{
+  await page.setViewportSize(viewport);const state=await fixture(page);
+  await page.goto("/app/admin/request-template-studio/services/new");
+  await expect(page).toHaveURL(/request-template-studio\?create=1/);
+  await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Новая услуга");
+  await expect(page.getByRole("button",{name:"Опубликовать шаблон",exact:true})).toHaveCount(0);
+  expect(state.mutations).toHaveLength(0);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
+ });
+}
+
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
-  test(`guided studio independent template ${viewport.width}`, async ({ page }, info) => {
+  test(`legacy template publishing keeps canonical confirmation ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport); const state = await fixture(page);
     await page.route("**/api/web/session/me", route => route.fulfill({ json: { status: "success", data: { user_login: "studio-test@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view", "admin.forms.publish"] } } }));
     await page.route("**/api/web/admin/helpdesk-model/policies", route => route.fulfill({ json: { status: "success", data: { policies: {} } } }));
