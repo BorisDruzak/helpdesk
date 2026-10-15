@@ -6,7 +6,7 @@ import { AdminRequestTemplateStudioPage } from "./request-template-studio-page";
 
 vi.mock("../../features/auth/session-provider", () => ({ useSession: () => ({ session: { actor_role: role } }) }));
 let role = "admin";
-const definition = { scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", blocks: [], process_binding: { request_template_key: "printer" } };
+const definition = { schema_version: 2, scenario_key: "printer", service_code: "it", offering_full_code: "it.printer", title: "Не печатает", blocks: [], process_binding: { request_template_key: "printer" } };
 const detail = { scenario: { id: "s1", ...definition, archived: false }, draft: { revision: 3, definition } };
 const catalog = { categories: [{ id: "c1", parent_id: null, service_code: "it", title: "Оборудование", slug: "hardware", revision: 1, visibility: "internal", lifecycle_status: "draft" }], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [{ ...detail.scenario, status: "draft", revision: 3, category_id: "c1", issues: [] }], total: 1, offset: 0, limit: 100 };
 function response(data: unknown, status = 200) { return new Response(JSON.stringify(status === 200 ? { status: "success", data } : { status: "error", error_code: "REVISION_CONFLICT" }), { status, headers: { "content-type": "application/json" } }); }
@@ -21,19 +21,19 @@ function mockFetch() {
 }
 afterEach(() => { vi.unstubAllGlobals(); role = "admin"; });
 describe("Guided Studio catalog", () => {
-  it("opens the catalog with a primary new-map action", async () => {
+  it("opens the unified catalog with a primary create-service action", async () => {
     mockFetch(); mount();
     expect(await screen.findByRole("button", { name: "Создать услугу" })).toBeVisible();
-    expect(await screen.findByRole("button", { name: "Настроить услугу Принтер" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Настроить услугу Не печатает" })).toBeVisible();
     expect(screen.getByLabelText("Поиск услуг")).toBeVisible();
     expect(screen.queryByLabelText("Визуальная карта сценария")).not.toBeInTheDocument();
     expect(screen.queryByText("Экспертный")).not.toBeInTheDocument();
   });
-  it("opens one wizard step and saves with the server revision", async () => {
-    const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("button", { name: "Настроить услугу Принтер" }));fireEvent.click(screen.getByRole("button", { name: "Открыть карту сценария" }));
-    await waitFor(() => expect(screen.getByLabelText("Название карты")).toHaveValue("Не печатает"));
+  it("opens the service map and saves with the server revision", async () => {
+    const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("button", { name: "Настроить услугу Не печатает" }));fireEvent.click(screen.getByRole("button", { name: "Открыть карту сценария" }));
+    await waitFor(() => expect(screen.getByLabelText("Название услуги")).toHaveValue("Не печатает"));
     expect(screen.queryByRole("tab", { name: "Каталог" })).not.toBeInTheDocument();expect(screen.getByRole("heading", { name: "Библиотека блоков" })).toBeVisible();
-    fireEvent.change(await screen.findByLabelText("Название карты"), { target: { value: "Проверка принтера" } });
+    fireEvent.change(await screen.findByLabelText("Название услуги"), { target: { value: "Проверка принтера" } });
     expect(screen.getByLabelText("Визуальная карта сценария")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     expect(await screen.findByText("Черновик сохранён. Ревизия 4.")).toBeVisible();
@@ -41,22 +41,22 @@ describe("Guided Studio catalog", () => {
     expect(JSON.parse(String(saved?.[1]?.body))).toMatchObject({ revision: 3, definition: { title: "Проверка принтера" } });
   });
   it("keeps local edits on conflict until explicit reload", async () => {
-    const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("button", { name: "Настроить услугу Принтер" }));fireEvent.click(screen.getByRole("button", { name: "Открыть карту сценария" }));
-    await waitFor(() => expect(screen.getByLabelText("Название карты")).toHaveValue("Не печатает"));
-    fireEvent.change(await screen.findByLabelText("Название карты"), { target: { value: "Локальная правка" } });
+    const fetcher = mockFetch(); mount(); fireEvent.click(await screen.findByRole("button", { name: "Настроить услугу Не печатает" }));fireEvent.click(screen.getByRole("button", { name: "Открыть карту сценария" }));
+    await waitFor(() => expect(screen.getByLabelText("Название услуги")).toHaveValue("Не печатает"));
+    fireEvent.change(await screen.findByLabelText("Название услуги"), { target: { value: "Локальная правка" } });
     fetcher.mockImplementation(async (_, init) => init?.method === "PUT" ? response(null, 409) : response(detail));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     expect(await screen.findByText(/Черновик изменён другим администратором/)).toBeVisible();
-    expect(screen.getByLabelText("Название карты")).toHaveValue("Локальная правка");
+    expect(screen.getByLabelText("Название услуги")).toHaveValue("Локальная правка");
     fireEvent.click(screen.getByRole("button", { name: "Загрузить серверную версию" }));
-    await waitFor(() => expect(screen.getByLabelText("Название карты")).toHaveValue("Не печатает"));
+    await waitFor(() => expect(screen.getByLabelText("Название услуги")).toHaveValue("Не печатает"));
   });
   it("auditor can inspect but cannot mutate", async () => {
     role = "auditor"; mockFetch(); mount();
-    expect(await screen.findByRole("button", { name: "Настроить услугу Принтер" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Настроить услугу Не печатает" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Новая карта" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Настроить услугу Принтер" }));fireEvent.click(screen.getByRole("button", { name: "Открыть карту сценария" }));
-    expect(await screen.findByLabelText("Название карты")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Настроить услугу Не печатает" }));fireEvent.click(screen.getByRole("button", { name: "Открыть карту сценария" }));
+    expect(await screen.findByLabelText("Название услуги")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Сохранить черновик" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Тестировать" }));
     expect(screen.getByRole("button", { name: "Начать проверку" })).toBeEnabled();
