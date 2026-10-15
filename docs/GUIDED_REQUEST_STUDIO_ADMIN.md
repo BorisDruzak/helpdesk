@@ -1,5 +1,13 @@
 # Guided Request Studio administration
 
+For current service-map authoring, see
+[UNIFIED_SERVICE_SCENARIOS.md](UNIFIED_SERVICE_SCENARIOS.md).
+The [Russian click-by-click guide](REQUEST_STUDIO_USER_GUIDE_RU.md) records the
+earlier interface; its version notice identifies the applicable release.
+
+The sections below also describe that earlier interface. For the current unified
+model, the linked canonical guide takes precedence.
+
 The admin/auditor entry is `/app/admin/request-template-studio`. It opens the
 full-width **Каталог услуг** workbench. **Создать услугу** is the primary action.
 Choose **Обычная форма** for a direct form (reuse a published processing template
