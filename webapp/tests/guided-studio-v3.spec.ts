@@ -55,6 +55,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
   await page.getByRole("button", { name: "Тестировать", exact: true }).click(); await page.getByRole("button", { name: "Начать проверку", exact: true }).click();
   await simulationAnswers(page, "Весь отдел");
   await expect(page.getByText("Приоритет: P1", { exact: true })).toBeVisible(); await expect(page.getByText(/Ответить до:/)).toBeVisible();
+  expect(await page.getByRole("complementary", { name: "Контекстный инспектор", exact: true }).evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await page.getByText(/Выбрать обработку · ветвь 1.*выбрана/).click();
   await expect(page.getByText("Все условия (И)", { exact: false })).toBeVisible();
   await expect(page.getByText("✓ Выполнено", { exact: true })).toHaveCount(4);

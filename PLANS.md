@@ -8,15 +8,16 @@ Constraints: historical maps/sessions unchanged, no parallel policy/SLA runtime,
 no client authority, preserve unrelated untracked files and user browser drafts.
 Decisions: explicit defaults; selected branches assign processing in traversal order,
 last explicit assignment wins with provenance; priority uses existing typed facts.
-Current State: implementation and independent risk review corrections published in
-draft PR #43. Mandatory CI passed 17/18 layers, including 148 browser fixtures and all
-migration/DB layers except four legacy-submit regressions in the final API layer.
-RCA: the new unavailable-approver preview blocker must be scoped to trusted v3
-map processing; preserve legacy behavior and keep v3 fail-closed. The correction
-passed 11 pure checks and both complete legacy/v3 API files (10 PostgreSQL cases);
-existing legacy API tests remain unchanged. Temporary test resources were cleaned.
-Next Steps: pass the updated mandatory CI, install that exact candidate on isolated
-staging and collect browser acceptance, then stop the staging service.
+Current State: implementation and independent risk review corrections are in draft
+PR #43. Candidate ab2b0b3 passed all 18 mandatory CI layers, including frontend806,
+browser148 and legacy/v3 PostgreSQL APIs; its identical-tree PR merge was tested.
+Installed staging confirms schema150 and strict TLS. Owned-draft YAML/JSON semantic
+roundtrips, invalid queue paths, urgent/standard server comparison and specialized
+unknown-answer fallback passed live. No service was published.
+Live 1366 inspection exposed comparison-button overflow inside the inspector.
+A local wrapping fix reproduced RED then passed browser1366/1920 and 10 unit checks.
+Next Steps: pass final-candidate CI, install the final candidate, recheck the narrow
+inspector on staging and stop the staging service. Keep runtime receipts separate.
 Verification: RED/GREEN contract/runtime/search/authoring checks; backend noDB310,
 frontend805, fresh build and browser7 passed. Disposable PostgreSQL unified/ACL7,
 runtime/approval/policyhealth22 and migration150 operation1 passed. Workspace/diff and

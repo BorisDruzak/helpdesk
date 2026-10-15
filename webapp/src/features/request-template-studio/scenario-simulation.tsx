@@ -70,8 +70,8 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
         sequence.current++; setResult(null); setSteps([]); setValues({}); setDiagnosticOutcomes(previous => ({ ...previous, [item.id]: event.target.value as DiagnosticFailureStatus }));
       }}>{Object.entries(diagnosticFailureLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>)}
     </fieldset>}
-    <Button disabled={dirty || disabled || busy} onClick={() => void run([])}>Начать проверку</Button>
-    {result?.processing && <Button variant="outline" disabled={dirty || disabled || busy} onClick={() => { setComparison(structuredClone(result)); void run([]); }}>Сохранить результат и сравнить другой набор ответов</Button>}
+    <Button className="max-w-full whitespace-normal" disabled={dirty || disabled || busy} onClick={() => void run([])}>Начать проверку</Button>
+    {result?.processing && <Button className="h-auto min-h-11 w-full min-w-0 whitespace-normal py-2" variant="outline" disabled={dirty || disabled || busy} onClick={() => { setComparison(structuredClone(result)); void run([]); }}>Сохранить результат и сравнить другой набор ответов</Button>}
     {comparison && result?.processing && <><ScenarioSimulationComparison first={comparison} second={result} definition={definition} /><Button variant="ghost" onClick={() => setComparison(null)}>Убрать сравнение</Button></>}
     {dirty && <p>Сначала сохраните изменения.</p>}{error && <p role="alert">{error}</p>}
     {result?.simulation_scope?.limited_scope && <p role="status" className="rounded border border-amber-300 p-3">Проверяется только допустимая часть выбранного входа. В черновике есть ошибки; публикация всей карты заблокирована. Исключённые шаги: {result.simulation_scope.excluded_block_ids.map(id => definition?.blocks?.find(block => block.id === id)?.title ?? "Шаг").join(", ")}.</p>}
