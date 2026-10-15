@@ -2308,3 +2308,6 @@ verification map has user changes and is excluded from further writes.
 Checks: Studio155 and server runtime65 pass, including chained decisions with
 select/radio, fallback and Back/change-answer in v1/v2. Final build/workspace and
 exact-SHA staging browser acceptance follow in task receipt.
+Browser follow-up found sibling React keys colliding between block editor and
+route editor after decision insertion. Give route instances a separate key
+namespace; add switching regression. Final Studio suite156 pass after repair.

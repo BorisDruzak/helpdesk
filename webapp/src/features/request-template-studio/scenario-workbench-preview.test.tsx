@@ -3,10 +3,20 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach,expect,it,vi } from "vitest";
 import { ScenarioMapWorkbench } from "./scenario-map-workbench";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
-vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitionId:(source:string,index:number)=>`${source}:${index}`,entranceEdgeId:(key:string|null)=>`entry:${key}`,ScenarioMapCanvas:({onSelect,onEntrance}:{onSelect:(id:string)=>void;onEntrance:(key:string,target:string)=>void})=><div><button onClick={()=>onSelect("q")}>Выбрать вопрос</button><button onClick={()=>onEntrance("named","q")}>Выбрать связь входа</button></div>}));
+vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitionId:(source:string,index:number)=>`${source}:${index}`,entranceEdgeId:(key:string|null)=>`entry:${key}`,ScenarioMapCanvas:({onSelect,onEntrance}:{onSelect:(id:string)=>void;onEntrance:(key:string,target:string)=>void})=><div><button onClick={()=>onSelect("q")}>Выбрать вопрос</button><button onClick={()=>onSelect("branch")}>Выбрать второе условие</button><button onClick={()=>onEntrance("named","q")}>Выбрать связь входа</button></div>}));
 const definition:ScenarioDraftDefinition={scenario_key:"s",title:"Карта",service_code:"it",offering_full_code:"it.p",process_binding:{request_template_key:"p"},entry_block_id:"q",entry_points:[{key:"named",title:"Вход",target_block_id:"q"}],blocks:[{id:"q",kind:"instruction",title:"Проверка",content:{body:"Шаг"},transitions:[]},{id:"done",kind:"finish",title:"Готово"}]};
 const catalog={services:[],offerings:[],categories:[],scenarios:[],total:0,offset:0,limit:100};
 afterEach(()=>vi.unstubAllGlobals());
+it("keeps exactly one block editor when switching between decision blocks",()=>{
+ const d:ScenarioDraftDefinition={...definition,schema_version:2,blocks:[{id:"q",kind:"decision",title:"Первое",transitions:[{to:"branch"}]},{id:"branch",kind:"decision",title:"Второе",transitions:[{to:"done"}]},definition.blocks![1]]};
+ render(<MemoryRouter><ScenarioMapWorkbench definition={d} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
+ fireEvent.click(screen.getByRole("button",{name:"Выбрать второе условие"}));
+ expect(screen.getAllByLabelText("Название блока")).toHaveLength(1);
+ expect(screen.getByLabelText("Название блока")).toHaveValue("Второе");
+ fireEvent.click(screen.getByRole("button",{name:"Выбрать вопрос"}));
+ expect(screen.getAllByLabelText("Название блока")).toHaveLength(1);
+ expect(screen.getByLabelText("Название блока")).toHaveValue("Первое");
+});
 it("keeps historical questions read-only until an explicit source migration",()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
  const change=vi.fn();const view=render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing disabled={false} onChange={change}/></MemoryRouter>);
