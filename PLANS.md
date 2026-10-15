@@ -8,10 +8,15 @@ Constraints: historical maps/sessions unchanged, no parallel policy/SLA runtime,
 no client authority, preserve unrelated untracked files and user browser drafts.
 Decisions: explicit defaults; selected branches assign processing in traversal order,
 last explicit assignment wins with provenance; priority uses existing typed facts.
-Current State: implementation and independent risk review corrections complete;
-map processing, canonical manager approvals, Studio and search share current contracts.
-Next Steps: freeze/publish this candidate as a draft PR, run mandatory CI, then install
-the exact verified candidate on isolated staging and collect browser acceptance.
+Current State: implementation and independent risk review corrections published in
+draft PR #43. Mandatory CI passed 17/18 layers, including 148 browser fixtures and all
+migration/DB layers except four legacy-submit regressions in the final API layer.
+RCA: the new unavailable-approver preview blocker must be scoped to trusted v3
+map processing; preserve legacy behavior and keep v3 fail-closed. The correction
+passed 11 pure checks and both complete legacy/v3 API files (10 PostgreSQL cases);
+existing legacy API tests remain unchanged. Temporary test resources were cleaned.
+Next Steps: pass the updated mandatory CI, install that exact candidate on isolated
+staging and collect browser acceptance, then stop the staging service.
 Verification: RED/GREEN contract/runtime/search/authoring checks; backend noDB310,
 frontend805, fresh build and browser7 passed. Disposable PostgreSQL unified/ACL7,
 runtime/approval/policyhealth22 and migration150 operation1 passed. Workspace/diff and
@@ -2349,3 +2354,4 @@ No runtime behavior, production/staging deployment or Endpoint operation changes
 Checks: full unit suite792 passed in hosted CI; local no-DB server1452 passed,
 1 skipped; scripts272 passed; required fast audit layers passed. Full fixture,
 migration/DB and exact-SHA workflow results are recorded in the publication receipt.
+

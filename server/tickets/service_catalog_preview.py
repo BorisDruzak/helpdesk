@@ -146,7 +146,10 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
         blockers.append("Не удалось определить маршрут обращения.")
     if scenario_snapshot is not None and not await lock_active_scenario_queue(session, routing.get("queue_id")):
         blockers.append("Маршрут обращения недоступен. Обратитесь в поддержку.")
-    if scenario_snapshot is not None and approval.get("required") and not approval.get("approvers"):
+    # The pre-create approver guarantee belongs to map-owned v3 processing.
+    # Historical scenarios retain their canonical approval-wait behavior.
+    map_processing = scenario_snapshot.get("map_processing") if scenario_snapshot is not None else None
+    if isinstance(map_processing, dict) and approval.get("required") and not approval.get("approvers"):
         blockers.append("Не удалось определить согласующего. Обратитесь в поддержку.")
 
     first_response = _minutes_label(sla.get("first_response_min"))

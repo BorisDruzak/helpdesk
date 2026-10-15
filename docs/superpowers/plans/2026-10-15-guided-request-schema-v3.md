@@ -83,6 +83,7 @@ canonical standalone SLA targets/calendar and routing fallback; server trace for
 - [x] Run disposable PostgreSQL scenario A/B/D and public search/API checks; no live service publication.
 - [x] Run focused backend/frontend checks, build and `python scripts/verify_workspace.py --workspace .`.
 - [x] Inspect complete diff and run one independent review; fix material findings and scoped regression checks.
-- [ ] Commit task-related files only with Conventional Commits; verify status and origin/main compatibility.
+- [x] Commit task-related files only with Conventional Commits; verify status and origin/main compatibility.
 - [ ] Install verified exact candidate to approved isolated staging via project release procedure; browser-check 1366/1920 and console/network, stop services started for validation.
-- [ ] Push verified branch, create/attach draft PR, report exact verification and any remaining live gate.
+- [x] Push the feature branch and create/attach draft PR43; report remaining live gates explicitly.
+- [ ] Resolve the final CI legacy-submit regression and pass the updated mandatory gate. Keep unavailable-approver preview blocking scoped to trusted v3 processing; preserve v1/v2 and existing API regressions.

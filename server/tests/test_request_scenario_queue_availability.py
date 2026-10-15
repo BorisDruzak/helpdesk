@@ -32,6 +32,25 @@ async def test_legacy_preview_keeps_existing_route_behavior(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("snapshot,approvers,expected", [
+    (None, [], True),
+    ({"version_id": "v1"}, [], True),
+    ({"version_id": "v2", "form_schema": {"fields": []}, "processing_facts": {}}, [], True),
+    ({"version_id": "v3", "map_processing": {}}, [], False),
+    ({"version_id": "v3", "map_processing": {}}, ["canonical-approver"], True),
+])
+async def test_only_trusted_v3_processing_blocks_unresolved_approver(monkeypatch, snapshot, approvers, expected):
+    simulation = {"routing": {"queue_id": 9}, "approval": {"required": True, "approvers": approvers}}
+    monkeypatch.setattr(module, "simulate_service_catalog_processing", AsyncMock(return_value=(SimpleNamespace(service={}, offering={}), simulation)))
+    session = SimpleNamespace(scalar=AsyncMock(return_value=SimpleNamespace(is_active=True)))
+    # Even a forged public payload marker cannot opt a legacy request into v3
+    # authority; only server-composed scenario_snapshot selects the new gate.
+    result = await module.build_requester_service_catalog_preview(session, {"map_processing": {}}, scenario_snapshot=snapshot)
+    assert result["ok"] is expected
+    assert bool(result["blockers"]) is not expected
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("active", [False, True])
 async def test_actual_scenario_routing_is_checked_before_other_initialization(monkeypatch, active):
     from tickets import create_flow
