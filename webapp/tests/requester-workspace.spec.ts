@@ -468,7 +468,7 @@ test("requester dynamic multi-select conditions reveal and require conditional f
   await page.getByLabel("Assets").getByText("Printer").click();
   await expect(page.getByLabel("Printer room")).toBeVisible();
   await page.getByRole("button", { name: "Создать обращение" }).click();
-  await expect(page.getByRole("status")).toContainText("Printer room");
+  await expect(page.getByRole("status").filter({ hasText: /^Заполните:/ })).toHaveText("Заполните: Printer room.");
   await page.getByLabel("Printer room").fill("Room 401");
 
   const createRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/web/requester/tickets"));
