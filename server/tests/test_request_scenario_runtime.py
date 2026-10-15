@@ -16,6 +16,35 @@ def _modules():
 
 
 @pytest.mark.parametrize("schema_version", [1, 2])
+@pytest.mark.parametrize("field_type", ["select", "radio"])
+@pytest.mark.parametrize("answer,expected", [("mail", "mail_help"), ("vpn", "vpn_help"), ("other", "review")])
+def test_chained_decisions_reuse_prior_answers_and_keep_fallback(schema_version, field_type, answer, expected):
+    raw = pilot()
+    raw.update(schema_version=schema_version, entry_points=[{"key": "main", "title": "Помощь", "target_block_id": "questions"}])
+    page = raw["blocks"][0]
+    page["fields"] = [{"key": "issue", "type": field_type, "label": "Проблема", "required": True,
+                       "options": [{"value": value, "label": value} for value in ("mail", "vpn", "other")]}]
+    page["transitions"] = [{"to": "first"}]
+    raw["blocks"] = [page,
+        {"id": "first", "kind": "decision", "title": "Первое условие", "transitions": [
+            {"to": "mail_help", "when": {"op": "eq", "source": "answer", "field": "issue", "value": "mail"}}, {"to": "second"}]},
+        {"id": "second", "kind": "decision", "title": "Второе условие", "transitions": [
+            {"to": "vpn_help", "when": {"op": "eq", "source": "answer", "field": "issue", "value": "vpn"}}, {"to": "review"}]},
+        *[{"id": block_id, "kind": "instruction", "title": block_id, "content": {"body": "Инструкция"}, "transitions": [{"to": "review"}]} for block_id in ("mail_help", "vpn_help")],
+        *raw["blocks"][4:6]]
+    _, runtime = _modules()
+    engine = runtime.ScenarioRuntime(_definition(raw))
+    initial = engine.initial_state()
+    state = engine.advance(initial, _answer(initial, {"issue": answer}))
+    assert state.current_block_id == expected
+    assert ("second" in state.history) == (answer != "mail")
+    back = engine.back(state, "questions", expected_revision=state.revision)
+    assert back.current_block_id == "questions"
+    changed = engine.advance(back, _answer(back, {"issue": "mail" if answer != "mail" else "vpn"}))
+    assert changed.current_block_id == ("mail_help" if answer != "mail" else "vpn_help")
+
+
+@pytest.mark.parametrize("schema_version", [1, 2])
 @pytest.mark.parametrize("field_type", ["radio", "select"])
 @pytest.mark.parametrize("answer,expected", [("mail", "mail_help"), ("vpn", "vpn_help"), ("other", "review")])
 def test_choice_answer_selects_the_matching_instruction_or_fallback(schema_version, field_type, answer, expected):

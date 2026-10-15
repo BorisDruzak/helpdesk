@@ -17,6 +17,6 @@ export function ScenarioStepMenu({ inserting, onChoose, onClose }: { inserting: 
     <div className="flex items-center justify-between gap-2"><h3 className="font-semibold">Что добавить дальше?</h3><Button variant="ghost" aria-label="Закрыть меню шагов" onClick={onClose}>×</Button></div>
     <p className="mb-2 text-xs text-slate-500">{inserting ? "Шаг будет вставлен в выбранную стрелку с сохранением условия." : "Новый шаг подключится автоматически."}</p>
     {choices.map(item => <button type="button" key={item.kind} className="studio-step-menu__choice" onClick={() => onChoose(item.kind)}><strong>{item.title}</strong><span>{item.hint}</span></button>)}
-    {inserting && <p className="mt-2 border-t pt-2 text-xs text-slate-500">Условия, проверки и результаты требуют явных ветвей. Для них редактор предложит безопасное действие.</p>}
+    {inserting && <p className="mt-2 border-t pt-2 text-xs text-slate-500">У нового условия прежнее продолжение станет ветвью «Иначе». Проверки результата и завершающие шаги добавляются отдельно.</p>}
   </div>;
 }

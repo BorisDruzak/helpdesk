@@ -26,7 +26,9 @@ it("opens deletion in a visible dialog and keeps errors next to confirmation",()
 it("edits decision conditions directly in the selected block",()=>{
  const d:ScenarioDraftDefinition={...definition,entry_block_id:"branch",blocks:[{id:"q",kind:"form_page",title:"Вопрос",fields:[{key:"vpn",type:"checkbox",label:"Нужен VPN?"}],transitions:[{to:"branch"}]},{id:"branch",kind:"decision",title:"Маршрут",transitions:[{to:"done",when:{op:"eq",source:"answer",field:"vpn",value:true}}]},definition.blocks![1]]};
  render(<MemoryRouter><ScenarioMapWorkbench definition={{...d,blocks:[d.blocks![1],d.blocks![0],d.blocks![2]]}} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
+ fireEvent.click(screen.getByRole("button", {name:/Ветвь 1/}));
  expect(screen.getByLabelText("Значение условия")).toBeVisible();
+ fireEvent.click(screen.getByRole("button", {name:/^Иначе/}));
  expect(screen.getByLabelText("Если ни одно условие не выполнено")).toBeVisible();
 });
 it("an unbound v2 map needs no canonical type picker",()=>{

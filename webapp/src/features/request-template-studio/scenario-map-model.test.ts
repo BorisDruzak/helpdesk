@@ -30,6 +30,19 @@ describe("atomic map edits", () => {
   it("inserts a normal continuation and preserves the original condition", () => { const d = draft(); const next = insertOnTransition(d, "q", 0, "instruction"); const added = next.blocks!.find(b => !d.blocks!.some(old => old.id === b.id))!; expect(next.blocks![0].transitions![0]).toEqual({ ...d.blocks![0].transitions![0], to: added.id }); expect(added.transitions).toEqual([{ to: "done" }]); expect(d.blocks).toHaveLength(4); });
   it("honors a deliberate drop position without mutating its input", () => { const d = draft(), point = { x: 0, y: 0 }; const next = insertOnTransition(d, "q", 0, "instruction", point); expect(next.editor_layout?.positions?.[next.blocks!.at(-1)!.id]).toEqual(point); expect(point).toEqual({ x: 0, y: 0 }); });
   it("rejects terminal insertion and cycles atomically", () => { const d = draft(); expect(() => insertOnTransition(d, "q", 0, "finish")).toThrow(); expect(() => connectBlocks(d, "review", "q")).toThrow(/цикл/); expect(d).toEqual(draft()); });
+  it("inserts a decision after a decision while preserving the incoming condition and continuation", () => {
+    const d = draft();
+    d.blocks![0] = { id: "q", kind: "decision", title: "Первое условие", transitions: [{ to: "review", when: { op: "eq", source: "answer", field: "issue", value: "mail" }, priority: 3, processing_facts: { urgency: "blocked" } }, { to: "ticket" }] };
+    const original = structuredClone(d);
+    const next = insertOnTransition(d, "q", 0, "decision");
+    const added = next.blocks!.at(-1)!;
+    expect(added.kind).toBe("decision");
+    expect(added.transitions).toEqual([{ to: "review" }]);
+    expect(next.blocks![0].transitions![0]).toEqual({ ...d.blocks![0].transitions![0], to: added.id });
+    expect(next.blocks![0].transitions![1]).toEqual({ to: "ticket" });
+    expect(d).toEqual(original);
+    expect(() => connectBlocks(next, added.id, "q")).toThrow(/цикл/);
+  });
   it("requires explicit entrance resolution before deleting its target", () => { const d = draft(); expect(() => deleteMapBlock(d, "q", "review")).toThrow(/точк/); const next = deleteMapBlock(d, "q", "review", "reassign"); expect(next.entry_points![0].target_block_id).toBe("review"); expect(next.entry_block_id).toBe("review"); expect(next.blocks!.some(b => b.id === "q")).toBe(false); });
   it("can explicitly remove draft entrances atomically", () => { const next = deleteMapBlock(draft(), "q", "review", "remove"); expect(next.entry_points).toEqual([]); });
 });

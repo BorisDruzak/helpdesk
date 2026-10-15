@@ -83,3 +83,9 @@
 .studio-delete-dialog { width:min(580px,calc(100vw - 32px)); }
 .studio-entry-name { background: white; color: #065f46; border: 1px solid #b8dcc9; border-radius: 6px; padding: 4px 8px; width: 180px; font-size: 12px; }
 .studio-entry-name:focus { outline: 2px solid #087443; outline-offset: 2px; }
+.studio-branch-card { border:1px solid #dbe5df; border-radius:12px; overflow:hidden; background:white; }
+.studio-branch-card__summary { display:flex; flex-direction:column; gap:6px; width:100%; padding:12px; text-align:left; font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.studio-branch-card__summary:hover,.studio-branch-card__summary[aria-expanded="true"] { background:#f0f9f4; }
+.studio-branch-card__summary:focus-visible { outline:2px solid #087443; outline-offset:-3px; }
+.studio-branch-card__condition { color:#475569; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.studio-branch-card__target { color:#086440; font-weight:600; }

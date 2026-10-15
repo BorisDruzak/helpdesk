@@ -78,7 +78,7 @@ export function connectBlocks(definition: ScenarioDraftDefinition, source: strin
   return replaceTransitions(definition, source, [...block.transitions ?? [], edge]);
 }
 export function insertOnTransition(definition: ScenarioDraftDefinition, source: string, index: number, kind: ScenarioBlock["kind"], position?: { x: number; y: number }) {
-  if (terminal(kind) || kind === "resolution_check" || kind === "decision") throw new Error("Этот шаг завершает маршрут или требует отдельных ветвей. Добавьте его из библиотеки и явно настройте переходы.");
+  if (terminal(kind) || kind === "resolution_check") throw new Error("Этот шаг завершает маршрут или требует отдельных ветвей. Добавьте его из библиотеки и явно настройте переходы.");
   const from = definition.blocks?.find(item => item.id === source);
   const edge = from?.transitions?.[index];
   if (!edge || (definition.blocks?.length ?? 0) >= 256) throw new Error("Переход не найден или достигнут лимит блоков");

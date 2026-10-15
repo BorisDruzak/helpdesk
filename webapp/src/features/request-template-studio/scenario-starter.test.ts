@@ -42,9 +42,12 @@ describe("editable starter routes", () => {
     expect(next.blocks!.find(block => block.id === check.id)!.transitions![0]).toEqual(check.transitions![0]);
     expect(draft).toEqual(before);
   });
-  it("does not silently discard a route when inserting a branching or terminal step", () => {
+  it("preserves a decision continuation and rejects terminal insertion", () => {
     const draft = createScenarioStarter("Доступ", "simple", "access", null);
     expect(() => insertOnTransition(draft, draft.blocks![0].id, 0, "submit_ticket")).toThrow(/маршрут/);
-    expect(() => appendMapStep(draft, draft.blocks![0].id, "decision")).toThrow(/ветв/);
+    const next = appendMapStep(draft, draft.blocks![0].id, "decision");
+    expect(next.blocks!.at(-1)!.kind).toBe("decision");
+    expect(next.blocks!.at(-1)!.transitions).toEqual([{ to: draft.blocks![0].transitions![0].to }]);
+    expect(() => insertOnTransition(draft, draft.blocks![0].id, 0, "resolution_check")).toThrow(/ветв/);
   });
 });

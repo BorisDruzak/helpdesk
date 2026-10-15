@@ -2294,3 +2294,17 @@ remains unchanged. Own staging draft only; user map drafts and active rules excl
 Checks: frontend181 and runtime53 pass, including v1/v2 select/radio routing to
 mail/VPN instructions and fallback. Final build/workspace and exact-SHA staging
 browser acceptance follow. No schema, policy engine or storage changes.
+
+# 2026-10-15 Collapsible branches and chained decisions
+
+Bounded Studio UX: independent branch disclosures with human condition/target
+summaries, expand/collapse all, automatic opening of a newly added branch. Pure UI
+state does not edit scenario data. Remove redundant outer route disclosure.
+Allow inserting decisions into existing edges while preserving condition,
+priority, processing facts and former continuation as the new fallback. Existing
+cycle guards and canonical server execution remain unchanged. No migration/API.
+Browser reproduced prior insertion refusal in a fresh owned draft; the earlier
+verification map has user changes and is excluded from further writes.
+Checks: Studio155 and server runtime65 pass, including chained decisions with
+select/radio, fallback and Back/change-answer in v1/v2. Final build/workspace and
+exact-SHA staging browser acceptance follow in task receipt.

@@ -159,8 +159,12 @@
   `scenario-map-workbench`, `scenario-map-canvas` and `scenario-map-model` own
   React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
   and cycle guards. `scenario-delete-dialog` keeps destructive draft edits and errors
-  visible; `scenario-block-routes` exposes decision/check conditions and fallback
-  routes without adding a client evaluator. `scenario-template-questions` imports
+  visible; `scenario-block-routes` exposes decision/check conditions and fallback routes
+  in independently collapsible cards with accessible summaries supplied by
+  `scenario-condition-summary` (labels only, no client evaluator). A decision can
+  be inserted into a transition, preserving its original condition, priority and
+  processing facts; its previous continuation becomes the new decision fallback.
+  `scenario-template-questions` imports
   mandatory canonical form answers before a selected ticket result. Admin
   `RequestScenarioRepo.simulate` retains the reached route on form/policy preview
   failure, returning optional `processing_error` and null `processing`; this never
