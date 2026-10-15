@@ -2354,4 +2354,3 @@ No runtime behavior, production/staging deployment or Endpoint operation changes
 Checks: full unit suite792 passed in hosted CI; local no-DB server1452 passed,
 1 skipped; scripts272 passed; required fast audit layers passed. Full fixture,
 migration/DB and exact-SHA workflow results are recorded in the publication receipt.
-
