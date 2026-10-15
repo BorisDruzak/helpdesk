@@ -128,14 +128,20 @@ class ScenarioRuntime:
                 return
             if item.validation.optional_when_legacy_missing and key not in supplied:
                 return
+            required = item.required or item.required_when is not None and evaluate_condition(item.required_when, normalized)
+            if self.definition.schema_version == 3 and item.type == "checkbox" and key not in supplied:
+                if enforce_required and required:
+                    errors[key] = "Field is required"
+                return  # An omitted answer has no authority to mean "No".
             try:
+                if self.definition.schema_version == 3 and item.type == "checkbox" and supplied.get(key) is None and not item.allow_unknown:
+                    raise ValueError("Unknown checkbox value is not supported")
                 value = self._normalize(item, supplied.get(key))
             except (ValueError, TypeError):
                 errors[key] = "Invalid value or field constraint"
                 return
-            required = item.required or item.required_when is not None and evaluate_condition(item.required_when, normalized)
             unknown = key in supplied and supplied[key] is None and item.allow_unknown
-            empty = value is None or value == "" or value == [] or item.type == "checkbox" and value is False
+            empty = value is None or value == "" or value == [] or self.definition.schema_version < 3 and item.type == "checkbox" and value is False
             if enforce_required and required and empty and not unknown:
                 errors[key] = "Field is required"
                 return

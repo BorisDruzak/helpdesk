@@ -573,3 +573,37 @@ def test_recent_runtime_tables_support_smoke_insert_select_delete(test_database_
         "requested_action_payload_redacted": {},
         "metadata_json": {},
     }
+
+
+@pytest.mark.migration_clone
+@pytest.mark.asyncio
+async def test_v3_constraint_upgrade_preserves_rows_and_blocks_unsafe_downgrade(migration_clone_database_url):
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    import sqlalchemy as sa
+    path = Path(__file__).resolve().parents[1] / "app/db/migrations/versions/20261015_150_scenario_schema_v3.py"
+    spec = importlib.util.spec_from_file_location("scenario_v3_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    engine = create_async_engine(migration_clone_database_url, poolclass=NullPool)
+    def verify(connection):
+        connection.execute(sa.text("CREATE TABLE request_studio_scenario_versions (id int PRIMARY KEY, version int NOT NULL, schema_version int NOT NULL, CONSTRAINT ck_studio_version_schema CHECK (version > 0 AND schema_version IN (1,2)))"))
+        connection.execute(sa.text("INSERT INTO request_studio_scenario_versions VALUES (1,1,1),(2,1,2)"))
+        module.op = Operations(MigrationContext.configure(connection))
+        module.upgrade()
+        connection.execute(sa.text("INSERT INTO request_studio_scenario_versions VALUES (3,1,3)"))
+        with pytest.raises(RuntimeError, match="immutable v3"):
+            module.downgrade()
+        assert connection.execute(sa.text("SELECT schema_version FROM request_studio_scenario_versions ORDER BY id")).scalars().all() == [1, 2, 3]
+        connection.execute(sa.text("DELETE FROM request_studio_scenario_versions WHERE id = 3"))
+        module.downgrade()
+        with pytest.raises(sa.exc.IntegrityError):
+            with connection.begin_nested():
+                connection.execute(sa.text("INSERT INTO request_studio_scenario_versions VALUES (4,1,3)"))
+        module.upgrade()
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(verify)
+            assert await connection.scalar(sa.text("SELECT count(*) FROM request_studio_scenario_versions")) == 2
+    finally:
+        await engine.dispose()

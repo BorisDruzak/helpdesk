@@ -30,7 +30,7 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
     </div>
     <label className="block">Подсказка<Input maxLength={2000} value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label>
     {roles.some(role => role.startsWith("priority_")) && <p className="studio-next-help">Ответ используется действующей политикой Helpdesk.</p>}
-    {definition.schema_version === 2 && <QuestionProcessingEffects field={field} disabled={disabled} onChange={onChange}/>}
+    {(definition.schema_version ?? 1) >= 2 && <QuestionProcessingEffects field={field} disabled={disabled} onChange={onChange}/>}
     <label className="block">Пример ответа<Input maxLength={500} value={field.placeholder ?? ""} onChange={event => onChange({ ...field, placeholder: event.target.value })} /></label>
     {isChoice(field.type) && <fieldset className="space-y-3"><legend className="font-medium">Варианты ответа</legend>
       {(field.options ?? []).map((option, index) => <div key={index} className="space-y-2 rounded-md border p-3">
@@ -53,7 +53,7 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
             <label>Максимум символов<Input type="number" min={1} max={10000} value={field.validation?.max_length ?? ""} onChange={event => bound("max_length", event.target.value)} /></label>
           </div>}
         </fieldset>
-        {definition.schema_version !== 2 && <>
+        {(definition.schema_version ?? 1) < 2 && <>
         <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="font-medium">Назначения ответа</legend>
           {Object.entries(roleLabels).map(([role, title]) => <label key={role} className="text-sm"><input type="checkbox" disabled={disabled || !compatibleRole(field.type, role as ScenarioRole)} checked={roles.includes(role as ScenarioRole)} onChange={event => onChange({ ...field, process_mapping: { ...field.process_mapping, roles: event.target.checked ? [...roles, role as ScenarioRole] : roles.filter(item => item !== role) } })} /> {title}</label>)}
         </fieldset>

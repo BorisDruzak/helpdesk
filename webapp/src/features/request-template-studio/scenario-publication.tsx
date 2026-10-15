@@ -19,7 +19,7 @@ function changeLabel(path: string, definition?: ScenarioDraftDefinition): string
     const entry = definition?.entry_points?.find(item => item.key === parts[1]);
     return entry ? `Пункт каталога «${entry.title}»` : "Состав пунктов каталога";
   }
-  return ({ editor_layout: "Расположение блоков", process_binding: "Правила обработки", category_id: "Категория услуги",
+  return ({ processing: "Направления и сроки обработки карты", editor_layout: "Расположение блоков", process_binding: "Правила обработки", category_id: "Категория услуги",
     service_code: "Раздел каталога", entry_block_id: "Вход в маршрут", publish_offering: "Публикация услуги", offering: "Доступность услуги" } as Record<string, string>)[parts[0]] ?? "Настройки услуги";
 }
 

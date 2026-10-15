@@ -47,7 +47,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
     {block.kind === "review" && <p>Перед продолжением сотрудник увидит собранные ответы и сможет вернуться к вопросам.</p>}
     {block.kind === "submit_ticket" && <p>Обращение создаёт сервер с применением политик услуги. Этот блок завершает сценарий.</p>}
     {block.kind === "finish" && <label className="block">Сообщение о решении<textarea disabled={disabled} maxLength={2000} className="field-base min-h-24 w-full" value={block.message ?? ""} onChange={event => onChange({ ...block, message: event.target.value })} /></label>}
-    {(definition.schema_version !== 2 || block.kind === "diagnostic") && <AdvancedDisclosure title="Расширенные настройки" description="Совместимость исторического шага">
+    {((definition.schema_version ?? 1) < 2 || block.kind === "diagnostic") && <AdvancedDisclosure title="Расширенные настройки" description="Совместимость исторического шага">
       <div className="min-w-0 space-y-4">
         <p className="break-all text-sm">Стабильный ключ: {block.id}</p>
         <p>{definition.entry_block_id === block.id ? "Первый блок сценария" : "Вход создаётся линией от «Начала» к этому блоку."}</p>

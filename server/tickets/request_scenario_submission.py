@@ -16,10 +16,16 @@ def derive_scenario_form(definition, state):
                 continue
             if item.validation.optional_when_legacy_missing and item.key not in state.answers:
                 continue
+            if definition.schema_version == 3 and item.type == "checkbox" and item.key not in state.answers:
+                continue  # Do not let the legacy form normalizer invent False.
             raw = item.model_dump(mode="json")
             raw["key"] = item.process_mapping.fact_key or item.key
             raw["required"] = bool(item.required or (item.required_when and evaluate_condition(item.required_when, state.answers)))
             if item.allow_unknown and state.answers.get(item.key) is None:
+                raw["required"] = False
+            if definition.schema_version == 3 and item.type == "checkbox" and type(state.answers.get(item.key)) is bool:
+                # Runtime already enforced presence; the legacy form validator
+                # treats required checkbox as consent and rejects explicit No.
                 raw["required"] = False
             # Entity pickers were resolved and authorized by the session runtime.
             if item.type.endswith("_picker") and item.key in state.answers:
@@ -55,7 +61,46 @@ def processing_facts(definition, state):
     return facts
 
 
-def build_scenario_submission(definition, state, *, session_id, version_id):
+def map_processing(definition, state):
+    """Retain only decisions on the validated route; last explicit value wins."""
+    from tickets.request_scenario_conditions import selected_transition, condition_evaluation
+    config = definition.processing
+    selected = {"route": config.defaults.route, "sla_profile": config.defaults.sla_profile}
+    sources = {key: {"kind": "default"} for key in selected}
+    trace, condition_trace, answers = [], [], {}
+    blocks = {block.id: block for block in definition.blocks}
+    for offset, identifier in enumerate(state.history):
+        block = blocks[identifier]
+        for field in getattr(block, "fields", ()):
+            if field.key in state.answers:
+                answers[field.key] = state.answers[field.key]
+        result = state.results.get(identifier)
+        if isinstance(result, dict):
+            result = result.get("result") or result.get("status")
+        edge = selected_transition(block, answers, result)
+        expected = state.history[offset + 1] if offset + 1 < len(state.history) else state.current_block_id
+        if edge is None or edge.to != expected:
+            raise ScenarioInputError({"history": "Retained route no longer matches validated answers"})
+        index = next(index for index, item in enumerate(block.transitions) if item is edge)
+        for candidate_index, candidate in enumerate(block.transitions):
+            condition_trace.append({"block_id": identifier, "transition_index": candidate_index, "to": candidate.to,
+                "selected": candidate is edge, "condition_evaluation": condition_evaluation(candidate.when, answers, result)})
+        assignments = edge.processing.model_dump(exclude_none=True) if edge.processing else {}
+        for key, value in assignments.items():
+            selected[key] = value
+            sources[key] = {"kind": "transition", "block_id": identifier, "transition_index": index}
+        trace.append({"block_id": identifier, "transition_index": index, "to": edge.to,
+            "condition": edge.when.model_dump(mode="json") if edge.when else None, "matched": True, "assignments": assignments})
+    result = {"assignment_mode": config.assignment_mode, "trace": trace, "condition_trace": condition_trace}
+    for kind, items in (("route", config.routes), ("sla_profile", config.sla_profiles)):
+        result[kind] = {"key": selected[kind], **items[selected[kind]].model_dump(mode="json"), "source": sources[kind]}
+    if "approval_required" in selected:
+        result["approval_required"] = selected["approval_required"]
+        result["approval_source"] = sources["approval_required"]
+    return result
+
+
+def build_scenario_submission(definition, state, *, session_id, version_id, source_snapshot=None):
     runtime = ScenarioRuntime(definition)
     if state.state != "active" or runtime.blocks[state.current_block_id].kind != "submit_ticket":
         raise ScenarioInputError({"block": "Only the active submit step can create a ticket"})
@@ -88,13 +133,21 @@ def build_scenario_submission(definition, state, *, session_id, version_id):
         "session_id": session_id, "version_id": version_id, "scenario_key": definition.scenario_key,
         "answers": answers, "facts": facts, "field_roles": roles, "summary": summary,
         "history": list(state.history),
-        "policy_refs": dict(definition.process_binding.policy_refs),
+        "policy_refs": {kind: code for kind, code in definition.process_binding.policy_refs.items()
+                        if definition.schema_version != 3 or kind not in {"routing", "sla"}},
         "diagnostics": {key: value for key, value in state.results.items() if key in runtime.blocks and runtime.blocks[key].kind == "diagnostic"},
         "reported_context": deepcopy(state.results.get("_entry_point")),
     }
-    if definition.schema_version == 2:
+    if definition.schema_version >= 2:
         snapshot["form_schema"] = derive_scenario_form(definition, projected)
         snapshot["processing_facts"] = processing_facts(definition, projected)
+    if definition.schema_version == 3:
+        snapshot["map_processing"] = map_processing(definition, projected)
+        profile = snapshot["map_processing"]["sla_profile"]
+        if source_snapshot is not None and profile["time_basis"] == "business":
+            from tickets.request_scenario_processing import validated_scenario_calendar
+            frozen = next((item for item in source_snapshot.get("business_calendars", []) if item["id"] == profile["calendar_id"]), None)
+            snapshot["map_processing"]["calendar_snapshot"] = validated_scenario_calendar(frozen)
     return payload, snapshot
 
 

@@ -10,9 +10,17 @@ type Props = {
   resultValues?: string[]; disabled: boolean; onChange: (value: ScenarioCondition | null) => void; depth?: number;
 };
 const operators = { eq: "Равно", neq: "Не равно", gt: "Больше", gte: "Не меньше", lt: "Меньше", lte: "Не больше", in: "Один из", exists: "Ответ задан", and: "Все условия", or: "Любое условие", not: "Не выполняется" };
+export function newAnswerCondition(field: ScenarioField): ScenarioCondition {
+  const source = { source: "answer" as const, field: field.key };
+  if (field.type === "checkbox") return { ...source, op: "eq", value: true };
+  const first = field.options?.[0];
+  if (first && field.type === "multi_select") return { ...source, op: "in", value: [first.value] };
+  if (first && (field.type === "radio" || field.type === "select")) return { ...source, op: "eq", value: first.value };
+  return { ...source, op: "exists" };
+}
 export function ScenarioConditionEditor({ label, value, fields, resultValues = [], disabled, onChange, depth = 0 }: Props) {
   const seed = (): ScenarioCondition => fields.length
-    ? { op: "exists", source: "answer", field: fields[0].key }
+    ? newAnswerCondition(fields[0])
     : { op: "eq", source: "current_result", value: resultValues[0] ?? "yes" };
   const leaf = value && "source" in value ? value : seed();
   const field = "field" in leaf ? fields.find(item => item.key === leaf.field) : undefined;
@@ -50,6 +58,7 @@ export function ScenarioConditionEditor({ label, value, fields, resultValues = [
         <label className="min-w-0 flex-1">Правило<Select value={value.op} onChange={event => operator(event.target.value as ScenarioCondition["op"])}>{Object.entries(operators).map(([op, title]) => <option key={op} value={op} disabled={!operatorAllowed(op)}>{title}</option>)}</Select></label>
         <Button variant="ghost" onClick={() => onChange(null)}>Убрать условие</Button>
       </div>
+      {depth < 8 && <div className="flex flex-wrap gap-1"><Button variant="ghost" onClick={() => onChange({ op: "and", conditions: [value, seed()] })}>Добавить группу И</Button><Button variant="ghost" onClick={() => onChange({ op: "or", conditions: [value, seed()] })}>Добавить группу ИЛИ</Button><Button variant="ghost" onClick={() => onChange({ op: "not", condition: value })}>Добавить отрицание</Button></div>}
       {depth >= 8 ? <p role="alert">Глубокое условие сохранено. Упростите его перед редактированием.</p> : value.op === "and" || value.op === "or" ? <>
         {value.conditions.map((item, index) => <ScenarioConditionEditor key={index} label={`Условие ${index + 1}`} value={item} fields={fields} resultValues={resultValues} disabled={disabled} depth={depth + 1} onChange={next => {
           const conditions = value.conditions.flatMap((old, i) => i === index ? next ? [next] : [] : [old]);
@@ -59,8 +68,9 @@ export function ScenarioConditionEditor({ label, value, fields, resultValues = [
       </> : value.op === "not" ? <ScenarioConditionEditor label="Исключение" value={value.condition} fields={fields} resultValues={resultValues} disabled={disabled} depth={depth + 1} onChange={next => onChange(next ? { ...value, condition: next } : null)} /> : "source" in value && <>
         <label className="block">Источник<Select value={value.source === "answer" ? value.field : "__result"} onChange={event => {
           const source = event.target.value === "__result" ? { source: "current_result" as const } : { source: "answer" as const, field: event.target.value };
-          // Changing a source retains only the operator, never an incompatible typed value.
-          onChange({ ...source, op: "exists" });
+          // Only an explicit source change seeds a new rule; saved presence checks stay intact.
+          const selected = fields.find(item => item.key === event.target.value);
+          onChange(selected ? newAnswerCondition(selected) : { ...source, op: "exists" });
         }}>
           {value.source === "answer" && !field && <option value={value.field}>Ответ больше не найден</option>}
           {fields.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}

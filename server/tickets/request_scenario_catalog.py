@@ -31,6 +31,9 @@ def project_catalog_entries(definition, categories, version_id):
     return [
         {"key": entry.key, "entry_point_key": entry.key, "title": entry.title,
          "description": entry.description, "category_id": entry.category_id,
+         "category_title": (categories[entry.category_id].get("title") if isinstance(categories.get(entry.category_id), dict)
+                            else getattr(categories.get(entry.category_id), "title", None)),
+         "help_mode": "guided",
          "synonyms": list(entry.synonyms), "scenario_key": definition.scenario_key,
          "version_id": version_id, "target_block_id": entry.target_block_id}
         for entry in definition.entry_points if entry.enabled and entry.visibility == "public"

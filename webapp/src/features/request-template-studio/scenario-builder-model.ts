@@ -116,6 +116,25 @@ export function conditionFields(definition: ScenarioDraftDefinition, blockId: st
   }
   return (definition.blocks ?? []).flatMap(block => allowed.has(block.id) && block.kind === "form_page" ? block.fields : []).filter(field => field.key !== excludeKey);
 }
+/** Structural availability hint only; conditions and visibility are evaluated by the server. */
+export function conditionFieldAvailability(definition: ScenarioDraftDefinition, blockId: string) {
+  const blocks = definition.blocks ?? [];
+  const entrances = [...new Set([definition.entry_block_id, ...definition.entry_points?.filter(entry => entry.enabled !== false).map(entry => entry.target_block_id) ?? []].filter((id): id is string => !!id))];
+  function bypasses(avoiding: string) {
+    const pending = [...entrances], seen = new Set<string>();
+    while (pending.length) {
+      const id = pending.pop()!;
+      if (id === avoiding || seen.has(id)) continue;
+      if (id === blockId) return true;
+      seen.add(id); pending.push(...blocks.find(block => block.id === id)?.transitions?.map(edge => edge.to) ?? []);
+    }
+    return false;
+  }
+  return conditionFields(definition, blockId).map(field => {
+    const owner = blocks.find(block => block.kind === "form_page" && block.fields.some(item => item.key === field.key));
+    return { field, mayBeMissing: !field.required || !!field.allow_unknown || !!field.visible_when || !!field.required_when || !!owner && bypasses(owner.id) };
+  });
+}
 export function removeBlock(definition: ScenarioDraftDefinition, id: string, replacement: string | null) {
   const block = definition.blocks?.find(item => item.id === id);
   if (!block) return definition;

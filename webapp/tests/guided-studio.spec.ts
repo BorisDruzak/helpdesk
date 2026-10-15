@@ -158,7 +158,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     const created: any[] = [];
     await page.route("**/api/web/admin/request-studio/services", async route => {
       const body = route.request().postDataJSON(); created.push(body);
-      expect(body.definition).toMatchObject({schema_version:2,title:"Новая печать",service_code:"it",offering_full_code:"",blocks:[]});
+      expect(body.definition).toMatchObject({schema_version:3,title:"Новая печать",service_code:"it",offering_full_code:"",blocks:[]});
       await route.fulfill({json:{status:"success",data:{scenario:{id:"new",archived:false},draft:{revision:1,definition:{...body.definition,offering_full_code:"it.new",process_binding:{request_template_key:"printer"}}}}}});
     });
     await page.goto("/app/admin/request-template-studio"); await newCatalogMap(page);

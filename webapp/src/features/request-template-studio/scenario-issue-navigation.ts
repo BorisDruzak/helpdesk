@@ -4,6 +4,7 @@ import type { ScenarioDraftDefinition, ScenarioPolicyKind } from "./scenario-con
 export type ScenarioIssueDestination = { step: number; label: string; blockId?: string; transitions?: boolean; policy?: ScenarioPolicyKind };
 export function scenarioIssueDestination(issue: Pick<ScenarioPublicationPreview["readiness"]["issues"][number], "code" | "path">, definition: ScenarioDraftDefinition): ScenarioIssueDestination {
   const path = issue.path || "";
+  if (path === "processing" || path.startsWith("processing.")) return { step: 2, label: path.includes("sla_profiles") || path.includes("sla_profile") ? "Сроки обработки карты" : "Направления и обработка карты" };
   const entrance = definition.entry_points?.find(entry => path === `entry_points.${entry.key}` || path.startsWith(`entry_points.${entry.key}.`));
   if (entrance) return { step: 1, label: entrance.title, blockId: entrance.target_block_id };
   const block = definition.blocks?.find(item => path === `blocks.${item.id}` || path.startsWith(`blocks.${item.id}.`));

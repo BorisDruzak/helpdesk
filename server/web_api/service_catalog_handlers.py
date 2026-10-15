@@ -206,6 +206,9 @@ async def handle_web_admin_service_catalog_simulate(request: web.Request) -> web
 async def handle_service_catalog_current(request: web.Request) -> web.Response:
     async with get_session() as session:
         payload = await ServiceCatalogRuntimeResolver(session).current_catalog_for_requester()
+    if "q" in request.query:
+        from tickets.service_catalog_search import search_public_catalog
+        payload["search"] = search_public_catalog(payload, request.query.get("q", ""))
     return web.json_response({"status": "ok", **payload})
 
 

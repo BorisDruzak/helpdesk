@@ -1,0 +1,1776 @@
+{
+  "$defs": {
+    "AllAny": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "and",
+            "or"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "and": "#/$defs/AllAny",
+                "eq": "#/$defs/Comparison",
+                "exists": "#/$defs/Exists",
+                "gt": "#/$defs/Comparison",
+                "gte": "#/$defs/Comparison",
+                "in": "#/$defs/Membership",
+                "lt": "#/$defs/Comparison",
+                "lte": "#/$defs/Comparison",
+                "neq": "#/$defs/Comparison",
+                "not": "#/$defs/Negation",
+                "or": "#/$defs/AllAny"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Comparison"
+              },
+              {
+                "$ref": "#/$defs/Membership"
+              },
+              {
+                "$ref": "#/$defs/Exists"
+              },
+              {
+                "$ref": "#/$defs/AllAny"
+              },
+              {
+                "$ref": "#/$defs/Negation"
+              }
+            ]
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Conditions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "conditions"
+      ],
+      "title": "AllAny",
+      "type": "object"
+    },
+    "AnswerEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        },
+        "facts": {
+          "$ref": "#/$defs/ProcessingFacts"
+        }
+      },
+      "required": [
+        "value",
+        "facts"
+      ],
+      "title": "AnswerEffect",
+      "type": "object"
+    },
+    "Comparison": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "answer",
+            "current_result"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "op": {
+          "enum": [
+            "eq",
+            "neq",
+            "gt",
+            "gte",
+            "lt",
+            "lte"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "source",
+        "op",
+        "value"
+      ],
+      "title": "Comparison",
+      "type": "object"
+    },
+    "Decision": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "decision",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "Decision",
+      "type": "object"
+    },
+    "Diagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "diagnostic",
+          "title": "Kind",
+          "type": "string"
+        },
+        "capability": {
+          "default": "endpoint.context.diagnostic.collect",
+          "maxLength": 100,
+          "title": "Capability",
+          "type": "string"
+        },
+        "require_consent": {
+          "default": true,
+          "title": "Require Consent",
+          "type": "boolean"
+        },
+        "timeout_seconds": {
+          "default": 30,
+          "maximum": 120,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        },
+        "execution_mode": {
+          "const": "unavailable",
+          "default": "unavailable",
+          "title": "Execution Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "Diagnostic",
+      "type": "object"
+    },
+    "EditorPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "ge": -100000,
+          "le": 100000,
+          "title": "X"
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "ge": -100000,
+          "le": 100000,
+          "title": "Y"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "EditorPosition",
+      "type": "object"
+    },
+    "Exists": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "answer",
+            "current_result"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "op": {
+          "const": "exists",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "op"
+      ],
+      "title": "Exists",
+      "type": "object"
+    },
+    "FieldOption": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "label"
+      ],
+      "title": "FieldOption",
+      "type": "object"
+    },
+    "FieldValidation": {
+      "additionalProperties": false,
+      "properties": {
+        "optional_when_legacy_missing": {
+          "default": false,
+          "title": "Optional When Legacy Missing",
+          "type": "boolean"
+        },
+        "min_length": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Length"
+        },
+        "max_length": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Length"
+        },
+        "min_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Value"
+        },
+        "max_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Value"
+        }
+      },
+      "title": "FieldValidation",
+      "type": "object"
+    },
+    "Finish": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "finish",
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "default": "Проблема решена без обращения",
+          "maxLength": 2000,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "Finish",
+      "type": "object"
+    },
+    "FormPage": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "form_page",
+          "title": "Kind",
+          "type": "string"
+        },
+        "layout": {
+          "default": "group",
+          "enum": [
+            "single",
+            "group",
+            "section"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/ScenarioField"
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "title": "Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "fields"
+      ],
+      "title": "FormPage",
+      "type": "object"
+    },
+    "Instruction": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "instruction",
+          "title": "Kind",
+          "type": "string"
+        },
+        "content": {
+          "$ref": "#/$defs/InstructionContent"
+        },
+        "acknowledgment_required": {
+          "default": true,
+          "title": "Acknowledgment Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "content"
+      ],
+      "title": "Instruction",
+      "type": "object"
+    },
+    "InstructionContent": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "default": "markdown",
+          "enum": [
+            "markdown",
+            "plain"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "body": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Body",
+          "type": "string"
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "title": "InstructionContent",
+      "type": "object"
+    },
+    "Membership": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "answer",
+            "current_result"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "op": {
+          "const": "in",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "title": "Value",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source",
+        "op",
+        "value"
+      ],
+      "title": "Membership",
+      "type": "object"
+    },
+    "Negation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "not",
+          "title": "Op",
+          "type": "string"
+        },
+        "condition": {
+          "discriminator": {
+            "mapping": {
+              "and": "#/$defs/AllAny",
+              "eq": "#/$defs/Comparison",
+              "exists": "#/$defs/Exists",
+              "gt": "#/$defs/Comparison",
+              "gte": "#/$defs/Comparison",
+              "in": "#/$defs/Membership",
+              "lt": "#/$defs/Comparison",
+              "lte": "#/$defs/Comparison",
+              "neq": "#/$defs/Comparison",
+              "not": "#/$defs/Negation",
+              "or": "#/$defs/AllAny"
+            },
+            "propertyName": "op"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Comparison"
+            },
+            {
+              "$ref": "#/$defs/Membership"
+            },
+            {
+              "$ref": "#/$defs/Exists"
+            },
+            {
+              "$ref": "#/$defs/AllAny"
+            },
+            {
+              "$ref": "#/$defs/Negation"
+            }
+          ],
+          "title": "Condition"
+        }
+      },
+      "required": [
+        "op",
+        "condition"
+      ],
+      "title": "Negation",
+      "type": "object"
+    },
+    "ProcessBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "request_template_key": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "title": "Request Template Key",
+          "type": "string"
+        },
+        "priority_source": {
+          "const": "existing_server_policy_runtime",
+          "default": "existing_server_policy_runtime",
+          "title": "Priority Source",
+          "type": "string"
+        },
+        "policy_refs": {
+          "additionalProperties": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+            "type": "string"
+          },
+          "maxProperties": 8,
+          "propertyNames": {
+            "enum": [
+              "priority",
+              "routing",
+              "sla",
+              "ola",
+              "approval",
+              "notification",
+              "closure",
+              "visibility"
+            ]
+          },
+          "title": "Policy Refs",
+          "type": "object"
+        }
+      },
+      "required": [
+        "request_template_key"
+      ],
+      "title": "ProcessBinding",
+      "type": "object"
+    },
+    "ProcessMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "roles": {
+          "items": {
+            "enum": [
+              "display_only",
+              "priority_impact",
+              "priority_urgency",
+              "priority_importance",
+              "routing_field",
+              "diagnostic_input",
+              "approval_subject",
+              "closure_evidence",
+              "reporting_dimension",
+              "passport_fact",
+              "visibility_public"
+            ],
+            "type": "string"
+          },
+          "maxItems": 11,
+          "title": "Roles",
+          "type": "array"
+        },
+        "fact_key": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fact Key"
+        },
+        "effects": {
+          "items": {
+            "$ref": "#/$defs/AnswerEffect"
+          },
+          "maxItems": 100,
+          "title": "Effects",
+          "type": "array"
+        }
+      },
+      "title": "ProcessMapping",
+      "type": "object"
+    },
+    "ProcessingFacts": {
+      "additionalProperties": false,
+      "properties": {
+        "impact": {
+          "anyOf": [
+            {
+              "enum": [
+                "single_user",
+                "multiple_users",
+                "department"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impact"
+        },
+        "urgency": {
+          "anyOf": [
+            {
+              "enum": [
+                "can_work",
+                "degraded",
+                "blocked"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Urgency"
+        },
+        "importance": {
+          "anyOf": [
+            {
+              "enum": [
+                "normal",
+                "important",
+                "critical"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Importance"
+        }
+      },
+      "title": "ProcessingFacts",
+      "type": "object"
+    },
+    "ResolutionCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "resolution_check",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "ResolutionCheck",
+      "type": "object"
+    },
+    "Review": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "review",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "Review",
+      "type": "object"
+    },
+    "ScenarioBranchProcessing": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "sla_profile": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sla Profile"
+        },
+        "approval_required": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Required"
+        }
+      },
+      "title": "ScenarioBranchProcessing",
+      "type": "object"
+    },
+    "ScenarioEditorLayout": {
+      "additionalProperties": false,
+      "properties": {
+        "positions": {
+          "maxProperties": 257,
+          "patternProperties": {
+            "^[a-z0-9][a-z0-9_]*$": {
+              "$ref": "#/$defs/EditorPosition"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "title": "Positions",
+          "type": "object"
+        }
+      },
+      "title": "ScenarioEditorLayout",
+      "type": "object"
+    },
+    "ScenarioEntryPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Description",
+          "type": "string"
+        },
+        "category_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category Id"
+        },
+        "synonyms": {
+          "items": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Synonyms",
+          "type": "array"
+        },
+        "visibility": {
+          "default": "public",
+          "enum": [
+            "public",
+            "internal",
+            "restricted"
+          ],
+          "title": "Visibility",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "target_block_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Target Block Id",
+          "type": "string"
+        },
+        "reported_symptom": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Reported Symptom",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "title",
+        "target_block_id"
+      ],
+      "title": "ScenarioEntryPoint",
+      "type": "object"
+    },
+    "ScenarioField": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "text",
+            "textarea",
+            "select",
+            "multi_select",
+            "radio",
+            "checkbox",
+            "number",
+            "date",
+            "datetime",
+            "phone",
+            "email",
+            "url",
+            "user_picker",
+            "department_picker",
+            "location_picker",
+            "device_picker",
+            "service_picker"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "placeholder": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Placeholder",
+          "type": "string"
+        },
+        "help_text": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Help Text",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/FieldOption"
+          },
+          "maxItems": 100,
+          "title": "Options",
+          "type": "array"
+        },
+        "visible_when": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "and": "#/$defs/AllAny",
+                  "eq": "#/$defs/Comparison",
+                  "exists": "#/$defs/Exists",
+                  "gt": "#/$defs/Comparison",
+                  "gte": "#/$defs/Comparison",
+                  "in": "#/$defs/Membership",
+                  "lt": "#/$defs/Comparison",
+                  "lte": "#/$defs/Comparison",
+                  "neq": "#/$defs/Comparison",
+                  "not": "#/$defs/Negation",
+                  "or": "#/$defs/AllAny"
+                },
+                "propertyName": "op"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Comparison"
+                },
+                {
+                  "$ref": "#/$defs/Membership"
+                },
+                {
+                  "$ref": "#/$defs/Exists"
+                },
+                {
+                  "$ref": "#/$defs/AllAny"
+                },
+                {
+                  "$ref": "#/$defs/Negation"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visible When"
+        },
+        "required_when": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "and": "#/$defs/AllAny",
+                  "eq": "#/$defs/Comparison",
+                  "exists": "#/$defs/Exists",
+                  "gt": "#/$defs/Comparison",
+                  "gte": "#/$defs/Comparison",
+                  "in": "#/$defs/Membership",
+                  "lt": "#/$defs/Comparison",
+                  "lte": "#/$defs/Comparison",
+                  "neq": "#/$defs/Comparison",
+                  "not": "#/$defs/Negation",
+                  "or": "#/$defs/AllAny"
+                },
+                "propertyName": "op"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Comparison"
+                },
+                {
+                  "$ref": "#/$defs/Membership"
+                },
+                {
+                  "$ref": "#/$defs/Exists"
+                },
+                {
+                  "$ref": "#/$defs/AllAny"
+                },
+                {
+                  "$ref": "#/$defs/Negation"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required When"
+        },
+        "validation": {
+          "$ref": "#/$defs/FieldValidation"
+        },
+        "process_mapping": {
+          "$ref": "#/$defs/ProcessMapping"
+        },
+        "allow_unknown": {
+          "default": false,
+          "title": "Allow Unknown",
+          "type": "boolean"
+        },
+        "group": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group"
+        },
+        "group_title": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Title"
+        },
+        "aliases": {
+          "items": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Aliases",
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "type",
+        "label"
+      ],
+      "title": "ScenarioField",
+      "type": "object"
+    },
+    "ScenarioProcessing": {
+      "additionalProperties": false,
+      "properties": {
+        "sla_profiles": {
+          "maxProperties": 64,
+          "patternProperties": {
+            "^[a-z0-9][a-z0-9_]*$": {
+              "$ref": "#/$defs/ScenarioSlaProfile"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "title": "Sla Profiles",
+          "type": "object"
+        },
+        "routes": {
+          "maxProperties": 64,
+          "patternProperties": {
+            "^[a-z0-9][a-z0-9_]*$": {
+              "$ref": "#/$defs/ScenarioRoute"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "title": "Routes",
+          "type": "object"
+        },
+        "defaults": {
+          "$ref": "#/$defs/ScenarioProcessingDefaults"
+        },
+        "assignment_mode": {
+          "const": "last_matching_branch",
+          "default": "last_matching_branch",
+          "title": "Assignment Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "defaults"
+      ],
+      "title": "ScenarioProcessing",
+      "type": "object"
+    },
+    "ScenarioProcessingDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "const": "",
+              "type": "string"
+            }
+          ],
+          "title": "Route"
+        },
+        "sla_profile": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "const": "",
+              "type": "string"
+            }
+          ],
+          "title": "Sla Profile"
+        }
+      },
+      "required": [
+        "route",
+        "sla_profile"
+      ],
+      "title": "ScenarioProcessingDefaults",
+      "type": "object"
+    },
+    "ScenarioRoute": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "queue_code": {
+          "maxLength": 100,
+          "title": "Queue Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "queue_code"
+      ],
+      "title": "ScenarioRoute",
+      "type": "object"
+    },
+    "ScenarioSlaProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "first_response_minutes": {
+          "maximum": 525600,
+          "minimum": 0,
+          "title": "First Response Minutes",
+          "type": "integer"
+        },
+        "resolution_minutes": {
+          "maximum": 525600,
+          "minimum": 0,
+          "title": "Resolution Minutes",
+          "type": "integer"
+        },
+        "time_basis": {
+          "default": "calendar",
+          "enum": [
+            "calendar",
+            "business"
+          ],
+          "title": "Time Basis",
+          "type": "string"
+        },
+        "calendar_id": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calendar Id"
+        }
+      },
+      "required": [
+        "title",
+        "first_response_minutes",
+        "resolution_minutes"
+      ],
+      "title": "ScenarioSlaProfile",
+      "type": "object"
+    },
+    "SubmitTicket": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "submit_ticket",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "SubmitTicket",
+      "type": "object"
+    },
+    "Transition": {
+      "additionalProperties": false,
+      "properties": {
+        "to": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "To",
+          "type": "string"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "and": "#/$defs/AllAny",
+                  "eq": "#/$defs/Comparison",
+                  "exists": "#/$defs/Exists",
+                  "gt": "#/$defs/Comparison",
+                  "gte": "#/$defs/Comparison",
+                  "in": "#/$defs/Membership",
+                  "lt": "#/$defs/Comparison",
+                  "lte": "#/$defs/Comparison",
+                  "neq": "#/$defs/Comparison",
+                  "not": "#/$defs/Negation",
+                  "or": "#/$defs/AllAny"
+                },
+                "propertyName": "op"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Comparison"
+                },
+                {
+                  "$ref": "#/$defs/Membership"
+                },
+                {
+                  "$ref": "#/$defs/Exists"
+                },
+                {
+                  "$ref": "#/$defs/AllAny"
+                },
+                {
+                  "$ref": "#/$defs/Negation"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "When"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
+        },
+        "processing_facts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessingFacts"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "processing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScenarioBranchProcessing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "to"
+      ],
+      "title": "Transition",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "enum": [
+        1,
+        2,
+        3
+      ],
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "scenario_key": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Scenario Key",
+      "type": "string"
+    },
+    "service_code": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "title": "Service Code",
+      "type": "string"
+    },
+    "offering_full_code": {
+      "maxLength": 220,
+      "pattern": "^[a-z0-9][a-z0-9_-]*\\.[a-z0-9][a-z0-9_-]*$",
+      "title": "Offering Full Code",
+      "type": "string"
+    },
+    "category_id": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Category Id"
+    },
+    "title": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "entry_block_id": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Entry Block Id"
+    },
+    "entry_points": {
+      "items": {
+        "$ref": "#/$defs/ScenarioEntryPoint"
+      },
+      "maxItems": 64,
+      "title": "Entry Points",
+      "type": "array"
+    },
+    "editor_layout": {
+      "$ref": "#/$defs/ScenarioEditorLayout"
+    },
+    "blocks": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "decision": "#/$defs/Decision",
+            "diagnostic": "#/$defs/Diagnostic",
+            "finish": "#/$defs/Finish",
+            "form_page": "#/$defs/FormPage",
+            "instruction": "#/$defs/Instruction",
+            "resolution_check": "#/$defs/ResolutionCheck",
+            "review": "#/$defs/Review",
+            "submit_ticket": "#/$defs/SubmitTicket"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/FormPage"
+          },
+          {
+            "$ref": "#/$defs/Instruction"
+          },
+          {
+            "$ref": "#/$defs/Decision"
+          },
+          {
+            "$ref": "#/$defs/ResolutionCheck"
+          },
+          {
+            "$ref": "#/$defs/Diagnostic"
+          },
+          {
+            "$ref": "#/$defs/Review"
+          },
+          {
+            "$ref": "#/$defs/SubmitTicket"
+          },
+          {
+            "$ref": "#/$defs/Finish"
+          }
+        ]
+      },
+      "maxItems": 256,
+      "title": "Blocks",
+      "type": "array"
+    },
+    "process_binding": {
+      "$ref": "#/$defs/ProcessBinding"
+    },
+    "processing": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScenarioProcessing"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "publish_offering": {
+      "default": false,
+      "title": "Publish Offering",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "scenario_key",
+    "service_code",
+    "offering_full_code",
+    "title",
+    "process_binding"
+  ],
+  "title": "ScenarioDraftDefinition",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -113,6 +113,17 @@ def test_catalog_omits_hidden_disabled_and_hidden_category_entries():
     assert 'reported_symptom' not in items[0]
 
 
+def test_catalog_exposes_only_public_category_title_and_help_mode_for_search():
+    from tickets.request_scenario_catalog import project_catalog_entries
+    raw = entries_graph()
+    category_id = '00000000-0000-0000-0000-000000000001'
+    raw['entry_points'][0]['category_id'] = category_id
+    categories = {category_id: {'visibility': 'public', 'lifecycle_status': 'published', 'title': 'Оборудование'}}
+    items = project_catalog_entries(ScenarioDefinition.model_validate(raw), categories, 'pinned')
+    assert items[0]['category_title'] == 'Оборудование'
+    assert items[0]['help_mode'] == 'guided'
+
+
 def test_back_preserves_pinned_entry_and_reported_symptom_does_not_supply_facts():
     from tickets.request_scenario_submission import build_scenario_submission
     from web_api.dto.request_scenario import ScenarioAnswerRequest

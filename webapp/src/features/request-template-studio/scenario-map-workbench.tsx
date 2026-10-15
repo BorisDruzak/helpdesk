@@ -44,7 +44,7 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
   const geometry = useWorkbenchGeometry(gridRef);
   const emitted = useRef(definition);
   const blocks = definition.blocks ?? [];
-  const legacy = existing && definition.schema_version !== 2;
+  const legacy = existing && (definition.schema_version ?? 1) < 2;
   const block = blocks.find(item => item.id === selected);
   const positions = stableMapPositions(definition);
   const hasInspectorPanel = !!inspectorPanel;
@@ -60,7 +60,7 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
   function openProcessing() { choose(metadataNodeId); setInspectorTab("settings"); setProcessingOpen(true); onInspect?.(); }
   function change(next: ScenarioDraftDefinition) {
     if (disabled || JSON.stringify(next) === JSON.stringify(definition)) return;
-    if (legacy && next.schema_version !== 2 && JSON.stringify(next.blocks) !== JSON.stringify(definition.blocks)) { setError("Сначала переведите историческую карту на единую модель. Геометрию можно менять без переноса."); return; }
+    if (legacy && (next.schema_version ?? 1) < 2 && JSON.stringify(next.blocks) !== JSON.stringify(definition.blocks)) { setError("Сначала переведите историческую карту на единую модель. Геометрию можно менять без переноса."); return; }
     try { requireAcyclic(next); setPast(items => [...items.slice(-99), structuredClone(definition)]); setFuture([]); setError(""); emitted.current = next; onChange(next); }
     catch (failure) { setError(failure instanceof Error ? failure.message : "Изменение не выполнено"); }
   }
@@ -90,7 +90,7 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
       if (event.key.toLowerCase() === "y") { event.preventDefault(); history(true); }
     }
   }}>
-    {existing && definition.schema_version !== 2 && <div className="rounded border p-3 text-sm"><p>Историческая карта сохраняет прежнее поведение. Единая модель будет проверять обращение по вопросам этой карты. Действующая версия и начатые сеансы сохранятся до публикации.</p><Button variant="outline" disabled={disabled} onClick={() => perform(() => {
+    {existing && (definition.schema_version ?? 1) < 2 && <div className="rounded border p-3 text-sm"><p>Историческая карта сохраняет прежнее поведение. Единая модель будет проверять обращение по вопросам этой карты. Действующая версия и начатые сеансы сохранятся до публикации.</p><Button variant="outline" disabled={disabled} onClick={() => perform(() => {
       let next = definition;
       if (next.entry_block_id && !next.entry_points?.some(entry => entry.enabled !== false && entry.target_block_id === next.entry_block_id)) {
         next = { ...next, entry_points: [...next.entry_points ?? [], { key: `entry_${crypto.randomUUID().replaceAll("-", "")}`, title: next.title, target_block_id: next.entry_block_id, category_id: next.category_id ?? null, enabled: true, visibility: "public" }] };

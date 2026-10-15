@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "../../features/auth/session-provider";
 import { pendingCreateKey, clearCreateKey } from "../../features/requester/create-intent";
 import { ScenarioEntrances } from "../../features/requester/scenario-entrances";
+import { CatalogSearch } from "../../features/requester/catalog-search";
 
 import { createRequesterTicket, previewRequesterTicket, RequesterApiError, searchRequesterOnBehalfPeople } from "../../features/requester/api";
 import {
@@ -370,6 +371,7 @@ function RequesterNewRequestContent() {
   const [validationAttempted, setValidationAttempted] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
+  const [selectedSearchEntry, setSelectedSearchEntry] = useState<string | undefined>();
   const [showAllCategoryOptions, setShowAllCategoryOptions] = useState(false);
   const restoredDraftRef = useRef(false);
 
@@ -686,6 +688,7 @@ function RequesterNewRequestContent() {
   }
 
   function selectCategoryKey(key: string) {
+    setSelectedSearchEntry(undefined);
     if (key !== selectedCategoryKey) {
       resetOnBehalfState();
       setFieldServerErrors({});
@@ -831,10 +834,17 @@ function RequesterNewRequestContent() {
             }}>Начать отдельное обращение</button>
           </div>
         ) : null}
+        <CatalogSearch availableOfferings={categoryOptions.flatMap(option => option.offering ? [option.offering.full_code] : [])}
+          fallbackOffering={categoryOptions.find(option => option.offering?.full_code === catalogQuery.data?.fallback?.full_code)?.offering?.full_code}
+          onSelect={(offeringCode, entry) => {
+            const option = categoryOptions.find(item => item.offering?.full_code === offeringCode);
+            if (option) { selectCategoryKey(option.key); setSelectedSearchEntry(entry); }
+          }} />
         {selectedOffering?.guided_scenario_enabled ? <>
           <CategorySelector options={categorySelectorOptions} selectedKey={selectedCategoryKey}
             recommendedKey={recommendedCategoryKey} onChange={selectCategoryKey} />
-          <ScenarioEntrances key={selectedOffering.full_code} offering={selectedOffering} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
+          <ScenarioEntrances key={`${selectedOffering.full_code}:${selectedSearchEntry ?? "default"}`} initialEntryPointKey={selectedSearchEntry}
+            offering={selectedOffering} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
         </> : <DetailsStepPanel
           categoryError={categoryError}
           categoryInputRef={(element) => {

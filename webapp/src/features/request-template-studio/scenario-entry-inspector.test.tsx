@@ -12,7 +12,7 @@ it("retains a trailing newline while entering multiple search phrases", () => {
   }
   render(<Editor />);
   fireEvent.click(screen.getByText("Поиск в каталоге"));
-  const input = screen.getByLabelText("Дополнительные поисковые слова");
+  const input = screen.getByLabelText("Дополнительные поисковые выражения");
   fireEvent.focus(input);
   fireEvent.change(input, { target: { value: "замятие\n" } });
   expect(input).toHaveValue("замятие\n");

@@ -316,6 +316,16 @@ def _allow_ticket_write(ticket: Any, auth_context: AuthContext) -> bool:
     return _allow_ticket_read(ticket, auth_context) and _can_write(auth_context)
 
 
+async def can_read_ui_ticket(ticket_repo, ticket, auth_context) -> bool:
+    """Canonical UI ticket scope, also used to select actionable approvers."""
+    if auth_context.actor_role == "support":
+        queue_allowed = await ticket_repo.is_actor_in_queue(getattr(ticket, "queue_id", None), auth_context.actor_id)
+        assignee_allowed = auth_context.actor_id == getattr(ticket, "assignee_id", None)
+        if not queue_allowed and not assignee_allowed and getattr(ticket, "queue_id", None) is not None:
+            return False
+    return _allow_ticket_read(ticket, auth_context)
+
+
 def _device_binding_error(payload: dict[str, Any], *, status: int = 403) -> web.Response:
     return _json_error(
         "active_device_binding_required",
@@ -356,10 +366,7 @@ async def _get_ticket_or_response(
     if not ticket:
         return None, _json_error("ticket_not_found", status=404), ticket_repo, auth_context
     if auth_context.actor_role == "support":
-        queue_allowed = await ticket_repo.is_actor_in_queue(getattr(ticket, "queue_id", None), auth_context.actor_id)
-        assignee_allowed = auth_context.actor_id == getattr(ticket, "assignee_id", None)
-        queue_less_ticket = getattr(ticket, "queue_id", None) is None
-        if not queue_allowed and not assignee_allowed and not queue_less_ticket:
+        if not await can_read_ui_ticket(ticket_repo, ticket, auth_context):
             return None, _json_error("forbidden", status=403), ticket_repo, auth_context
     if auth_context.actor_role == "agent":
         binding, binding_error = await _resolve_agent_ticket_binding(
