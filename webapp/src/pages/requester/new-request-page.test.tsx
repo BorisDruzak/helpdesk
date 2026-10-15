@@ -61,6 +61,41 @@ afterEach(() => {
 });
 
 describe("RequesterNewRequestPage", () => {
+  it("opens the exact catalog search entrance after explicit selection", async () => {
+    const fetchMock = installNewRequestMock({ withPrinterOffering: true });
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/service-catalog/current?q=")) return jsonResponse({ status: "ok", search: {
+        results: [{ title: "Не печатает принтер", category: "Оборудование", description: "Проверим печать",
+          help_mode: "guided", offering_full_code: "workplace.printer_issue", entry_point_key: "no_print", match_reason: "Совпали слова запроса" }],
+        suggestions: [], corrected_query: null,
+      } });
+      if (url === "/api/service-catalog/current") {
+        const response = await original(input, init);
+        const payload = await response.json();
+        const offering = payload.services[0].offerings.find((item: { full_code: string }) => item.full_code === "workplace.printer_issue");
+        offering.guided_scenario_enabled = true;
+        offering.catalog_items = [{ key: "no_print", title: "Не печатает принтер", entry_point_key: "no_print", synonyms: [] }];
+        return jsonResponse(payload);
+      }
+      if (url === "/api/web/requester/request-scenarios/sessions") return jsonResponse({ status: "success", data: {
+        id: "print-session", revision: 1, state: "active", back_targets: [],
+        block: { id: "printer_check", kind: "instruction", title: "Проверьте подключение принтера" },
+      } });
+      return original(input, init);
+    });
+    renderPage();
+    const input = await screen.findByRole("searchbox", { name: "Найти проблему во всём каталоге" });
+    fireEvent.change(input, { target: { value: "принтер не печатает" } });
+    const entry = await screen.findByRole("button", { name: /Не печатает принтер/ });
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("request-scenarios/sessions"))).toHaveLength(0);
+    fireEvent.click(entry);
+    await screen.findByRole("heading", { name: "Проверьте подключение принтера" });
+    const sessionCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("request-scenarios/sessions"));
+    expect(JSON.parse(String(sessionCall?.[1]?.body))).toEqual({ offering_full_code: "workplace.printer_issue", entry_point_key: "no_print" });
+  });
+
   it("shows an initial context failure instead of fake profile restrictions and keeps it visible while retrying", async () => {
     const fetchMock = installNewRequestMock({ setupHelpForm: true, withDevice: false });
     const original = fetchMock.getMockImplementation()!;

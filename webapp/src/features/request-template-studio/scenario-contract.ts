@@ -30,7 +30,11 @@ export type ScenarioField = {
   aliases?: string[];
 };
 export type ScenarioProcessingFacts = {impact?:"single_user"|"multiple_users"|"department"|null;urgency?:"can_work"|"degraded"|"blocked"|null;importance?:"normal"|"important"|"critical"|null};
-export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null; processing_facts?:ScenarioProcessingFacts|null };
+export type ScenarioBranchProcessing = {route?:string|null;sla_profile?:string|null;approval_required?:boolean|null};
+export type ScenarioSlaProfile = {title:string;first_response_minutes:number;resolution_minutes:number;time_basis?:"calendar"|"business";calendar_id?:number|null};
+export type ScenarioRoute = {title:string;queue_code:string};
+export type ScenarioProcessing = {sla_profiles:Record<string,ScenarioSlaProfile>;routes:Record<string,ScenarioRoute>;defaults:{route:string;sla_profile:string};assignment_mode?:"last_matching_branch"};
+export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null; processing_facts?:ScenarioProcessingFacts|null;processing?:ScenarioBranchProcessing|null };
 type BlockBase = { id: string; title: string; transitions?: ScenarioTransition[] };
 export type ScenarioBlock = BlockBase & (
   | { kind: "form_page"; layout?: "single" | "group" | "section"; fields: ScenarioField[] }
@@ -50,7 +54,7 @@ export type ScenarioEntryPoint = {
 };
 export type ScenarioEditorLayout = { positions?: Record<string, { x: number; y: number }> };
 export type ScenarioDraftDefinition = {
-  schema_version?: 1 | 2;
+  schema_version?: 1 | 2 | 3;
   scenario_key: string;
   service_code: string;
   offering_full_code: string;
@@ -63,6 +67,7 @@ export type ScenarioDraftDefinition = {
   editor_layout?: ScenarioEditorLayout;
   blocks?: ScenarioBlock[];
   process_binding: { request_template_key: string; priority_source?: "existing_server_policy_runtime"; policy_refs?: Partial<Record<ScenarioPolicyKind, string>> };
+  processing?:ScenarioProcessing|null;
 };
 export type ScenarioDefinition = Omit<ScenarioDraftDefinition, "entry_block_id" | "blocks"> & {
   entry_block_id: string;

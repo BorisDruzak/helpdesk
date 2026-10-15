@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ServiceCatalogOffering } from "./types";
 import { ScenarioSession } from "./scenario-session";
 
-export function ScenarioEntrances({ offering, owner, deviceId }: { offering: ServiceCatalogOffering; owner: string; deviceId: string }) {
+export function ScenarioEntrances({ offering, owner, deviceId, initialEntryPointKey }: { offering: ServiceCatalogOffering; owner: string; deviceId: string; initialEntryPointKey?: string }) {
   const [query, setQuery] = useState("");
   const selectionKey = owner ? `pc_client.scenario.selection:${owner}:${offering.full_code}` : null;
-  const [entry, setEntry] = useState<string | undefined>(() => { try { return selectionKey ? sessionStorage.getItem(selectionKey) || undefined : undefined; } catch { return undefined; } });
+  const [entry, setEntry] = useState<string | undefined>(() => { if (initialEntryPointKey) return initialEntryPointKey; try { return selectionKey ? sessionStorage.getItem(selectionKey) || undefined : undefined; } catch { return undefined; } });
+  useEffect(() => { if (initialEntryPointKey && selectionKey) { try { sessionStorage.setItem(selectionKey, initialEntryPointKey); } catch { /* Server session remains authoritative. */ } } }, [initialEntryPointKey, selectionKey]);
   function choose(value: string | undefined) { setEntry(value); if (selectionKey) { try { if (value) sessionStorage.setItem(selectionKey, value); else sessionStorage.removeItem(selectionKey); } catch { /* Server session is authoritative. */ } } }
   const items = offering.catalog_items ?? [];
   if (!items.length) return <ScenarioSession offering={offering.full_code} owner={owner} deviceId={deviceId} />;

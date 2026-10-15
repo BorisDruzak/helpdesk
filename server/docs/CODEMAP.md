@@ -102,7 +102,7 @@
   cannot supply facts. Validation/readiness cover all entrances under one bounded
   coverage budget. No new migration or external Endpoint contract is introduced.
 - Unified service Studio: `webapp/src/pages/admin/request-template-studio-page.tsx`
-  opens the catalog and creates an empty v2 map directly. Five palette kinds and a
+  opens the catalog and creates an empty v3 map directly. Five palette kinds and a
   unique Start node use `scenario-map-*`; dashed Start edges create named catalog
   entrances, never executable transitions. `scenario-purpose` owns placement;
   `scenario-processing-facts` sends typed facts to existing server policies.
@@ -119,6 +119,22 @@
   version 1/2 without rewriting rows; downgrade refuses persisted v2 versions.
   See `docs/UNIFIED_SERVICE_SCENARIOS.md` for current click-by-click authoring.
   Existing session, policy, audit and confirmed-publication owners remain canonical.
+  Schema v3 adds map-owned `processing.sla_profiles/routes/defaults` and transition
+  selections. `request_scenario_submission` derives defaults and branch assignments
+  from revalidated retained history; `request_scenario_processing` adapts them to
+  canonical routing/SLA contexts after registry overlays in preview and create.
+  Map selection survives lifecycle policy resolution; no separate SLA engine or
+  global per-profile policy is introduced. Migration150 permits immutable1/2/3
+  and refuses downgrade with v3 rows. Document import validates configured active
+  queues/calendars without saving or publishing. `service_catalog_search` ranks
+  only the authorized published catalog exposed by `/api/service-catalog/current?q=`;
+  requester catalog search opens a selected offering/entry without authority input.
+  `approval_policy` resolves a missing requester-manager snapshot through trusted
+  Registry/UI identity; policy health and actual creation share canonical approver
+  fallback resolution. Requester preview supplies authenticated requester context,
+  never manager authority from form answers. The generated machine contract lives
+  at `docs/contracts/request-scenario.schema.json`; regenerate/check it with
+  `scripts/export_request_scenario_schema.py` after DTO changes.
   Catalog metadata uses the immutable version referenced by the active pointer
   (not the greatest historical version), and the latest scenario/draft timestamp.
   `app/repos/request_scenario_repo.py` searches offering request types and Studio

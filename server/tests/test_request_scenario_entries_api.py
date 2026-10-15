@@ -60,8 +60,8 @@ async def test_published_entrances_acl_resume_context_and_version_pin(test_clien
     public = dict(key='paper', title='Paper jam', target_block_id='instruction',
                   visibility='public', enabled=True, reported_symptom='Reported paper jam', synonyms=['jam'])
     definition['entry_points'] = [public,
-        {**public, 'key': 'hidden', 'visibility': 'internal'},
-        {**public, 'key': 'disabled', 'enabled': False},
+        {**public, 'key': 'hidden', 'title': 'Confidential toner stock', 'visibility': 'internal'},
+        {**public, 'key': 'disabled', 'title': 'Disabled color printing', 'enabled': False},
         {**public, 'key': 'missing_category', 'category_id': '00000000-0000-0000-0000-000000000001'}]
     async with async_sessionmaker(test_engine)() as session:
         version_id = await publish_snapshot(session, version_id, definition)
@@ -73,6 +73,12 @@ async def test_published_entrances_acl_resume_context_and_version_pin(test_clien
     catalog = await (await test_client_light.get('/api/service-catalog/current', headers=OWNER)).json()
     service = next(item for item in catalog['services'] if item['service_code'] == definition['service_code'])
     assert [item['entry_point_key'] for item in service['offerings'][0]['catalog_items']] == ['paper']
+    search = await (await test_client_light.get('/api/service-catalog/current?q=jam', headers=OWNER)).json()
+    assert any(item['entry_point_key'] == 'paper' for item in search['search']['results'])
+    for query in ('Confidential toner stock', 'Disabled color printing'):
+        search = await (await test_client_light.get('/api/service-catalog/current', params={'q': query}, headers=OWNER)).json()
+        assert not search['search']['results']
+        assert not search['search']['suggestions']
     response = await test_client_light.post(BASE, headers=OWNER, json={**body, 'entry_point_key': 'paper'})
     assert response.status == 200, await response.text()
     selected = (await response.json())['data']

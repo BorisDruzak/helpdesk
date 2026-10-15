@@ -44,6 +44,9 @@ class RequestScenarioRepo:
         from web_api.dto.request_scenario import ScenarioDraftDefinition, CatalogCode, _bounded_input
         from pydantic import TypeAdapter
         _bounded_input(raw)
+        version = raw.get("schema_version", 2)
+        if type(version) is not int or version not in {1, 2, 3}:
+            raise ScenarioAdminError("VALIDATION_ERROR")
         code = TypeAdapter(CatalogCode).validate_python(raw.get("service_code"))
         service = await self._service_lock(code)
         prior = await self.session.scalar(select(RequestStudioScenario).where(RequestStudioScenario.scenario_key == raw.get("scenario_key")))
@@ -88,7 +91,7 @@ class RequestScenarioRepo:
         if not template.get("published_at") or not template.get("is_active"):
             raise ScenarioAdminError("SERVICE_PROCESSING_DEFAULT_REQUIRED", 409)
         offering_code = "map_" + hashlib.sha256(str(raw.get("scenario_key")).encode()).hexdigest()[:32]
-        bound = {**raw, "schema_version": 2, "offering_full_code": code + "." + offering_code,
+        bound = {**raw, "schema_version": max(2, version), "offering_full_code": code + "." + offering_code,
                  "process_binding": {**(raw.get("process_binding") or {}), "request_template_key": template_key}, "publish_offering": True}
         definition = ScenarioDraftDefinition.model_validate(bound)
         await self._category(definition.category_id, code)
@@ -267,7 +270,9 @@ class RequestScenarioRepo:
         if not template:
             raise ScenarioAdminError("TEMPLATE_NOT_FOUND", 404)
         from tickets.request_scenario_processing import apply_scenario_policy_refs
-        await apply_scenario_policy_refs(self.session, {"template_context": {}}, definition.process_binding.policy_refs)
+        references = {kind: code for kind, code in definition.process_binding.policy_refs.items()
+                      if definition.schema_version != 3 or kind not in {"routing", "sla"}}
+        await apply_scenario_policy_refs(self.session, {"template_context": {}}, references)
         await self._category(definition.category_id, definition.service_code)
         for entry in definition.entry_points:
             await self._category(entry.category_id, definition.service_code)
@@ -374,9 +379,13 @@ class RequestScenarioRepo:
                 # The graph reached its result. Canonical form/policy validation is
                 # still blocked; disclose it separately without echoing raw inputs.
                 processing_error = {"code": "PROCESSING_INPUT_INVALID"}
+        terminal_trace = {}
+        if engine.definition.schema_version == 3 and state.state == "completed_self_service":
+            from tickets.request_scenario_submission import map_processing
+            terminal_trace = {"map_processing": map_processing(engine.definition, state)}
         return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"),
                 "current_step": project_step(engine.definition, projected)["block"], "processing": processing, "revision": draft.revision,
-                "simulation_scope": scope, "processing_error": processing_error}
+                "simulation_scope": scope, "processing_error": processing_error, **terminal_trace}
 
     async def catalog_view(self, *, query="", status="all", offset=0, limit=100, category_id=None, service_code=None, offering_code=None):
         categories = await self.categories()

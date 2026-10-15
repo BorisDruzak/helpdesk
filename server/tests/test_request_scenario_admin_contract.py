@@ -10,6 +10,30 @@ pytestmark = pytest.mark.no_db
 
 
 @pytest.mark.asyncio
+async def test_import_structure_errors_return_paths_without_raw_values(monkeypatch):
+    import json
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from auth.context import AuthContext, AuthType
+    @asynccontextmanager
+    async def session():
+        yield SimpleNamespace()
+    monkeypatch.setattr(handlers, "get_session", session)
+    class Content:
+        async def iter_chunked(self, size):
+            yield json.dumps({"format": "json", "content": json.dumps({"schema_version": "PRIVATE_VALUE"})}).encode()
+    class Request(dict):
+        query = {}
+        content = Content()
+    request = Request(auth_context=AuthContext(actor_id="admin-test", actor_role="admin", auth_type=AuthType.UI_TOKEN))
+    response = await handlers.handle_scenario_document_validate(request)
+    assert response.status == 400
+    body = json.loads(response.text)
+    assert any(item["path"] == "schema_version" for item in body["issues"])
+    assert "PRIVATE_VALUE" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_http_catalog_string_pagination_reaches_repository(monkeypatch):
     captured = {}
     async def run(request, operation):

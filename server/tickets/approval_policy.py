@@ -147,6 +147,36 @@ async def _resolve_approval_source(
             or custom_fields.get("requester_manager_id")
             or getattr(ticket, "requester_manager_id", None)
         )
+        if not values:
+            # The authenticated requester is recorded by canonical creation.
+            # Never resolve management authority from submitted form values.
+            from sqlalchemy.ext.asyncio import AsyncSession
+            if isinstance(session, AsyncSession):
+                from requester.identity_service import RequesterIdentityResolver
+                from app.db.models import RegistryPerson, RegistryPersonIdentity
+                from app.repos.registration_repo import is_person_active
+                requester = await RequesterIdentityResolver(session).resolve_person_for_web_user(str(getattr(ticket, "requester_id", "") or ""))
+                metadata = requester.metadata_json if requester is not None and isinstance(requester.metadata_json, dict) else {}
+                manager_id = metadata.get("manager_person_id") or metadata.get("manager_id") or metadata.get("reports_to_person_id")
+                manager = await session.get(RegistryPerson, manager_id) if isinstance(manager_id, str) and manager_id else None
+                if is_person_active(manager):
+                    identities = (await session.scalars(select(RegistryPersonIdentity.normalized_identifier).where(
+                        RegistryPersonIdentity.person_id == manager.person_id,
+                        RegistryPersonIdentity.provider == "ui_login", RegistryPersonIdentity.verified.is_(True),
+                    ).order_by(RegistryPersonIdentity.normalized_identifier))).all()
+                    # Multiple actor identities require an explicit source;
+                    # arbitrary ordering must never choose an approver.
+                    if len(identities) == 1:
+                        from app.repos.ui_users_repo import UiUsersRepo, normalize_user_login
+                        from app.repos.ticket_events_repo import TicketEventsRepo
+                        from access_control.service import can
+                        from auth.context import AuthContext, AuthType
+                        from tickets.handlers import can_read_ui_ticket
+                        user = await UiUsersRepo(session).get_by_login(identities[0])
+                        if user is not None and user.is_active and user.actor_role in {"admin", "support", "auditor"}:
+                            actor = AuthContext(actor_id=normalize_user_login(user.user_login), actor_role=user.actor_role, auth_type=AuthType.UI_TOKEN)
+                            if await can(session, actor, "ticket.status.change") and await can_read_ui_ticket(TicketEventsRepo(session), ticket, actor):
+                                values = [actor.actor_id]
         return source_type, values
     if source_type == "service_owner":
         request_template = _request_template_context(ticket)

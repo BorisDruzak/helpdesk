@@ -12,7 +12,7 @@ export type ScenarioCategory = {
 };
 export type CategoryInput = Omit<ScenarioCategory, "id" | "effective_visibility" | "revision"> & { revision?: number | null };
 export type ScenarioItem = {
-  schema_version?:1|2;
+  schema_version?:1|2|3;
   id: string; scenario_key: string; service_code: string; offering_full_code: string;
   category_id: string | null; title: string; description: string; archived: boolean; enabled: boolean;
   published_version_id: string | null; status?: ScenarioStatus; revision?: number;
@@ -33,14 +33,25 @@ export type ScenarioCatalog = {
 export type OfferingCard = { offering: AdminServiceCatalogOffering; scenarios: ScenarioItem[];
   active_mode: "form" | "scenario"; requester_available?: boolean; active_scenario_id?: string | null; category_ids: string[] };
 export type SimulationState = { current_block_id: string; revision: number; state: string; answers: Record<string, unknown>; history: string[]; results: Record<string, unknown> };
+export type ScenarioConditionEvaluation = { op: string; matched: boolean; source?: string; field?: string; value?: unknown; actual?: unknown; present?: boolean; children?: ScenarioConditionEvaluation[] };
+type ProcessingSource = { kind: "default" | "transition"; block_id?: string; transition_index?: number };
+export type ScenarioMapProcessingResult = {
+  assignment_mode: "last_matching_branch";
+  route: { key: string; title: string; queue_code: string; source: ProcessingSource };
+  sla_profile: { key: string; title: string; first_response_minutes: number; resolution_minutes: number; time_basis: "calendar" | "business"; calendar_id?: number | null; source: ProcessingSource };
+  approval_required?: boolean;
+  trace: { block_id: string; transition_index: number; to: string; matched: boolean; assignments: { route?: string; sla_profile?: string; approval_required?: boolean } }[];
+  condition_trace?: { block_id: string; transition_index: number; to: string; selected: boolean; condition_evaluation: ScenarioConditionEvaluation }[];
+};
 export type ScenarioSimulation = { revision: number; current_block: ScenarioBlock; state: SimulationState;
+  map_processing?: ScenarioMapProcessingResult;
   processing_error?: { code: "PROCESSING_INPUT_INVALID" } | null;
   simulation_scope?: { limited_scope: boolean; excluded_block_ids: string[]; issues: { code: string; path: string; message: string }[] };
   current_step?: { id: string; kind: string; title: string; fields?: (RequestFormField & { value?: unknown; allow_unknown?: boolean; group?: string | null; group_title?: string | null })[]; layout?: "single" | "group" | "section";
     has_dynamic_fields?: boolean; content?: { body: string }; acknowledgment_required?: boolean; can_request_ticket?: boolean; message?: string;
     answers?: { key: string; label: string; display_value: string }[] };
   processing?: { priority: { priority_class: string; reason?: string | null }; routing: { queue_title?: string | null; queue_code?: string; queue_id?: number };
-    sla: { first_response_min?: number; resolution_min?: number }; ola?: { policy_code?: string | null; ack_min?: number; processing_min?: number };
+    sla: { first_response_min?: number; resolution_min?: number; first_response_due_preview?: string | null; resolution_due_preview?: string | null }; map_processing?: ScenarioMapProcessingResult; ola?: { policy_code?: string | null; ack_min?: number; processing_min?: number };
     approval: { required: boolean }; closure?: { requires_public_summary: boolean; requires_resolution_code: boolean };
     validated_facts?: Record<string, unknown>; notification?: { would_send: false; recipient_groups: string[]; channels: { channel: string; enabled: boolean; available: boolean }[] };
     would_create_ticket: false } | null;

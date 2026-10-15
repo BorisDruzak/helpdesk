@@ -1745,7 +1745,7 @@ async def preview_requester_ticket_in_session(request, data, session, *, scenari
         else {}
     )
     preview_payload["custom_fields"] = {**client_custom_fields, **context_custom_fields}
-    preview_payload["requester_context"] = requester_context
+    preview_payload["requester_context"] = {**requester_context, "requester_id": auth_context.actor_id}
     if isinstance(requester_context.get("device"), dict):
         preview_payload["device_metadata"] = dict(requester_context["device"])
     ticket_context_preview = await _build_requester_ticket_context_preview(
@@ -1806,6 +1806,8 @@ async def preview_requester_ticket_in_session(request, data, session, *, scenari
     try:
         preview = await build_requester_service_catalog_preview(session, preview_payload, scenario_snapshot=scenario_snapshot)
     except ServiceCatalogPreviewError as exc:
+        if scenario_snapshot is not None and exc.processing_unavailable:
+            return _error("Обработка обращения временно недоступна.", status=409, error_code="PROCESSING_UNAVAILABLE")
         return _validation_error(exc.details)
     except ValueError as exc:
         return _validation_error({"preview": str(exc)})
@@ -2069,6 +2071,8 @@ async def create_requester_ticket_in_session(request, data, session, *, request_
                 validated_submission = await apply_scenario_policy_refs(session, validated_submission, scenario_snapshot.get("policy_refs"))
                 from tickets.request_scenario_processing import apply_scenario_processing_facts
                 validated_submission = apply_scenario_processing_facts(validated_submission, scenario_snapshot.get("processing_facts"))
+                from tickets.request_scenario_processing import apply_scenario_map_processing
+                validated_submission = await apply_scenario_map_processing(session, validated_submission, scenario_snapshot.get("map_processing"))
             extra_custom_fields.update(build_form_custom_fields(validated_submission))
             catalog_process_fields = (
                 validated_submission.get("catalog_fields")
@@ -2098,6 +2102,9 @@ async def create_requester_ticket_in_session(request, data, session, *, request_
                     fallback=_priority_policy_fallback(data),
                 )
         except ValueError as exc:
+            from tickets.request_scenario_processing import ScenarioProcessingUnavailable
+            if scenario_snapshot is not None and isinstance(exc, ScenarioProcessingUnavailable):
+                return _error("Обработка обращения временно недоступна.", status=409, error_code="PROCESSING_UNAVAILABLE")
             details = exc.args[0] if exc.args else "invalid form payload"
             return _validation_error({"form_payload": details})
     policy = template_context.get("on_behalf_policy") if isinstance(template_context.get("on_behalf_policy"), dict) else {}

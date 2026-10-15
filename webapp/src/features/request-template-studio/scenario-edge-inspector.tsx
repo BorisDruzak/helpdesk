@@ -3,11 +3,12 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import type { ScenarioBlock, ScenarioDraftDefinition } from "./scenario-contract";
-import { conditionFields } from "./scenario-builder-model";
+import { conditionFields, conditionFieldAvailability } from "./scenario-builder-model";
 import { ScenarioConditionEditor } from "./scenario-condition-editor";
 import { insertOnTransition, mapPalette, replaceTransitions } from "./scenario-map-model";
 
 import { ProcessingFactsEditor } from "./scenario-processing-facts";
+import { ScenarioBranchProcessingEditor } from "./scenario-branch-processing";
 
 export function ScenarioEdgeInspector({ definition, source, index, disabled, onChange }: { definition: ScenarioDraftDefinition; source: string; index: number; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void }) {
   const [kind, setKind] = useState<ScenarioBlock["kind"]>("instruction");
@@ -16,6 +17,7 @@ export function ScenarioEdgeInspector({ definition, source, index, disabled, onC
   const edge = block?.transitions?.[index];
   if (!block || !edge) return <p>Переход больше не существует. Выберите другой элемент.</p>;
   const edges = block.transitions!;
+  const maybeMissing = conditionFieldAvailability(definition, source).filter(item => item.mayBeMissing);
   const results = ({ resolution_check: ["yes", "no", "unknown"], instruction: ["acknowledged", "request_ticket"], diagnostic: ["unavailable", "denied", "timeout", "capability_absent"] } as Partial<Record<ScenarioBlock["kind"], string[]>>)[block.kind] ?? [];
   function perform(action: () => ScenarioDraftDefinition) { try { onChange(action()); setError(""); } catch (failure) { setError(failure instanceof Error ? failure.message : "Изменение не выполнено"); } }
   const update = (patch: Partial<typeof edge>) => perform(() => replaceTransitions(definition, source, edges.map((old, i) => i === index ? { ...old, ...patch } : old)));
@@ -24,7 +26,9 @@ export function ScenarioEdgeInspector({ definition, source, index, disabled, onC
     {error && <p role="alert">{error}</p>}
     <label className="block">Следующий блок<Select autoFocus value={edge.to} onChange={event => update({ to: event.target.value })}><option value="" disabled>Выберите блок</option>{definition.blocks?.filter(item => item.id !== source).map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
     <ScenarioConditionEditor label="Условие перехода" value={edge.when} fields={conditionFields(definition, source)} resultValues={results} disabled={disabled} onChange={when => update({ when })} />
-    {definition.schema_version === 2 && <details><summary>Влияние ветки на обработку</summary><ProcessingFactsEditor value={edge.processing_facts} disabled={disabled} onChange={processing_facts=>update({processing_facts})}/></details>}
+    {!!maybeMissing.length && <p role="status" className="text-sm text-amber-800">При специализированном входе или скрытом вопросе могут отсутствовать ответы: {maybeMissing.map(item => item.field.label).join(", ")}. Проверяйте «Ответ задан»; отсутствие ответа не означает «Нет». Настройте резервный маршрут.</p>}
+    <ScenarioBranchProcessingEditor definition={definition} value={edge.processing} disabled={disabled} onChange={processing => update({ processing })} />
+    {(definition.schema_version ?? 1) >= 2 && <details><summary>Влияние ветки на приоритет</summary><ProcessingFactsEditor value={edge.processing_facts} disabled={disabled} onChange={processing_facts=>update({processing_facts})}/></details>}
     <details><summary>Расширенные условия</summary><label className="block">Приоритет сопоставления<Input type="number" min={1} max={10000} value={edge.priority ?? ""} onChange={event => update({ priority: event.target.value ? Number(event.target.value) : null })} /></label></details>
     {!edge.when && <p className="text-sm text-slate-500">Резервный маршрут. Он должен идти после условных переходов.</p>}
     <Button variant="secondary" onClick={() => perform(() => replaceTransitions(definition, source, [...edges.filter((_, i) => i !== index), edge]))}>Переместить переход в конец</Button>

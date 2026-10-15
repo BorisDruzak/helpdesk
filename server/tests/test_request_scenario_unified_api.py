@@ -13,15 +13,16 @@ pytestmark = [pytest.mark.db_cleanup("full"), pytest.mark.light_app]
 
 
 @pytest.mark.asyncio
-async def test_direct_service_creation_is_atomic_idempotent_and_admin_only(test_client_light, test_engine):
+@pytest.mark.parametrize("schema_version", [2, 3])
+async def test_direct_service_creation_is_atomic_idempotent_and_admin_only(test_client_light, test_engine, schema_version):
     _, existing = await ready(test_engine)
-    source = {"schema_version": 2, "scenario_key": "new_" + uuid.uuid4().hex, "service_code": existing["service_code"],
+    source = {"schema_version": schema_version, "scenario_key": "new_" + uuid.uuid4().hex, "service_code": existing["service_code"],
         "title": "New service", "offering_full_code": "", "process_binding": {"request_template_key": ""}, "blocks": [], "entry_points": []}
     assert (await test_client_light.post(BASE + "/services", headers=AUDITOR, json={"definition": source})).status == 403
     created = await test_client_light.post(BASE + "/services", headers=ADMIN, json={"definition": source})
     assert created.status == 200, await created.text()
     value = (await created.json())["data"]
-    assert value["draft"]["definition"]["schema_version"] == 2
+    assert value["draft"]["definition"]["schema_version"] == schema_version
     assert value["draft"]["definition"]["publish_offering"] is True
     again = await test_client_light.post(BASE + "/services", headers=ADMIN, json={"definition": source})
     assert again.status == 200, await again.text()
@@ -83,6 +84,24 @@ async def test_document_round_trip_has_no_save_or_publish_side_effect(test_clien
     assert invalid.status == 400
     detail = (await (await test_client_light.get(url, headers=ADMIN)).json())["data"]
     assert detail["draft"]["revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_v3_import_checks_queue_references_without_saving(test_client_light, test_engine):
+    import yaml
+    identifier, definition = await ready(test_engine)
+    definition.update(schema_version=3, entry_points=[{"key": "main", "title": "Printer", "target_block_id": "questions"}],
+        processing={"sla_profiles": {"standard": {"title": "Standard", "first_response_minutes": 30, "resolution_minutes": 120}},
+                    "routes": {"support": {"title": "Support", "queue_code": "missing_" + uuid.uuid4().hex}},
+                    "defaults": {"route": "support", "sla_profile": "standard"}})
+    response = await test_client_light.post(BASE + "/documents/validate?scenario_id=" + identifier,
+        headers=ADMIN, json={"format": "yaml", "content": yaml.safe_dump(definition)})
+    assert response.status == 200, await response.text()
+    issues = (await response.json())["data"]["issues"]
+    assert any(item["code"] == "processing_queue_unavailable" and item["path"] == "processing.routes.support.queue_code" for item in issues)
+    detail = (await (await test_client_light.get(BASE + "/scenarios/" + identifier, headers=ADMIN)).json())["data"]
+    assert detail["draft"]["revision"] == 1
+    assert detail["scenario"]["published_version_id"] is not None
 
 
 @pytest.mark.asyncio

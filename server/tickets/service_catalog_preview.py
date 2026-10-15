@@ -17,9 +17,10 @@ from tickets.service_catalog_runtime import ServiceCatalogResolutionError, Servi
 
 
 class ServiceCatalogPreviewError(ValueError):
-    def __init__(self, details: dict[str, Any]):
+    def __init__(self, details: dict[str, Any], *, processing_unavailable=False):
         super().__init__("invalid service catalog preview")
         self.details = details
+        self.processing_unavailable = processing_unavailable
 
 
 def _minutes_label(minutes: Any) -> str | None:
@@ -95,9 +96,12 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
             validated = await apply_scenario_policy_refs(session, validated, scenario_snapshot.get("policy_refs"))
             from tickets.request_scenario_processing import apply_scenario_processing_facts
             validated = apply_scenario_processing_facts(validated, scenario_snapshot.get("processing_facts"))
+            from tickets.request_scenario_processing import apply_scenario_map_processing
+            validated = await apply_scenario_map_processing(session, validated, scenario_snapshot.get("map_processing"))
     except ValueError as exc:
+        from tickets.request_scenario_processing import ScenarioProcessingUnavailable
         details = exc.args[0] if exc.args else "invalid form payload"
-        raise ServiceCatalogPreviewError({"form_payload": details}) from exc
+        raise ServiceCatalogPreviewError({"form_payload": details}, processing_unavailable=isinstance(exc, ScenarioProcessingUnavailable)) from exc
 
     simulate_payload = {
         "service_code": selection.service.get("code") if selection.service else None,
@@ -113,6 +117,8 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
         "diagnostic_consent": deepcopy(payload.get("diagnostic_consent") if isinstance(payload.get("diagnostic_consent"), dict) else {}),
     }
     simulation = await PolicyHealthService(session).simulate(simulate_payload, validated_submission=validated)
+    if scenario_snapshot and scenario_snapshot.get("map_processing") is not None:
+        simulation["map_processing"] = deepcopy(scenario_snapshot["map_processing"])
     return selection, simulation
 
 
@@ -140,6 +146,8 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
         blockers.append("Не удалось определить маршрут обращения.")
     if scenario_snapshot is not None and not await lock_active_scenario_queue(session, routing.get("queue_id")):
         blockers.append("Маршрут обращения недоступен. Обратитесь в поддержку.")
+    if scenario_snapshot is not None and approval.get("required") and not approval.get("approvers"):
+        blockers.append("Не удалось определить согласующего. Обратитесь в поддержку.")
 
     first_response = _minutes_label(sla.get("first_response_min"))
     resolution = _minutes_label(sla.get("resolution_min"))

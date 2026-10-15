@@ -75,7 +75,7 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:8
   await page.getByRole("button",{name:"Сохранить черновик",exact:true}).click();
   await expect(page.getByText("Черновик сохранён. Ревизия 1.")).toBeVisible();
   expect(await page.locator(".react-flow__viewport").getAttribute("style")).toBe(viewportBefore);
-  const draft=state.draft();expect(draft.schema_version).toBe(2);expect(draft.blocks).toHaveLength(2);
+  const draft=state.draft();expect(draft.schema_version).toBe(3);expect(draft.blocks).toHaveLength(2);
   expect(draft.entry_points).toMatchObject([{title:"Запросить доступ",target_block_id:question,category_id:draft.category_id}]);
   expect(draft.blocks[0].transitions).toEqual([{to:result}]);expect(draft.blocks[0].fields[0]).toMatchObject({label:"К какой системе нужен доступ?",required:true,type:"text"});
   const writes=state.writes.length;

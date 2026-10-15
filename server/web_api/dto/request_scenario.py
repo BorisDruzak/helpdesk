@@ -93,11 +93,49 @@ class AnswerEffect(StrictModel):
     facts: ProcessingFacts
 
 
+class ScenarioBranchProcessing(StrictModel):
+    route: Key | None = None
+    sla_profile: Key | None = None
+    approval_required: StrictBool | None = None
+
+
+class ScenarioSlaProfile(StrictModel):
+    title: Annotated[str, Field(min_length=1, max_length=300)]
+    first_response_minutes: int = Field(ge=0, le=525600)
+    resolution_minutes: int = Field(ge=0, le=525600)
+    time_basis: Literal["calendar", "business"] = "calendar"
+    calendar_id: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_calendar(self):
+        if self.time_basis == "calendar" and self.calendar_id is not None:
+            raise ValueError("calendar time must not select a business calendar")
+        return self
+
+
+class ScenarioRoute(StrictModel):
+    title: Annotated[str, Field(min_length=1, max_length=300)]
+    queue_code: Annotated[str, Field(max_length=100)]
+
+
+class ScenarioProcessingDefaults(StrictModel):
+    route: Key | Literal[""]
+    sla_profile: Key | Literal[""]
+
+
+class ScenarioProcessing(StrictModel):
+    sla_profiles: Annotated[dict[Key, ScenarioSlaProfile], Field(max_length=64)] = Field(default_factory=dict)
+    routes: Annotated[dict[Key, ScenarioRoute], Field(max_length=64)] = Field(default_factory=dict)
+    defaults: ScenarioProcessingDefaults
+    assignment_mode: Literal["last_matching_branch"] = "last_matching_branch"
+
+
 class Transition(StrictModel):
     to: Key
     when: Condition | None = None
     priority: int | None = Field(default=None, ge=1, le=10000)
     processing_facts: ProcessingFacts | None = None
+    processing: ScenarioBranchProcessing | None = None
 
 
 class FieldOption(StrictModel):
@@ -237,7 +275,7 @@ class ScenarioEditorLayout(StrictModel):
 
 
 class ScenarioDraftDefinition(StrictModel):
-    schema_version: Literal[1, 2] = 1
+    schema_version: Literal[1, 2, 3] = 1
     scenario_key: Key
     service_code: CatalogCode
     offering_full_code: Annotated[str, Field(max_length=220, pattern=r"^[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9_-]*$")]
@@ -249,6 +287,7 @@ class ScenarioDraftDefinition(StrictModel):
     editor_layout: ScenarioEditorLayout = Field(default_factory=ScenarioEditorLayout)
     blocks: Annotated[list[Block], Field(max_length=256)] = Field(default_factory=list)
     process_binding: ProcessBinding
+    processing: ScenarioProcessing | None = None
     publish_offering: StrictBool = False
 
     @model_validator(mode="before")
@@ -262,6 +301,10 @@ class ScenarioDraftDefinition(StrictModel):
             raise ValueError("offering must belong to the selected service")
         if type(self.schema_version) is not int:
             raise ValueError("schema_version must be an integer")
+        if self.schema_version < 3 and (self.processing is not None or any(
+            edge.processing is not None for block in self.blocks for edge in block.transitions
+        )):
+            raise ValueError("map-owned processing requires schema_version 3")
         if self.schema_version == 1 and any(
             edge.processing_facts is not None or any(field.process_mapping.effects for field in getattr(block, "fields", ()))
             for block in self.blocks for edge in (block.transitions or [Transition(to=block.id)])

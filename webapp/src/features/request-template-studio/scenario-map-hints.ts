@@ -14,8 +14,8 @@ export function scenarioMapHints(definition: ScenarioDraftDefinition): MapHint[]
   const hints: MapHint[] = [], blocks = definition.blocks ?? [], ids = new Set(blocks.map(block => block.id));
   const add = (code: string, text: string, blockId?: string) => hints.push({ code, text, blockId, level: "required" });
   const result = blocks.find(block => block.kind === "submit_ticket");
-  if (definition.schema_version !== 2 && !definition.offering_full_code) add("offering", "Выберите тип обращения, чтобы сохранить черновик.", result?.id);
-  else if (definition.schema_version !== 2 && !definition.process_binding.request_template_key) add("template", "Для обращения не выбран шаблон заявки.", result?.id);
+  if ((definition.schema_version ?? 1) < 2 && !definition.offering_full_code) add("offering", "Выберите тип обращения, чтобы сохранить черновик.", result?.id);
+  else if ((definition.schema_version ?? 1) < 2 && !definition.process_binding.request_template_key) add("template", "Для обращения не выбран шаблон заявки.", result?.id);
   if (!definition.title.trim()) add("title", "Укажите название в настройках карты.");
   if (!blocks.length) hints.push({ code: "blocks", text: "Добавьте первый шаг: вопрос или инструкцию.", target: "blocks", level: "required" });
   else {

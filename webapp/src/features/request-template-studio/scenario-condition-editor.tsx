@@ -50,6 +50,7 @@ export function ScenarioConditionEditor({ label, value, fields, resultValues = [
         <label className="min-w-0 flex-1">Правило<Select value={value.op} onChange={event => operator(event.target.value as ScenarioCondition["op"])}>{Object.entries(operators).map(([op, title]) => <option key={op} value={op} disabled={!operatorAllowed(op)}>{title}</option>)}</Select></label>
         <Button variant="ghost" onClick={() => onChange(null)}>Убрать условие</Button>
       </div>
+      {depth < 8 && <div className="flex flex-wrap gap-1"><Button variant="ghost" onClick={() => onChange({ op: "and", conditions: [value, seed()] })}>Добавить группу И</Button><Button variant="ghost" onClick={() => onChange({ op: "or", conditions: [value, seed()] })}>Добавить группу ИЛИ</Button><Button variant="ghost" onClick={() => onChange({ op: "not", condition: value })}>Добавить отрицание</Button></div>}
       {depth >= 8 ? <p role="alert">Глубокое условие сохранено. Упростите его перед редактированием.</p> : value.op === "and" || value.op === "or" ? <>
         {value.conditions.map((item, index) => <ScenarioConditionEditor key={index} label={`Условие ${index + 1}`} value={item} fields={fields} resultValues={resultValues} disabled={disabled} depth={depth + 1} onChange={next => {
           const conditions = value.conditions.flatMap((old, i) => i === index ? next ? [next] : [] : [old]);

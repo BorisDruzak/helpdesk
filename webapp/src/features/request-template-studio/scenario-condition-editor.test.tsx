@@ -75,3 +75,18 @@ it("keeps invalid numeric membership explicit instead of serializing infinity as
   expect(input).toHaveValue("1e999");
   expect(screen.getByRole("alert")).toHaveTextContent("Введите конечные числа");
 });
+it("builds nested ALL/ANY/NOT rules over three previous questions using visible labels", () => {
+  render(<ConditionHarness fields={[{ key: "issue", type: "text", label: "Что не работает?" }, { key: "scale", type: "text", label: "Сколько сотрудников?" }, { key: "work", type: "text", label: "Можно продолжать работу?" }]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Добавить условие" }));
+  fireEvent.click(screen.getByRole("button", { name: "Добавить группу И" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ещё условие" }));
+  const sources = screen.getAllByLabelText("Источник");
+  expect(sources).toHaveLength(3);
+  fireEvent.change(sources[1], { target: { value: "scale" } });
+  fireEvent.change(sources[2], { target: { value: "work" } });
+  expect(sources.map(source => (source as HTMLSelectElement).value)).toEqual(["issue", "scale", "work"]);
+  fireEvent.click(screen.getAllByRole("button", { name: "Добавить группу ИЛИ" })[1]);
+  expect(screen.getAllByLabelText("Правило").some(select => (select as HTMLSelectElement).value === "or")).toBe(true);
+  fireEvent.click(screen.getAllByRole("button", { name: "Добавить отрицание" })[1]);
+  expect(screen.getAllByLabelText("Правило").some(select => (select as HTMLSelectElement).value === "not")).toBe(true);
+});

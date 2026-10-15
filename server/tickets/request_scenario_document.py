@@ -64,6 +64,20 @@ def document_issues(definition):
         return [ScenarioIssue("incomplete_graph", "blocks", "Добавьте входы, вопросы и завершение маршрута.")]
 
 
+async def document_reference_issues(session, definition):
+    """Read-only import checks share the publication reference validator."""
+    if definition.schema_version != 3 or definition.processing is None:
+        return []
+    from sqlalchemy import select
+    from app.db.models import TicketQueue, TicketBusinessCalendar
+    from tickets.request_scenario_processing import validate_map_processing_references
+    queues = [{"code": row.code, "is_active": row.is_active}
+              for row in await session.scalars(select(TicketQueue))]
+    calendars = [{key: getattr(row, key) for key in ("id", "is_active", "timezone", "weekly_hours_json", "holidays_json")}
+                 for row in await session.scalars(select(TicketBusinessCalendar))]
+    return validate_map_processing_references(definition, queues, calendars)
+
+
 def export_scenario_document(definition, format):
     raw = ScenarioDraftDefinition.model_validate(definition.model_dump(mode="json") if hasattr(definition, "model_dump") else definition).model_dump(mode="json")
     if format == "json":

@@ -1,3 +1,26 @@
+# 2026-10-15 Guided Request Studio schema v3
+
+Goal: map-owned SLA profiles/directions, composite branch authoring and explainable
+canonical processing, complete JSON/YAML v3 interchange, public catalog search.
+Scope: one codex/guided-request-schema-v3 branch from e5080f5, isolated staging,
+draft PR. Production, existing SLA/queue changes and real-service publication excluded.
+Constraints: historical maps/sessions unchanged, no parallel policy/SLA runtime,
+no client authority, preserve unrelated untracked files and user browser drafts.
+Decisions: explicit defaults; selected branches assign processing in traversal order,
+last explicit assignment wins with provenance; priority uses existing typed facts.
+Current State: implementation and independent risk review corrections complete;
+map processing, canonical manager approvals, Studio and search share current contracts.
+Next Steps: freeze/publish this candidate as a draft PR, run mandatory CI, then install
+the exact verified candidate on isolated staging and collect browser acceptance.
+Verification: RED/GREEN contract/runtime/search/authoring checks; backend noDB310,
+frontend805, fresh build and browser7 passed. Disposable PostgreSQL unified/ACL7,
+runtime/approval/policyhealth22 and migration150 operation1 passed. Workspace/diff and
+machine-schema drift checks passed. Runtime manager case actually approves through
+the existing support endpoint; invalid/ineligible managers use explicit fallback or block.
+Handoff: spec/plan docs/superpowers dated2026-10-15; runtime/Studio/search ownership
+separate. Exact-SHA CI/installer/browser receipts belong to the candidate evidence;
+no production operation or real-service publication is authorized.
+
 # 2026-10-14 Requester form regression
 
 Actor: requester and admin using their own requester workspace. Primary job:

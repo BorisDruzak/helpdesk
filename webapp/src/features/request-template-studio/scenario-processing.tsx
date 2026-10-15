@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import type { ScenarioDraftDefinition, ScenarioPolicyKind } from "./scenario-contract";
 import { ScenarioPolicyEditor, type EditableScenarioPolicy } from "./scenario-policy-editor";
+import { ScenarioMapProcessing } from "./scenario-map-processing";
 
 const labels: Record<ScenarioPolicyKind, string> = { priority: "Приоритет по ответам", routing: "Маршрут и очередь", sla: "Сроки обслуживания", ola: "Внутренние сроки поддержки", approval: "Согласование", notification: "Уведомления", closure: "Закрытие обращения", visibility: "Видимость обращения" };
 const descriptions: Record<ScenarioPolicyKind, string> = {
@@ -32,11 +33,11 @@ export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy
   }, [attempt]);
   return <div className="min-w-0 space-y-4">
     <h2 className="text-lg font-semibold">Обработка услуги</h2>
-    <p className="text-sm">Эти правила действуют для обращений, созданных через эту услугу. Выбирайте готовое опубликованное правило, только если нужно изменить действующую обработку.</p>
-    <p className="text-sm text-slate-500">«Использовать действующие правила» сохраняет серверное наследование. Оно не создаёт недостающие правила: их наличие проверяется перед публикацией.</p>
+    {definition.schema_version === 3 ? <ScenarioMapProcessing definition={definition} disabled={disabled} onChange={onChange} /> : <><p className="text-sm">Эти правила действуют для обращений, созданных через эту услугу. Выбирайте готовое опубликованное правило, только если нужно изменить действующую обработку.</p>
+    <p className="text-sm text-slate-500">«Использовать действующие правила» сохраняет серверное наследование. Оно не создаёт недостающие правила: их наличие проверяется перед публикацией.</p></>}
     {focusPolicy && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Проверьте настройку «{labels[focusPolicy]}» ниже: выберите готовое правило или создайте новое, затем сохраните черновик. Затем повторите проверку публикации.</p>}
     {error ? <div role="alert"><p>Не удалось загрузить политики обработки.</p><Button variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку политик</Button></div> : !policies ? <p role="status">Загрузка политик обработки…</p> : <div className="grid min-w-0 gap-4">
-      {(Object.keys(labels) as ScenarioPolicyKind[]).sort((a, b) => Number(b === focusPolicy) - Number(a === focusPolicy)).map(kind => {
+      {(Object.keys(labels) as ScenarioPolicyKind[]).filter(kind => definition.schema_version !== 3 || !["routing", "sla"].includes(kind)).sort((a, b) => Number(b === focusPolicy) - Number(a === focusPolicy)).map(kind => {
         const choices = (policies[kind] || []).filter((item, index, items) => item.is_active && !!item.published_at && items.findIndex(other => other.code === item.code && other.is_active && !!other.published_at) === index);
         const code = definition.process_binding.policy_refs?.[kind] || "";
         return <div key={kind} className={`min-w-0 rounded border p-3 ${kind === focusPolicy ? "border-amber-400 bg-amber-50" : ""}`}>

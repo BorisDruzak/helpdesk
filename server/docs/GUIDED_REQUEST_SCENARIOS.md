@@ -4,7 +4,7 @@ The existing Service Catalog service/offering, RequestTemplate/FormSchema and
 policy runtime remain authoritative. Categories are navigation over that catalog.
 Scenario execution and publication are separate from saving a draft.
 
-## Contracts (schema version 1)
+## Contracts (schema versions 1, 2 and 3)
 
 Studio v3 extends schema 1 additively. `entry_points` holds up to 64 stable
 catalog items (`key`, title/description, optional category, up to 20 search
@@ -12,7 +12,23 @@ synonyms, visibility/enabled, `target_block_id`, `reported_symptom`). The legacy
 `entry_block_id` remains the default. `editor_layout.positions` stores up to
 257 bounded finite `{x,y}` coordinates independently of executable transitions.
 Graph and entrances publish together in the existing immutable definition JSONB;
-no new migration is required (current source Alembic head 148).
+Entrances required no new migration. Migration149 added version2; migration150
+adds version3 without rewriting stored rows or changing historical session pins.
+
+Version3 introduces bounded map-owned `processing` dictionaries (up to64 profiles
+and directions), explicit `defaults.route/sla_profile`, and the declared
+`last_matching_branch` assignment mode. Each SLA profile has positive integer
+`first_response_minutes`/`resolution_minutes` up to525600, calendar/business time
+and a business calendar reference when applicable. Directions reference active
+queue codes; transition `processing` may choose direction/profile and an optional
+`approval_required` boolean. Requester answer DTOs carry none of these authorities.
+Composite conditions keep the canonical evaluator, explicit overlap priorities and
+fallback. Processing follows revalidated retained history, records source/replacements
+and adapts to TicketRoutingService/TicketSlaService and canonical approvals in both
+simulation and actual create. All configured queue/calendar references are checked
+before publication, including unused ones; immutable snapshots retain the settings.
+Priority remains an independent existing server policy. V1/v2 registries stay active.
+See [the administrator guide](../../docs/UNIFIED_SERVICE_SCENARIOS.md) and its v3 YAML example.
 
 Session start and admin simulation accept optional `entry_point_key`, never a
 caller-supplied target/version. The server resolves requester entrances only from

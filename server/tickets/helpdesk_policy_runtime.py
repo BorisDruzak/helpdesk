@@ -91,8 +91,18 @@ async def resolve_effective_ticket_policy(
 
     request_template = _request_template_context_from_ticket(ticket)
     policy = _snapshot_policy_from_ticket(ticket, kind, snapshot_fields=snapshot_fields)
-    if not isinstance(session, AsyncSession):
+    # This marker exists only in trusted scenario composition. Map-owned SLA
+    # and routing are immutable ticket inputs; approval keeps its canonical
+    # approver source while the traversed branch selects whether it is required.
+    scenario = request_template.get("scenario_processing")
+    if isinstance(scenario, dict) and kind in {"routing", "sla"}:
         return policy
+    def branch_approval(config):
+        if kind == "approval" and isinstance(scenario, dict) and "approval_required" in scenario:
+            config = {**config, "required": scenario["approval_required"]}
+        return config
+    if not isinstance(session, AsyncSession):
+        return branch_approval(policy)
 
     template_code = str(
         request_template.get("key")
@@ -121,8 +131,8 @@ async def resolve_effective_ticket_policy(
         )
         config = effective.get("config") if isinstance(effective, dict) else {}
         if isinstance(config, dict) and config:
-            return config
-        return policy
+            return branch_approval(config)
+        return branch_approval(policy)
 
     effective = await HelpdeskPolicyRepo(session).resolve_effective_policy(
         kind=kind,
@@ -133,7 +143,7 @@ async def resolve_effective_ticket_policy(
     config = effective.get("config") if isinstance(effective, dict) else {}
     if isinstance(config, dict) and config:
         policy = _deep_merge(policy, config)
-    return policy
+    return branch_approval(policy)
 
 
 async def apply_effective_registry_policies(
@@ -239,6 +249,19 @@ async def apply_effective_registry_policies(
         template_context["effective_policy_snapshots"] = snapshots
     if refs:
         template_context["policy_refs"] = refs
+
+    pinned = validated_submission.get("template_context") or {}
+    scenario = pinned.get("scenario_processing")
+    if isinstance(scenario, dict):
+        for kind in ("routing", "sla"):
+            template_context[kind + "_policy"] = deepcopy(pinned[kind + "_policy"])
+            template_context.pop(kind + "_policy_code", None)
+            for field in ("policy_refs", "effective_policy_sources", "effective_policy_snapshots"):
+                if isinstance(template_context.get(field), dict):
+                    template_context[field].pop(kind, None)
+        template_context.pop("sla_policy_id", None)
+        if "approval_required" in scenario:
+            template_context.setdefault("approval_policy", {})["required"] = scenario["approval_required"]
 
     result = deepcopy(validated_submission)
     result["template_context"] = template_context

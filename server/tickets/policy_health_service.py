@@ -12,7 +12,7 @@ from app.repos import TicketEventsRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
-from tickets.approval_policy import _approval_mode, _resolve_approval_source
+from tickets.approval_policy import _approval_mode, _resolve_approvers
 from tickets.diagnostic_policy import collect_diagnostic_policy_auto_run_triggers
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies, resolve_effective_ticket_policy
 from tickets.ola_service import _targets_from_ola_policy, get_ola_targets_for_queue
@@ -387,8 +387,7 @@ class PolicyHealthService:
             )
 
         approval_policy = await resolve_effective_ticket_policy(self.session, ticket, "approval")
-        approval_source = approval_policy.get("approver_source") or approval_policy.get("approvers") or {}
-        source_type, approvers = await _resolve_approval_source(self.session, ticket, approval_source)
+        source_type, approvers = await _resolve_approvers(self.session, ticket, approval_policy)
         approval_payload = {
             "policy_code": _policy_code(approval_policy, template_context, "approval"),
             "required": bool(approval_policy.get("required")),

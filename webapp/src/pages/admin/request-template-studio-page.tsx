@@ -61,7 +61,7 @@ function StudioWorkspace() {
     if (!data) return;
     const folder = data.categories.find(item=>item.id===category);
     const code = folder?.service_code ?? (category?.startsWith("service:") ? category.slice(8) : data.services.find(item=>item.lifecycle_status==="published"&&item.visibility==="public")?.code ?? "");
-    editor.create({...createScenarioStarter("Новая услуга","empty",code,folder?.id??null),schema_version:2},false);
+    editor.create(createScenarioStarter("Новая услуга","empty",code,folder?.id??null),false);
     setExplorerTab("blocks");
   }
   async function createForOffering(item:AdminServiceCatalogOffering) {

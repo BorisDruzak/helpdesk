@@ -43,10 +43,25 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     });
     await page.route("**/api/registry/options", route => route.fulfill({ json: { status: "success", data: { departments: [], locations: [] } } }));
     await page.route("**/public_api/ticket_forms/current**", route => route.fulfill({ json: { status: "ok", pack: { key: "request_forms", version: "test", forms: [{ key: "printer", title: "Не печатает", fields: [{ key: "legacy", label: "Старое поле", type: "text" }], availability_policy: { available_without_agent_binding: true } }] } } }));
-    await page.route("**/api/service-catalog/current", route => route.fulfill({ json: { status: "ok", catalog_version: "test", services: [{ service_code: "workplace", title: "Рабочее место", offerings: [{ offering_code: "printer", full_code: "workplace.printer", title: "Не печатает", request_template_key: "printer", guided_scenario_enabled: true, ...(mode === "ticket" ? { catalog_items: [{ key: "paper", title: "Бумага застряла", description: "Помощь с бумагой", synonyms: ["замятие"], entry_point_key: "paper", scenario_key: "printer", version_id: "v1", target_block_id: "questions" }] } : {}) }] }] } }));
-    await page.goto(mode === "escape-ticket" ? "/app/requester/new/?offering=workplace.printer" : mode === "ticket" ? "/app/requester/new?offering=workplace.printer" : "/app/requester/new");
+    await page.route("**/api/service-catalog/current*", route => {
+      if (new URL(route.request().url()).searchParams.has("q")) return route.fulfill({ json: { status: "ok", search: {
+        results: [{ title: "Бумага застряла", description: "Помощь с бумагой", category: "Оборудование", help_mode: "guided",
+          offering_full_code: "workplace.printer", entry_point_key: "paper", match_reason: "Совпало дополнительное поисковое выражение" }],
+        suggestions: [], corrected_query: null,
+      } } });
+      return route.fulfill({ json: { status: "ok", catalog_version: "test", services: [{ service_code: "workplace", title: "Рабочее место", offerings: [{ offering_code: "printer", full_code: "workplace.printer", title: "Не печатает", request_template_key: "printer", guided_scenario_enabled: true, ...(mode === "ticket" ? { catalog_items: [{ key: "paper", title: "Бумага застряла", description: "Помощь с бумагой", synonyms: ["замятие"], entry_point_key: "paper", scenario_key: "printer", version_id: "v1", target_block_id: "questions" }] } : {}) }] }] } });
+    });
+    await page.goto(mode === "escape-ticket" ? "/app/requester/new/?offering=workplace.printer" : "/app/requester/new");
     if (mode === "self-service") await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
-    if (mode === "ticket") { await page.getByLabel("Найти проблему", { exact: true }).fill("замятие"); await page.getByRole("button", { name: /Бумага застряла/ }).click(); }
+    if (mode === "ticket") {
+      await page.getByRole("searchbox", { name: "Найти проблему во всём каталоге" }).fill("замятие");
+      const result = page.getByRole("button", { name: /Бумага застряла/ });
+      await expect(result).toBeInViewport({ ratio: 1 });
+      await expect(page.getByText("Оборудование · Пошаговая помощь")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`${viewport.width}-catalog-search.png`) });
+      await result.click();
+    }
     await expect(page.getByRole("heading", { name: "Что происходит с принтером?" })).toBeVisible();
     await expect(page.getByText("Старое поле")).toHaveCount(0);
     await page.getByRole("textbox", { name: /Опишите проблему/ }).fill("Задание остаётся в очереди");

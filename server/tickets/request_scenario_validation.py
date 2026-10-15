@@ -29,6 +29,28 @@ def validate_scenario(definition):
     issues = []
     def add(code, path, message):
         issues.append(ScenarioIssue(code, path, message))
+    if definition.schema_version == 3:
+        config = definition.processing
+        if config is None:
+            add("processing_missing", "processing", "Настройте направления и сроки обработки карты.")
+        else:
+            for kind, choices in (("route", config.routes), ("sla_profile", config.sla_profiles)):
+                if getattr(config.defaults, kind) not in choices:
+                    add("processing_default_missing", f"processing.defaults.{kind}", "Выберите существующее значение по умолчанию.")
+                for block in definition.blocks:
+                    for index, edge in enumerate(block.transitions):
+                        value = getattr(edge.processing, kind, None)
+                        if value is not None and value not in choices:
+                            add("processing_reference_unknown", f"blocks.{block.id}.transitions.{index}.processing.{kind}", "Результат ветки ссылается на отсутствующую настройку карты.")
+            for key, profile in config.sla_profiles.items():
+                for duration in ("first_response_minutes", "resolution_minutes"):
+                    if getattr(profile, duration) < 1:
+                        add("processing_duration_missing", f"processing.sla_profiles.{key}.{duration}", "Укажите положительный срок в минутах.")
+                if profile.time_basis == "business" and profile.calendar_id is None:
+                    add("processing_calendar_missing", f"processing.sla_profiles.{key}.calendar_id", "Для рабочих сроков выберите рабочий календарь.")
+            for key, route in config.routes.items():
+                if not route.queue_code.strip():
+                    add("processing_queue_missing", f"processing.routes.{key}.queue_code", "Выберите действующую очередь.")
     blocks = {}
     fields = {}
     locations = {}

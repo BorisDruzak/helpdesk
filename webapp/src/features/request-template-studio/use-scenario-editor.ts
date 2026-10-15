@@ -8,7 +8,7 @@ function semanticJson(value: unknown): string {
   return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 }
-function blankScenario(): ScenarioDraftDefinition { return { schema_version: 1, scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: "Новый сценарий", description: "", service_code: "", offering_full_code: "", category_id: null, entry_block_id: null, blocks: [], process_binding: { request_template_key: "" } }; }
+function blankScenario(): ScenarioDraftDefinition { return { schema_version: 3, processing: { routes: {}, sla_profiles: {}, defaults: { route: "", sla_profile: "" }, assignment_mode: "last_matching_branch" }, scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: "Новый сценарий", description: "", service_code: "", offering_full_code: "", category_id: null, entry_block_id: null, blocks: [], process_binding: { request_template_key: "" } }; }
 export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
   const cache = useQueryClient();
   const [detail, setDetail] = useState<ScenarioDetail | null>(null);
@@ -68,7 +68,7 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
   function create(copy?: ScenarioDraftDefinition, asCopy = true) {
     requestSequence.current += 1; setLoadId(null); setLoading(false);
     setDetail(null); setMessage(""); setError(""); setConflict(false);
-    const next = copy ? { ...structuredClone(copy), ...(asCopy ? { schema_version: 2 as const, offering_full_code: "", process_binding: { ...copy.process_binding, request_template_key: "" } } : {}), scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: asCopy ? `${copy.title} — копия` : copy.title } : blankScenario();
+    const next = copy ? { ...structuredClone(copy), ...(asCopy ? { schema_version: copy.schema_version === 3 ? 3 as const : 2 as const, offering_full_code: "", process_binding: { ...copy.process_binding, request_template_key: "" } } : {}), scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: asCopy ? `${copy.title} — копия` : copy.title } : blankScenario();
     pristine.current = copy ? null : next;
     setDefinition(next);
   }

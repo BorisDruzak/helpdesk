@@ -60,6 +60,23 @@ def explicit_ticket_request(condition):
     return isinstance(condition, Comparison) and condition.source == "current_result" and condition.op == "eq" and condition.value == "request_ticket"
 
 
+def condition_evaluation(condition, answers, current_result=None):
+    """Explain the same canonical predicate used for branch execution."""
+    if condition is None:
+        return {"op": "otherwise", "matched": True}
+    result = {"op": condition.op, "matched": evaluate_condition(condition, answers, current_result)}
+    if isinstance(condition, (AllAny, Negation)):
+        children = condition.conditions if isinstance(condition, AllAny) else [condition.condition]
+        result["children"] = [condition_evaluation(child, answers, current_result) for child in children]
+    else:
+        result.update(source=condition.source, field=condition.field,
+            actual=answers.get(condition.field) if condition.source == "answer" else current_result,
+            present=condition.field in answers if condition.source == "answer" else current_result is not None)
+        if hasattr(condition, "value"):
+            result["value"] = condition.value
+    return result
+
+
 def selected_transition(block, answers, result=None):
     conditional = sorted((edge for edge in block.transitions if edge.when is not None),
                          key=lambda edge: edge.priority if edge.priority is not None else 10001)

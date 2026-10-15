@@ -168,7 +168,12 @@ class RequestScenarioSessionRepo:
         if row.revision != revision:
             raise ScenarioConflict("Scenario revision changed")
         state = self._state(row)
-        data, snapshot = build_scenario_submission(runtime.definition, state, session_id=row.id, version_id=row.version_id)
+        source = None
+        if runtime.definition.schema_version == 3:
+            version = await self.session.get(RequestStudioScenarioVersion, row.version_id)
+            source = version.source_snapshot
+        data, snapshot = build_scenario_submission(runtime.definition, state, session_id=row.id, version_id=row.version_id,
+            **({"source_snapshot": source} if runtime.definition.schema_version == 3 else {}))
         for key in state.history:
             if runtime.blocks[key].kind == "form_page":
                 checked = deepcopy(state)

@@ -127,7 +127,7 @@ def test_conversion_reports_unsupported_semantics_instead_of_dropping(form):
 def test_persistence_permits_both_pinned_v1_and_unified_v2():
     from app.db.request_scenario_models import RequestStudioScenarioVersion
     constraint = next(item for item in RequestStudioScenarioVersion.__table__.constraints if item.name == "ck_studio_version_schema")
-    assert "schema_version IN (1,2)" in str(constraint.sqltext)
+    assert "schema_version IN (1,2,3)" in str(constraint.sqltext)
 
 
 def test_effects_must_match_supported_answer_values():

@@ -64,7 +64,7 @@ export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled
     data: { entrance: true, key: entry.key, labelOffset: (definition.entry_points!.indexOf(entry))*30, select:()=>onEntrance(entry.key,entry.target_block_id), rename: !disabled && onEntranceTitle ? (title:string)=>onEntranceTitle(entry.key,title) : undefined }, selected: selectedEdge === entranceEdgeId(entry.key), markerEnd: { type: MarkerType.ArrowClosed },
     label: entry.title, style: { stroke: "#0d9488", strokeWidth: 2, strokeDasharray: "6 4", opacity: entry.enabled === false ? 0.45 : 1 },
   }));
-  if (definition.schema_version !== 2 && definition.entry_block_id && !definition.entry_points?.some(entry => entry.target_block_id === definition.entry_block_id) && nodes.some(node => node.id === definition.entry_block_id)) entranceEdges.push({
+  if ((definition.schema_version ?? 1) < 2 && definition.entry_block_id && !definition.entry_points?.some(entry => entry.target_block_id === definition.entry_block_id) && nodes.some(node => node.id === definition.entry_block_id)) entranceEdges.push({
     id: entranceEdgeId(null), source: metadataNodeId, sourceHandle: "entrance", target: definition.entry_block_id, type: "smoothstep", reconnectable: "target",
     data: { entrance: true, key: null }, selected: selectedEdge === entranceEdgeId(null), label: "Основной вход", style: { stroke: "#0d9488", strokeDasharray: "6 4" },
   });

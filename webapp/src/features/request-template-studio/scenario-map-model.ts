@@ -70,7 +70,7 @@ export function connectBlocks(definition: ScenarioDraftDefinition, source: strin
   if (!block || terminal(block.kind) || !definition.blocks?.some(item => item.id === target)) throw new Error("Этот блок нельзя соединить с выбранной целью");
   if ((block.transitions?.length ?? 0) >= 30) throw new Error("Достигнут лимит переходов");
   let edge:ScenarioTransition={to:target};
-  if(definition.schema_version===2&&block.kind==="resolution_check"){
+  if((definition.schema_version??1)>=2&&block.kind==="resolution_check"){
     const used=(block.transitions??[]).map(item=>item.when&&"value" in item.when?item.when.value:null);
     const value=["yes","no","unknown"].find(item=>!used.includes(item));
     if(value)edge={to:target,when:{source:"current_result",op:"eq",value}};

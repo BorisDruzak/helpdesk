@@ -12,7 +12,7 @@ from app.db import get_session
 from app.repos.request_scenario_repo import RequestScenarioRepo, ScenarioAdminError, serialize
 from auth.middleware import require_auth
 from tickets.request_scenario_runtime import ScenarioConflict, ScenarioInputError
-from tickets.request_scenario_validation import ScenarioValidationError
+from tickets.request_scenario_validation import ScenarioValidationError, ScenarioIssue
 from web_api.dto.request_scenario import CatalogCode, StrictModel
 from web_api.dto.request_scenario_admin import CategoryInput, Identifier, RevisionInput, ScenarioCreate, ScenarioSave, SimulationInput, ScenarioPublish, ScenarioRollback
 from tickets.request_scenario_publication import ScenarioPublicationService
@@ -134,10 +134,22 @@ async def handle_scenario_convert_forms(request):
 @require_auth("admin", "auditor")
 async def handle_scenario_document_validate(request):
     async def operation(repo):
-        from tickets.request_scenario_document import parse_scenario_document, document_issues
+        from tickets.request_scenario_document import parse_scenario_document, document_issues, document_reference_issues
         from tickets.request_scenario_publication import scenario_diff
         payload = await _payload(request, ScenarioDocumentInput)
-        definition = parse_scenario_document(payload.content, payload.format)
+        try:
+            definition = parse_scenario_document(payload.content, payload.format)
+        except ValidationError as exc:
+            messages = {"extra_forbidden": "Неизвестное поле документа.", "missing": "Заполните обязательное поле.",
+                        "literal_error": "Выберите поддерживаемую версию, тип или значение."}
+            issues = [ScenarioIssue(item["type"], ".".join(str(part)[:100] for part in item["loc"])[:1000] or "document",
+                       messages.get(item["type"], "Проверьте тип и допустимый диапазон значения."))
+                      for item in exc.errors(include_input=False, include_context=False, include_url=False)[:100]]
+            raise ScenarioValidationError(issues) from exc
+        except ValueError as exc:
+            path = f"document.line.{exc.lineno}" if isinstance(exc, json.JSONDecodeError) else "document"
+            raise ScenarioValidationError([ScenarioIssue("invalid_document", path,
+                "Проверьте синтаксис JSON/YAML: ключи должны быть уникальными, ссылки и исполняемые конструкции запрещены.")]) from exc
         identifier = request.query.get("scenario_id")
         before = {}
         if identifier:
@@ -149,7 +161,9 @@ async def handle_scenario_document_validate(request):
                 raise ScenarioAdminError("CATALOG_BINDING_IMMUTABLE", 409)
             from web_api.dto.request_scenario import ScenarioDraftDefinition
             before = ScenarioDraftDefinition.model_validate(draft.definition).model_dump(mode="json")
-        return {"definition": definition.model_dump(mode="json"), "issues": [asdict(issue) for issue in document_issues(definition)],
+        issues = [asdict(issue) for issue in document_issues(definition)]
+        issues.extend(await document_reference_issues(repo.session, definition))
+        return {"definition": definition.model_dump(mode="json"), "issues": issues,
                 "diff": scenario_diff(before, definition.model_dump(mode="json"))}
     return await _run(request, operation)
 

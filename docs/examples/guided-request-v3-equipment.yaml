@@ -1,0 +1,162 @@
+schema_version: 3
+scenario_key: equipment_support
+service_code: workplace
+offering_full_code: workplace.equipment
+title: Проблемы с оборудованием
+description: Помощь с печатью, сетью и программами
+entry_block_id: problem
+process_binding:
+  request_template_key: equipment
+processing:
+  assignment_mode: last_matching_branch
+  sla_profiles:
+    urgent:
+      title: Срочный
+      first_response_minutes: 30
+      resolution_minutes: 120
+      time_basis: calendar
+    elevated:
+      title: Повышенный
+      first_response_minutes: 60
+      resolution_minutes: 180
+      time_basis: calendar
+    standard:
+      title: Стандартный
+      first_response_minutes: 120
+      resolution_minutes: 300
+      time_basis: calendar
+  routes:
+    workplace:
+      title: Поддержка рабочих мест
+      queue_code: workplace_support
+    network:
+      title: Сетевые администраторы
+      queue_code: network_support
+    first_line:
+      title: Первая линия поддержки
+      queue_code: servicedesk_l1
+  defaults:
+    route: first_line
+    sla_profile: standard
+entry_points:
+  - key: equipment
+    title: Не работает оборудование
+    description: Принтер, сеть или программа мешают работе
+    synonyms: [ошибка оборудования, нужна помощь]
+    target_block_id: problem
+  - key: printing
+    title: Проблемы с печатью
+    description: Проверим масштаб и возможность продолжать работу
+    synonyms: [не печатает принтер, ошибка печати, печать не идёт]
+    target_block_id: scope
+blocks:
+  - id: problem
+    kind: form_page
+    title: Что не работает?
+    layout: single
+    fields:
+      - key: problem_type
+        type: radio
+        label: Что не работает?
+        required: true
+        options:
+          - {value: printer, label: Принтер}
+          - {value: network, label: Сеть}
+          - {value: software, label: Программа}
+    transitions:
+      - to: scope
+  - id: scope
+    kind: form_page
+    title: Сколько сотрудников затронуто?
+    layout: single
+    fields:
+      - key: affected_scope
+        type: radio
+        label: Сколько сотрудников затронуто?
+        required: true
+        options:
+          - {value: one, label: Один}
+          - {value: several, label: Несколько}
+          - {value: department, label: Весь отдел}
+        process_mapping:
+          effects:
+            - {value: one, facts: {impact: single_user}}
+            - {value: several, facts: {impact: multiple_users}}
+            - {value: department, facts: {impact: department}}
+    transitions:
+      - to: ability
+  - id: ability
+    kind: form_page
+    title: Можно ли продолжать работу?
+    layout: single
+    fields:
+      - key: can_continue
+        type: radio
+        label: Можно ли продолжать работу?
+        required: true
+        allow_unknown: true
+        options:
+          - {value: 'yes', label: Да}
+          - {value: partial, label: Частично}
+          - {value: 'no', label: Нет}
+        process_mapping:
+          effects:
+            - {value: 'yes', facts: {urgency: can_work}}
+            - {value: partial, facts: {urgency: degraded}}
+            - {value: 'no', facts: {urgency: blocked}}
+    transitions:
+      - to: choose
+  - id: choose
+    kind: decision
+    title: Выбрать помощь и сроки
+    transitions:
+      - to: printer_help
+        priority: 10
+        when:
+          op: and
+          conditions:
+            - {source: answer, field: problem_type, op: eq, value: printer}
+            - {source: answer, field: affected_scope, op: eq, value: department}
+            - {source: answer, field: can_continue, op: eq, value: 'no'}
+        processing: {route: workplace, sla_profile: urgent}
+      - to: network_help
+        priority: 20
+        when:
+          op: and
+          conditions:
+            - {source: answer, field: problem_type, op: eq, value: network}
+            - {source: answer, field: can_continue, op: eq, value: 'no'}
+        processing: {route: network, sla_profile: elevated}
+      - to: review
+        processing: {route: first_line, sla_profile: standard}
+  - id: printer_help
+    kind: instruction
+    title: Проверить принтер
+    content: {body: 'Проверьте питание принтера и наличие бумаги. Не разбирайте устройство.'}
+    transitions:
+      - to: check
+  - id: network_help
+    kind: instruction
+    title: Проверить подключение
+    content: {body: 'Проверьте сетевой кабель и доступность других сайтов.'}
+    transitions:
+      - to: check
+  - id: check
+    kind: resolution_check
+    title: Удалось решить проблему?
+    transitions:
+      - to: done
+        when: {source: current_result, op: eq, value: 'yes'}
+      - to: review
+  - id: review
+    kind: review
+    title: Проверить ответы
+    transitions:
+      - to: submit
+  - id: submit
+    kind: submit_ticket
+    title: Создать обращение
+  - id: done
+    kind: finish
+    title: Проблема решена
+    message: Спасибо! Обращение не требуется.
