@@ -9,7 +9,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     page.on("requestfailed", request => errors.push(request.url()));
     page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`); });
     const fields = Array.from({ length: 32 }, (_, index) => ({ key: `question_${index}`, type: "text", label: `Вопрос ${index + 1}`, allow_unknown: index === 0, group: index < 16 ? "device" : "impact", group_title: index < 16 ? "Устройство" : "Влияние" }));
-    const definition = { scenario_key: "printer", title: "Не печатает", service_code: "workplace", offering_full_code: "workplace.printer_issue", entry_block_id: "questions", process_binding: { request_template_key: "printer" }, blocks: [
+    const definition = { schema_version: 2, scenario_key: "printer", title: "Не печатает", service_code: "workplace", offering_full_code: "workplace.printer_issue", entry_block_id: "questions", process_binding: { request_template_key: "printer" }, blocks: [
       { id: "questions", title: "Вопросы о печати", kind: "form_page", layout: "section", fields, transitions: [{ to: "submit" }] }, { id: "submit", title: "Отправка", kind: "submit_ticket" },
     ] };
     await page.route("**/api/web/**", async route => {
@@ -28,8 +28,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.goto("/app/admin/request-template-studio");
-    await page.getByRole("region", { name: "Карты сценариев" }).getByRole("button", { name: "Не печатает", exact: true }).click();
-    await page.getByRole("button", { name: "Карта сценария", exact: true }).click();
+    await page.getByRole("button", { name: "Настроить услугу Не печатает", exact: true }).click();
+    await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
     await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Вопросы о печати", exact: true }).click();
     const questions = page.getByRole("list", { name: "Вопросы страницы", exact: true });
     const questionListSize = await questions.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }));

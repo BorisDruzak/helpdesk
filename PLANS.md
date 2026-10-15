@@ -2311,3 +2311,18 @@ exact-SHA staging browser acceptance follow in task receipt.
 Browser follow-up found sibling React keys colliding between block editor and
 route editor after decision insertion. Give route instances a separate key
 namespace; add switching regression. Final Studio suite156 pass after repair.
+
+
+# 2026-10-15 Studio publication to main
+
+Publish the accumulated Studio implementation, versioned user guide and archived
+interactive prototype without operational scratch files, credentials or caches.
+Align unit and browser fixtures with the approved single service/map model:
+catalog map titles, explicit map opening, category creation in the catalog,
+processing navigation, entry labels and service creation without a form wizard.
+Keep legacy diagnostic safety, template publication confirmation, auditor access,
+dirty guards, complete simulation answers and immutable-version workflows covered.
+No runtime behavior, production/staging deployment or Endpoint operation changes.
+Checks: full unit suite792 passed in hosted CI; local no-DB server1452 passed,
+1 skipped; scripts272 passed; required fast audit layers passed. Full fixture,
+migration/DB and exact-SHA workflow results are recorded in the publication receipt.
