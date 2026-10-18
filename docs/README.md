@@ -18,6 +18,7 @@
 - Endpoint diagnostics: `server/docs/ENDPOINT_OPERATION_CONTRACT.md`.
 - Auth/security: `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md`.
 - Tickets/chat/forms: `server/docs/TICKET_SYSTEM.md`, `server/docs/CHAT_MESSAGE_CONTRACT.md`, `server/docs/REQUEST_FORM_BUILDER.md`.
+- Guided Request Studio: [создание услуг и сценариев через JSON](JSON_REQUEST_SCENARIO_GUIDE.md) — переносимые примеры, условия, SLA, импорт, публикация и поиск сотрудником; [руководство администратора](UNIFIED_SERVICE_SCENARIOS.md).
 - External Knowledge/Registry boundaries: `server/docs/SEGMENTATION_BOUNDARIES.md`, `server/docs/KNOWLEDGE_PLATFORM_API_V1.md`, and `server/docs/REGISTRY_PLATFORM_API_V1.md` — Helpdesk consumes versioned ports; local Knowledge is removed/unavailable, while Registry uses a temporary local adapter behind a redacted `RegistryPort` during cutover.
 - Endpoint operations: `server/docs/ENDPOINT_OPERATION_CONTRACT.md`.
 - Observer/traces: `server/docs/OBSERVER_LAYER.md`, `server/docs/OBSERVER_AUTHORING_RULES.md`.

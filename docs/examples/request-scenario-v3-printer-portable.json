@@ -1,0 +1,668 @@
+{
+  "schema_version": 3,
+  "title": "Принтеры и МФУ — пример сценария v3",
+  "description": "Три входа, самопомощь, составные условия, три направления и сроки решения 2/3/5 часов.",
+  "entry_block_id": "intro_no_print",
+  "entry_points": [
+    {
+      "key": "printer_no_print",
+      "title": "Принтер не печатает",
+      "description": "Задание не выходит на печать, ошибка или принтер недоступен",
+      "synonyms": [
+        "не могу распечатать",
+        "ничего не печатает",
+        "принтр не печатает",
+        "документ не печатается",
+        "очередь печати",
+        "принтер офлайн"
+      ],
+      "visibility": "public",
+      "enabled": true,
+      "target_block_id": "intro_no_print",
+      "reported_symptom": "Сотрудник сообщил, что принтер не печатает; причина не проверена."
+    },
+    {
+      "key": "printer_jam",
+      "title": "Застряла бумага",
+      "description": "Замятие листа, принтер сообщает о бумаге или не протягивает её",
+      "synonyms": [
+        "замятие бумаги",
+        "зажевало бумагу",
+        "бумага застряла",
+        "лист застрял",
+        "ошибка paper jam"
+      ],
+      "visibility": "public",
+      "enabled": true,
+      "target_block_id": "intro_jam",
+      "reported_symptom": "Сотрудник сообщил о возможном замятии бумаги; причина не проверена."
+    },
+    {
+      "key": "printer_faded",
+      "title": "Бледная или полосатая печать",
+      "description": "Текст печатается бледно, с пропусками либо полосами",
+      "synonyms": [
+        "бледная печать",
+        "полосы на бумаге",
+        "плохо печатает",
+        "светлая печать",
+        "пропуски при печати",
+        "некачественная печать"
+      ],
+      "visibility": "public",
+      "enabled": true,
+      "target_block_id": "intro_faded",
+      "reported_symptom": "Сотрудник сообщил о низком качестве печати; причина не проверена."
+    }
+  ],
+  "editor_layout": {
+    "positions": {
+      "system_start": {
+        "x": -850,
+        "y": -50
+      },
+      "intro_no_print": {
+        "x": -550,
+        "y": -340
+      },
+      "intro_jam": {
+        "x": -550,
+        "y": -90
+      },
+      "intro_faded": {
+        "x": -550,
+        "y": 160
+      },
+      "check_after": {
+        "x": -220,
+        "y": -70
+      },
+      "resolved": {
+        "x": 80,
+        "y": -410
+      },
+      "q_scope": {
+        "x": 80,
+        "y": -70
+      },
+      "q_urgency": {
+        "x": 375,
+        "y": -70
+      },
+      "q_connection": {
+        "x": 660,
+        "y": -70
+      },
+      "d_processing": {
+        "x": 970,
+        "y": -70
+      },
+      "notify_network_urgent": {
+        "x": 1330,
+        "y": -560
+      },
+      "notify_printer_urgent": {
+        "x": 1330,
+        "y": -320
+      },
+      "notify_unknown_urgent": {
+        "x": 1330,
+        "y": -80
+      },
+      "notify_network_elevated": {
+        "x": 1330,
+        "y": 160
+      },
+      "notify_other_elevated": {
+        "x": 1330,
+        "y": 400
+      },
+      "q_details": {
+        "x": 1660,
+        "y": -70
+      },
+      "submit": {
+        "x": 1980,
+        "y": -70
+      }
+    }
+  },
+  "processing": {
+    "assignment_mode": "last_matching_branch",
+    "sla_profiles": {
+      "urgent": {
+        "title": "Срочный — решение за 2 часа",
+        "first_response_minutes": 30,
+        "resolution_minutes": 120,
+        "time_basis": "calendar"
+      },
+      "elevated": {
+        "title": "Повышенный — решение за 3 часа",
+        "first_response_minutes": 60,
+        "resolution_minutes": 180,
+        "time_basis": "calendar"
+      },
+      "standard": {
+        "title": "Стандартный — решение за 5 часов",
+        "first_response_minutes": 120,
+        "resolution_minutes": 300,
+        "time_basis": "calendar"
+      }
+    },
+    "routes": {
+      "first_line": {
+        "title": "Первая линия поддержки",
+        "queue_code": "servicedesk_l1"
+      },
+      "printer_team": {
+        "title": "Поддержка принтеров и рабочих мест",
+        "queue_code": "workplace_support"
+      },
+      "network_team": {
+        "title": "Сетевые администраторы",
+        "queue_code": "network_support"
+      }
+    },
+    "defaults": {
+      "route": "first_line",
+      "sla_profile": "standard"
+    }
+  },
+  "blocks": [
+    {
+      "id": "intro_no_print",
+      "kind": "instruction",
+      "title": "Проверить основные причины отсутствия печати",
+      "content": {
+        "format": "markdown",
+        "body": "1. Убедитесь, что принтер включён и на его панели нет сообщения об ошибке.\n2. Проверьте бумагу и правильность выбора принтера в окне печати.\n3. Если это допустимо, повторите отправку одного документа.\nНе меняйте общие настройки принтера и не удаляйте чужие задания."
+      },
+      "acknowledgment_required": true,
+      "transitions": [
+        {
+          "to": "check_after"
+        }
+      ]
+    },
+    {
+      "id": "intro_jam",
+      "kind": "instruction",
+      "title": "Проверить сообщение о замятии",
+      "content": {
+        "format": "markdown",
+        "body": "1. Прекратите отправлять новые задания.\n2. Посмотрите на сообщение принтера и доступные рекомендации производителя.\n3. Удаляйте только свободно доступный лист по штатной инструкции, не разбирая устройство и не применяя силу.\nЕсли лист недоступен, не пытайтесь извлечь его силой. Продолжите сценарий, выберите «Нет» на проверке результата и ответьте на вопросы для поддержки."
+      },
+      "acknowledgment_required": true,
+      "transitions": [
+        {
+          "to": "check_after"
+        }
+      ]
+    },
+    {
+      "id": "intro_faded",
+      "kind": "instruction",
+      "title": "Проверить качество печати",
+      "content": {
+        "format": "markdown",
+        "body": "1. Сверьте настройки качества и режима экономии тонера.\n2. Если доступно, проверьте информацию об остатке расходных материалов на дисплее.\n3. Не разбирайте принтер и не извлекайте картридж, если это не предусмотрено инструкцией."
+      },
+      "acknowledgment_required": true,
+      "transitions": [
+        {
+          "to": "check_after"
+        }
+      ]
+    },
+    {
+      "id": "check_after",
+      "kind": "resolution_check",
+      "title": "Удалось восстановить работу принтера?",
+      "transitions": [
+        {
+          "to": "resolved",
+          "when": {
+            "source": "current_result",
+            "op": "eq",
+            "value": "yes"
+          },
+          "priority": 10
+        },
+        {
+          "to": "q_scope"
+        }
+      ]
+    },
+    {
+      "id": "resolved",
+      "kind": "finish",
+      "title": "Печать восстановлена",
+      "message": "Спасибо! Если печать работает корректно, создавать обращение не требуется."
+    },
+    {
+      "id": "q_scope",
+      "kind": "form_page",
+      "title": "Масштаб проблемы",
+      "layout": "single",
+      "fields": [
+        {
+          "key": "impact_scope",
+          "type": "radio",
+          "label": "Сколько сотрудников затронуто?",
+          "required": true,
+          "options": [
+            {
+              "value": "one",
+              "label": "Только я"
+            },
+            {
+              "value": "several",
+              "label": "Несколько сотрудников"
+            },
+            {
+              "value": "department",
+              "label": "Всё подразделение"
+            }
+          ],
+          "process_mapping": {
+            "roles": [
+              "priority_impact"
+            ],
+            "effects": [
+              {
+                "value": "one",
+                "facts": {
+                  "impact": "single_user"
+                }
+              },
+              {
+                "value": "several",
+                "facts": {
+                  "impact": "multiple_users"
+                }
+              },
+              {
+                "value": "department",
+                "facts": {
+                  "impact": "department"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "to": "q_urgency"
+        }
+      ]
+    },
+    {
+      "id": "q_urgency",
+      "kind": "form_page",
+      "title": "Срочность",
+      "layout": "single",
+      "fields": [
+        {
+          "key": "work_continuity",
+          "type": "radio",
+          "label": "Можно ли продолжать работу?",
+          "required": true,
+          "options": [
+            {
+              "value": "can_work",
+              "label": "Да, есть обходной способ"
+            },
+            {
+              "value": "degraded",
+              "label": "Частично, работа затруднена"
+            },
+            {
+              "value": "blocked",
+              "label": "Нет, работа остановлена"
+            }
+          ],
+          "process_mapping": {
+            "roles": [
+              "priority_urgency"
+            ],
+            "effects": [
+              {
+                "value": "can_work",
+                "facts": {
+                  "urgency": "can_work"
+                }
+              },
+              {
+                "value": "degraded",
+                "facts": {
+                  "urgency": "degraded"
+                }
+              },
+              {
+                "value": "blocked",
+                "facts": {
+                  "urgency": "blocked"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "to": "q_connection"
+        }
+      ]
+    },
+    {
+      "id": "q_connection",
+      "kind": "form_page",
+      "title": "Подключение принтера",
+      "layout": "single",
+      "fields": [
+        {
+          "key": "printer_connection",
+          "type": "radio",
+          "label": "Как принтер подключён к компьютеру?",
+          "required": true,
+          "options": [
+            {
+              "value": "network",
+              "label": "По сети / общий принтер"
+            },
+            {
+              "value": "usb",
+              "label": "USB / локально"
+            },
+            {
+              "value": "unknown",
+              "label": "Не знаю"
+            }
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "to": "d_processing"
+        }
+      ]
+    },
+    {
+      "id": "d_processing",
+      "kind": "decision",
+      "title": "Выбрать маршрут и сроки по трём ответам",
+      "transitions": [
+        {
+          "to": "notify_network_urgent",
+          "when": {
+            "op": "and",
+            "conditions": [
+              {
+                "source": "answer",
+                "field": "impact_scope",
+                "op": "eq",
+                "value": "department"
+              },
+              {
+                "source": "answer",
+                "field": "work_continuity",
+                "op": "eq",
+                "value": "blocked"
+              },
+              {
+                "source": "answer",
+                "field": "printer_connection",
+                "op": "eq",
+                "value": "network"
+              }
+            ]
+          },
+          "priority": 10,
+          "processing": {
+            "route": "network_team",
+            "sla_profile": "urgent"
+          }
+        },
+        {
+          "to": "notify_printer_urgent",
+          "when": {
+            "op": "and",
+            "conditions": [
+              {
+                "source": "answer",
+                "field": "impact_scope",
+                "op": "eq",
+                "value": "department"
+              },
+              {
+                "source": "answer",
+                "field": "work_continuity",
+                "op": "eq",
+                "value": "blocked"
+              },
+              {
+                "source": "answer",
+                "field": "printer_connection",
+                "op": "eq",
+                "value": "usb"
+              }
+            ]
+          },
+          "priority": 20,
+          "processing": {
+            "route": "printer_team",
+            "sla_profile": "urgent"
+          }
+        },
+        {
+          "to": "notify_unknown_urgent",
+          "when": {
+            "op": "and",
+            "conditions": [
+              {
+                "source": "answer",
+                "field": "impact_scope",
+                "op": "eq",
+                "value": "department"
+              },
+              {
+                "source": "answer",
+                "field": "work_continuity",
+                "op": "eq",
+                "value": "blocked"
+              }
+            ]
+          },
+          "priority": 30,
+          "processing": {
+            "route": "first_line",
+            "sla_profile": "urgent"
+          }
+        },
+        {
+          "to": "notify_network_elevated",
+          "when": {
+            "op": "and",
+            "conditions": [
+              {
+                "source": "answer",
+                "field": "printer_connection",
+                "op": "eq",
+                "value": "network"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "source": "answer",
+                    "field": "work_continuity",
+                    "op": "eq",
+                    "value": "blocked"
+                  },
+                  {
+                    "source": "answer",
+                    "field": "impact_scope",
+                    "op": "eq",
+                    "value": "department"
+                  }
+                ]
+              }
+            ]
+          },
+          "priority": 40,
+          "processing": {
+            "route": "network_team",
+            "sla_profile": "elevated"
+          }
+        },
+        {
+          "to": "notify_other_elevated",
+          "when": {
+            "op": "or",
+            "conditions": [
+              {
+                "source": "answer",
+                "field": "work_continuity",
+                "op": "eq",
+                "value": "blocked"
+              },
+              {
+                "source": "answer",
+                "field": "impact_scope",
+                "op": "eq",
+                "value": "department"
+              }
+            ]
+          },
+          "priority": 50,
+          "processing": {
+            "route": "first_line",
+            "sla_profile": "elevated"
+          }
+        },
+        {
+          "to": "q_details",
+          "processing": {
+            "route": "first_line",
+            "sla_profile": "standard"
+          }
+        }
+      ]
+    },
+    {
+      "id": "notify_network_urgent",
+      "kind": "instruction",
+      "title": "Массовая проблема сетевой печати",
+      "content": {
+        "format": "markdown",
+        "body": "По ответам проблема затрагивает всё подразделение и печать остановлена. Не изменяйте настройки общего сетевого принтера; после отправки обращения приложите текст ошибки, если он известен."
+      },
+      "acknowledgment_required": true,
+      "transitions": [
+        {
+          "to": "q_details"
+        }
+      ]
+    },
+    {
+      "id": "notify_printer_urgent",
+      "kind": "instruction",
+      "title": "Массовая проблема локальной печати",
+      "content": {
+        "format": "markdown",
+        "body": "По ответам работа подразделения остановлена. Сообщите специалисту название принтера и место установки; не выполняйте самостоятельный сброс настроек."
+      },
+      "acknowledgment_required": true,
+      "transitions": [
+        {
+          "to": "q_details"
+        }
+      ]
+    },
+    {
+      "id": "notify_unknown_urgent",
+      "kind": "instruction",
+      "title": "Срочная проблема с неизвестным подключением",
+      "content": {
+        "format": "markdown",
+        "body": "Подключение определить не удалось, но работа подразделения остановлена. Уточните место расположения принтера в заявке; обращение будет передано первой линии."
+      },
+      "acknowledgment_required": true,
+      "transitions": [
+        {
+          "to": "q_details"
+        }
+      ]
+    },
+    {
+      "id": "notify_network_elevated",
+      "kind": "instruction",
+      "title": "Проблема сетевого подключения",
+      "content": {
+        "format": "markdown",
+        "body": "Проверьте, что речь идёт о сетевом принтере. Не меняйте адреса и сетевые параметры самостоятельно; опишите сообщение об ошибке."
+      },
+      "acknowledgment_required": true,
+      "transitions": [
+        {
+          "to": "q_details"
+        }
+      ]
+    },
+    {
+      "id": "notify_other_elevated",
+      "kind": "instruction",
+      "title": "Работа затруднена или остановлена",
+      "content": {
+        "format": "markdown",
+        "body": "Уточните в заявке затронутые рабочие места и возможность использовать другой принтер. Поддержка получит собранные ответы."
+      },
+      "acknowledgment_required": true,
+      "transitions": [
+        {
+          "to": "q_details"
+        }
+      ]
+    },
+    {
+      "id": "q_details",
+      "kind": "form_page",
+      "title": "Данные для специалиста",
+      "layout": "group",
+      "fields": [
+        {
+          "key": "printer_location",
+          "type": "text",
+          "label": "Где находится принтер (кабинет, этаж)",
+          "required": false,
+          "placeholder": "Например, кабинет 205"
+        },
+        {
+          "key": "printer_model",
+          "type": "text",
+          "label": "Модель или название принтера",
+          "required": false,
+          "placeholder": "Например, Kyocera, имя сетевого принтера"
+        },
+        {
+          "key": "problem_details",
+          "type": "textarea",
+          "label": "Что именно происходит и какие действия уже выполнены?",
+          "required": true,
+          "help_text": "Опишите сообщение об ошибке и результат предложенных проверок."
+        }
+      ],
+      "transitions": [
+        {
+          "to": "submit"
+        }
+      ]
+    },
+    {
+      "id": "submit",
+      "kind": "submit_ticket",
+      "title": "Создать обращение в поддержку"
+    }
+  ]
+}

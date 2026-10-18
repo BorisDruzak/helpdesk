@@ -1,0 +1,153 @@
+{
+  "schema_version": 3,
+  "title": "Проблема с принтером — простой пример",
+  "description": "Собираем сведения и выбираем срок обработки по ответам.",
+  "entry_block_id": "questions",
+  "entry_points": [
+    {
+      "key": "printer_problem",
+      "title": "Принтер не печатает",
+      "description": "Не получается распечатать документ.",
+      "synonyms": [
+        "не могу распечатать",
+        "ошибка печати",
+        "печать не идет"
+      ],
+      "target_block_id": "questions"
+    }
+  ],
+  "processing": {
+    "assignment_mode": "last_matching_branch",
+    "routes": {
+      "support": {
+        "title": "Первая линия поддержки",
+        "queue_code": "servicedesk_l1"
+      }
+    },
+    "sla_profiles": {
+      "urgent": {
+        "title": "Срочный — 2 часа",
+        "first_response_minutes": 30,
+        "resolution_minutes": 120,
+        "time_basis": "calendar"
+      },
+      "elevated": {
+        "title": "Повышенный — 3 часа",
+        "first_response_minutes": 60,
+        "resolution_minutes": 180,
+        "time_basis": "calendar"
+      },
+      "standard": {
+        "title": "Стандартный — 5 часов",
+        "first_response_minutes": 120,
+        "resolution_minutes": 300,
+        "time_basis": "calendar"
+      }
+    },
+    "defaults": {
+      "route": "support",
+      "sla_profile": "standard"
+    }
+  },
+  "blocks": [
+    {
+      "id": "questions",
+      "kind": "form_page",
+      "title": "Уточнение проблемы",
+      "layout": "group",
+      "fields": [
+        {
+          "key": "scope",
+          "type": "radio",
+          "label": "Сколько сотрудников затронуто?",
+          "required": true,
+          "options": [
+            {
+              "value": "one",
+              "label": "Только я"
+            },
+            {
+              "value": "department",
+              "label": "Всё подразделение"
+            }
+          ]
+        },
+        {
+          "key": "can_continue",
+          "type": "checkbox",
+          "label": "Можно продолжать работу?",
+          "required": true
+        },
+        {
+          "key": "problem_details",
+          "type": "textarea",
+          "label": "Что происходит и что уже проверили?",
+          "required": true
+        }
+      ],
+      "transitions": [
+        {
+          "to": "routing"
+        }
+      ]
+    },
+    {
+      "id": "routing",
+      "kind": "decision",
+      "title": "Выбрать сроки обработки",
+      "transitions": [
+        {
+          "to": "submit",
+          "priority": 10,
+          "when": {
+            "op": "and",
+            "conditions": [
+              {
+                "source": "answer",
+                "field": "scope",
+                "op": "eq",
+                "value": "department"
+              },
+              {
+                "source": "answer",
+                "field": "can_continue",
+                "op": "eq",
+                "value": false
+              }
+            ]
+          },
+          "processing": {
+            "route": "support",
+            "sla_profile": "urgent"
+          }
+        },
+        {
+          "to": "submit",
+          "priority": 20,
+          "when": {
+            "source": "answer",
+            "field": "can_continue",
+            "op": "eq",
+            "value": false
+          },
+          "processing": {
+            "route": "support",
+            "sla_profile": "elevated"
+          }
+        },
+        {
+          "to": "submit",
+          "processing": {
+            "route": "support",
+            "sla_profile": "standard"
+          }
+        }
+      ]
+    },
+    {
+      "id": "submit",
+      "kind": "submit_ticket",
+      "title": "Создать обращение в поддержку"
+    }
+  ]
+}
