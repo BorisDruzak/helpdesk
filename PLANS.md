@@ -11,13 +11,14 @@ remain reachable. Use existing state, mutations and design primitives.
 Current State: implemented on codex/ui-support-001 from main 520b6218. Existing
 advanced modes are retained; shared dialogs and typed mutations are reused.
 Next Steps: frozen-candidate full CI, then draft PR. No production deployment.
-Verification: workspace sanity and diff check pass; frontend suite 840 tests
-plus the added stable-ID regression; server no-DB 1532 passed, 1 existing skip.
-Focused browser 10/10 covers simple 1366/1920/390, existing advanced modes and
-normal-shell navigation, with synthetic fixtures. Source workflow PostgreSQL
-concurrency 3/3 passed through an owned staging tunnel, now closed. Additional
-API/DB acceptance is running in a disposable staging directory; no deployed
-service or real ticket is changed. Full CI must bind to the committed candidate.
+Verification: workspace sanity and diff check pass; frontend suite 843 tests;
+server no-DB 1532 passed, 1 existing skip. Fresh build and focused browser 13/13
+cover simple 1366/1920/390, existing advanced modes and normal-shell navigation,
+with synthetic fixtures. Source workflow PostgreSQL concurrency 3/3 passed through
+an owned staging tunnel, now closed. The broad staging API/DB selection exceeded
+its runner limit; its owned process was stopped and it is not counted as green.
+No deployed service or real ticket is changed. Full CI must bind to the committed
+candidate. Final regressions cover assignment permission and internal event tabs.
 Handoff: task active through CI/PR; preserve unrelated untracked files.
 
 # 2026-10-18 Build answer branches from an empty decision

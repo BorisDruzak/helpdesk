@@ -8,6 +8,11 @@ const detail = { ticket: { ticket_id: "one", ticket_code: "T-001", title: "Пр�
 } as unknown as SupportTicketDetailPayload;
 
 describe("simple support ticket", () => {
+  it("does not offer self-assignment without assignment permission", () => {
+    render(<SimpleSupportTicket detail={detail} actorId="operator" canWork canAssign={false} onStatus={vi.fn()} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={null} />);
+    expect(screen.queryByRole("button", { name: "Взять в работу" })).not.toBeInTheDocument();
+  });
+
   it("shows compact content, scenario answers and a single take action without an agent", () => {
     const status = vi.fn();
     render(<SimpleSupportTicket detail={detail} actorId="operator" canWork onStatus={status} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={<div>Переписка</div>} />);

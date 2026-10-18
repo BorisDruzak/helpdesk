@@ -2342,6 +2342,7 @@ export function TicketListPage() {
           <SimpleSupportQueue {...simpleQueueProps} compact />
           {workspaceQuery.data && selectedTicket ? <SimpleSupportTicket detail={workspaceQuery.data.detail} ticket={selectedTicket} context={viewModel.right.context}
             actorId={session?.user_login} isAdmin={isAdmin} canWork={hasPermission("ticket.status.change") && !workspaceErrorState}
+            canAssign={hasPermission("ticket.assign")}
             pending={operatorActionMutation.isPending || takeTicketMutation.isPending}
             error={workspaceErrorState ? "Не удалось обновить обращение. Обновите данные перед действием." : actionError instanceof Error ? actionError.message : null}
             onStatus={(value) => operatorActionMutation.mutate({ kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" })}

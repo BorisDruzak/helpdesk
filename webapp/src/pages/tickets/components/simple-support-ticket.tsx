@@ -4,7 +4,7 @@ import type { SupportWorkspaceContext, SupportWorkspaceSelectedTicket } from "..
 
 export type SimpleSupportTicketProps = {
   detail: SupportTicketDetailPayload; ticket?: SupportWorkspaceSelectedTicket | null; context?: SupportWorkspaceContext | null;
-  actorId?: string; isAdmin?: boolean; canWork: boolean; pending?: boolean; error?: string | null;
+  actorId?: string; isAdmin?: boolean; canWork: boolean; canAssign?: boolean; pending?: boolean; error?: string | null;
   onStatus: (value: string) => void; onResolve: () => void; onAdvanced: (mode?: "passport" | "tools" | "sla" | "ticket") => void;
   onQueue: () => void; onManage?: (kind: "queue" | "priority") => void; conversation: ReactNode;
 };
@@ -16,7 +16,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
   const other = Boolean(raw.assignee_id && !mine);
   const allowed = (status: string) => canWork && detail.actions.status_options.some((option) => option.value === status);
   let primary: { label: string; hint: string; run: () => void } | null = null;
-  if (["new", "queued", "assigned"].includes(raw.status) && (!other || isAdmin) && allowed("in_progress")) {
+  if (["new", "queued", "assigned"].includes(raw.status) && (!other || isAdmin) && (raw.assignee_id || props.canAssign !== false) && allowed("in_progress")) {
     primary = { label: raw.assignee_id ? "Начать работу" : "Взять в работу", hint: "После успешного перехода в работу станет доступна переписка.", run: () => onStatus("in_progress") };
   } else if (["in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"].includes(raw.status) && (mine || isAdmin)) {
     if (raw.status !== "in_progress" && allowed("in_progress")) primary = { label: "Возобновить работу", hint: "Обращение вернётся в работу. Ожидание ответа завершится.", run: () => onStatus("in_progress") };
@@ -44,7 +44,8 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
         </div>
       </header>
       {props.error ? <p role="alert" className="simple-notice simple-risk">{props.error}</p> : null}
-      {other && !isAdmin || !raw.assignee_id || ["new", "queued", "assigned"].includes(raw.status) ? <p className="simple-notice">{other ? "Назначено другому оператору. Доступен просмотр; изменение исполнителя выполняется отдельно с проверкой прав." : "Чтобы начать переписку и обработку, нажмите «" + (raw.assignee_id ? "Начать работу" : "Взять в работу") + "». Дождитесь успешного ответа сервера."}</p> : primary ? <p className="simple-action-hint simple-muted">{primary.hint}</p> : raw.status === "resolved" ? <p className="simple-notice">Решение отправлено сотруднику. Ожидается подтверждение по действующей политике.</p> : raw.status === "closed" ? <p className="simple-muted">Обращение закрыто. Переписка и история доступны для просмотра.</p> : null}
+      {!raw.assignee_id && props.canAssign === false ? <p className="simple-notice">Для взятия обращения в работу нужно право назначения исполнителя. Пока доступен просмотр.</p> : null}
+      {!raw.assignee_id && props.canAssign === false ? null : other && !isAdmin || !raw.assignee_id || ["new", "queued", "assigned"].includes(raw.status) ? <p className="simple-notice">{other ? "Назначено другому оператору. Доступен просмотр; изменение исполнителя выполняется отдельно с проверкой прав." : "Чтобы начать переписку и обработку, нажмите «" + (raw.assignee_id ? "Начать работу" : "Взять в работу") + "». Дождитесь успешного ответа сервера."}</p> : primary ? <p className="simple-action-hint simple-muted">{primary.hint}</p> : raw.status === "resolved" ? <p className="simple-notice">Решение отправлено сотруднику. Ожидается подтверждение по действующей политике.</p> : raw.status === "closed" ? <p className="simple-muted">Обращение закрыто. Переписка и история доступны для просмотра.</p> : null}
       <div className="simple-ticket__content">
         <details className="simple-panel simple-ticket__description" open><summary>Описание и ответы сотрудника</summary><p>{raw.description || "Описание не указано"}</p>
           {detail.request_form?.rows.length ? <dl className="simple-facts">{detail.request_form.rows.map((row) => <div key={row.key}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl> : null}

@@ -638,11 +638,12 @@ export function mapSupportTimelineEntries(
   return (entries ?? []).map((entry, index) => {
     const category = entry.event_category ?? null;
     const requesterKind = entry.requester_timeline_kind ?? null;
-    const isInternal = category === "internal" || entry.visibility === "internal";
+    const isInternal = entry.event_type === "chat_message" && entry.from_role !== "system"
+      && (category === "internal" || entry.visibility === "internal");
     const isDiagnostic = requesterKind === "diagnostic_result" || category === "diagnostics" || entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";
     const isPublicMessage = entry.event_type === "chat_message" && entry.visibility === "public"
       && (!category || category === "message") && (entry.from_role !== "system" || requesterKind === "support_message");
-    const kind: SupportWorkspaceTimelineKind = isInternal ? "internal" : isDiagnostic ? "diagnostics" : isPublicMessage ? "message" : "history";
+    const kind: SupportWorkspaceTimelineKind = isDiagnostic ? "diagnostics" : isInternal ? "internal" : isPublicMessage ? "message" : "history";
     const operationStatus = entry.tool_status ?? "";
     const operationTone = operationStatusTone(operationStatus);
     const historyTone =

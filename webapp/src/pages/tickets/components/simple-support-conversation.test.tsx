@@ -7,6 +7,14 @@ import { SimpleSupportConversation } from "./simple-support-conversation";
 const raw = (extra: Record<string, unknown>) => ({ event_type: "chat_message", visibility: "public", text: "Здравствуйте", attachments: [], from_role: "support", message_id: null, event_id: null, ts: null, direction: "to_agent", reply_to: null, ...extra }) as SupportTicketDetailPayload["timeline"][number];
 
 describe("clean support conversation", () => {
+  it("puts internal diagnostic and status events in history rather than operator notes", () => {
+    const items = mapSupportTimelineEntries([
+      raw({ event_id: 20, event_type: "tool_call_result", visibility: "internal" }),
+      raw({ event_id: 21, event_type: "status_changed", visibility: "internal" }),
+    ]);
+    expect(items.map((item) => item.kind)).toEqual(["diagnostics", "history"]);
+  });
+
   it("keeps distinct message and event identities even when their printed values coincide", () => {
     const items = mapSupportTimelineEntries([raw({ message_id: "1", event_id: 7 }), raw({ event_id: 1, visibility: "system", text: "Статус изменён" })]);
     expect(new Set(items.map((item) => item.id)).size).toBe(2);

@@ -1,10 +1,11 @@
 import { expect, test, type Page } from "playwright/test";
 
 async function login(page: Page) {
-  await page.goto("/app/login");
+  await page.goto("/app/login?next=/app/tickets");
   await page.getByLabel("Логин").fill("support");
   await page.getByLabel("Пароль").fill("secret");
   await page.getByRole("button", { name: "Войти", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Очередь обращений", exact: true })).toBeVisible();
 }
 
 for (const width of [1366, 1920, 390]) {
@@ -46,8 +47,8 @@ for (const width of [1366, 1920, 390]) {
       await route.fulfill({ response, json: payload });
     });
     await login(page);
-    await page.goto("/app/tickets");
     await expect(page.getByRole("heading", { name: "Очередь обращений" })).toBeVisible();
+    await expect(page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "Взять в работу", exact: true })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Завершённые", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: info.outputPath(`queue-${width}.png`), fullPage: true });

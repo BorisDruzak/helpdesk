@@ -50,6 +50,7 @@ SUPPORT_PERMISSIONS = [
     "ticket.comment.public",
     "ticket.comment.internal",
     "ticket.status.change",
+    "ticket.assign",
     "ticket.playbook.run",
     "ticket.tool.run",
     "module.tool.run.low_risk",
