@@ -225,7 +225,7 @@
   defines strict bodies and bounded inputs. `app/repos/request_scenario_repo.py`
   binds existing catalog/template records, serializes edits by service/draft
   revision and writes the existing catalog audit in the same transaction.
-  Requester form/bootstrap/profile/device reads and ticket creation/detail routes
+  Requester form/bootstrap/profile/device reads and ticket creation/detail/reply routes
   also admit the admin role already granted the requester workspace. Scenario
   commands accept that role while retaining the authenticated actor as owner;
   admin requester routes have no cross-owner bypass. Ticket pages can read the

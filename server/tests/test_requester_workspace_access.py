@@ -1,5 +1,6 @@
 """The admin requester workspace uses the authenticated owner's boundaries."""
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from aiohttp import web
@@ -101,3 +102,82 @@ async def test_admin_ticket_consent_reads_stay_owner_scoped(monkeypatch, detail)
     called = service.get_for_requester if detail else service.list_for_requester
     assert called.await_args.kwargs["requester_external_ref"] == "own-person"
     assert called.await_args.kwargs["requester_person_id"] == "own-person"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role,owned,status,policy_allowed,expected", [
+    (None, True, "queued", True, 401),
+    ("user", True, "queued", True, 200),
+    ("admin", True, "queued", True, 200),
+    ("admin", True, "waiting_on_user", True, 200),
+    ("user", False, "queued", True, 404),
+    ("admin", False, "queued", True, 404),
+    ("support", True, "queued", True, 403),
+    ("auditor", True, "queued", True, 403),
+    ("user", True, "closed", True, 409),
+    ("admin", True, "closed", True, 409),
+    ("admin", True, "queued", False, 409),
+])
+async def test_requester_reply_keeps_workspace_owner_role_and_state_boundaries(
+    monkeypatch, role, owned, status, policy_allowed, expected,
+):
+    database = SimpleNamespace(commit=AsyncMock())
+
+    @asynccontextmanager
+    async def session():
+        yield database
+
+    ticket = SimpleNamespace(ticket_id="own-ticket", device_id=None, status=status,
+        requester_person_id="own-person", requester_binding_id=None, requester_account_mode="declared_profile",
+        custom_fields={"requester_action_policy": {"can_send_message": policy_allowed}})
+    resolver = SimpleNamespace(get_ticket=AsyncMock(return_value=ticket if owned else None))
+    repo = SimpleNamespace(add_event=AsyncMock(return_value=(101, 1)))
+    workflow = SimpleNamespace(apply_triggered_transition=AsyncMock(return_value={
+        "event_result": (102, 2), "event_payload": {"status": "assigned"}}))
+    observer, push = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(handlers, "get_session", session)
+    monkeypatch.setattr(handlers, "RequesterIdentityResolver", MagicMock(return_value=resolver))
+    monkeypatch.setattr(handlers, "TicketEventsRepo", MagicMock(return_value=repo))
+    monkeypatch.setattr(handlers, "TicketWorkflowService", MagicMock(return_value=workflow))
+    monkeypatch.setattr(handlers, "_write_requester_web_observer_event", observer)
+    monkeypatch.setattr(handlers, "_push_ticket_event", push)
+    monkeypatch.setattr("auth.middleware._write_web_auth_audit", AsyncMock())
+
+    @web.middleware
+    async def auth(request, handler):
+        if role is not None:
+            request["auth_context"] = AuthContext("own-login", role, AuthType.SESSION)
+        return await handler(request)
+
+    app = web.Application(middlewares=[auth])
+    app.router.add_post("/api/web/requester/tickets/{ticket_id}/message", handlers.handle_web_requester_ticket_message)
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post("/api/web/requester/tickets/own-ticket/message?actor_id=other-login", json={
+            "text": "Привет", "message_id": "owned-message", "actor_id": "other-login",
+            "sender_role": "support", "visibility": "internal"})
+        result = await response.json()
+        assert response.status == expected, result
+
+    if role in {"user", "admin"}:
+        resolver.get_ticket.assert_awaited_once_with(actor_id="own-login", ticket_id="own-ticket")
+    else:
+        resolver.get_ticket.assert_not_awaited()
+    if expected != 200:
+        repo.add_event.assert_not_awaited()
+        observer.assert_not_awaited()
+        push.assert_not_awaited()
+        workflow.apply_triggered_transition.assert_not_awaited()
+        return
+
+    payload = repo.add_event.await_args.kwargs["payload"]
+    assert payload["sender_role"] == "user" and payload["from"] == "user"
+    assert payload["sender_display_name"] == "own-login" and payload["visibility"] == "public"
+    assert payload["text"] == "Привет" and payload["requester_person_id"] == "own-person"
+    assert observer.await_args.kwargs["auth_context"].actor_id == "own-login"
+    assert observer.await_args.kwargs["auth_context"].actor_role == role
+    database.commit.assert_awaited_once()
+    if status == "waiting_on_user":
+        assert workflow.apply_triggered_transition.await_args.kwargs["trigger_actor_id"] == "own-login"
+        assert workflow.apply_triggered_transition.await_args.kwargs["trigger_actor_role"] == role
+    else:
+        workflow.apply_triggered_transition.assert_not_awaited()

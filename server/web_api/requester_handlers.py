@@ -1230,7 +1230,7 @@ async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.
     )
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_ticket_message(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
