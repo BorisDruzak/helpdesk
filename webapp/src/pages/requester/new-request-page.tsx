@@ -40,7 +40,6 @@ import {
   recommendOffering,
   requesterFormPrefillFromContext,
   resolveRecommendedCategoryKey,
-  CategorySelector,
 } from "./new-request-workflow";
 import type {
   RequestFormDefinition,
@@ -61,6 +60,7 @@ type NewRequestDraft = {
   onBehalfQuery?: string;
   onBehalfReason?: string;
   selectedCategoryKey?: string;
+  selectedSearchEntry?: string;
   selectedOnBehalfPerson?: RequesterOnBehalfPerson | null;
   showAllCategoryOptions?: boolean;
   status: "draft";
@@ -366,13 +366,12 @@ function RequesterNewRequestContent() {
   const [onBehalfPeople, setOnBehalfPeople] = useState<RequesterOnBehalfPerson[]>([]);
   const [selectedOnBehalfPerson, setSelectedOnBehalfPerson] = useState<RequesterOnBehalfPerson | null>(null);
   const [onBehalfReason, setOnBehalfReason] = useState("");
-  const categorySelectRef = useRef<HTMLSelectElement | null>(null);
+  const categorySelectRef = useRef<HTMLInputElement | null>(null);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const [validationAttempted, setValidationAttempted] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
   const [selectedSearchEntry, setSelectedSearchEntry] = useState<string | undefined>();
-  const [showAllCategoryOptions, setShowAllCategoryOptions] = useState(false);
   const restoredDraftRef = useRef(false);
 
   const categoryOptions = useMemo(
@@ -396,17 +395,6 @@ function RequesterNewRequestContent() {
     () => categoryOptions.find((option) => option.key === selectedCategoryKey) ?? null,
     [categoryOptions, selectedCategoryKey],
   );
-  const categorySelectorOptions = useMemo(() => {
-    if (
-      !showAllCategoryOptions &&
-      shouldAutoSelectRecommendedCategory &&
-      selectedCategory &&
-      selectedCategory.key === recommendedCategoryKey
-    ) {
-      return [selectedCategory];
-    }
-    return categoryOptions;
-  }, [categoryOptions, recommendedCategoryKey, selectedCategory, shouldAutoSelectRecommendedCategory, showAllCategoryOptions]);
   const selectedOffering = selectedCategory?.offering ?? null;
   const selectedService = selectedCategory?.service ?? null;
   const selectedForm = selectedCategory?.form ?? null;
@@ -489,10 +477,6 @@ function RequesterNewRequestContent() {
   }, [autoSelectCategoryKey, categoryOptions]);
 
   useEffect(() => {
-    setShowAllCategoryOptions(false);
-  }, [recommendedCategoryKey]);
-
-  useEffect(() => {
     setFieldValues((current) => {
       const next = mergeContextPrefillValues(selectedForm, current, previousPrefill, requestFormPrefill);
       setPreviousPrefill(buildDefaultFieldValues(selectedForm, requestFormPrefill));
@@ -530,7 +514,7 @@ function RequesterNewRequestContent() {
       return;
     }
     setSelectedCategoryKey(draft.selectedCategoryKey ?? "");
-    setShowAllCategoryOptions(Boolean(draft.showAllCategoryOptions));
+    setSelectedSearchEntry(draft.selectedSearchEntry);
     setFieldValues(draft.fieldValues ?? {});
     setOnBehalfEnabled(Boolean(draft.onBehalfEnabled));
     setOnBehalfQuery(draft.onBehalfQuery ?? "");
@@ -552,8 +536,7 @@ function RequesterNewRequestContent() {
       onBehalfEnabled ||
       Boolean(onBehalfQuery.trim()) ||
       Boolean(onBehalfReason.trim()) ||
-      Boolean(selectedOnBehalfPerson) ||
-      showAllCategoryOptions;
+      Boolean(selectedOnBehalfPerson);
     if (!hasDraftData) {
       removeNewRequestDraft(requestDraftStorageKey);
       return;
@@ -567,7 +550,7 @@ function RequesterNewRequestContent() {
       onBehalfReason,
       selectedCategoryKey,
       selectedOnBehalfPerson,
-      showAllCategoryOptions,
+      selectedSearchEntry,
       status: "draft",
       updated_at: new Date().toISOString(),
     });
@@ -581,7 +564,7 @@ function RequesterNewRequestContent() {
     requestIntent,
     selectedCategoryKey,
     selectedOnBehalfPerson,
-    showAllCategoryOptions,
+    selectedSearchEntry,
   ]);
 
   async function runOnBehalfSearch() {
@@ -834,24 +817,14 @@ function RequesterNewRequestContent() {
             }}>Начать отдельное обращение</button>
           </div>
         ) : null}
-        <CatalogSearch availableOfferings={categoryOptions.flatMap(option => option.offering ? [option.offering.full_code] : [])}
-          fallbackOffering={categoryOptions.find(option => option.offering?.full_code === catalogQuery.data?.fallback?.full_code)?.offering?.full_code}
-          onSelect={(offeringCode, entry) => {
-            const option = categoryOptions.find(item => item.offering?.full_code === offeringCode);
-            if (option) { selectCategoryKey(option.key); setSelectedSearchEntry(entry); }
-          }} />
+        <CatalogSearch options={categoryOptions} selectedKey={selectedCategoryKey} selectedEntry={selectedSearchEntry}
+          inputRef={element => { categorySelectRef.current = element; }} error={categoryError}
+          fallbackOffering={catalogQuery.data?.fallback?.full_code}
+          onSelect={(key, entry) => { selectCategoryKey(key); setSelectedSearchEntry(entry); }} />
         {selectedOffering?.guided_scenario_enabled ? <>
-          <CategorySelector options={categorySelectorOptions} selectedKey={selectedCategoryKey}
-            recommendedKey={recommendedCategoryKey} onChange={selectCategoryKey} />
           <ScenarioEntrances key={`${selectedOffering.full_code}:${selectedSearchEntry ?? "default"}`} initialEntryPointKey={selectedSearchEntry}
             offering={selectedOffering} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
         </> : <DetailsStepPanel
-          categoryError={categoryError}
-          categoryInputRef={(element) => {
-            categorySelectRef.current = element;
-          }}
-          categoryOptions={categoryOptions}
-          categorySelectorOptions={categorySelectorOptions}
           clearFieldServerError={clearFieldServerError}
           contextualFields={contextualFields}
           createTicket={createTicket}
@@ -870,10 +843,8 @@ function RequesterNewRequestContent() {
           onBehalfReasonError={onBehalfReasonError}
           previewResult={previewResult}
           previewSubmitting={previewSubmitting}
-          recommendedCategoryKey={recommendedCategoryKey}
           requiresOnBehalfForAvailability={requiresOnBehalfForAvailability}
           runOnBehalfSearch={runOnBehalfSearch}
-          selectedCategoryKey={selectedCategoryKey}
           selectedForm={selectedForm}
           selectedOnBehalfPerson={selectedOnBehalfPerson}
           setError={setError}
@@ -881,9 +852,7 @@ function RequesterNewRequestContent() {
           setOnBehalfEnabled={setOnBehalfEnabled}
           setOnBehalfQuery={setOnBehalfQuery}
           setOnBehalfReason={setOnBehalfReason}
-          setSelectedCategoryKey={selectCategoryKey}
           setSelectedOnBehalfPerson={setSelectedOnBehalfPerson}
-          setShowAllCategoryOptions={setShowAllCategoryOptions}
           submitting={submitting}
           validationAttempted={validationAttempted}
           valueValidation={valueValidation}

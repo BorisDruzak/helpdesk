@@ -52,10 +52,13 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       return route.fulfill({ json: { status: "ok", catalog_version: "test", services: [{ service_code: "workplace", title: "Рабочее место", offerings: [{ offering_code: "printer", full_code: "workplace.printer", title: "Не печатает", request_template_key: "printer", guided_scenario_enabled: true, ...(mode === "ticket" ? { catalog_items: [{ key: "paper", title: "Бумага застряла", description: "Помощь с бумагой", synonyms: ["замятие"], entry_point_key: "paper", scenario_key: "printer", version_id: "v1", target_block_id: "questions" }] } : {}) }] }] } });
     });
     await page.goto(mode === "escape-ticket" ? "/app/requester/new/?offering=workplace.printer" : "/app/requester/new");
-    if (mode === "self-service") await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
+    if (mode === "self-service") {
+      await page.getByRole("combobox", { name: "Найти проблему во всём каталоге" }).click();
+      await page.getByRole("option", { name: /Не печатает/ }).click();
+    }
     if (mode === "ticket") {
-      await page.getByRole("searchbox", { name: "Найти проблему во всём каталоге" }).fill("замятие");
-      const result = page.getByRole("button", { name: /Бумага застряла/ });
+      await page.getByRole("combobox", { name: "Найти проблему во всём каталоге" }).fill("замятие");
+      const result = page.getByRole("option", { name: /Бумага застряла/ });
       await expect(result).toBeInViewport({ ratio: 1 });
       await expect(page.getByText("Оборудование · Пошаговая помощь")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

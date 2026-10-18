@@ -11,6 +11,11 @@ async function fulfillJson(route: Route, payload: unknown) {
   });
 }
 
+async function selectProblem(page: Page, title: string) {
+  await page.getByRole("combobox", { name: "Найти проблему во всём каталоге" }).click();
+  await page.getByRole("option").filter({ has: page.getByText(title, { exact: true }) }).click();
+}
+
 async function installRequesterMocks(page: Page) {
   const ticket = {
     ticket_id: ticketId,
@@ -352,12 +357,12 @@ for (const scenario of routeMatrix) {
 test("requester create flow validates and submits from one form", async ({ page }) => {
   await page.goto("/app/requester/new");
 
-  await expect(page.getByLabel("Категория обращения")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Найти проблему во всём каталоге" })).toBeVisible();
   await expect(page.getByText("Черновик")).toBeVisible();
   await expect(page.getByLabel("Что случилось или что нужно?")).toBeHidden();
   await expect(page.getByRole("button", { name: "К проверке" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Проверить обращение" })).toBeHidden();
-  await page.getByLabel("Категория обращения").selectOption("form:vpn_access");
+  await selectProblem(page, "VPN access");
   await page.getByLabel("Impact").selectOption("me");
   await page.getByRole("button", { name: "Создать обращение" }).click();
   await expect(page).toHaveURL(/\/app\/requester\/tickets\/REQ-1002$/);
@@ -405,7 +410,7 @@ test("requester on-behalf flow searches a person and submits affected-person con
   );
 
   await page.goto("/app/requester/new");
-  await page.getByLabel("Категория обращения").selectOption("form:on_behalf_access");
+  await selectProblem(page, "Access for another employee");
   await page.getByLabel("For another employee").check();
   await page.getByLabel("Найти сотрудника").fill("Maria");
   await page.getByRole("button", { name: "Найти" }).click();
@@ -463,7 +468,7 @@ test("requester dynamic multi-select conditions reveal and require conditional f
   );
 
   await page.goto("/app/requester/new");
-  await page.getByLabel("Категория обращения").selectOption("form:conditional_assets");
+  await selectProblem(page, "Conditional assets");
   await expect(page.getByLabel("Printer room")).toBeHidden();
   await page.getByLabel("Assets").getByText("Printer").click();
   await expect(page.getByLabel("Printer room")).toBeVisible();
@@ -624,7 +629,7 @@ for (const pattern of ["(a)?(?(1)b|c)", "(?#comment)a"]) {
       return fulfillJson(route, { status: "success", data: { ticket_id: ticketId, ticket_code: ticketCode } });
     });
     await page.goto("/app/requester/new");
-    await page.getByLabel("Категория обращения").selectOption("form:regex_probe");
+    await selectProblem(page, "Regex regression");
     await page.getByLabel("Код формата").fill("c");
     await page.getByRole("button", { name: "Создать обращение", exact: true }).click();
     await expect(page.getByText("Ошибка настройки формата поля. Обратитесь в поддержку.", { exact: true }).first()).toBeVisible();
@@ -659,7 +664,7 @@ test("requester saved checkbox conditions submit zero and reopen the created tic
     return fulfillJson(route,{status:"success",data:{ticket_id:"550e8400-e29b-41d4-a716-446655440002",ticket_code:"REQ-1002"}});
   });
   await page.goto("/app/requester/new");
-  await page.getByLabel("Категория обращения").selectOption("form:checkbox_zero");
+  await selectProblem(page, "Checkbox regression");
   await expect(page.getByLabel("Причина без количества")).toBeVisible();
   await expect(page.getByLabel("Количество",{exact:true})).toBeHidden();
   await page.getByLabel("Показать количество").check();
@@ -697,7 +702,7 @@ test("requester create retains its key across a lost response and browser reload
     });
   });
   await page.goto("/app/requester/new");
-  await page.getByLabel("Категория обращения").selectOption("form:vpn_access");
+  await selectProblem(page, "VPN access");
   await page.getByLabel("Impact").selectOption("me");
   await page.getByRole("button", { name: "Создать обращение" }).click();
   await expect.poll(() => keys.length).toBe(1);
@@ -743,7 +748,7 @@ test("requester create conflict requires an explicit separate request", async ({
     });
   });
   await page.goto("/app/requester/new");
-  await page.getByLabel("Категория обращения").selectOption("form:vpn_access");
+  await selectProblem(page, "VPN access");
   await page.getByLabel("Impact").selectOption("me");
   await page.getByRole("button", { name: "Создать обращение" }).click();
   await expect(page.getByRole("link", { name: "Проверить обращения" })).toBeVisible();

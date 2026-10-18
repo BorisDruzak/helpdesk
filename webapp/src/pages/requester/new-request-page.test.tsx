@@ -46,12 +46,13 @@ function renderPage(initialEntry = "/app/requester/new") {
 }
 
 async function chooseCategory(label: string) {
-  const select = await screen.findByLabelText("Категория обращения");
-  const option = Array.from((select as HTMLSelectElement).options).find((item) => item.textContent?.includes(label));
+  const select = await screen.findByRole("combobox", { name: "Найти проблему во всём каталоге" });
+  fireEvent.focus(select);
+  const option = screen.getAllByRole("option").find((item) => item.textContent?.includes(label));
   if (!option) {
     throw new Error(`Category option not found: ${label}`);
   }
-  fireEvent.change(select, { target: { value: option.value } });
+  fireEvent.click(option);
 }
 
 afterEach(() => {
@@ -61,6 +62,33 @@ afterEach(() => {
 });
 
 describe("RequesterNewRequestPage", () => {
+  it("uses the configured available fallback from the permanent action before searching", async () => {
+    const fetcher = installNewRequestMock({ withPrinterOffering: true }); const original = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (input, init) => {
+      const result = await original(input, init);
+      if (String(input) !== "/api/service-catalog/current") return result;
+      const payload = await result.json(); payload.fallback = payload.services[0].offerings[1];
+      return jsonResponse(payload);
+    });
+    renderPage(); fireEvent.click(await screen.findByRole("button", { name: "Не нашёл свою проблему" }));
+    expect(screen.getByText("Выбрано: Проблема с принтером")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Проблема с принтером" })).toBeVisible();
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes("?q=") || String(url).includes("request-scenarios/sessions"))).toBe(false);
+  });
+  it("uses one editable catalog selector for available forms without a separate category picker", async () => {
+    const fetcher = installNewRequestMock({ withPrinterOffering: true }); renderPage();
+    const input = await screen.findByRole("combobox", { name: "Найти проблему во всём каталоге" });
+    expect(screen.queryByLabelText("Категория обращения")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Найти проблему")).not.toBeInTheDocument();
+    fireEvent.focus(input);
+    expect(screen.getByRole("option", { name: /Проблема с принтером/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: /Сломался ноутбук/ })).toBeVisible();
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes("request-scenarios/sessions"))).toBe(false);
+    fireEvent.click(screen.getByRole("option", { name: /Проблема с принтером/ }));
+    expect(screen.getByText(/Выбрано: Проблема с принтером/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Изменить проблему" })).toBeVisible();
+    expect(screen.getByLabelText("Кратко")).toBeVisible();
+  });
   it("opens the exact catalog search entrance after explicit selection", async () => {
     const fetchMock = installNewRequestMock({ withPrinterOffering: true });
     const original = fetchMock.getMockImplementation()!;
@@ -86,9 +114,9 @@ describe("RequesterNewRequestPage", () => {
       return original(input, init);
     });
     renderPage();
-    const input = await screen.findByRole("searchbox", { name: "Найти проблему во всём каталоге" });
+    const input = await screen.findByRole("combobox", { name: "Найти проблему во всём каталоге" });
     fireEvent.change(input, { target: { value: "принтер не печатает" } });
-    const entry = await screen.findByRole("button", { name: /Не печатает принтер/ });
+    const entry = await screen.findByRole("option", { name: /Не печатает принтер/ });
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("request-scenarios/sessions"))).toHaveLength(0);
     fireEvent.click(entry);
     await screen.findByRole("heading", { name: "Проверьте подключение принтера" });
@@ -146,10 +174,10 @@ describe("RequesterNewRequestPage", () => {
     renderPage();
     await fillLaptopForm("Обычный черновик");
     fireEvent.click(screen.getByRole("button", { name: "Test printer link" }));
-    await waitFor(() => expect((screen.getByLabelText("Категория обращения") as HTMLSelectElement).selectedOptions[0].textContent).toContain("Проблема с принтером"));
+    await screen.findByText("Выбрано: Проблема с принтером");
     fireEvent.change(screen.getByLabelText("Кратко"), { target: { value: "Черновик принтера" } });
     fireEvent.click(screen.getByRole("button", { name: "Test laptop link" }));
-    await waitFor(() => expect((screen.getByLabelText("Категория обращения") as HTMLSelectElement).selectedOptions[0].textContent).toContain("Сломался ноутбук"));
+    await screen.findByText("Выбрано: Сломался ноутбук");
     fireEvent.change(screen.getByLabelText("Кратко"), { target: { value: "Ссылочный ноутбук" } });
     fireEvent.click(screen.getByRole("button", { name: "Test normal link" }));
     await waitFor(() => expect(screen.getByLabelText("Кратко")).toHaveValue("Обычный черновик"));
@@ -165,13 +193,13 @@ describe("RequesterNewRequestPage", () => {
     window.sessionStorage.setItem(draftKey, draft);
     renderPage("/app/requester/new?offering=workplace.printer_issue");
     expect(await screen.findByLabelText("Кратко")).toBeVisible();
-    expect((screen.getByLabelText("Категория обращения") as HTMLSelectElement).selectedOptions[0].textContent).toContain("Проблема с принтером");
+    expect(screen.getByText("Выбрано: Проблема с принтером")).toBeVisible();
     expect(window.sessionStorage.getItem(draftKey)).toBe(draft);
   });
   it("does not auto-select an offering absent from the requester catalog", async () => {
     installNewRequestMock();
     renderPage("/app/requester/new?offering=private.hidden");
-    expect(await screen.findByLabelText("Категория обращения")).toHaveValue("");
+    expect(await screen.findByRole("combobox", { name: "Найти проблему во всём каталоге" })).toHaveValue("");
     expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument();
   });
   function draftEntries() {
@@ -191,7 +219,7 @@ describe("RequesterNewRequestPage", () => {
     const fetchMock = installNewRequestMock();
     renderPage();
 
-    expect(await screen.findByLabelText("Категория обращения")).toBeInTheDocument();
+    expect(await screen.findByRole("combobox", { name: "Найти проблему во всём каталоге" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Что случилось или что нужно?")).not.toBeInTheDocument();
     expect(screen.queryByText("Возможно, поможет")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "К проверке" })).not.toBeInTheDocument();
@@ -274,7 +302,7 @@ describe("RequesterNewRequestPage", () => {
     installNewRequestMock({ withDistractorOffering: true });
     renderPage();
 
-    const selector = await screen.findByLabelText("Категория обращения");
+    const selector = await screen.findByRole("combobox", { name: "Найти проблему во всём каталоге" });
     expect(selector).toHaveValue("");
     fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Выберите категорию обращения.");
@@ -403,7 +431,7 @@ describe("RequesterNewRequestPage", () => {
     });
     renderPage();
 
-    expect(await screen.findByLabelText("Категория обращения")).toBeInTheDocument();
+    expect(await screen.findByRole("combobox", { name: "Найти проблему во всём каталоге" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Сначала заполните профиль" })).not.toBeInTheDocument();
   });
 

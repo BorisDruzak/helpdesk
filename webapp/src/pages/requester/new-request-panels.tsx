@@ -15,16 +15,11 @@ import type {
   ServiceCatalogSafePreview,
 } from "../../features/requester/types";
 import {
-  CategorySelector,
   OnBehalfPanel,
   type CategoryOption,
 } from "./new-request-workflow";
 
 export function DetailsStepPanel({
-  categoryOptions,
-  categoryError,
-  categoryInputRef,
-  categorySelectorOptions,
   createTicket,
   contextualFields,
   fieldRefs,
@@ -42,10 +37,8 @@ export function DetailsStepPanel({
   onBehalfReasonError,
   previewResult,
   previewSubmitting,
-  recommendedCategoryKey,
   requiresOnBehalfForAvailability,
   runOnBehalfSearch,
-  selectedCategoryKey,
   selectedForm,
   selectedOnBehalfPerson,
   clearFieldServerError,
@@ -54,17 +47,11 @@ export function DetailsStepPanel({
   setOnBehalfEnabled,
   setOnBehalfQuery,
   setOnBehalfReason,
-  setSelectedCategoryKey,
   setSelectedOnBehalfPerson,
-  setShowAllCategoryOptions,
   submitting,
   validationAttempted,
   valueValidation,
 }: {
-  categoryOptions: CategoryOption[];
-  categoryError?: string | null;
-  categoryInputRef?: (element: HTMLSelectElement | null) => void;
-  categorySelectorOptions: CategoryOption[];
   createTicket: () => void;
   contextualFields: RequestFormDefinition["fields"];
   fieldRefs: MutableRefObject<Record<string, HTMLElement | null>>;
@@ -82,10 +69,8 @@ export function DetailsStepPanel({
   onBehalfReasonError?: string | null;
   previewResult: ServiceCatalogSafePreview | null;
   previewSubmitting: boolean;
-  recommendedCategoryKey: string | null;
   requiresOnBehalfForAvailability: boolean;
   runOnBehalfSearch: () => void;
-  selectedCategoryKey: string;
   selectedForm: RequestFormDefinition | null;
   selectedOnBehalfPerson: RequesterOnBehalfPerson | null;
   clearFieldServerError: (fieldKey: string) => void;
@@ -94,9 +79,7 @@ export function DetailsStepPanel({
   setOnBehalfEnabled: (value: boolean) => void;
   setOnBehalfQuery: (value: string) => void;
   setOnBehalfReason: (value: string) => void;
-  setSelectedCategoryKey: (value: string) => void;
   setSelectedOnBehalfPerson: (value: RequesterOnBehalfPerson) => void;
-  setShowAllCategoryOptions: (value: boolean) => void;
   submitting: boolean;
   validationAttempted: boolean;
   valueValidation: DynamicFormValidationResult;
@@ -104,21 +87,8 @@ export function DetailsStepPanel({
   const previewBlockers = previewResult?.blockers ?? [];
   return (
     <section className="rounded-panel border border-slate-200 bg-white p-4">
-      <CategorySelector
-        canShowAll={categorySelectorOptions.length < categoryOptions.length}
-        error={categoryError}
-        inputRef={categoryInputRef}
-        onShowAll={() => setShowAllCategoryOptions(true)}
-        options={categorySelectorOptions}
-        recommendedKey={recommendedCategoryKey}
-        selectedKey={selectedCategoryKey}
-        onChange={(key) => {
-          setSelectedCategoryKey(key);
-          setError(null);
-        }}
-      />
       {!selectedForm ? (
-        <p className="mt-3 text-sm text-slate-600">Выберите категорию, чтобы увидеть нужные поля и безопасную проверку.</p>
+        <p className="mt-3 text-sm text-slate-600">Выберите проблему в поиске выше, чтобы увидеть нужные поля и безопасную проверку.</p>
       ) : null}
       {selectedForm ? <h2 className="mt-4 text-lg font-semibold text-slate-950">{selectedForm.title}</h2> : null}
       {requiresOnBehalfForAvailability ? (

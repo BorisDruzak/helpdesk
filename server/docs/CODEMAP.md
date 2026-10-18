@@ -600,8 +600,13 @@ TTL, immutable version pinning, last-command replay and redacted catalog audit.
 `request_scenario_session.py` projects one safe step, and
 `request_scenario_pickers.py` reads/validates scoped Registry entities.
 `request_scenario_catalog.py` adds per-offering availability to the existing
-Service Catalog. Requester UI uses `features/requester/scenario-session.tsx`
-from `pages/requester/new-request-page.tsx`; legacy offering UI remains default.
+Service Catalog. `features/requester/catalog-search.tsx` provides the single
+editable requester selector: empty browsing uses available catalog entries,
+typed queries retain canonical server ranking, and the configured catalog
+fallback remains an explicit action. `pages/requester/new-request-page.tsx`
+shares this selector between legacy forms and guided entrances; selecting an
+entrance opens `features/requester/scenario-session.tsx`. Opening the selector
+alone does not start a session.
 `tickets/request_scenario_submission.py` revalidates visited pages and maps typed
 facts/roles into the existing form submission, retaining a support snapshot.
 `web_api/requester_handlers.py` exposes caller-transaction create/preview helpers:
