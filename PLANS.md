@@ -2428,3 +2428,18 @@ No runtime behavior, production/staging deployment or Endpoint operation changes
 Checks: full unit suite792 passed in hosted CI; local no-DB server1452 passed,
 1 skipped; scripts272 passed; required fast audit layers passed. Full fixture,
 migration/DB and exact-SHA workflow results are recorded in the publication receipt.
+
+# 2026-10-18 Ticket workspace usability fixes
+
+Bounded support/requester fixes from the five staging browser comments. Use one
+route-aware queue/card workspace; give the queue its full working width and keep
+the command row from stretching. Put assignment/status beside the reply, move
+system and diagnostic events to Context, and make closure guidance explicit.
+Preserve server closure checks, audit and requester ownership. Align requester
+admin replies with the existing owner-scoped requester read/create contract.
+
+Implementation is isolated from the unrelated Registry working copy. Regression
+checks cover route restoration, queue navigation, event classification, explicit
+closure guidance, accessible primary actions and owner-scoped reply authorization.
+Focused tests, final browser checks, exact-SHA CI and staging acceptance are
+recorded in the task evidence. No new database migration or Endpoint operation.

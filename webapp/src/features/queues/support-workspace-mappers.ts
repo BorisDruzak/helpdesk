@@ -11,6 +11,7 @@ import type {
   SupportTicketSlaOlaTimerPayload,
   SupportTicketToolsPayload,
 } from "./api";
+import { isSupportConversationEntry } from "./support-conversation";
 import type {
   SupportWorkspaceContext,
   SupportWorkspaceClosurePlan,
@@ -620,7 +621,8 @@ export function mapSupportTimelineEntries(
     const requesterKind = entry.requester_timeline_kind ?? null;
     const isInternal = category === "internal" || entry.visibility === "internal";
     const isDiagnostic = requesterKind === "diagnostic_result" || category === "diagnostics" || entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";
-    const kind: SupportWorkspaceTimelineKind = isDiagnostic ? "diagnostics" : isInternal ? "internal" : entry.event_type === "chat_message" ? "message" : "history";
+    const isConversation = isSupportConversationEntry(entry);
+    const kind: SupportWorkspaceTimelineKind = isDiagnostic ? "diagnostics" : isConversation ? isInternal ? "internal" : "message" : "history";
     const operationStatus = entry.tool_status ?? "";
     const operationTone = operationStatusTone(operationStatus);
     const historyTone =
@@ -634,12 +636,12 @@ export function mapSupportTimelineEntries(
     return {
       id: entry.message_id ?? String(entry.event_id ?? index),
       kind,
-      title: entry.event_label ?? (isDiagnostic ? entry.tool_name ?? "Диагностика" : isInternal ? "Внутренняя заметка" : entry.visibility === "system" ? "Системное событие" : "Сообщение"),
+      title: entry.event_label ?? (isDiagnostic ? entry.tool_name ?? "Диагностика" : isConversation ? isInternal ? "Внутренняя заметка" : "Сообщение" : "Системное событие"),
       actor: entry.sender_display_name ?? entry.from_role,
       timestampLabel: formatDateTime(entry.ts),
       body: entry.text,
       visibility: entry.visibility,
-      tone: isDiagnostic ? operationTone : isInternal ? "warning" : entry.visibility === "system" ? historyTone : "brand",
+      tone: isDiagnostic ? operationTone : isConversation ? isInternal ? "warning" : "brand" : historyTone,
       operation: isDiagnostic
         ? {
             name: entry.tool_name ?? "operation",

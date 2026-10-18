@@ -20,6 +20,10 @@ export type TicketsWorkspaceUrlState = {
   shouldOpenQueue: boolean;
 };
 
+export function getInitialTicketsWorkspaceMode(ticketId: string | null | undefined, state: TicketsWorkspaceUrlState): "queue" | "ticket" {
+  return state.shouldOpenQueue || !ticketId ? "queue" : "ticket";
+}
+
 export function normalizeTicketsSmartViewParam(rawValue: string | null | undefined): string | null {
   const value = String(rawValue ?? "").trim();
   if (!value) {

@@ -83,6 +83,42 @@ export function attachmentFromUpload(upload: RequesterAttachmentUploadResult): P
   };
 }
 
+const humanMessageRoles = new Set(["user", "requester", "agent", "device", "client", "support", "admin", "staff", "operator"]);
+const supportMessageRoles = new Set(["support", "admin", "staff", "operator"]);
+type RequesterHistoryEvent = PublicTicketEvent & { attachments?: PublicTicketAttachment[] };
+function messageRole(message: PublicTicketMessage): string {
+  return (message.from_role || message.sender_role || "user").trim().toLowerCase();
+}
+
+export function partitionRequesterTimeline(messages: PublicTicketMessage[], events: PublicTicketEvent[]) {
+  const conversation: PublicTicketMessage[] = [];
+  const history: RequesterHistoryEvent[] = [...events];
+  const eventIndices = new Map(history.flatMap((event, index) => {
+    const id = event.event_id ?? event.id;
+    return id == null ? [] : [[String(id), index] as const];
+  }));
+  for (const [index, message] of messages.entries()) {
+    const eventIndex = message.event_id == null ? undefined : eventIndices.get(String(message.event_id));
+    const existing = eventIndex === undefined ? undefined : history[eventIndex];
+    if (humanMessageRoles.has(messageRole(message)) && existing?.requester_timeline_kind !== "system_event" && existing?.requester_timeline_kind !== "diagnostic_result") {
+      conversation.push(message);
+      continue;
+    }
+    if (existing) {
+      // Retain the server's canonical safe event projection and public file references.
+      if (message.attachments?.length) history[eventIndex!] = { ...existing, attachments: message.attachments };
+    } else {
+      const event: RequesterHistoryEvent = {
+        event_id: message.event_id ?? `message:${message.message_id ?? index}`, type: "chat_message",
+        requester_timeline_kind: "system_event", requester_timeline_text: message.text || "Системное уведомление",
+        ts: message.ts, created_at: message.created_at, attachments: message.attachments,
+      };
+      eventIndices.set(String(event.event_id), history.length); history.push(event);
+    }
+  }
+  return { messages: conversation, events: history };
+}
+
 export function MessagesPanel({ messages }: { messages: PublicTicketMessage[] }) {
   return (
     <section className="rounded-panel border border-slate-200 bg-white p-4">
@@ -92,7 +128,7 @@ export function MessagesPanel({ messages }: { messages: PublicTicketMessage[] })
         {messages.map((message) => (
           <article className="rounded-panel border border-slate-200 px-3 py-2" key={message.message_id || message.event_id || message.created_at}>
             <div className="flex flex-wrap justify-between gap-2 text-xs font-semibold text-slate-500">
-              <span>{message.from_role === "support" || message.sender_role === "support" ? "Поддержка" : "Заявитель"}</span>
+              <span>{supportMessageRoles.has(messageRole(message)) ? "Поддержка" : "Заявитель"}</span>
               <span>{formatRussianDateTime(message.created_at || message.ts, { emptyText: "" })}</span>
             </div>
             {message.text ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{message.text}</p> : null}
@@ -112,7 +148,7 @@ export function MessagesPanel({ messages }: { messages: PublicTicketMessage[] })
   );
 }
 
-export function TimelinePanel({ events }: { events: PublicTicketEvent[] }) {
+export function TimelinePanel({ events }: { events: RequesterHistoryEvent[] }) {
   return (
     <section className="rounded-panel border border-slate-200 bg-white p-4">
       <h3 className="text-lg font-semibold text-slate-950">История</h3>
@@ -122,6 +158,7 @@ export function TimelinePanel({ events }: { events: PublicTicketEvent[] }) {
             <li className="rounded-panel bg-slate-50 px-3 py-2 text-sm text-slate-700" key={String(event.event_id ?? event.id ?? event.created_at ?? event.ts)}>
               <span className="font-semibold">{event.requester_timeline_text || "Обновление обращения"}</span>
               <span className="ml-2 text-xs text-slate-500">{formatRussianDateTime(event.created_at || event.ts, { emptyText: "" })}</span>
+              {event.attachments?.length ? <div className="mt-2 flex flex-wrap gap-2">{event.attachments.map(attachment => <a className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700" href={attachment.url || `/api/artifacts/${encodeURIComponent(attachment.artifact_id)}/download`} key={attachment.artifact_id}>{requesterSafeAttachmentName(attachment.name)}</a>)}</div> : null}
             </li>
           ))
         ) : (

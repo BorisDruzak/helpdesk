@@ -401,6 +401,19 @@ function renderTicketListPage(initialEntry = "/app/tickets") {
   );
 }
 
+async function openClosureRequirements() {
+  await screen.findByTestId("support-reply-composer");
+  fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+  fireEvent.click(screen.getByRole("button", { name: "Требования к закрытию" }));
+  return screen.findByTestId("closure-plan-panel");
+}
+
+async function openSystemContext() {
+  const strip = await screen.findByTestId("support-command-strip");
+  fireEvent.click(within(strip).getByRole("button", { name: "Контекст" }));
+  return screen.findByRole("region", { name: "Системные события" });
+}
+
 beforeEach(() => {
   fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [], total: 0 }));
   fetchSupportQueueSavedViewsMock.mockResolvedValue({
@@ -420,6 +433,38 @@ afterEach(() => {
 });
 
 describe("TicketListPage", () => {
+  it("keeps the general queue open instead of automatically navigating to a ticket", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    window.localStorage.setItem("support-workspace-last-mode", "ticket");
+    renderTicketListPage();
+    await screen.findByRole("heading", { name: "Очередь тикетов" });
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-mode", "queue");
+    expect(fetchSupportTicketWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it("opens a direct ticket link despite a previously expanded queue", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    window.localStorage.setItem("support-workspace-last-mode", "queue");
+    renderTicketListPage("/app/tickets/ticket-1");
+    await screen.findByTestId("support-reply-composer");
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-mode", "ticket");
+  });
+
+  it("keeps ticket actions beside the reply and shows closure requirements only on demand", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    renderTicketListPage("/app/tickets/ticket-1");
+    const actions = await screen.findByRole("group", { name: "Действия обращения" });
+    expect(within(actions).getByRole("button", { name: "Взять себе" })).toBeInTheDocument();
+    expect(within(actions).getByRole("button", { name: "Сменить статус" })).toBeInTheDocument();
+    expect(screen.queryByTestId("closure-plan-panel")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    fireEvent.click(screen.getByRole("button", { name: "Требования к закрытию" }));
+    expect(screen.getByTestId("closure-plan-panel")).toBeInTheDocument();
+  });
+
   it("switches between ticket, queue and expanded right-panel workspace modes", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
@@ -461,15 +506,16 @@ describe("TicketListPage", () => {
     expect(screen.getByText("Готовность к закрытию")).toBeInTheDocument();
   });
 
-  it("restores the last workspace mode from localStorage", async () => {
+  it("prioritizes a direct ticket link over a persisted queue mode", async () => {
     window.localStorage.setItem("support-workspace-last-mode", "queue");
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    expect(await screen.findByTestId("support-workspace-root")).toHaveAttribute("data-mode", "queue");
-    expect(screen.getByRole("heading", { name: "Очередь тикетов" })).toBeInTheDocument();
+    expect(await screen.findByTestId("support-workspace-root")).toHaveAttribute("data-mode", "ticket");
+    expect(await screen.findByTestId("support-reply-composer")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Очередь тикетов" })).not.toBeInTheDocument();
   });
 
   it("persists the active right tab, smart view and selected queue", async () => {
@@ -504,8 +550,9 @@ describe("TicketListPage", () => {
     renderTicketListPage("/app/tickets/ticket-1");
 
     const root = await screen.findByTestId("support-workspace-root");
-    expect(root).toHaveAttribute("data-mode", "tools");
-    expect(screen.getByRole("heading", { name: "Инструменты" })).toBeInTheDocument();
+    expect(root).toHaveAttribute("data-mode", "ticket");
+    expect(window.localStorage.getItem("support-workspace-active-right-tab")).toBe("context");
+    expect(await screen.findByTestId("support-reply-composer")).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchSupportQueueMock).toHaveBeenCalledWith(expect.objectContaining({ smartView: "sla_risk" }));
     });
@@ -544,17 +591,66 @@ describe("TicketListPage", () => {
     });
   });
 
-  it("refreshes the active standalone timeline tab when operation realtime events arrive", async () => {
+  it("keeps older human messages and deduplicated internal notes visible when recent history is all system events", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    const base = timelinePayload().items[0];
+    const human = { ...base, event_id: 501, message_id: "older-human", event_type: "chat_message", event_category: "message", from_role: "user", sender_display_name: "Сотрудник", visibility: "public", direction: "to_agent", text: "Старое сообщение пользователя", ts: "2026-05-01T09:00:00+05:00" };
+    const internal = { ...human, event_id: 502, message_id: "older-internal", event_category: "internal", from_role: "support", visibility: "internal", text: "Внутренняя заметка оператора", ts: "2026-05-01T09:01:00+05:00" };
+    const recent = Array.from({ length: 80 }, (_, index) => ({ ...base, event_id: 600 + index, message_id: null, event_type: "status_changed", event_category: "history", text: `Служебное изменение ${index + 1}` }));
+    fetchSupportTicketTimelineMock.mockImplementation(async (_id, filter) => timelinePayload({ filter, items: filter === "messages" ? [internal, human] : filter === "internal" ? [internal] : recent }));
+    renderTicketListPage("/app/tickets/ticket-1");
+    const chat = await screen.findByRole("region", { name: "Переписка" });
+    expect(await within(chat).findByText("Старое сообщение пользователя")).toBeInTheDocument();
+    expect(within(chat).getAllByText("Внутренняя заметка оператора")).toHaveLength(1);
+    expect(within(chat).getAllByRole("article")[0]).toHaveTextContent("Старое сообщение пользователя");
+    expect(within(chat).queryByText("Служебное изменение 1")).not.toBeInTheDocument();
+    expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "messages");
+    expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "internal");
+    const context = await openSystemContext();
+    expect(within(context).getByText("Служебное изменение 1")).toBeInTheDocument();
+    expect(within(context).queryByText("Старое сообщение пользователя")).not.toBeInTheDocument();
+  });
+
+  it.each(["conversation", "context"])("keeps known messages and an unsent reply when the %s query fails and can retry", async failedSection => {
+    const base = timelinePayload().items[0];
+    const human = { ...base, event_id: 901, message_id: "known-message", event_type: "chat_message", event_category: "message", from_role: "user", visibility: "public", direction: "to_agent", text: "Сохранённое сообщение пользователя" };
+    const history = { ...base, event_id: 902, message_id: null, event_type: "status_changed", event_category: "history", text: "Сохранённое системное событие" };
+    const payload = workspacePayload(); payload.detail.timeline = [human, history];
+    fetchSupportQueueMock.mockResolvedValue(queuePayload()); fetchSupportTicketWorkspaceMock.mockResolvedValue(payload);
+    let failed = true;
+    fetchSupportTicketTimelineMock.mockImplementation(async (_id, filter) => {
+      if (failed && (failedSection === "conversation" ? filter === "messages" || filter === "internal" : filter === "all")) throw new Error("temporary failure");
+      return timelinePayload({ filter, items: filter === "messages" ? [human] : filter === "internal" ? [] : [history] });
+    });
+    renderTicketListPage("/app/tickets/ticket-1");
+    const draft = await screen.findByTestId("support-reply-composer");
+    fireEvent.change(draft, { target: { value: "Неотправленный ответ" } });
+    if (failedSection === "context") await openSystemContext();
+    const retry = await screen.findByRole("button", { name: failedSection === "conversation" ? "Повторить загрузку переписки" : "Повторить загрузку событий" });
+    expect(screen.getByRole("alert")).toHaveTextContent(failedSection === "conversation" ? "Не удалось обновить переписку" : "Не удалось обновить события");
+    expect(within(screen.getByRole("region", { name: "Переписка" })).getByText("Сохранённое сообщение пользователя")).toBeInTheDocument();
+    if (failedSection === "context") expect(screen.getByText("Сохранённое системное событие")).toBeInTheDocument();
+    expect(draft).toHaveValue("Неотправленный ответ");
+    failed = false; fireEvent.click(retry);
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(draft).toHaveValue("Неотправленный ответ");
+  });
+
+  it("refreshes the filtered context and complete conversation when operation realtime events arrive", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload());
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Диагностика" }));
+    const context = await openSystemContext();
+    fireEvent.click(within(context).getByRole("button", { name: "Диагностика" }));
 
     await waitFor(() => {
       expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "diagnostics");
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "messages");
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "internal");
       expect(realtimeClientMock.subscribeTicket).toHaveBeenCalledWith("ticket-1", expect.any(Function));
     });
 
@@ -570,6 +666,8 @@ describe("TicketListPage", () => {
     await waitFor(() => {
       expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
       expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "diagnostics");
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "messages");
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "internal");
     });
   });
 
@@ -755,7 +853,6 @@ describe("TicketListPage", () => {
 
     renderTicketListPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Развернуть очередь" }));
     expect(await screen.findByRole("heading", { name: "Очередь тикетов" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Срезы" }));
     expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
@@ -834,7 +931,9 @@ describe("TicketListPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Вернуться к очереди" }));
 
-    expect(await screen.findByText("Выберите тикет из очереди")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Очередь тикетов" })).toBeInTheDocument();
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-mode", "queue");
+    expect(screen.queryByTestId("support-reply-composer")).not.toBeInTheDocument();
   });
 
   it("shows a permission-denied workspace edge state for forbidden tickets", async () => {
@@ -847,24 +946,27 @@ describe("TicketListPage", () => {
     expect(screen.getByText("У вашей роли нет доступа к этому тикету или внутренним данным.")).toBeInTheDocument();
   });
 
-  it("renders actionable empty timeline states for all and filtered views", async () => {
+  it("keeps empty human conversation separate from empty system context and its filters", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ items: [], total: 0 }));
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    expect(await screen.findByText("В таймлайне пока нет событий")).toBeInTheDocument();
-    expect(screen.getByText("Новые сообщения, диагностика и системные изменения появятся здесь.")).toBeInTheDocument();
+    expect(await screen.findByText("Сообщений пользователя и поддержки пока нет.")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Переписка" })).queryByRole("button", { name: "Диагностика" })).not.toBeInTheDocument();
+    const context = await openSystemContext();
+    expect(within(context).getByText("В таймлайне пока нет событий")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Диагностика" }));
+    fireEvent.click(within(context).getByRole("button", { name: "Диагностика" }));
 
     expect(await screen.findByText("Нет событий: Диагностика")).toBeInTheDocument();
-    expect(screen.getByText("Смените фильтр или откройте все события таймлайна.")).toBeInTheDocument();
+    expect(within(context).getByRole("button", { name: "Диагностика" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Показать все события" }));
+    fireEvent.click(within(context).getByRole("button", { name: "Все" }));
 
     expect(await screen.findByText("В таймлайне пока нет событий")).toBeInTheDocument();
+    expect(within(context).getByRole("button", { name: "Все" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("sends selected status, queue, priority and assign targets through reason-capturing controls", async () => {
@@ -1016,7 +1118,7 @@ describe("TicketListPage", () => {
       expect(postSupportWorkspaceCleanupNoiseMock).toHaveBeenCalled();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "К чату" }));
+    fireEvent.click(screen.getByRole("button", { name: "К переписке" }));
     fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
     fireEvent.click(screen.getByRole("button", { name: "Скрыть у всех" }));
     await waitFor(() => {
@@ -1024,7 +1126,7 @@ describe("TicketListPage", () => {
     });
   });
 
-  it("loads filtered timeline tab through the typed timeline endpoint", async () => {
+  it("loads filtered diagnostic context through the typed endpoint without moving results into human conversation", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload());
@@ -1036,13 +1138,15 @@ describe("TicketListPage", () => {
     });
     expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Диагностика" }));
+    const context = await openSystemContext();
+    fireEvent.click(within(context).getByRole("button", { name: "Диагностика" }));
 
     await waitFor(() => {
       expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "diagnostics");
     });
     expect(await screen.findByText("Filtered DNS result")).toBeInTheDocument();
     expect(await screen.findByText("Upstream returned an invalid gateway response.")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Переписка" })).queryByText("Filtered DNS result")).not.toBeInTheDocument();
   });
 
   it("renders running operations and disabled tool/playbook reasons in the tools sidebar", async () => {
@@ -1538,7 +1642,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    expect(await screen.findByTestId("closure-plan-panel")).toBeInTheDocument();
+    expect(await openClosureRequirements()).toBeInTheDocument();
     expect(screen.getByText("Перед закрытием")).toBeInTheDocument();
     expect(screen.getByText("Доказательство для P0")).toBeInTheDocument();
     expect(screen.getByText("Добавить evidence")).toBeInTheDocument();
@@ -1577,7 +1681,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     expect(within(closurePanel).getByTestId("closure-plan-title")).toHaveClass("text-slate-950");
     expect(within(closurePanel).getByTestId("closure-plan-summary")).toHaveClass("text-amber-900");
     expect(within(closurePanel).getByTestId("closure-blocker-card")).toHaveClass("bg-white/80");
@@ -1695,7 +1799,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить evidence" }));
 
     const focusCard = await screen.findByTestId("closure-focus-card");
@@ -1758,7 +1862,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить evidence" }));
 
     expect(await screen.findByText("Кандидаты evidence")).toBeInTheDocument();
@@ -1813,7 +1917,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить worklog" }));
 
     expect(await screen.findByText("Новый worklog")).toBeInTheDocument();
@@ -1861,7 +1965,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     fireEvent.click(within(closurePanel).getByRole("button", { name: "Заполнить решение" }));
 
     const focusCard = await screen.findByTestId("closure-focus-card");
@@ -1920,7 +2024,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     fireEvent.click(within(closurePanel).getByRole("button", { name: "Заполнить решение" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Перевести тикет в решение" });
@@ -1981,7 +2085,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить evidence" }));
 
     const focusCard = await screen.findByTestId("closure-focus-card");
@@ -2024,7 +2128,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить worklog" }));
 
     const focusCard = await screen.findByTestId("closure-focus-card");
@@ -2131,7 +2235,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    const closurePanel = await openClosureRequirements();
     expect(within(closurePanel).getByRole("button", { name: "Добавить evidence" })).toBeInTheDocument();
     expect(within(closurePanel).getByRole("button", { name: "Добавить worklog" })).toBeInTheDocument();
     expect(within(closurePanel).getByRole("button", { name: "Показать ещё 2" })).toBeInTheDocument();
@@ -2167,7 +2271,7 @@ describe("TicketListPage", () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload({tickets:[]}));
     renderTicketListPage("/app/tickets");
     await screen.findByTestId("support-workspace-root");
-    expect(screen.getByPlaceholderText("Поиск по моим тикетам...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Поиск по номеру, теме, заявителю...")).toBeInTheDocument();
     expect(screen.queryByRole("button",{name:"Показать список заявок"})).not.toBeInTheDocument();
   });
 

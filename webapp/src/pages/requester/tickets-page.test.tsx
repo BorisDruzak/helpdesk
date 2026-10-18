@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RequesterTicketsPage } from "./tickets-page";
 import { RequesterTicketChatPage } from "./ticket-chat-page";
+import type { PublicTicketEvent, PublicTicketMessage } from "../../features/requester/types";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -40,6 +41,40 @@ afterEach(() => {
 });
 
 describe("RequesterTicketsPage", () => {
+  it.each([true, false])("keeps public system notices out of chat and available once in history (event supplied: %s)", async eventSupplied => {
+    const fetcher = installTicketsMock({ initialDetailStatus: "waiting_on_user", messages: [
+      { message_id: "user-message", event_id: "41", from_role: "user", text: "Проблема ещё актуальна", attachments: [{ artifact_id: "user-log", name: "user.log", url: "/api/artifacts/user-log/download" }] },
+      { message_id: "access-notice", event_id: "42", from_role: "system", text: "Публичное уведомление о доступе", ts: "2026-06-19T04:45:00Z", attachments: [{ artifact_id: "system-evidence", name: "event.log", url: "/api/artifacts/system-evidence/download" }] },
+    ], events: eventSupplied ? [{ id: 42, type: "chat_message", requester_timeline_kind: "system_event", requester_timeline_text: "Код доступа к обращению сформирован.", ts: "2026-06-19T04:45:00Z" }] : [] });
+    renderTicketsPage("/app/requester/tickets/REQ-1001");
+    expect(await screen.findByText("Проблема ещё актуальна")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "user.log" })).toHaveAttribute("href", "/api/artifacts/user-log/download");
+    expect(screen.queryByText("Публичное уведомление о доступе")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "event.log" })).not.toBeInTheDocument();
+    const reply = screen.getByLabelText("Ответ заявителя"); fireEvent.change(reply, { target: { value: "Неотправленный ответ" } });
+    fireEvent.click(screen.getByRole("button", { name: "Описание и история" }));
+    const history = screen.getByRole("list", { name: "История обращения" });
+    expect(within(history).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(history).getByText(eventSupplied ? "Код доступа к обращению сформирован." : "Публичное уведомление о доступе")).toBeInTheDocument();
+    expect(within(history).getByRole("link", { name: "event.log" })).toHaveAttribute("href", "/api/artifacts/system-evidence/download");
+    if (eventSupplied) expect(within(history).queryByText("Публичное уведомление о доступе")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Вернуться к чату" }));
+    expect(screen.getByLabelText("Ответ заявителя")).toHaveValue("Неотправленный ответ");
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+  it("keeps an unknown sender in safe history while preserving legacy messages with no sender role", async () => {
+    installTicketsMock({ messages: [
+      { message_id: "legacy", text: "Сообщение старого клиента" },
+      { message_id: "future", from_role: "future_automation", text: "Публичное служебное обновление" },
+      { message_id: "staff", from_role: "admin", text: "Ответ администратора" },
+    ], events: [] });
+    renderTicketsPage("/app/requester/tickets/REQ-1001");
+    expect(await screen.findByText("Сообщение старого клиента")).toBeInTheDocument();
+    expect(screen.getByText("Ответ администратора").closest("article")).toHaveTextContent("Поддержка");
+    expect(screen.queryByText("Публичное служебное обновление")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Описание и история" }));
+    expect(within(screen.getByRole("list", { name: "История обращения" })).getByText("Публичное служебное обновление")).toBeInTheDocument();
+  });
   it("opens a dedicated chat without a ticket list or expanded description", async () => {
     installTicketsMock({ initialDetailStatus: "waiting_on_user" });
     renderTicketsPage("/app/requester/tickets/REQ-1001");
@@ -198,7 +233,7 @@ describe("RequesterTicketsPage", () => {
   });
 });
 
-function installTicketsMock(options: { allowClosedReopen?: boolean; initialDetailStatus?: string; messageFails?: boolean; consentFailure?: string } = {}) {
+function installTicketsMock(options: { allowClosedReopen?: boolean; initialDetailStatus?: string; messageFails?: boolean; consentFailure?: string; messages?: PublicTicketMessage[]; events?: PublicTicketEvent[] } = {}) {
   let consentStatus = "pending";
   let detailStatus = options.initialDetailStatus ?? "resolved";
   let feedbackSubmitted = false;
@@ -287,7 +322,7 @@ function installTicketsMock(options: { allowClosedReopen?: boolean; initialDetai
             actions: mockTicketActions(detailStatus),
             updated_at: "2026-06-19T04:30:00Z",
           },
-          messages: messageSent
+          messages: options.messages ?? (messageSent
             ? [
                 {
                   message_id: "m-1",
@@ -297,8 +332,8 @@ function installTicketsMock(options: { allowClosedReopen?: boolean; initialDetai
                   attachments: [{ artifact_id: "artifact-1", name: "log.txt", url: "/api/artifacts/artifact-1/download" }],
                 },
               ]
-            : [{ message_id: "m-support", from_role: "support", text: "Проверьте питание.", created_at: "2026-06-19T04:40:00Z" }],
-          events: [{ event_id: "e-1", requester_timeline_text: "Оператор запросил диагностику", created_at: "2026-06-19T04:45:00Z" }],
+            : [{ message_id: "m-support", from_role: "support", text: "Проверьте питание.", created_at: "2026-06-19T04:40:00Z" }]),
+          events: options.events ?? [{ event_id: "e-1", requester_timeline_text: "Оператор запросил диагностику", created_at: "2026-06-19T04:45:00Z" }],
         },
       });
     }

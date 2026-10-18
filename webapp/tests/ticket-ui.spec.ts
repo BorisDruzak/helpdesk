@@ -31,7 +31,8 @@ for (const width of [1366, 1920]) {
     await expect(page.getByTestId("support-workspace-root")).toHaveAttribute("data-theme", "light");
     await expect(page.getByRole("button", { name: "Выполнить действие" })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`tickets-${width}.png`) });
-    if (width === 1366) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+    await page.getByTestId("support-command-strip").getByRole("button", { name: "Контекст", exact: true }).click();
+    await expect(page.getByTestId("support-inspector-panel")).toBeVisible();
     await page.getByText("Тестовый заявитель", { exact: true }).scrollIntoViewIfNeeded();
     await expect(page.getByText("person@example.test", { exact: true })).toBeVisible();
     await expect(page.getByText("1234", { exact: true })).toBeVisible();
@@ -42,10 +43,9 @@ for (const width of [1366, 1920]) {
     await expect(page.getByText("Выполнено", { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`sla-${width}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(2);
-    if (width === 1366) {
-      await page.getByRole("button", { name: "Вернуться к переписке", exact: true }).click();
-      await expect(page.getByLabel("Сообщение в тикет")).toBeVisible();
-    }
+    const returnToChat = page.getByRole("button", { name: "Вернуться к переписке", exact: true });
+    if (await returnToChat.isVisible()) await returnToChat.click();
+    await expect(page.getByLabel("Сообщение в тикет")).toBeVisible();
     expect(errors).toEqual([]);
   });
 }

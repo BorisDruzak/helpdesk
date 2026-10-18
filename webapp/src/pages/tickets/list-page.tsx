@@ -117,11 +117,11 @@ import { fetchTicketProblemLinks } from "../../features/problems/api";
 import { ExpandedWorkspaceHeader } from "./components/expanded-workspace-header";
 import { OperationsTable } from "./components/operations-table";
 import { QueueExplorer } from "./components/queue-explorer";
-import { TicketPreviewPanel } from "./components/ticket-preview-panel";
+import { SupportConversationTimeline } from "./sections/SupportConversationTimeline";
+import { partitionSupportTimeline } from "../../features/queues/support-conversation";
 import { TicketDeviceAgentPanel } from "./components/ticket-device-agent-panel";
 import { summarizeToolAvailability } from "./tool-availability";
 import {
-  getInitialWorkspaceMode,
   getInitialWorkspaceRightTab,
   getInitialWorkspaceSelectedQueue,
   getInitialWorkspaceSelectedView,
@@ -132,7 +132,7 @@ import {
   type WorkspaceMode,
   type WorkspaceRightTab,
 } from "./workspace-types";
-import { getTicketsWorkspaceUrlState } from "./url-state";
+import { getInitialTicketsWorkspaceMode, getTicketsWorkspaceUrlState } from "./url-state";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 const SUPPORT_OPERATION_REFRESH_MS = 2_500;
@@ -1249,7 +1249,6 @@ export function TicketListPage() {
   const [ticketListCollapsed,setTicketListCollapsed]=useState(()=>loadPanelPreferences(panelAccount,"support").ticketListCollapsed);
   useEffect(()=>setTicketListCollapsed(loadPanelPreferences(panelAccount,"support").ticketListCollapsed),[panelAccount]);
   const initialUrlStateRef = useRef(getTicketsWorkspaceUrlState(searchParams));
-  const shouldKeepQueueRouteRef = useRef(initialUrlStateRef.current.shouldOpenQueue);
   const [scope, setScope] = useState<SupportQueueScope>("all");
   const [smartView, setSmartView] = useState(() => initialUrlStateRef.current.smartView ?? getInitialWorkspaceSelectedView("my_action"));
   const [activeQueueId, setActiveQueueId] = useState<string | null>(() => getInitialWorkspaceSelectedQueue());
@@ -1262,7 +1261,8 @@ export function TicketListPage() {
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => (initialUrlStateRef.current.shouldOpenQueue ? "queue" : getInitialWorkspaceMode()));
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => getInitialTicketsWorkspaceMode(params.ticketId, initialUrlStateRef.current));
+  const [showClosureRequirements, setShowClosureRequirements] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const [toolsWorkspaceTab, setToolsWorkspaceTab] = useState<ToolsWorkspaceTab>("quick");
@@ -1296,29 +1296,25 @@ export function TicketListPage() {
   const workspaceColumns = workspaceColumnsByMode[workspaceMode] ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE[workspaceMode];
   const isCompactWorkspace = workspaceViewportWidth < 1200;
   const rightPanelInDrawer = isCompactWorkspace && workspaceMode !== "queue";
-  const canResizeWorkspace = workspaceViewportWidth >= 1200;
+  const canResizeWorkspace = workspaceViewportWidth >= 1200 && workspaceMode !== "queue";
 
   useEffect(() => {
     setSelectedTicketId(params.ticketId ?? null);
-  }, [params.ticketId]);
+    setWorkspaceMode(getInitialTicketsWorkspaceMode(params.ticketId, getTicketsWorkspaceUrlState(searchParams)));
+    setShowClosureRequirements(false);
+  }, [params.ticketId, searchParams]);
 
   useEffect(() => {
     const urlState = getTicketsWorkspaceUrlState(searchParams);
     if (!urlState.shouldOpenQueue) {
       return;
     }
-    shouldKeepQueueRouteRef.current = true;
-    if (urlState.smartView && urlState.smartView !== smartView) {
+    if (urlState.smartView) {
       setSmartView(urlState.smartView);
     }
     const nextSearch = urlState.search ?? urlState.similarGroup ?? "";
-    if (nextSearch !== search) {
-      setSearch(nextSearch);
-    }
-    if (workspaceMode !== "queue") {
-      setWorkspaceMode("queue");
-    }
-  }, [search, searchParams, smartView, workspaceMode]);
+    setSearch(nextSearch);
+  }, [searchParams]);
 
   useEffect(() => {
     selectedTicketIdRef.current = selectedTicketId;
@@ -1365,7 +1361,7 @@ export function TicketListPage() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setCompactInspectorOpen(false);
-        setWorkspaceMode((current) => (current === "ticket" ? current : "ticket"));
+        setWorkspaceMode(selectedTicketIdRef.current ? "ticket" : "queue");
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -1480,21 +1476,6 @@ export function TicketListPage() {
     retry: false,
   });
 
-  useEffect(() => {
-    const queue = queueQuery.data;
-    if (!queue || selectedTicketId) {
-      return;
-    }
-    if (shouldKeepQueueRouteRef.current) {
-      return;
-    }
-    if (queue.summary.selected_ticket_id) {
-      startTransition(() => {
-        navigate(`/app/tickets/${queue.summary.selected_ticket_id}`, { replace: true });
-      });
-    }
-  }, [navigate, queueQuery.data, selectedTicketId]);
-
   const workspaceQuery = useQuery({
     queryKey: ["tickets-workspace", selectedTicketId],
     queryFn: () => fetchSupportTicketWorkspace(selectedTicketId!),
@@ -1506,8 +1487,7 @@ export function TicketListPage() {
     },
   });
 
-  const timelineApiFilter: SupportTicketTimelineFilter =
-    timelineFilter === "message" ? "messages" : timelineFilter;
+  const timelineApiFilter: SupportTicketTimelineFilter = timelineFilter === "message" ? "messages" : timelineFilter;
 
   const timelineQuery = useQuery({
     queryKey: ["tickets-workspace-timeline", selectedTicketId, timelineApiFilter],
@@ -1517,6 +1497,22 @@ export function TicketListPage() {
     refetchInterval: workspaceHasLiveOperations(workspaceQuery.data)
       ? SUPPORT_OPERATION_REFRESH_MS
       : SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS,
+  });
+
+  const conversationQuery = useQuery({
+    queryKey: ["tickets-workspace-timeline", selectedTicketId, "conversation"],
+    queryFn: async () => {
+      const [messages, internal] = await Promise.all([
+        fetchSupportTicketTimeline(selectedTicketId!, "messages"),
+        fetchSupportTicketTimeline(selectedTicketId!, "internal"),
+      ]);
+      const entries = [...messages.items, ...internal.items];
+      return [...new Map(entries.map((entry, index) => [String(entry.event_id ?? entry.message_id ?? index), entry])).values()]
+        .sort((left, right) => (Date.parse(left.ts ?? "") || 0) - (Date.parse(right.ts ?? "") || 0) || (left.event_id ?? 0) - (right.event_id ?? 0));
+    },
+    enabled: Boolean(selectedTicketId),
+    retry: false,
+    refetchInterval: SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS,
   });
 
   const markReadMutation = useMutation({
@@ -1532,7 +1528,7 @@ export function TicketListPage() {
   });
 
   const latestRequesterMessageEventId = useMemo(() => {
-    const timelineItems = timelineQuery.data?.items ?? workspaceQuery.data?.detail.timeline ?? [];
+    const timelineItems = conversationQuery.data ?? workspaceQuery.data?.detail.timeline ?? [];
     let latest: number | null = null;
     for (const item of timelineItems) {
       if (typeof item.event_id !== "number") {
@@ -1548,7 +1544,7 @@ export function TicketListPage() {
       }
     }
     return latest;
-  }, [timelineQuery.data?.items, workspaceQuery.data?.detail.timeline]);
+  }, [conversationQuery.data, workspaceQuery.data?.detail.timeline]);
 
   useEffect(() => {
     if (!selectedTicketId || latestRequesterMessageEventId === null || markReadMutation.isPending) {
@@ -1648,10 +1644,9 @@ export function TicketListPage() {
 
   const aggregateTimeline = viewModel.selectedTicket?.timeline ?? [];
   const endpointTimeline = timelineQuery.data ? mapSupportTimelineEntries(timelineQuery.data.items) : null;
-  const visibleTimeline =
-    timelineFilter === "all"
-      ? endpointTimeline ?? aggregateTimeline
-      : endpointTimeline ?? aggregateTimeline.filter((item) => item.kind === timelineFilter);
+  const allTimeline = partitionSupportTimeline(conversationQuery.data ? mapSupportTimelineEntries(conversationQuery.data) : aggregateTimeline).conversation;
+  const contextTimeline = partitionSupportTimeline(endpointTimeline ?? aggregateTimeline).context;
+  const visibleTimeline = timelineFilter === "all" ? contextTimeline : contextTimeline.filter(item => item.kind === timelineFilter);
   const workspaceErrorState = workspaceQuery.isError ? classifyWorkspaceError(workspaceQuery.error) : null;
   const timelineEmptyState = visibleTimeline.length === 0 ? getTimelineEmptyState(timelineFilter) : null;
   const firstRunnableTool = viewModel.right.tools.find((item) => item.enabled);
@@ -2283,7 +2278,7 @@ export function TicketListPage() {
       />
 
       <div
-        className="relative grid min-h-0 flex-1 overflow-hidden support-workspace__mode-grid"
+        className="relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden support-workspace__mode-grid"
         data-overlay-right={rightPanelInDrawer ? "true" : "false"}
         style={{...getWorkspaceGridStyle(workspaceMode, workspaceColumns, workspaceViewportWidth),...(effectiveListCollapsed?{"--support-left":"52px","--support-center":"minmax(0, 1fr)"}: {})} as CSSProperties}
       >
@@ -2311,9 +2306,6 @@ export function TicketListPage() {
                 <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
                   SLA {selectedTicket.timers.filter((timer) => timer.status === "at_risk" || timer.status === "breached").length}
                 </span>
-                <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
-                  Passport {selectedTicket.closurePlan.missingCount}/{selectedTicket.closurePlan.total || selectedTicket.closurePlan.missingCount}
-                </span>
               </>
             ) : (
               <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
@@ -2321,14 +2313,15 @@ export function TicketListPage() {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedTicket && workspaceMode === "queue" ? <button className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold" type="button" onClick={() => openTicket(selectedTicket.id)}>К переписке</button> : null}
             <button
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-300 hover:text-white"
-              onClick={() => setWorkspaceMode("queue")}
+              onClick={() => navigate("/app/tickets")}
               type="button"
             >
               <ClipboardList className="h-4 w-4" />
-              Queue
+              Все тикеты
             </button>
             <button
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -2341,7 +2334,7 @@ export function TicketListPage() {
               type="button"
             >
               <Eye className="h-4 w-4" />
-              Inspector
+              Контекст
             </button>
           </div>
         </section>
@@ -2375,7 +2368,7 @@ export function TicketListPage() {
             <GripVertical className="h-4 w-4" />
           </span>
         </button> : null}
-        <aside aria-label="Список заявок" data-collapsed={effectiveListCollapsed?"true":"false"} className="support-workspace__ticket-list flex min-h-0 flex-col border-r border-white/10 bg-[#0b1624]">
+        <aside aria-label="Список заявок" data-collapsed={effectiveListCollapsed?"true":"false"} className="support-workspace__ticket-list flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#0b1624]">
           {selectedTicket && workspaceMode!=="queue" ? <button aria-label={effectiveListCollapsed?"Показать список заявок":"Скрыть список заявок"} aria-expanded={!effectiveListCollapsed} className="m-2 rounded-lg border border-white/10 p-2 text-xs font-semibold" onClick={toggleTicketList} type="button">{effectiveListCollapsed?<><ClipboardList className="mx-auto h-4 w-4"/><span className="sr-only">Заявки</span></>:"Скрыть список заявок"}</button>:null}
           {effectiveListCollapsed?<span className="text-center text-xs text-slate-500">{visibleTickets.length}</span>:<>
           {workspaceMode === "queue" ? (
@@ -2402,12 +2395,7 @@ export function TicketListPage() {
               onScopeChange={setScope}
               onSearchChange={setSearch}
               onShowArchiveChange={setShowArchive}
-              onSelectTicket={(ticketId) => {
-                setWorkspaceMode("queue");
-                startTransition(() => {
-                  navigate(`/app/tickets/${ticketId}`);
-                });
-              }}
+              onSelectTicket={openTicket}
               onSmartViewChange={setSmartView}
               queues={viewModel.left.queues}
               scope={scope}
@@ -2536,16 +2524,6 @@ export function TicketListPage() {
         </aside>
 
         <main className="flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#07111f]">
-          {workspaceMode === "queue" ? (
-            <TicketPreviewPanel
-              canTakeTicket={selectedTicketIsUnassigned}
-              onAssignTicket={() => openOperatorAction("assign_self")}
-              onOpenTicket={openTicket}
-              onTakeTicket={() => openOperatorAction("assign_self")}
-              selectedTicket={selectedTicket}
-            />
-          ) : null}
-
           {workspaceMode !== "queue" && !selectedTicketId ? (
             <div className="flex flex-1 items-center justify-center px-8 text-center">
               <div>
@@ -2601,11 +2579,11 @@ export function TicketListPage() {
 
           {workspaceMode !== "queue" && selectedTicket ? (
             <>
-              <div className="min-h-[176px] max-h-[48vh] resize-y overflow-auto border-b border-white/10 bg-[#0b1624]/70 px-5 py-3">
+              <div className="max-h-[42vh] shrink-0 overflow-y-auto border-b border-white/10 bg-[#0b1624]/70 px-4 py-3">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="mb-2 flex items-center gap-3 text-sm text-slate-400">
-                      <Link className="hover:text-white" to="/app/tickets">Очередь</Link>
+                      <Link className="font-semibold hover:text-white" to="/app/tickets">Все тикеты</Link>
                       <span>/</span>
                       <span>{selectedTicket.code}</span>
                     </div>
@@ -2640,17 +2618,7 @@ export function TicketListPage() {
                     </button>
                     {moreOpen ? (
                       <div className="absolute right-0 z-20 mt-2 max-h-[min(70vh,520px)] w-[340px] overflow-y-auto rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
-                        <button
-                          className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
-                            selectedTicketIsUnassigned ? "bg-blue-600 text-white hover:bg-blue-500" : "text-slate-500"
-                          }`}
-                          disabled={!session?.user_login || !selectedTicketIsUnassigned}
-                          onClick={() => openOperatorAction("assign_self")}
-                          type="button"
-                        >
-                          Взять себе
-                        </button>
-                        <div className="my-1 border-t border-white/10" />
+                        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm" onClick={() => { setShowClosureRequirements(value => !value); setMoreOpen(false); }}>Требования к закрытию</button>
                         {selectedTicket.hiddenFromWorkspace ? (
                           <button
                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
@@ -2694,14 +2662,6 @@ export function TicketListPage() {
                             Архивировать
                           </button>
                         ) : null}
-                        <button
-                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={statusActionOptions.length === 0}
-                          onClick={() => openOperatorAction("status")}
-                          type="button"
-                        >
-                          Сменить статус
-                        </button>
                         <button
                           className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                           disabled={queueActionOptions.length === 0}
@@ -3019,7 +2979,7 @@ export function TicketListPage() {
                   </p>
                 ) : null}
 
-                {selectedTicket.closurePlan.missingCount > 0 ? (
+                {showClosureRequirements ? (
                   <section
                     className={`mt-4 rounded-xl p-4 ${
                       isLightTheme
@@ -3113,122 +3073,10 @@ export function TicketListPage() {
               </div>
 
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="flex items-center gap-5 border-b border-white/10 px-5">
-                  {timelineTabs.map((tab) => (
-                    <button
-                      className={`border-b-2 px-1 py-3 text-sm font-semibold transition ${
-                        timelineFilter === tab.value ? "border-blue-500 text-blue-200" : "border-transparent text-slate-400 hover:text-white"
-                      }`}
-                      key={tab.value}
-                      onClick={() => setTimelineFilter(tab.value)}
-                      type="button"
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                  <button className="ml-auto rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300" type="button">
-                    Фильтр
-                  </button>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-                  {timelineEmptyState ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center text-sm text-slate-400">
-                      <Inbox className="mx-auto h-9 w-9 text-slate-500" />
-                      <p className="mt-4 text-base font-semibold text-white">{timelineEmptyState.title}</p>
-                      <p className="mx-auto mt-2 max-w-md leading-6">{timelineEmptyState.body}</p>
-                      {timelineEmptyState.actionLabel ? (
-                        <button
-                          className="mt-4 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 font-semibold text-slate-100 transition hover:border-blue-400/40 hover:bg-blue-500/20"
-                          onClick={() => setTimelineFilter("all")}
-                          type="button"
-                        >
-                          {timelineEmptyState.actionLabel}
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="space-y-4">
-                    {visibleTimeline.map((item) => (
-                      <article className="grid grid-cols-[36px_minmax(0,1fr)_110px] gap-4" key={item.id}>
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-full border ${toneClasses(item.tone)}`}>
-                          {item.kind === "diagnostics" ? <Wrench className="h-4 w-4" /> : item.kind === "internal" ? <Lock className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
-                        </div>
-                        <div className="min-w-0 rounded-xl border border-white/10 bg-[#0d1828] px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2 text-sm">
-                            <span className="font-semibold text-white">{item.actor}</span>
-                            <span className="text-slate-500">·</span>
-                            <span className="text-slate-400">{item.title}</span>
-                            {item.visibility === "internal" ? <Lock className="h-3.5 w-3.5 text-amber-300" /> : null}
-                          </div>
-                          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-200">{item.body}</p>
-                          {item.operation ? (
-                            <div className="mt-3 rounded-lg border border-white/10 bg-[#111f33] p-3 text-sm">
-                              <div className="grid gap-3 md:grid-cols-3">
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Операция</p>
-                                  <p className="mt-1 font-semibold text-white">{item.operation.name}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Статус</p>
-                                  <span className={`mt-1 inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(item.operation.statusTone)}`}>
-                                    {item.operation.statusLabel}
-                                  </span>
-                                </div>
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Итог</p>
-                                  <p className={`mt-1 break-all font-semibold ${operationResultTextClass(item.operation)}`}>
-                                    {item.operation.summary ?? item.operation.preview ?? "Нет результата"}
-                                  </p>
-                                </div>
-                              </div>
-                              {item.operation.preview && item.operation.summary && item.operation.preview !== item.operation.summary ? (
-                                <p className="mt-3 break-all rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-slate-400">
-                                  {item.operation.preview}
-                                </p>
-                              ) : null}
-                              {item.operation.resultPayload !== undefined && item.operation.resultPayload !== null ? (
-                                <ToolResultEventCard
-                                  result={item.operation.resultPayload}
-                                  presentationSchema={item.operation.presentationSchema}
-                                />
-                              ) : null}
-                              {item.operation.metaLabels.length ? (
-                                <div className="mt-3 flex flex-wrap gap-1.5">
-                                  {item.operation.metaLabels.slice(0, 6).map((label) => (
-                                    <span className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
-                                      {label}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                              {item.operation.steps?.length ? (
-                                <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 md:grid-cols-3">
-                                  {item.operation.steps.map((step) => (
-                                    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2" key={`${item.id}:${step.name}:${step.status}`}>
-                                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{step.name}</p>
-                                      <p className={`mt-1 font-semibold ${diagnosticStepTextClass(step.status)}`}>
-                                        {diagnosticStepStatusLabel(step.status)}
-                                      </p>
-                                      <p className="mt-1 break-words text-xs leading-5 text-slate-400">{step.value}</p>
-                                      {step.details ? <p className="mt-1 break-words text-xs leading-5 text-slate-500">{step.details}</p> : null}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {item.attachments.length ? (
-                            <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
-                              <Paperclip className="h-4 w-4" />
-                              {item.attachments.length} влож.
-                            </div>
-                          ) : null}
-                        </div>
-                        <time className="pt-2 text-right text-xs text-slate-500">{item.timestampLabel}</time>
-                      </article>
-                    ))}
-                  </div>
+                <div className="shrink-0 border-b border-white/10 px-4 py-2 font-semibold">Переписка</div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3" data-testid="support-conversation">
+                  {conversationQuery.isError ? <div role="alert" className="mb-3 rounded-lg border border-red-400/30 p-3 text-sm">Не удалось обновить переписку. <button type="button" className="underline" onClick={() => void conversationQuery.refetch()}>Повторить загрузку переписки</button></div> : null}
+                  {conversationQuery.isLoading && !allTimeline.length ? <p className="text-sm text-slate-500">Загружаем переписку…</p> : <SupportConversationTimeline items={[...allTimeline, ...contextTimeline]} onOpenContext={() => selectRightTab("context")} />}
                 </div>
 
                 <div className="border-t border-white/10 bg-[#0b1624] p-3">
@@ -3268,7 +3116,10 @@ export function TicketListPage() {
                     {attachmentError ? (
                       <p className="mx-4 mb-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">{attachmentError}</p>
                     ) : null}
-                    <div className="flex items-center gap-2 px-4 pb-3">
+                    <div role="group" aria-label="Действия обращения" className="flex flex-wrap items-center gap-2 px-3 pb-3">
+                      <button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold disabled:opacity-50" disabled={!session?.user_login || !selectedTicketIsUnassigned || operatorActionMutation.isPending} onClick={() => openOperatorAction("assign_self")}>Взять себе</button>
+                      <button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold disabled:opacity-50" disabled={!statusActionOptions.length || operatorActionMutation.isPending} onClick={() => openOperatorAction("status")}>Сменить статус</button>
+
                       <input
                         aria-label="Файлы для сообщения"
                         className="hidden"
@@ -3551,6 +3402,94 @@ export function TicketListPage() {
                 </section>
               </TicketContextPanel>
             ) : null}
+
+            {selectedTicket && sidebarTab === "context" ? <section aria-label="Системные события" className="mt-3 space-y-3 rounded-xl border border-white/10 bg-[#111f33] p-3">
+              <h3 className="font-semibold">Системные события и диагностика</h3>
+              {timelineQuery.isError ? <div role="alert" className="text-sm">Не удалось обновить события. <button type="button" className="underline" onClick={() => void timelineQuery.refetch()}>Повторить загрузку событий</button></div> : null}
+              <div className="flex flex-wrap gap-2">{timelineTabs.filter(tab => tab.value !== "message" && tab.value !== "internal").map(tab => <button type="button" className="rounded-lg border border-white/10 px-2 py-1 text-xs" aria-pressed={timelineFilter === tab.value} key={tab.value} onClick={() => setTimelineFilter(tab.value)}>{tab.label}</button>)}</div>
+              {timelineEmptyState ? <p className="text-sm text-slate-500">{timelineEmptyState.title}</p> : null}
+                  <div className="space-y-4">
+                    {visibleTimeline.map((item) => (
+                      <article className="grid min-w-0 grid-cols-[28px_minmax(0,1fr)] gap-2" key={item.id}>
+                        <div className={`flex h-9 w-9 items-center justify-center rounded-full border ${toneClasses(item.tone)}`}>
+                          {item.kind === "diagnostics" ? <Wrench className="h-4 w-4" /> : item.kind === "internal" ? <Lock className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                        </div>
+                        <div className="min-w-0 rounded-xl border border-white/10 bg-[#0d1828] px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-semibold text-white">{item.actor}</span>
+                            <span className="text-slate-500">·</span>
+                            <span className="text-slate-400">{item.title}</span>
+                            {item.visibility === "internal" ? <Lock className="h-3.5 w-3.5 text-amber-300" /> : null}
+                          </div>
+                          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-200">{item.body}</p>
+                          {item.operation ? (
+                            <div className="mt-3 rounded-lg border border-white/10 bg-[#111f33] p-3 text-sm">
+                              <div className="grid gap-3">
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Операция</p>
+                                  <p className="mt-1 font-semibold text-white">{item.operation.name}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Статус</p>
+                                  <span className={`mt-1 inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(item.operation.statusTone)}`}>
+                                    {item.operation.statusLabel}
+                                  </span>
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Итог</p>
+                                  <p className={`mt-1 break-all font-semibold ${operationResultTextClass(item.operation)}`}>
+                                    {item.operation.summary ?? item.operation.preview ?? "Нет результата"}
+                                  </p>
+                                </div>
+                              </div>
+                              {item.operation.preview && item.operation.summary && item.operation.preview !== item.operation.summary ? (
+                                <p className="mt-3 break-all rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-slate-400">
+                                  {item.operation.preview}
+                                </p>
+                              ) : null}
+                              {item.operation.resultPayload !== undefined && item.operation.resultPayload !== null ? (
+                                <ToolResultEventCard
+                                  result={item.operation.resultPayload}
+                                  presentationSchema={item.operation.presentationSchema}
+                                />
+                              ) : null}
+                              {item.operation.metaLabels.length ? (
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                  {item.operation.metaLabels.slice(0, 6).map((label) => (
+                                    <span className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {item.operation.steps?.length ? (
+                                <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 md:grid-cols-3">
+                                  {item.operation.steps.map((step) => (
+                                    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2" key={`${item.id}:${step.name}:${step.status}`}>
+                                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{step.name}</p>
+                                      <p className={`mt-1 font-semibold ${diagnosticStepTextClass(step.status)}`}>
+                                        {diagnosticStepStatusLabel(step.status)}
+                                      </p>
+                                      <p className="mt-1 break-words text-xs leading-5 text-slate-400">{step.value}</p>
+                                      {step.details ? <p className="mt-1 break-words text-xs leading-5 text-slate-500">{step.details}</p> : null}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {item.attachments.length ? (
+                            <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
+                              <Paperclip className="h-4 w-4" />
+                              {item.attachments.length} влож.
+                            </div>
+                          ) : null}
+                        </div>
+                        <time className="col-start-2 text-xs text-slate-500">{item.timestampLabel}</time>
+                      </article>
+                    ))}
+                  </div>
+            </section> : null}
 
             {selectedTicket && sidebarTab === "quality" ? (
               <div className="space-y-3" data-testid="support-quality-panel">

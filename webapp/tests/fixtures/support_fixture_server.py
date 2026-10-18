@@ -2058,13 +2058,15 @@ async def handle_support_workspace_summary(request: web.Request) -> web.Response
 
 
 def command_center_item(ticket: dict) -> dict:
+    row = ticket.get("ticket", ticket)
+    ticket_id = row.get("ticket_id", row.get("id"))
     return {
-        "id": f"operator-action:{ticket['id']}",
-        "ticket_id": ticket["id"],
-        "ticket_number": ticket["code"],
-        "title": ticket["title"],
-        "status": ticket["status"],
-        "priority": ticket["priority"],
+        "id": f"operator-action:{ticket_id}",
+        "ticket_id": ticket_id,
+        "ticket_number": row.get("ticket_code", row.get("code")),
+        "title": row["title"],
+        "status": row["status"],
+        "priority": row.get("priority", "P3"),
         "queue": "Линия поддержки L1",
         "assignee": ticket.get("assignee_id"),
         "requester_name": ticket.get("requester_name"),
@@ -2088,7 +2090,7 @@ def command_center_item(ticket: dict) -> dict:
         "closure": {"blocked": True, "missing_count": 1, "primary_blocker": "Нужна причина решения."},
         "similar_group": None,
         "reason": "Требуется действие оператора по следующему шагу.",
-        "href": f"/app/tickets/{ticket['id']}",
+        "href": f"/app/tickets/{ticket_id}",
     }
 
 
@@ -2294,6 +2296,43 @@ async def handle_support_ticket_workspace(request: web.Request) -> web.Response:
     if ticket_id not in state["tickets"]:
         raise web.HTTPNotFound()
     return json_success(build_ticket_workspace(state, ticket_id))
+
+
+async def handle_support_ticket_timeline(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    ticket = request.app["fixture_state"]["tickets"].get(ticket_id)
+    if ticket is None:
+        raise web.HTTPNotFound()
+    selected_filter = request.query.get("filter", "all")
+    if selected_filter == "message":
+        selected_filter = "messages"
+    if selected_filter not in {"all", "messages", "internal", "diagnostics", "history"}:
+        selected_filter = "all"
+    items = deepcopy(ticket["timeline"])
+    for item in items:
+        item.setdefault("event_category", "internal" if item.get("visibility") == "internal" else
+            "message" if item.get("event_type") == "chat_message" else
+            "diagnostics" if item.get("event_type") in {"tool_call_started", "tool_call_result", "playbook_started"} else "history")
+    if selected_filter != "all":
+        category = {"messages": "message", "internal": "internal", "diagnostics": "diagnostics", "history": "history"}[selected_filter]
+        items = [item for item in items if item["event_category"] == category]
+    limit = max(1, min(400, int(request.query.get("limit", "80"))))
+    visible_items = items[-limit:]
+    return json_success({"ticket_id": ticket_id, "filter": selected_filter, "items": visible_items, "total": len(visible_items), "limit": limit})
+
+
+async def handle_support_ticket_read(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    if ticket_id not in request.app["fixture_state"]["tickets"]:
+        raise web.HTTPNotFound()
+    payload = await request.json()
+    return web.json_response({"ticket_id": ticket_id, "last_read_event_id": payload.get("last_read_event_id"), "read_scope": "support", "no_op": False})
 
 
 def _diagnostic_overview_fixture(ticket_id: str) -> dict:
@@ -3072,6 +3111,8 @@ def build_app() -> web.Application:
             web.put("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_update),
             web.delete("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_delete),
             web.get("/api/web/support/tickets/{ticket_id}/workspace", handle_support_ticket_workspace),
+            web.get("/api/web/support/tickets/{ticket_id}/timeline", handle_support_ticket_timeline),
+            web.post("/api/web/support/tickets/{ticket_id}/read", handle_support_ticket_read),
             web.get("/api/web/support/tickets/{ticket_id}/diagnostics/overview", handle_support_ticket_diagnostics_overview),
             web.get("/api/web/support/tickets/{ticket_id}/diagnostics/capabilities", handle_support_ticket_diagnostics_capabilities),
             web.get(

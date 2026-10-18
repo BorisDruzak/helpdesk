@@ -148,7 +148,17 @@
   }
 
   .support-workspace__mode-grid {
+    grid-template-rows: auto minmax(0, 1fr);
     transition: grid-template-columns 180ms ease;
+  }
+
+  .support-workspace[data-mode="queue"] .support-workspace__mode-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .support-workspace[data-mode="queue"] .support-workspace__mode-grid > main,
+  .support-workspace[data-mode="queue"] [data-testid="support-inspector-panel"] {
+    display: none !important;
   }
 
   .support-workspace__right-panel--drawer {
@@ -166,7 +176,7 @@
   }
 
   .support-workspace[data-compact-layout="true"][data-mode="queue"] .support-workspace__mode-grid {
-    grid-template-columns: minmax(0, 1fr) 0 0 !important;
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 
   @media (prefers-reduced-motion: reduce) {

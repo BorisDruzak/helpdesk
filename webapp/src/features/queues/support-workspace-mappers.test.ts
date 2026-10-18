@@ -448,6 +448,33 @@ describe("support workspace mappers", () => {
     });
   });
 
+  it.each([
+    { from_role: "system", visibility: "public" },
+    { from_role: "bot", visibility: "internal" },
+    { from_role: "future_automation", visibility: "public" },
+    { from_role: "support", visibility: "system" },
+    { from_role: "support", visibility: "public", direction: "system" },
+    { from_role: "support", visibility: "public", requester_timeline_kind: "system_event" },
+  ])("keeps automated chat records in context even when marked as messages: %j", metadata => {
+    const detail = detailPayload();
+    detail.timeline = [{ ...detail.timeline[0], ...metadata, text: "Служебная запись", attachments: [{ artifact_id: "event-evidence" }] }];
+    const timeline = mapWorkspaceTimeline(detail);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({ kind: "history", body: "Служебная запись", attachments: [{ artifact_id: "event-evidence" }] });
+  });
+
+  it.each(["user", "client", "requester", "agent", "device", "support", "admin", "staff", "operator"])("preserves a human message by %s even if its text mentions a system event", from_role => {
+    const detail = detailPayload();
+    detail.timeline = [{ ...detail.timeline[0], from_role, text: "SLA и код доступа нужно уточнить у поддержки" }];
+    expect(mapWorkspaceTimeline(detail)[0]).toMatchObject({ kind: "message", body: "SLA и код доступа нужно уточнить у поддержки" });
+  });
+
+  it("does not turn an internal lifecycle action by an operator into an internal chat note", () => {
+    const detail = detailPayload();
+    detail.timeline = [{ ...detail.timeline[1], event_type: "status_changed", text: "Обращение принято в работу" }];
+    expect(mapWorkspaceTimeline(detail)[0]).toMatchObject({ kind: "history", body: "Обращение принято в работу" });
+  });
+
   it("maps normalized backend timeline categories and operation steps", () => {
     const detail = detailPayload();
     detail.timeline = [

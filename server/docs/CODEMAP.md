@@ -271,6 +271,23 @@
   Its Vite fixture is built automatically by Playwright before the Python fixture
   server starts; it is not a production route or asset bundle.
 
+- The active support workspace uses route-based queue/card selection: `/app/tickets`
+  opens the full-width queue without automatically selecting a ticket; a ticket URL
+  opens the conversation regardless of a previously persisted queue mode.
+  `url-state.ts` resolves initial queue filters and view state. The workspace grid
+  reserves an automatic command row and a bounded, scrollable working row.
+- `features/queues/support-conversation.ts` classifies human chat from trusted
+  event metadata; system chat, lifecycle and diagnostic events remain in Context.
+  `sections/SupportConversationTimeline.tsx` renders public human messages and
+  internal notes, with an explicit link to the complete context event list.
+  Assignment and status controls beside the composer use the existing reason and
+  permission checks. Closure guidance is opened explicitly from the ticket menu;
+  server closure requirements and passport APIs remain authoritative.
+- The requester `ticket-chat-page.tsx` uses `tickets-workflow.tsx` to separate
+  participant messages from already projected public system records. The latter
+  remain in the existing description/history view, deduplicated by event ID;
+  public attachments and unsent replies survive switching views.
+
 ## Problem scheduler shutdown
 
 - `server/app/services/problem_candidate_scheduler.py::stop` shields the

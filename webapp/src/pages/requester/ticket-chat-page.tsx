@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Info } from "lucide-react";
 import { humanRequesterTicketCode } from "../../features/requester/queries";
@@ -6,7 +6,7 @@ import { requesterErrorMessage } from "../../features/requester/labels";
 import { RequesterConsentList } from "../../features/requester/consent-card";
 import { InlineAlert } from "../../features/requester/ui/form-controls";
 import { TicketDetailHeader, TicketReplyComposer, TicketResolutionPanel } from "./tickets-panels";
-import { MessagesPanel, TimelinePanel } from "./tickets-workflow";
+import { MessagesPanel, TimelinePanel, partitionRequesterTimeline } from "./tickets-workflow";
 import { useRequesterTicketChat } from "./use-ticket-chat";
 
 export function RequesterTicketChatPage() {
@@ -20,7 +20,7 @@ function RequesterTicketChat({ ticketId }: { ticketId: string | undefined }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followMessages = useRef(true);
   const { selectedTicket: ticket, detailQuery } = chat;
-  const messages = detailQuery.data?.messages ?? [];
+  const { messages, events } = useMemo(() => partitionRequesterTimeline(detailQuery.data?.messages ?? [], detailQuery.data?.events ?? []), [detailQuery.data?.messages, detailQuery.data?.events]);
   useEffect(() => {
     const scroller = scrollRef.current;
     if (scroller && followMessages.current && !showDetails && !chat.canClose && !chat.pendingConsents.length) scroller.scrollTop = scroller.scrollHeight;
@@ -40,7 +40,7 @@ function RequesterTicketChat({ ticketId }: { ticketId: string | undefined }) {
         {detailQuery.isLoading ? <p role="status" className="p-4 text-sm text-slate-600">Загружаем обращение...</p>
           : detailQuery.isError ? <InlineAlert role="alert">{requesterErrorMessage(detailQuery.error, "Не удалось загрузить обращение")}</InlineAlert>
           : !ticket ? <p className="p-4 text-sm text-slate-600">Обращение не найдено.</p>
-          : showDetails ? <div className="mx-auto max-w-4xl space-y-4"><TicketDetailHeader ticket={ticket} /><TimelinePanel events={detailQuery.data?.events ?? []} /></div>
+          : showDetails ? <div className="mx-auto max-w-4xl space-y-4"><TicketDetailHeader ticket={ticket} /><TimelinePanel events={events} /></div>
           : <div className="mx-auto max-w-4xl space-y-3">
             <RequesterConsentList consents={chat.pendingConsents} disabled={chat.actionSubmitting} onDecision={chat.decideConsent} />
             {chat.canClose || chat.canRate || chat.canReopen ? <TicketResolutionPanel {...chat} /> : null}

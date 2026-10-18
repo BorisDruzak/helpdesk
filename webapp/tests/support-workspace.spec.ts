@@ -112,10 +112,10 @@ test("оператор открывает tickets workspace через новы�
   await expect(page).toHaveURL(/\/app\/tickets$/);
   await expect(page.getByRole("heading", { name: "Тикеты" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Навигация поддержки" })).toBeVisible();
-  await expect(page.getByText("Мой рабочий список")).toBeVisible();
-  await expect(page.getByRole("button", { name: /T-200001 Ошибка синхронизации/ })).toBeVisible();
-
-  await page.getByRole("button", { name: /T-200001/ }).click();
+  await expect(page.getByRole("heading", { name: "Очередь тикетов", exact: true })).toBeVisible();
+  const row = page.getByRole("row").filter({ hasText: "T-200001" });
+  await expect(row).toBeVisible();
+  await row.click();
 
   await expect(page).toHaveURL(/\/app\/tickets\/ticket-1$/);
   await expect(page.getByText(/T-200001 Ошибка синхронизации/)).toBeVisible();
@@ -161,14 +161,8 @@ test("оператор видит безопасное состояние диа
   await expect(page.getByText("Для обращения не определено устройство Endpoint Platform.")).toBeVisible();
   expect(failedDiagnosticsRequests).toEqual([]);
   expect(unexpectedFailedRequests).toEqual([]);
-  expect(knownFixtureFailures).toEqual([
-    `404 GET ${new URL(page.url()).origin}/api/web/support/tickets/ticket-1/timeline?filter=all`,
-    `404 POST ${new URL(page.url()).origin}/api/web/support/tickets/ticket-1/read`,
-  ]);
-  expect(consoleErrors).toEqual([
-    "Failed to load resource: the server responded with a status of 404 (Not Found)",
-    "Failed to load resource: the server responded with a status of 404 (Not Found)",
-  ]);
+  expect(knownFixtureFailures).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 
   await page.setViewportSize({ width: 1366, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(2);
@@ -187,9 +181,11 @@ for (const width of [1366, 1440, 1920]) {
     await page.goto("/app/tickets/ticket-1");
     await expect(page.getByText(/T-200001 Ошибка синхронизации/)).toBeVisible();
     await expect(page.getByText("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ")).toBeVisible();
-    if (width < 1460) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+    await page.getByTestId("support-command-strip").getByRole("button", { name: "Контекст", exact: true }).click();
+    await expect(page.getByTestId("support-inspector-panel")).toBeVisible();
     await expect(page.getByRole("button", { name: "Паспорт", exact: true })).toBeVisible();
-    if (width < 1460) await page.getByRole("button", { name: "Вернуться к переписке", exact: true }).click();
+    const returnToChat = page.getByRole("button", { name: "Вернуться к переписке", exact: true });
+    if (await returnToChat.isVisible()) await returnToChat.click();
 
     const root = page.getByTestId("support-workspace-root");
     await expect(root).toHaveAttribute("data-theme", "light");
