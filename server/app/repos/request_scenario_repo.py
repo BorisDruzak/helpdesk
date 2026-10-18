@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
 import json
+import uuid
 
 from sqlalchemy import select, text, exists, or_, func
 
@@ -66,6 +67,21 @@ class RequestScenarioRepo:
             return {"scenario": serialize(row), "draft": serialize(draft)}
         if raw.get("offering_full_code") or (raw.get("process_binding") or {}).get("request_template_key"):
             raise ScenarioAdminError("CATALOG_BINDING_INVALID")
+        definition, template, _ = await self._prepare_service_definition(raw, service)
+        return await self._create_service_binding(definition, template)
+
+    async def _prepare_service_definition(self, raw, service=None):
+        """Resolve canonical section defaults without creating catalog rows."""
+        from web_api.dto.request_scenario import ScenarioDraftDefinition, CatalogCode, _bounded_input
+        from pydantic import TypeAdapter
+        _bounded_input(raw)
+        version = raw.get("schema_version", 2)
+        if type(version) is not int or version not in {1, 2, 3}:
+            raise ScenarioAdminError("VALIDATION_ERROR")
+        code = TypeAdapter(CatalogCode).validate_python(raw.get("service_code"))
+        service = service if service is not None else await self.catalog.get_service_by_code(code)
+        if not service:
+            raise ScenarioAdminError("SERVICE_NOT_FOUND", 404)
         configured = (service.get("metadata") or {}).get("studio_default_template")
         offerings = await self.catalog.list_offerings(service_code=code)
         candidates = sorted({item["request_template_key"] for item in offerings
@@ -94,13 +110,77 @@ class RequestScenarioRepo:
         bound = {**raw, "schema_version": max(2, version), "offering_full_code": code + "." + offering_code,
                  "process_binding": {**(raw.get("process_binding") or {}), "request_template_key": template_key}, "publish_offering": True}
         definition = ScenarioDraftDefinition.model_validate(bound)
-        await self._category(definition.category_id, code)
-        await self.catalog.upsert_offering_draft({"service_code": code, "code": offering_code,
+        source = {"effective_template": effective, "studio_default_template": configured,
+                  "service_defaults": {key: value for key, value in service.items() if key.startswith("default_")}}
+        return definition, template, source
+
+    async def _create_service_binding(self, definition, template):
+        """Shared catalog/scenario/audit transaction for all new service maps."""
+        await self._category(definition.category_id, definition.service_code)
+        await self.catalog.upsert_offering_draft({"service_code": definition.service_code, "code": definition.offering_full_code.partition(".")[2],
             "public_title": definition.title, "short_description": definition.description, "lifecycle_status": "draft",
-            "visibility": "public", "request_template_key": template_key, "ticket_type_code": template["ticket_type"],
+            "visibility": "public", "request_template_key": definition.process_binding.request_template_key, "ticket_type_code": template["ticket_type"],
             "request_type": "request", "metadata": {"studio_catalog": {"category_id": definition.category_id}, "studio_map_source": definition.scenario_key}},
             actor_id=self.auth.actor_id, actor_role=self.auth.actor_role)
         return await self.create(definition)
+
+    async def _prepare_service_document(self, payload, service=None):
+        from pydantic import ValidationError
+        from tickets.request_scenario_document import portable_document_definition, document_issues, document_reference_issues
+        from tickets.request_scenario_validation import ScenarioIssue, ScenarioValidationError
+        from tickets.request_scenario_processing import apply_scenario_policy_refs
+        creation_key = str(uuid.UUID(payload.creation_key)) if payload.creation_key else str(uuid.uuid4())
+        scenario_key = "scenario_import_" + uuid.UUID(creation_key).hex
+        try:
+            raw = portable_document_definition(payload.content, payload.format, scenario_key=scenario_key,
+                service_code=payload.service_code, category_id=payload.category_id)
+        except ValidationError as exc:
+            issues = [ScenarioIssue(item["type"], ".".join(str(part)[:100] for part in item["loc"])[:1000] or "document",
+                "Проверьте обязательные поля, тип и допустимые значения документа.")
+                for item in exc.errors(include_input=False, include_context=False, include_url=False)[:100]]
+            raise ScenarioValidationError(issues) from exc
+        except ValueError as exc:
+            path = f"document.line.{exc.lineno}" if isinstance(exc, json.JSONDecodeError) else "document"
+            raise ScenarioValidationError([ScenarioIssue("invalid_document", path,
+                "Проверьте синтаксис JSON/YAML: ключи должны быть уникальными, ссылки и исполняемые конструкции запрещены.")]) from exc
+        definition, template, source = await self._prepare_service_definition(raw.model_dump(mode="json"), service)
+        issues = [asdict(issue) for issue in document_issues(definition)]
+        issues.extend(await document_reference_issues(self.session, definition))
+        try:
+            await self._category(definition.category_id, definition.service_code)
+        except ScenarioAdminError:
+            issues.append({"code": "CATEGORY_BINDING_INVALID", "path": "category_id", "message": "Выберите действующую категорию выбранного раздела."})
+        try:
+            references = {kind: code for kind, code in definition.process_binding.policy_refs.items()
+                          if definition.schema_version != 3 or kind not in {"routing", "sla"}}
+            await apply_scenario_policy_refs(self.session, {"template_context": {}}, references)
+        except ValueError:
+            issues.append({"code": "policy_reference_unavailable", "path": "process_binding.policy_refs",
+                "message": "Выбранная политика обработки отсутствует, отключена или не опубликована."})
+        normalized = definition.model_dump(mode="json")
+        result = {"creation_key": creation_key, "source_hash": definition_hash({"definition": normalized, "binding_source": source}),
+                  "definition": normalized, "issues": issues}
+        return result, definition, template
+
+    async def preview_service_document(self, payload):
+        result, _, _ = await self._prepare_service_document(payload)
+        return result
+
+    async def create_service_document(self, payload):
+        from tickets.request_scenario_validation import ScenarioIssue, ScenarioValidationError
+        service = await self._service_lock(payload.service_code)
+        result, definition, template = await self._prepare_service_document(payload, service)
+        if result["source_hash"] != payload.source_hash:
+            raise ScenarioAdminError("IMPORT_PREVIEW_CHANGED", 409)
+        if result["issues"]:
+            raise ScenarioValidationError([ScenarioIssue(**issue) for issue in result["issues"]])
+        prior = await self.session.scalar(select(RequestStudioScenario).where(RequestStudioScenario.scenario_key == definition.scenario_key))
+        if prior:
+            row, draft = await self.detail(prior.id)
+            if draft.definition != definition.model_dump(mode="json"):
+                raise ScenarioAdminError("REVISION_CONFLICT", 409)
+            return {"scenario": serialize(row), "draft": serialize(draft)}
+        return await self._create_service_binding(definition, template)
 
     async def convert_offering(self, code, *, apply=False):
         from tickets.request_scenario_conversion import convert_form, ConversionBlocked

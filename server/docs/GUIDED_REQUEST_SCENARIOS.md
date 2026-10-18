@@ -30,6 +30,28 @@ before publication, including unused ones; immutable snapshots retain the settin
 Priority remains an independent existing server policy. V1/v2 registries stay active.
 See [the administrator guide](../../docs/UNIFIED_SERVICE_SCENARIOS.md) and its v3 YAML example.
 
+Admin-only `POST /api/web/admin/request-studio/services/document-preview` accepts
+`{format, content, service_code, category_id?, creation_key?}` and returns
+`{creation_key, source_hash, definition, issues}` without DML or audit writes.
+`POST /services/from-document` under the same prefix requires the same input plus
+the returned `creation_key` and `source_hash`, and creates one unpublished service
+through the existing catalog/scenario transaction. Both endpoints retain bounded
+JSON/YAML parsing, strict field validation and graph/resource checks. Source
+scenario/offering/template identities are replaced; omitted identities are valid
+only in this new-service adapter. All entrance categories follow the explicit
+destination. No queues, calendars, policies or published versions are created.
+
+Binding preparation is shared with ordinary service creation and inherits the
+selected section's effective processing template. The hash covers the normalized
+definition and inherited configuration; create recomputes it under the service
+lock and returns `409 IMPORT_PREVIEW_CHANGED` after intervening changes. The stable
+creation key supports an uncertain network retry without duplicate rows/audit.
+Invalid documents/resources and late persistence errors roll back the offering,
+scenario, draft and audit together. A preview must never call a persistence method:
+the normal session context commits on successful exit even for a read handler.
+Existing `/documents/validate?scenario_id=...` keeps all four immutable binding
+checks and never adopts the portable-create identity rules.
+
 Session start and admin simulation accept optional `entry_point_key`, never a
 caller-supplied target/version. The server resolves requester entrances only from
 the active published version and rechecks Service/Offering and category ancestry.

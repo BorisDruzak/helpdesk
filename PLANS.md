@@ -1,3 +1,41 @@
+# 2026-10-18 Make pending publication visible
+
+Live user report: the publication panel appeared frozen after confirmation.
+Observed result: version 1 was published successfully and browser errors were
+absent. Pending requests only disabled controls without visible progress text.
+Scope: phase-specific checking/publishing status and button labels; retain all
+confirmation, stale-response, revision, transaction and duplicate-action guards.
+Verify deferred success/error/reset paths and browser layouts at1366/1920.
+No backend optimization without measurements, no automatic retry or extra live
+publication. Deploy the checked candidate to isolated staging; preserve the
+user's published version and leave the authorized service running.
+
+# 2026-10-18 Create a service from a JSON/YAML document
+
+Actor/job: an administrator imports an AI-authored scenario as a new service,
+without first creating a blank service or copying four internal identifiers.
+Bounded extension of existing document parsing and transactional service creation.
+Flow: catalog action -> destination section/category and document -> read-only
+preview with graph/resource issues -> explicit creation of one unpublished draft.
+The server assigns a fresh scenario/offering/template binding; existing-map
+imports retain immutable binding checks. Preview writes nothing. Creation repeats
+validation and checks a hash of the normalized definition plus inherited processing
+configuration; a stable creation key makes uncertain retries idempotent. All entry
+categories explicitly follow the selected destination. No queue/policy creation,
+publication, migration, dependencies or production actions.
+Ownership: backend parser/resolver/API and rollback tests; frontend guarded dialog,
+input invalidation and file/paste browser tests; root docs and staging acceptance.
+Evidence before implementation: unchanged original YAML has zero graph issues,
+243 local traversals and 220 readiness variants. Existing-map import rejects its
+foreign binding. A validation-only rebound copy reports two unavailable staging
+queues. Prepared test copy explicitly uses distinct existing queues and corrects
+the paper-jam instruction to match its actual resolution-check/question path.
+ Acceptance: focused RED/GREEN tests, canonical disposable-PostgreSQL rollback/RBAC
+checks, real file/paste import and reload at1366/1920, original-invalid preview with
+no created rows, and server simulation of all three SLA/queue directions. Runtime
+and CI receipts remain outside tracked sources; preserve user maps and leave the
+authorized isolated staging service running.
+
 # 2026-10-18 Build answer branches from an empty decision
 
 Actor/job: an administrator starts with only a yes/no question connected to a

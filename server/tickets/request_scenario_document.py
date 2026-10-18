@@ -2,7 +2,8 @@
 import json
 import yaml
 from yaml.events import AliasEvent, CollectionStartEvent, CollectionEndEvent
-from web_api.dto.request_scenario import ScenarioDraftDefinition, ScenarioDefinition
+from copy import deepcopy
+from web_api.dto.request_scenario import ScenarioDraftDefinition, ScenarioDefinition, _bounded_input
 from tickets.request_scenario_validation import validate_scenario
 
 
@@ -29,7 +30,8 @@ DocumentLoader.yaml_implicit_resolvers = {key: [item for item in values if item[
                                          for key, values in DocumentLoader.yaml_implicit_resolvers.items()}
 
 
-def parse_scenario_document(content, format):
+def parse_scenario_document_raw(content, format):
+    """One guarded parser for immutable import and portable new-map creation."""
     if not isinstance(content, str) or len(content.encode("utf-8")) > 1048576:
         raise ValueError("Document exceeds byte limit")
     try:
@@ -51,9 +53,29 @@ def parse_scenario_document(content, format):
             raw = yaml.load(content, Loader=DocumentLoader)
         else:
             raise ValueError("Unsupported document format")
-        return ScenarioDraftDefinition.model_validate(raw)
+        _bounded_input(raw)
+        if not isinstance(raw, dict):
+            raise ValueError("Document must be an object")
+        return raw
     except (yaml.YAMLError, RecursionError, TypeError) as exc:
         raise ValueError("Invalid scenario document") from exc
+
+
+def parse_scenario_document(content, format):
+    return ScenarioDraftDefinition.model_validate(parse_scenario_document_raw(content, format))
+
+
+def portable_document_definition(content, format, *, scenario_key, service_code, category_id):
+    """Explicit new-document normalization; existing imports keep their identity."""
+    raw = deepcopy(parse_scenario_document_raw(content, format))
+    raw.update(scenario_key=scenario_key, service_code=service_code,
+               offering_full_code=service_code + ".document", category_id=category_id)
+    binding = raw.get("process_binding", {})
+    if isinstance(binding, dict):
+        raw["process_binding"] = {**binding, "request_template_key": "document"}
+    if isinstance(raw.get("entry_points"), list):
+        raw["entry_points"] = [{**entry, "category_id": category_id} if isinstance(entry, dict) else entry for entry in raw["entry_points"]]
+    return ScenarioDraftDefinition.model_validate(raw)
 
 
 def document_issues(definition):

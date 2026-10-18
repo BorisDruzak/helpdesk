@@ -64,16 +64,16 @@ export type ScenarioPublicationPreview = {
 };
 const root = "/api/web/admin/request-studio";
 export class ScenarioApiError extends RequestStudioApiError {
-  constructor(status: number, code?: string, public issues: { code: string; path: string }[] = []) {
+  constructor(status: number, code?: string, public issues: { code: string; path: string; message?: string }[] = []) {
     super("Не удалось выполнить действие в Студии", status, code);
   }
 }
-async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+async function request<T>(path: string, method = "GET", body?: unknown, includeIssueMessages = false): Promise<T> {
   const response = await fetch(`${root}${path}`, { method, credentials: "same-origin",
     ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
   const payload = response.headers.get("content-type")?.includes("application/json") ? await response.json() : null;
   if (!response.ok || payload?.status !== "success") {
-    const issues = Array.isArray(payload?.issues) ? payload.issues.filter((item: unknown): item is { code: string; path: string } => !!item && typeof item === "object" && "code" in item && typeof item.code === "string" && "path" in item && typeof item.path === "string").slice(0, 100).map((item: { code: string; path: string }) => ({ code: item.code, path: item.path })) : [];
+    const issues = Array.isArray(payload?.issues) ? payload.issues.filter((item: unknown): item is { code: string; path: string; message?: string } => !!item && typeof item === "object" && "code" in item && typeof item.code === "string" && "path" in item && typeof item.path === "string").slice(0, 100).map((item: { code: string; path: string; message?: string }) => ({ code: item.code, path: item.path, ...(includeIssueMessages && typeof item.message === "string" ? { message: item.message } : {}) })) : [];
     throw new ScenarioApiError(response.status, payload?.error_code, issues);
   }
   return payload.data as T;
@@ -84,6 +84,10 @@ export function fetchScenarioCatalog(q = "", status = "all", offset = 0, categor
 export function fetchScenarioDetail(id: string) { return request<ScenarioDetail>(`/scenarios/${encodeURIComponent(id)}`); }
 export function createScenario(definition: ScenarioDraftDefinition) { return request<ScenarioDetail>("/scenarios", "POST", { definition }); }
 export function createServiceScenario(definition:ScenarioDraftDefinition){return request<ScenarioDetail>("/services","POST",{definition});}
+export type ScenarioServiceDocumentInput = { format: "json" | "yaml"; content: string; service_code: string; category_id: string | null; creation_key: string };
+export type ScenarioServiceDocumentPreview = { creation_key: string; source_hash: string; definition: ScenarioDraftDefinition; issues: { code: string; path: string; message: string }[] };
+export function previewServiceDocument(input: ScenarioServiceDocumentInput) { return request<ScenarioServiceDocumentPreview>("/services/document-preview", "POST", input, true); }
+export function createServiceFromDocument(input: ScenarioServiceDocumentInput & { source_hash: string }) { return request<ScenarioDetail>("/services/from-document", "POST", input, true); }
 export type ConversionItem={offering_full_code:string;title?:string;archived?:boolean;status:"existing"|"ready"|"converted"|"blocked";detail?:ScenarioDetail;issues?:{code:string;message:string}[]};
 export function convertForms(apply=false,offering_full_code?:string){return request<{items:ConversionItem[]}>("/convert-forms","POST",{apply,offering_full_code:offering_full_code??null});}
 export function validateScenarioDocument(content:string,format:"json"|"yaml",id?:string){return request<{definition:ScenarioDraftDefinition;issues:{code:string;path:string;message:string}[];diff:{path:string;before:unknown;after:unknown}[]}>(`/documents/validate${id?`?scenario_id=${encodeURIComponent(id)}`:""}`,"POST",{content,format});}

@@ -27,27 +27,28 @@ export function ScenarioPublication({ id, revision, dirty, disabled, definition,
   const cache = useQueryClient();
   const [preview, setPreview] = useState<ScenarioPublicationPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<"checking" | "publishing" | null>(null);
+  const busy = pending !== null;
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [published, setPublished] = useState<ScenarioDraftDefinition | null>(null);
   const sequence = useRef(0);
   useEffect(() => {
     sequence.current++;
-    setPreview(null); setConfirmed(false); setError(""); setMessage(""); setPublished(null); setBusy(false);
+    setPreview(null); setConfirmed(false); setError(""); setMessage(""); setPublished(null); setPending(null);
     return () => { sequence.current++; };
   }, [id, revision, dirty, disabled]);
   async function prepare() {
     const current = ++sequence.current;
-    setBusy(true); setError(""); setPreview(null); setConfirmed(false); setMessage(""); setPublished(null);
+    setPending("checking"); setError(""); setPreview(null); setConfirmed(false); setMessage(""); setPublished(null);
     try { const value = await previewScenarioPublication(id, revision); if (current === sequence.current) setPreview(value); }
     catch { if (current === sequence.current) setError("Не удалось проверить публикацию. Повторите проверку."); }
-    finally { if (current === sequence.current) setBusy(false); }
+    finally { if (current === sequence.current) setPending(null); }
   }
   async function publish() {
     if (!preview?.confirmation_token || !confirmed || dirty || disabled || busy) return;
     const current = ++sequence.current;
-    setBusy(true); setError("");
+    setPending("publishing"); setError("");
     try {
       const result = await publishScenario(id, revision, preview.confirmation_token);
       if (current !== sequence.current) return;
@@ -61,12 +62,13 @@ export function ScenarioPublication({ id, revision, dirty, disabled, definition,
       setError(cause instanceof RequestStudioApiError && cause.status === 409
         ? "Черновик, обработка или срок подтверждения изменились. Подготовьте публикацию заново."
         : "Сценарий не опубликован. Подготовьте публикацию заново.");
-    } finally { if (current === sequence.current) setBusy(false); }
+    } finally { if (current === sequence.current) setPending(null); }
   }
   return <div className="min-w-0 space-y-4" aria-busy={busy}>
     <h2 className="text-lg font-semibold">Готовность к публикации</h2>
     <p>Проверка охватывает ветви и действующую обработку. Перед публикацией проверьте изменения.</p>
-    <Button disabled={dirty || disabled || busy} onClick={() => void prepare()}>Подготовить публикацию</Button>
+    <Button disabled={dirty || disabled || busy} onClick={() => void prepare()}>{pending === "checking" ? "Проверяем публикацию…" : "Подготовить публикацию"}</Button>
+    {pending === "checking" && <p role="status">Проверяем публикацию. Сервер проверяет ветви сценария и правила обработки.</p>}
     {dirty && <p>Сначала сохраните изменения.</p>}
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
     {published && <a className="inline-block text-brand-700 underline" target="_blank" rel="noopener noreferrer" href={`/app/requester/new?${new URLSearchParams({ offering: published.offering_full_code })}`}>Открыть сценарий сотрудника</a>}
@@ -85,8 +87,9 @@ export function ScenarioPublication({ id, revision, dirty, disabled, definition,
         <p className="text-sm text-slate-500">Проверьте вопросы, пункты каталога и пути на карте. Декларацию целиком можно получить через экспорт JSON / YAML.</p>
       </div> : <p>Содержимое сценария не изменилось. Будет создана новая версия с проверенной обработкой.</p>}
       {preview.readiness.can_publish && preview.confirmation_token && <div className="sticky bottom-0 z-10 grid gap-3 border-t bg-white py-3">
+        {pending === "publishing" && <p role="status">Публикуем сценарий. Дождитесь результата проверки и создания версии.</p>}
         <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} disabled={busy || dirty || disabled} onChange={event => setConfirmed(event.target.checked)} />Изменения проверены, подтверждаю публикацию</label>
-        <Button disabled={!confirmed || busy || dirty || disabled} onClick={() => void publish()}>Опубликовать сценарий</Button>
+        <Button disabled={!confirmed || busy || dirty || disabled} onClick={() => void publish()}>{pending === "publishing" ? "Публикуем сценарий…" : "Опубликовать сценарий"}</Button>
       </div>}
     </>}
   </div>;

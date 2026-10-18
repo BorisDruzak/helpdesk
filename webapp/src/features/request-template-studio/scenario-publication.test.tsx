@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioPublication } from "./scenario-publication";
@@ -63,4 +63,79 @@ it("does not treat Health OK as publication readiness", async () => {
 it("requires saving edits before preparing publication", () => {
   mount(true);
   expect(screen.getByRole("button", { name: "Подготовить публикацию" })).toBeDisabled();
+});
+
+const readyPreview = { health: { health_status: "ok" }, readiness: { can_publish: true, issues: [], variants_checked: 220 }, diff: [], confirmation_token: "reviewed-token" };
+function response(data: unknown) { return new Response(JSON.stringify({ status: "success", data }), { headers: { "Content-Type": "application/json" } }); }
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  let reject!: (cause: Error) => void;
+  const promise = new Promise<Response>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+it("explains delayed checking and publishing while preventing repeat actions until success", async () => {
+  const checking = deferredResponse(), publishing = deferredResponse();
+  const fetcher = vi.fn().mockReturnValueOnce(checking.promise).mockReturnValueOnce(publishing.promise);
+  vi.stubGlobal("fetch", fetcher); mount();
+  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Проверяем публикацию");
+  const checkingButton = screen.getByRole("button", { name: "Проверяем публикацию…" });
+  expect(checkingButton).toBeDisabled(); fireEvent.click(checkingButton); expect(fetcher).toHaveBeenCalledTimes(1);
+  await act(async () => { checking.resolve(response(readyPreview)); });
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Опубликовать сценарий" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Изменения проверены, подтверждаю публикацию" }));
+  fireEvent.click(screen.getByRole("button", { name: "Опубликовать сценарий" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Публикуем сценарий");
+  const publishingButton = screen.getByRole("button", { name: "Публикуем сценарий…" });
+  expect(publishingButton).toBeDisabled(); fireEvent.click(publishingButton); expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ revision: 2, confirm: true, confirmation_token: "reviewed-token" });
+  await act(async () => { publishing.resolve(response({ version: { version: 1, definition } })); });
+  await screen.findByText("Опубликована версия 1.");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Подготовить публикацию" })).toBeEnabled());
+  expect(screen.queryByText(/Проверяем публикацию|Публикуем сценарий/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Опубликовать сценарий" })).not.toBeInTheDocument();
+});
+it("clears the checking status and re-enables preparation after a failed request", async () => {
+  const checking = deferredResponse(); vi.stubGlobal("fetch", vi.fn(() => checking.promise)); mount();
+  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Проверяем публикацию");
+  await act(async () => { checking.reject(new Error("network unavailable")); });
+  expect(screen.getByRole("alert")).toHaveTextContent("Не удалось проверить публикацию");
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Подготовить публикацию" })).toBeEnabled();
+});
+it("clears the publishing status after an error and requires a new reviewed preview", async () => {
+  const publishing = deferredResponse();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response(readyPreview)).mockReturnValueOnce(publishing.promise)); mount();
+  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Изменения проверены, подтверждаю публикацию" }));
+  fireEvent.click(screen.getByRole("button", { name: "Опубликовать сценарий" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Публикуем сценарий");
+  await act(async () => { publishing.resolve(new Response(JSON.stringify({ status: "error", error_code: "CONFLICT" }), { status: 409, headers: { "Content-Type": "application/json" } })); });
+  expect(screen.getByRole("alert")).toHaveTextContent("Подготовьте публикацию заново");
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: "Изменения проверены, подтверждаю публикацию" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Опубликовать сценарий" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Подготовить публикацию" })).toBeEnabled();
+});
+it.each(["checking", "publishing"])("resets a stale %s status when the saved revision changes", async phase => {
+  const pending = deferredResponse();
+  vi.stubGlobal("fetch", phase === "checking" ? vi.fn(() => pending.promise) : vi.fn().mockResolvedValueOnce(response(readyPreview)).mockReturnValueOnce(pending.promise));
+  const cache = new QueryClient();
+  const ui = (revision: number) => <QueryClientProvider client={cache}><ScenarioPublication id="scenario" revision={revision} dirty={false} disabled={false} definition={definition} /></QueryClientProvider>;
+  const view = render(ui(2));
+  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  if (phase === "publishing") {
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Изменения проверены, подтверждаю публикацию" }));
+    fireEvent.click(screen.getByRole("button", { name: "Опубликовать сценарий" }));
+  }
+  expect(screen.getByRole("status")).toHaveTextContent(phase === "checking" ? "Проверяем публикацию" : "Публикуем сценарий");
+  view.rerender(ui(3));
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Подготовить публикацию" })).toBeEnabled();
+  await act(async () => { pending.resolve(response(phase === "checking" ? readyPreview : { version: { version: 1, definition } })); });
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: "Изменения проверены, подтверждаю публикацию" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Открыть сценарий сотрудника" })).not.toBeInTheDocument();
 });
