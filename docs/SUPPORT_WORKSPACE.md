@@ -1,0 +1,68 @@
+# Everyday support workspace
+
+The existing `/app/tickets` and `/app/tickets/:ticketId` routes open the simple
+operational layout by default. `TicketListPage` retains its query cache,
+realtime subscriptions, attachment upload and typed mutations. Components in
+`webapp/src/pages/tickets/components/simple-support-*` provide the queue,
+three-area ticket and conversation. `simple-resolution-form.tsx` presents policy
+fields and optional internal information.
+
+## Queue and actions
+
+Five filters use server-side smart views before the queue limit: `open`, `new`,
+`waiting`, `completed`; Mine uses `scope=mine` with `smart_view=open`. Resolved,
+closed and canceled tickets belong to Completed. Waiting includes user, vendor
+and internal-team waits. Approval has its own contextual action. Existing smart
+views, saved columns and bulk operations remain in the additional mode.
+
+The queue and ticket use one `POST /api/web/support/tickets/{id}/status` command
+with `to_status=in_progress` to take/start work. No separate assignment request
+is combined with it. Status and assignment become visible after success and
+refetch. The server locks and refreshes the ticket before checking ownership,
+permissions and the canonical transition. Unassigned work also requires
+`ticket.assign` and existing queue-membership assignment checks. Concurrent
+operators cannot silently take the same ticket. An administrator can help with
+assigned work without changing its assignee.
+
+## Conversation and privacy
+
+`handle_web_support_send_message` checks the appropriate comment permission,
+then reads the ticket with `for_update=True`. New public replies require an
+assignee and an active-work/waiting status. The assigned actor or an authorized
+administrator can reply. New, queued, assigned, resolved and closed tickets
+reject replies with `TICKET_NOT_IN_WORK`/409; a different support actor receives
+`ASSIGNEE_CONFLICT`/403. Rejection occurs before message persistence, observer
+success, broadcast or first-response SLA completion. Internal notes retain
+their separate permission and do not stop first-response SLA. Sending a message
+does not automatically change the ticket's status.
+
+The additive `actions.can_send_public_message` projection provides the UI gate;
+the endpoint remains authoritative. Dialog contains public chat messages,
+Internal notes contains internal entries, and History contains diagnostics and
+system events. Deduplication uses message/event identities, preserves attachments
+and takes internal visibility when duplicate projections disagree. Real public
+service messages, including solution-confirmation requests, remain in Dialog.
+Public/internal composer drafts and pending attachments are separate.
+
+## Resolution and additional functions
+
+Resolve opens one form using `actions.closure_requirements`, without imposing
+extra mandatory fields absent from policy. Missing evidence or passport
+requirements lead to the existing passport workspace. The server continues to
+enforce workflow, approval, closure and requester-confirmation policy. Resolved
+and closed remain separate states. An agent is not required for ordinary support.
+
+Additional mode retains tools, SLA, passport, Quality, saved queue views and bulk
+actions; returning to ordinary work is explicit. `?advanced=1` directly opens
+those existing surfaces. Ordinary entry ignores old expanded-mode preferences.
+No API, event history or subsystem is removed. No migration or dependency added.
+
+## Verification
+
+Targeted coverage: `test_support_work_no_db.py`, `test_support_work.py`,
+`test_support_operational_views_no_db.py`, the `simple-*` component tests and
+`webapp/tests/support-simple.spec.ts`. PostgreSQL tests verify competing claims,
+persisted assignee/status and SLA separately from synthetic browser fixtures.
+Browser scenarios cover 1366x768, 1920x1080 and 390x768, attachment links,
+dialog/note/history separation, draft privacy and resolution. Fixture results
+are not installed staging or production acceptance.

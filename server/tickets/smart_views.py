@@ -31,6 +31,10 @@ class SmartView:
 
 DEFAULT_SMART_VIEWS: tuple[SmartView, ...] = (
     SmartView("all", "Все", "Все доступные тикеты"),
+    SmartView("open", "Открытые", "Обращения, обработка которых ещё не завершена"),
+    SmartView("new", "Новые", "Новые обращения и обращения в очереди"),
+    SmartView("waiting", "Ожидают ответа", "Ожидают пользователя, внутреннюю группу или внешнюю сторону"),
+    SmartView("completed", "Завершённые", "Решённые, закрытые и отменённые обращения"),
     SmartView("my_action", "Нужен мой ответ", "Тикеты, где следующий шаг за поддержкой"),
     SmartView("requester_reply", "Ответил пользователь", "Тикеты с непрочитанными сообщениями пользователя"),
     SmartView("sla_risk", "Риск по сроку ответа", "Открытые тикеты с близким или нарушенным сроком ответа или решения"),
@@ -495,6 +499,14 @@ def matches_smart_view(
         return _matches_custom_filter(ticket_data, filter_config, actor_id=actor_id, now=now)
 
     status = str(ticket_data.get("status") or "").strip()
+    if view_id == "open":
+        return _is_open(ticket_data)
+    if view_id == "new":
+        return status in {"new", "queued"}
+    if view_id == "waiting":
+        return status in WAITING_STATUSES - {"waiting_on_approval"}
+    if view_id == "completed":
+        return status in TERMINAL_STATUSES
     if view_id == "my_action":
         owner = str(ticket_data.get("next_action_owner") or "").strip()
         return _is_open(ticket_data) and owner in {"support", "internal_team", "approver", "system"}

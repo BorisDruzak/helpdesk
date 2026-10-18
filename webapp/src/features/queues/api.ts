@@ -557,6 +557,7 @@ export type SupportTicketDetailPayload = {
       label: string;
     }>;
     can_send_internal_note: boolean;
+    can_send_public_message?: boolean;
     can_hide_from_workspace?: boolean;
     can_unhide_from_workspace?: boolean;
     can_archive_ticket?: boolean;

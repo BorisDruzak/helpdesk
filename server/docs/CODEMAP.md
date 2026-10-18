@@ -1,5 +1,19 @@
 # Helpdesk server code map
 
+## Everyday support workspace (UI-SUPPORT-001)
+
+- `webapp/src/pages/tickets/list-page.tsx` keeps the existing support queries,
+  realtime and mutations; `components/simple-support-*` compose the default
+  queue, compact ticket and three conversation tabs. Advanced modes stay reachable.
+- `tickets/smart_views.py` adds server-side operational views before queue limits.
+- `web_api/support_handlers.py` locks status/ownership before take-in-work and
+  public reply. Rejected replies write no event and do not finish first-response
+  SLA. `web_api/dto/support.py` projects `actions.can_send_public_message`.
+- `test_support_work.py` covers PostgreSQL competing operators, persisted
+  ownership, SLA and administrator access; the no-DB companion covers error
+  ordering. Existing FSM, assignment, closure, audit and internal visibility stay
+  authoritative. See [support workflow](../../docs/SUPPORT_WORKSPACE.md).
+
 ## Endpoint module discovery and inputs
 
 - `domain_ports/endpoint_modules.py` declares read-only primitive/published-module

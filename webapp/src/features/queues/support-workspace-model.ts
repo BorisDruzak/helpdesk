@@ -91,6 +91,7 @@ export type SupportWorkspaceTimelineItem = {
   kind: SupportWorkspaceTimelineKind;
   title: string;
   actor: string;
+  fromRole?: string;
   timestampLabel: string;
   body: string;
   visibility: string;

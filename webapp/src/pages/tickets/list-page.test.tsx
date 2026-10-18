@@ -378,7 +378,7 @@ function timelinePayload(overrides: Partial<SupportTicketTimelinePayload> = {}):
   };
 }
 
-function renderTicketListPage(initialEntry = "/app/tickets") {
+function renderTicketListPage(initialEntry = "/app/tickets", advanced = true) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -390,7 +390,7 @@ function renderTicketListPage(initialEntry = "/app/tickets") {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialEntry]}>
+      <MemoryRouter initialEntries={[advanced ? `${initialEntry}${initialEntry.includes("?") ? "&" : "?"}advanced=1` : initialEntry]}>
         <Routes>
           <Route path="/app/tickets" element={<TicketListPage />} />
           <Route path="/app/tickets/:ticketId" element={<TicketListPage />} />
@@ -2294,5 +2294,34 @@ describe("TicketListPage", () => {
     expect(await screen.findByText("База знаний пока недоступна")).toBeInTheDocument();
     expect(screen.getByText("Подключение к внешнему сервису знаний ещё не настроено.")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Ошибка 502 Bad Gateway" })).not.toBeInTheDocument();
+  });
+});
+
+
+describe("UI-SUPPORT-001 default workspace", () => {
+  it("preserves command-center deep links to advanced smart views", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    renderTicketListPage("/app/tickets?smart_view=new_unassigned", false);
+    await waitFor(() => expect(fetchSupportQueueMock).toHaveBeenCalledWith(expect.objectContaining({ smartView: "unassigned" })));
+  });
+
+  it("requires successful take-in-work before enabling a public reply and keeps status on conflict", async () => {
+    const workspace = workspacePayload();
+    workspace.detail.ticket.status = "queued";
+    workspace.detail.ticket.status_label = "В очереди";
+    workspace.detail.ticket.assignee_id = null;
+    workspace.detail.actions.status_options = [{ value: "in_progress", label: "В работе" }];
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    postSupportTicketStatusMock.mockRejectedValue(new Error("Обращение уже взято другим оператором"));
+    renderTicketListPage("/app/tickets/ticket-1", false);
+    const take = await screen.findByRole("button", { name: "Взять в работу" });
+    expect(screen.getByRole("textbox", { name: "Сообщение сотруднику" })).toBeDisabled();
+    expect(screen.queryByTestId("support-command-strip")).not.toBeInTheDocument();
+    fireEvent.click(take);
+    await waitFor(() => expect(postSupportTicketStatusMock).toHaveBeenCalledWith("ticket-1", "in_progress", expect.any(Object)));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Обращение уже взято");
+    expect(screen.getByRole("textbox", { name: "Сообщение сотруднику" })).toBeDisabled();
+    expect(postSupportTicketAssignMock).not.toHaveBeenCalled();
   });
 });

@@ -2479,6 +2479,8 @@ async def handle_support_ticket_status(request: web.Request) -> web.Response:
     payload = await request.json()
     to_status = payload.get("to_status", "new")
     ticket_state = state["tickets"][ticket_id]
+    if to_status == "in_progress" and not ticket_state["ticket"].get("assignee_id"):
+        ticket_state["ticket"]["assignee_id"] = SUPPORT_LOGIN
     ticket_state["ticket"]["status"] = to_status
     ticket_state["ticket"]["status_label"] = STATUS_LABELS.get(to_status, to_status)
     ticket_state["ticket"]["updated_at"] = now_iso(minutes=16)

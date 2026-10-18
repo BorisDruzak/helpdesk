@@ -1233,7 +1233,17 @@ def _apply_custom_smart_view_sort(
     return sorted(entries, key=cmp_to_key(compare))
 
 
-async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_admin: bool = False) -> SupportTicketActions:
+def _support_public_reply_error(ticket, *, actor_id: str | None, is_admin: bool = False) -> tuple[str, str] | None:
+    if not getattr(ticket, "assignee_id", None) or str(ticket.status) not in {
+        "in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor", "waiting_on_approval",
+    }:
+        return "TICKET_NOT_IN_WORK", "Сначала возьмите обращение в работу."
+    if not is_admin and str(ticket.assignee_id) != str(actor_id or ""):
+        return "ASSIGNEE_CONFLICT", "Обращение назначено другому оператору."
+    return None
+
+
+async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_admin: bool = False, actor_id: str | None = None) -> SupportTicketActions:
     if not is_staff:
         return SupportTicketActions(status_options=[], can_send_internal_note=False)
 
@@ -1258,6 +1268,7 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_a
     return SupportTicketActions(
         status_options=options,
         can_send_internal_note=True,
+        can_send_public_message=_support_public_reply_error(ticket, actor_id=actor_id, is_admin=is_admin) is None,
         can_hide_from_workspace=not _is_support_workspace_hidden(ticket),
         can_unhide_from_workspace=_is_support_workspace_hidden(ticket),
         can_archive_ticket=is_admin and getattr(ticket, "archived_at", None) is None,
@@ -3213,6 +3224,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         ticket,
         is_staff=auth_context.actor_role in {"admin", "support"},
         is_admin=auth_context.actor_role == "admin",
+        actor_id=auth_context.actor_id,
     )
     request_form = _build_support_request_form_payload(ticket_data)
     custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
@@ -5371,6 +5383,22 @@ async def handle_web_support_send_message(request: web.Request):
             if denied:
                 return denied
 
+            # Serialize the ownership/status check with status and assignment writes.
+            ticket = await repo.get_ticket(ticket.ticket_id, for_update=True)
+            if ticket is None:
+                return _support_json_error("Обращение не найдено", status=404)
+            # A concurrent queue move can change read scope while the lock is awaited.
+            ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            if visibility == "public":
+                reply_error = _support_public_reply_error(
+                    ticket, actor_id=auth_context.actor_id, is_admin=auth_context.actor_role == "admin",
+                )
+                if reply_error:
+                    code, message = reply_error
+                    return _support_json_error(message, status=403 if code == "ASSIGNEE_CONFLICT" else 409, error_code=code)
+
             artifacts_repo = ArtifactsRepo(session)
             attachments: list[dict[str, Any]] = []
             if attachment_refs:
@@ -5531,6 +5559,26 @@ async def handle_web_support_change_status(request: web.Request):
             denied = await _require_permission(session, auth_context, "ticket.status.change")
             if denied:
                 return denied
+
+            ticket = await repo.get_ticket(ticket.ticket_id, for_update=True)
+            if ticket is None:
+                return _support_json_error("Обращение не найдено", status=404)
+            # A concurrent queue move can change read scope while the lock is awaited.
+            ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            if to_status == "in_progress":
+                assignee = getattr(ticket, "assignee_id", None)
+                if assignee and str(assignee) != str(auth_context.actor_id or "") and auth_context.actor_role != "admin":
+                    return _support_json_error("Обращение назначено другому оператору.", status=403, error_code="ASSIGNEE_CONFLICT")
+                if not assignee:
+                    denied = await _require_permission(session, auth_context, "ticket.assign")
+                    if denied:
+                        return denied
+                    try:
+                        await TicketAssignmentService(repo).validate_manual_assignment(ticket, auth_context.actor_id)
+                    except TicketAssignmentError:
+                        return _support_json_error("Назначение исполнителя недоступно. Проверьте очередь и загрузку оператора.", status=409, error_code="ASSIGNMENT_CONFLICT")
 
             is_staff = auth_context.actor_role in {"admin", "support"}
             from_status = ticket.status

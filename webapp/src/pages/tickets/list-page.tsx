@@ -133,6 +133,11 @@ import {
   type WorkspaceRightTab,
 } from "./workspace-types";
 import { getTicketsWorkspaceUrlState } from "./url-state";
+import { SimpleSupportQueue, type SimpleQueueFilter } from "./components/simple-support-queue";
+import { SimpleSupportTicket } from "./components/simple-support-ticket";
+import { SimpleSupportConversation } from "./components/simple-support-conversation";
+import { SimpleResolutionForm } from "./components/simple-resolution-form";
+
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 const SUPPORT_OPERATION_REFRESH_MS = 2_500;
@@ -1249,7 +1254,11 @@ export function TicketListPage() {
   const [ticketListCollapsed,setTicketListCollapsed]=useState(()=>loadPanelPreferences(panelAccount,"support").ticketListCollapsed);
   useEffect(()=>setTicketListCollapsed(loadPanelPreferences(panelAccount,"support").ticketListCollapsed),[panelAccount]);
   const initialUrlStateRef = useRef(getTicketsWorkspaceUrlState(searchParams));
-  const shouldKeepQueueRouteRef = useRef(initialUrlStateRef.current.shouldOpenQueue);
+  const [simpleMode, setSimpleMode] = useState(() => searchParams.get("advanced") !== "1" && (!initialUrlStateRef.current.smartView || initialUrlStateRef.current.smartView === "all"));
+  const [simpleFilter, setSimpleFilter] = useState<SimpleQueueFilter>("open");
+  const simpleTextDraftsRef = useRef({ public: "", internal: "" });
+  const simpleAttachmentDraftsRef = useRef<{ public: SupportTicketAttachmentUpload[]; internal: SupportTicketAttachmentUpload[] }>({ public: [], internal: [] });
+  const shouldKeepQueueRouteRef = useRef(initialUrlStateRef.current.shouldOpenQueue || (!params.ticketId && searchParams.get("advanced") !== "1"));
   const [scope, setScope] = useState<SupportQueueScope>("all");
   const [smartView, setSmartView] = useState(() => initialUrlStateRef.current.smartView ?? getInitialWorkspaceSelectedView("my_action"));
   const [activeQueueId, setActiveQueueId] = useState<string | null>(() => getInitialWorkspaceSelectedQueue());
@@ -1262,7 +1271,7 @@ export function TicketListPage() {
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => (initialUrlStateRef.current.shouldOpenQueue ? "queue" : getInitialWorkspaceMode()));
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => simpleMode ? (params.ticketId ? "ticket" : "queue") : (initialUrlStateRef.current.shouldOpenQueue ? "queue" : getInitialWorkspaceMode()));
   const [moreOpen, setMoreOpen] = useState(false);
   const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const [toolsWorkspaceTab, setToolsWorkspaceTab] = useState<ToolsWorkspaceTab>("quick");
@@ -1323,6 +1332,9 @@ export function TicketListPage() {
   useEffect(() => {
     selectedTicketIdRef.current = selectedTicketId;
     setPendingAttachments([]);
+    setComposerText("");
+    simpleTextDraftsRef.current = { public: "", internal: "" };
+    simpleAttachmentDraftsRef.current = { public: [], internal: [] };
     setAttachmentError(null);
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = "";
@@ -1460,15 +1472,18 @@ export function TicketListPage() {
     };
   }, [resizingPane, workspaceMode]);
 
+  const effectiveQueueScope = simpleMode ? (simpleFilter === "mine" ? "mine" : "all") : scope;
+  const effectiveSmartView = simpleMode ? (simpleFilter === "mine" ? "open" : simpleFilter) : smartView;
+  const includeArchived = showArchive || (simpleMode && simpleFilter === "completed");
   const queueQuery = useQuery({
-    queryKey: ["tickets-workspace-queue", scope, smartView, deferredSearch, showArchive],
+    queryKey: ["tickets-workspace-queue", effectiveQueueScope, effectiveSmartView, deferredSearch, includeArchived],
     queryFn: () =>
       fetchSupportQueue({
-        scope,
+        scope: effectiveQueueScope,
         statusFilter: "all",
-        smartView,
+        smartView: effectiveSmartView,
         query: deferredSearch,
-        includeArchived: showArchive,
+        includeArchived,
       }),
     retry: false,
     refetchInterval: SUPPORT_QUEUE_REFRESH_MS,
@@ -1507,7 +1522,7 @@ export function TicketListPage() {
   });
 
   const timelineApiFilter: SupportTicketTimelineFilter =
-    timelineFilter === "message" ? "messages" : timelineFilter;
+    simpleMode ? "all" : timelineFilter === "message" ? "messages" : timelineFilter;
 
   const timelineQuery = useQuery({
     queryKey: ["tickets-workspace-timeline", selectedTicketId, timelineApiFilter],
@@ -1754,6 +1769,7 @@ export function TicketListPage() {
   }, [queryClient, selectedTicketId]);
 
   function selectRightTab(tab: SidebarTab) {
+    setSimpleMode(false);
     setCompactInspectorOpen(true);
     setSidebarTab(tab);
     if (tab === "tools" || tab === "sla" || tab === "passport") {
@@ -1792,6 +1808,8 @@ export function TicketListPage() {
       );
     },
     onSuccess: async () => {
+      simpleTextDraftsRef.current[composerMode] = "";
+      simpleAttachmentDraftsRef.current[composerMode] = [];
       setComposerText("");
       setPendingAttachments([]);
       setAttachmentError(null);
@@ -1905,6 +1923,17 @@ export function TicketListPage() {
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
       ]);
+    },
+  });
+
+  const takeTicketMutation = useMutation({
+    mutationFn: (ticketId: string) => postSupportTicketStatus(ticketId, "in_progress", { reason: "Взять обращение в работу" }),
+    onSuccess: async (_result, ticketId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", ticketId] }),
+      ]);
+      openTicket(ticketId);
     },
   });
 
@@ -2165,13 +2194,24 @@ export function TicketListPage() {
   const closureGuide = closureFocus ? closureFocusGuide(closureFocus) : null;
   const internalNoteAllowed = selectedTicket?.canSendInternalNote ?? false;
   const composerHasContent = Boolean(composerText.trim() || pendingAttachments.length > 0);
+  const rawTicket = workspaceQuery.data?.detail.ticket;
+  const staffActor = session?.actor_role === "support" || session?.actor_role === "admin";
+  const hasPermission = (permission: string) => staffActor && (!session?.permissions || session.permissions.includes(permission));
+  const publicReplyAllowed = Boolean(rawTicket && hasPermission("ticket.comment.public") && !workspaceErrorState && (
+    workspaceQuery.data?.detail.actions.can_send_public_message ?? (
+      rawTicket.assignee_id && ["in_progress", "waiting_on_user", "waiting_on_vendor", "waiting_on_internal_team", "waiting_on_approval"].includes(rawTicket.status) &&
+      (session?.actor_role === "admin" || rawTicket.assignee_id === session?.user_login)
+    )
+  ));
   const composerCanSend =
     composerHasContent &&
+    (composerMode === "internal" || publicReplyAllowed) &&
     !messageMutation.isPending &&
     !uploadingAttachments &&
     (composerMode !== "internal" || internalNoteAllowed);
   const actionError =
     messageMutation.error ||
+    takeTicketMutation.error ||
     operatorActionMutation.error ||
     toolRunMutation.error ||
     playbookRunMutation.error ||
@@ -2265,6 +2305,17 @@ export function TicketListPage() {
     }));
   }
 
+  const simpleQueueData = queueQuery.data && activeQueueId ? { ...queueQuery.data,
+    tickets: queueQuery.data.tickets.filter((item) => item.queue_code === activeQueueId) } : queueQuery.data;
+  const simpleQueueProps = {
+    queue: simpleQueueData, actorId: session?.user_login, canWork: hasPermission("ticket.status.change") && hasPermission("ticket.assign"),
+    filter: simpleFilter, search, loading: queueQuery.isLoading, error: queueQuery.isError,
+    pending: takeTicketMutation.isPending, selectedTicketId, activeQueueId,
+    onFilterChange: setSimpleFilter, onSearchChange: setSearch, onOpenTicket: openTicket,
+    onTakeTicket: (id: string) => takeTicketMutation.mutate(id), onQueueChange: setActiveQueueId,
+    onAdvanced: () => setSimpleMode(false),
+  };
+
   return (
     <section
       className={`support-workspace flex h-full min-h-0 flex-1 flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
@@ -2282,6 +2333,34 @@ export function TicketListPage() {
         refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
       />
 
+      {!simpleMode ? <button className="simple-advanced-return" type="button" onClick={() => { setSimpleMode(true); setWorkspaceMode(selectedTicketId ? "ticket" : "queue"); }}>← Вернуться к обычной работе</button> : null}
+      {simpleMode ? <div className="support-simple" data-testid="simple-support-workspace">
+        {workspaceMode === "queue" || !selectedTicketId ? <>
+          {actionError ? <p className="simple-notice simple-risk" role="alert">{actionError instanceof Error ? actionError.message : "Действие не выполнено"}</p> : null}
+          <SimpleSupportQueue {...simpleQueueProps} onAdvanced={() => { setSimpleMode(false); setWorkspaceMode("queue"); }} />
+        </> : <div className="simple-workspace">
+          <SimpleSupportQueue {...simpleQueueProps} compact />
+          {workspaceQuery.data && selectedTicket ? <SimpleSupportTicket detail={workspaceQuery.data.detail} ticket={selectedTicket} context={viewModel.right.context}
+            actorId={session?.user_login} isAdmin={isAdmin} canWork={hasPermission("ticket.status.change") && !workspaceErrorState}
+            pending={operatorActionMutation.isPending || takeTicketMutation.isPending}
+            error={workspaceErrorState ? "Не удалось обновить обращение. Обновите данные перед действием." : actionError instanceof Error ? actionError.message : null}
+            onStatus={(value) => operatorActionMutation.mutate({ kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" })}
+            onResolve={() => setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket))}
+            onAdvanced={(mode = "ticket") => { setSimpleMode(false); setWorkspaceMode(mode); if (mode !== "ticket") setSidebarTab(mode); }}
+            onManage={openOperatorAction} onQueue={() => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); }}
+            conversation={<SimpleSupportConversation key={selectedTicket.id}
+              items={mapSupportTimelineEntries([...(timelineQuery.data?.items ?? workspaceQuery.data.detail.timeline)].sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0)))}
+              mode={composerMode} text={composerText} canReply={publicReplyAllowed} canNote={hasPermission("ticket.comment.internal") && internalNoteAllowed}
+              pending={messageMutation.isPending || uploadingAttachments} loading={timelineQuery.isLoading} error={timelineQuery.isError}
+              onTextChange={(text) => { simpleTextDraftsRef.current[composerMode] = text; setComposerText(text); }}
+              onModeChange={(mode) => { simpleTextDraftsRef.current[composerMode] = composerText; simpleAttachmentDraftsRef.current[composerMode] = pendingAttachments; setComposerMode(mode); setComposerText(simpleTextDraftsRef.current[mode]); setPendingAttachments(simpleAttachmentDraftsRef.current[mode]); }}
+              onSend={() => { if (composerCanSend) messageMutation.mutate(); }}
+              attachments={pendingAttachments} inputRef={attachmentInputRef} onUpload={handleAttachmentInputChange} uploadError={attachmentError}
+              onRemoveAttachment={(id) => setPendingAttachments((items) => items.filter((item) => item.artifact_id !== id))}
+            />}
+          /> : <main className="simple-empty"><p role={workspaceErrorState ? "alert" : "status"}>{workspaceErrorState?.body ?? "Загружаем обращение…"}</p><button className="simple-button" type="button" onClick={() => workspaceQuery.refetch()}>Обновить</button></main>}
+        </div>}
+      </div> : (
       <div
         className="relative grid min-h-0 flex-1 overflow-hidden support-workspace__mode-grid"
         data-overlay-right={rightPanelInDrawer ? "true" : "false"}
@@ -2759,260 +2838,6 @@ export function TicketListPage() {
                   </div>
                 </section>
 
-                {operatorActionDraft && operatorActionMeta ? (
-                  <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
-                    <section
-                      aria-labelledby="operator-action-title"
-                      aria-modal="true"
-                      className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#101d30] p-5 text-slate-100 shadow-2xl shadow-black/50"
-                      role="dialog"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h2 className="text-lg font-semibold" id="operator-action-title">{operatorActionMeta.title}</h2>
-                          <p className="mt-1 text-sm leading-6 text-slate-400">{operatorActionMeta.description}</p>
-                        </div>
-                        <button
-                          aria-label="Закрыть действие"
-                          className="rounded-lg border border-white/10 px-2 py-1 text-sm text-slate-300 hover:text-white"
-                          onClick={() => setOperatorActionDraft(null)}
-                          type="button"
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      <div className="mt-5 space-y-4">
-                        {operatorActionDraft.kind === "status" ? (
-                          <label className="block text-sm font-medium text-slate-300">
-                            Новый статус
-                            <select
-                              className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
-                              onChange={(event) => {
-                                const targetStatus = event.currentTarget.value;
-                                setOperatorActionDraft((draft) => draft ? { ...draft, targetStatus } : draft);
-                              }}
-                              value={operatorActionDraft.targetStatus}
-                            >
-                              {statusActionOptions.map((option) => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                              ))}
-                            </select>
-                          </label>
-                        ) : null}
-
-                        {operatorActionDraft.kind === "queue" ? (
-                          <label className="block text-sm font-medium text-slate-300">
-                            Целевая очередь
-                            <select
-                              className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
-                              onChange={(event) => {
-                                const queueId = Number(event.currentTarget.value) || null;
-                                setOperatorActionDraft((draft) => draft ? { ...draft, queueId } : draft);
-                              }}
-                              value={operatorActionDraft.queueId ?? ""}
-                            >
-                              {queueActionOptions.map((queue) => (
-                                <option key={queue.id} value={queue.id ?? ""}>
-                                  {queue.name || queue.code || `Очередь ${queue.id}`} · {queue.count}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ) : null}
-
-                        {operatorActionDraft.kind === "priority" ? (
-                          <fieldset className="space-y-2">
-                            <legend className="text-sm font-medium text-slate-300">Новый приоритет</legend>
-                            <div className="grid grid-cols-4 gap-2">
-                              {priorityActionOptions.map((option) => (
-                                <button
-                                  className={`rounded-xl border px-3 py-3 text-left transition ${
-                                    operatorActionDraft.priority === option.value
-                                      ? "border-blue-400 bg-blue-600/25 text-white"
-                                      : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
-                                  }`}
-                                  key={option.value}
-                                  onClick={() =>
-                                    setOperatorActionDraft((draft) => draft ? { ...draft, priority: option.value } : draft)
-                                  }
-                                  type="button"
-                                >
-                                  <span className="block text-sm font-bold">{option.label}</span>
-                                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">{option.hint}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </fieldset>
-                        ) : null}
-
-                        {operatorActionDraft.kind === "assign_self" ? (
-                          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
-                            Исполнитель: <span className="font-semibold text-slate-100">{session?.user_login ?? "текущий оператор"}</span>
-                          </div>
-                        ) : null}
-
-                        <label className="block text-sm font-medium text-slate-300">
-                          Причина
-                          <input
-                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
-                            onChange={(event) => {
-                              const reason = event.currentTarget.value;
-                              setOperatorActionDraft((draft) => draft ? { ...draft, reason } : draft);
-                            }}
-                            placeholder="Например: ручная корректировка по диагностике"
-                            value={operatorActionDraft.reason}
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium text-slate-300">
-                          Комментарий для внутренней истории
-                          <textarea
-                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
-                            onChange={(event) => {
-                              const comment = event.currentTarget.value;
-                              setOperatorActionDraft((draft) => draft ? { ...draft, comment } : draft);
-                            }}
-                            placeholder="Необязательно. Добавьте контекст для следующего оператора."
-                            value={operatorActionDraft.comment}
-                          />
-                        </label>
-
-                        {!operatorReasonReady ? (
-                          <p className="text-xs text-amber-200">Укажите причину минимум из 3 символов, чтобы действие попало в историю осмысленно.</p>
-                        ) : null}
-                      </div>
-
-                      <div className="mt-5 flex justify-end gap-2">
-                        <button
-                          className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-slate-300 hover:text-white"
-                          onClick={() => setOperatorActionDraft(null)}
-                          type="button"
-                        >
-                          Отмена
-                        </button>
-                        <button
-                          className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={operatorSubmitDisabled}
-                          onClick={() => operatorActionDraft && operatorActionMutation.mutate(operatorActionDraft)}
-                          type="button"
-                        >
-                          {operatorActionMutation.isPending ? "Выполняем..." : operatorActionMeta.submit}
-                        </button>
-                      </div>
-                    </section>
-                  </div>
-                ) : null}
-                {resolutionCloseDraft ? (
-                  <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
-                    <section
-                      aria-labelledby="resolution-close-title"
-                      aria-modal="true"
-                      className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#101d30] p-5 text-slate-100 shadow-2xl shadow-black/50"
-                      role="dialog"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <h2 className="text-lg font-semibold" id="resolution-close-title">Перевести тикет в решение</h2>
-                          <p className="mt-1 text-sm leading-6 text-slate-400">
-                            Публичный итог увидит заявитель. Внутренний итог останется в истории поддержки.
-                          </p>
-                        </div>
-                        <button
-                          aria-label="Закрыть форму решения"
-                          className="rounded-lg border border-white/10 px-2 py-1 text-sm text-slate-300 hover:text-white"
-                          onClick={() => setResolutionCloseDraft(null)}
-                          type="button"
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      <div className="mt-4 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-2 text-sm leading-6 text-blue-100">
-                        Переход в статус «Решено» всё равно пройдёт через workflow, approval и closure policy. Если не хватает evidence,
-                        worklog или согласования, сервер вернёт точное требование.
-                      </div>
-
-                      <div className="mt-5 space-y-4">
-                        <label className="block text-sm font-medium text-slate-300">
-                          Код решения
-                          <input
-                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
-                            onChange={(event) => {
-                              const resolutionCode = event.currentTarget.value;
-                              setResolutionCloseDraft((draft) => draft ? { ...draft, resolutionCode } : draft);
-                            }}
-                            placeholder="Например: fixed_remote"
-                            value={resolutionCloseDraft.resolutionCode}
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium text-slate-300">
-                          Итог для заявителя
-                          <textarea
-                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
-                            onChange={(event) => {
-                              const requesterResolutionSummary = event.currentTarget.value;
-                              setResolutionCloseDraft((draft) => draft ? { ...draft, requesterResolutionSummary } : draft);
-                            }}
-                            placeholder="Коротко и понятно: что исправлено, как проверить результат."
-                            value={resolutionCloseDraft.requesterResolutionSummary}
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium text-slate-300">
-                          Внутренний итог
-                          <textarea
-                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
-                            onChange={(event) => {
-                              const resolutionSummary = event.currentTarget.value;
-                              setResolutionCloseDraft((draft) => draft ? { ...draft, resolutionSummary } : draft);
-                            }}
-                            placeholder="Причина, действия оператора, технические детали и риски повторения."
-                            value={resolutionCloseDraft.resolutionSummary}
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium text-slate-300">
-                          Причина перевода
-                          <input
-                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
-                            onChange={(event) => {
-                              const reason = event.currentTarget.value;
-                              setResolutionCloseDraft((draft) => draft ? { ...draft, reason } : draft);
-                            }}
-                            placeholder="Например: решение проверено оператором"
-                            value={resolutionCloseDraft.reason}
-                          />
-                        </label>
-
-                        {!resolutionCloseReady ? (
-                          <p className="text-xs text-amber-200">
-                            Заполните код решения, оба итога и причину перевода. Это защитит от случайного закрытия без паспорта.
-                          </p>
-                        ) : null}
-                      </div>
-
-                      <div className="mt-5 flex justify-end gap-2">
-                        <button
-                          className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-slate-300 hover:text-white"
-                          onClick={() => setResolutionCloseDraft(null)}
-                          type="button"
-                        >
-                          Отмена
-                        </button>
-                        <button
-                          className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={resolutionCloseSubmitDisabled}
-                          onClick={() => resolutionCloseMutation.mutate(resolutionCloseDraft)}
-                          type="button"
-                        >
-                          {resolutionCloseMutation.isPending ? "Переводим..." : "Перевести в решение"}
-                        </button>
-                      </div>
-                    </section>
-                  </div>
-                ) : null}
                 {actionError ? (
                   <p className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
                     {actionError instanceof Error ? actionError.message : "Действие не выполнено"}
@@ -3286,9 +3111,6 @@ export function TicketListPage() {
                         type="button"
                       >
                         <Paperclip className="h-4 w-4" />
-                      </button>
-                      <button className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300" type="button">
-                        Шаблоны
                       </button>
                       <button
                         aria-label={composerMode === "internal" ? "Переключить на публичный ответ" : "Переключить на внутреннюю заметку"}
@@ -4669,7 +4491,269 @@ export function TicketListPage() {
             </>
           )}
         </aside>
-      </div>
+      </div>)}
+                {operatorActionDraft && operatorActionMeta ? (
+                  <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
+                    <section
+                      aria-labelledby="operator-action-title"
+                      aria-modal="true"
+                      className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#101d30] p-5 text-slate-100 shadow-2xl shadow-black/50"
+                      role="dialog"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h2 className="text-lg font-semibold" id="operator-action-title">{operatorActionMeta.title}</h2>
+                          <p className="mt-1 text-sm leading-6 text-slate-400">{operatorActionMeta.description}</p>
+                        </div>
+                        <button
+                          aria-label="Закрыть действие"
+                          className="rounded-lg border border-white/10 px-2 py-1 text-sm text-slate-300 hover:text-white"
+                          onClick={() => setOperatorActionDraft(null)}
+                          type="button"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="mt-5 space-y-4">
+                        {operatorActionDraft.kind === "status" ? (
+                          <label className="block text-sm font-medium text-slate-300">
+                            Новый статус
+                            <select
+                              className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
+                              onChange={(event) => {
+                                const targetStatus = event.currentTarget.value;
+                                setOperatorActionDraft((draft) => draft ? { ...draft, targetStatus } : draft);
+                              }}
+                              value={operatorActionDraft.targetStatus}
+                            >
+                              {statusActionOptions.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+
+                        {operatorActionDraft.kind === "queue" ? (
+                          <label className="block text-sm font-medium text-slate-300">
+                            Целевая очередь
+                            <select
+                              className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
+                              onChange={(event) => {
+                                const queueId = Number(event.currentTarget.value) || null;
+                                setOperatorActionDraft((draft) => draft ? { ...draft, queueId } : draft);
+                              }}
+                              value={operatorActionDraft.queueId ?? ""}
+                            >
+                              {queueActionOptions.map((queue) => (
+                                <option key={queue.id} value={queue.id ?? ""}>
+                                  {queue.name || queue.code || `Очередь ${queue.id}`} · {queue.count}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+
+                        {operatorActionDraft.kind === "priority" ? (
+                          <fieldset className="space-y-2">
+                            <legend className="text-sm font-medium text-slate-300">Новый приоритет</legend>
+                            <div className="grid grid-cols-4 gap-2">
+                              {priorityActionOptions.map((option) => (
+                                <button
+                                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                                    operatorActionDraft.priority === option.value
+                                      ? "border-blue-400 bg-blue-600/25 text-white"
+                                      : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
+                                  }`}
+                                  key={option.value}
+                                  onClick={() =>
+                                    setOperatorActionDraft((draft) => draft ? { ...draft, priority: option.value } : draft)
+                                  }
+                                  type="button"
+                                >
+                                  <span className="block text-sm font-bold">{option.label}</span>
+                                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">{option.hint}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </fieldset>
+                        ) : null}
+
+                        {operatorActionDraft.kind === "assign_self" ? (
+                          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
+                            Исполнитель: <span className="font-semibold text-slate-100">{session?.user_login ?? "текущий оператор"}</span>
+                          </div>
+                        ) : null}
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Причина
+                          <input
+                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const reason = event.currentTarget.value;
+                              setOperatorActionDraft((draft) => draft ? { ...draft, reason } : draft);
+                            }}
+                            placeholder="Например: ручная корректировка по диагностике"
+                            value={operatorActionDraft.reason}
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Комментарий для внутренней истории
+                          <textarea
+                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const comment = event.currentTarget.value;
+                              setOperatorActionDraft((draft) => draft ? { ...draft, comment } : draft);
+                            }}
+                            placeholder="Необязательно. Добавьте контекст для следующего оператора."
+                            value={operatorActionDraft.comment}
+                          />
+                        </label>
+
+                        {!operatorReasonReady ? (
+                          <p className="text-xs text-amber-200">Укажите причину минимум из 3 символов, чтобы действие попало в историю осмысленно.</p>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-5 flex justify-end gap-2">
+                        <button
+                          className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-slate-300 hover:text-white"
+                          onClick={() => setOperatorActionDraft(null)}
+                          type="button"
+                        >
+                          Отмена
+                        </button>
+                        <button
+                          className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={operatorSubmitDisabled}
+                          onClick={() => operatorActionDraft && operatorActionMutation.mutate(operatorActionDraft)}
+                          type="button"
+                        >
+                          {operatorActionMutation.isPending ? "Выполняем..." : operatorActionMeta.submit}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
+                {resolutionCloseDraft && simpleMode ? (
+                  <div className="support-simple"><SimpleResolutionForm
+                    requirements={workspaceQuery.data?.detail.actions.closure_requirements ?? []}
+                    initial={resolutionCloseDraft} pending={resolutionCloseMutation.isPending}
+                    error={resolutionCloseMutation.error instanceof Error ? resolutionCloseMutation.error.message : null}
+                    onSubmit={(draft) => resolutionCloseMutation.mutate(draft)} onCancel={() => setResolutionCloseDraft(null)}
+                    onAdvanced={() => { setResolutionCloseDraft(null); selectRightTab("passport"); }}
+                  /></div>
+                ) : resolutionCloseDraft ? (
+                  <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
+                    <section
+                      aria-labelledby="resolution-close-title"
+                      aria-modal="true"
+                      className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#101d30] p-5 text-slate-100 shadow-2xl shadow-black/50"
+                      role="dialog"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-semibold" id="resolution-close-title">Перевести тикет в решение</h2>
+                          <p className="mt-1 text-sm leading-6 text-slate-400">
+                            Публичный итог увидит заявитель. Внутренний итог останется в истории поддержки.
+                          </p>
+                        </div>
+                        <button
+                          aria-label="Закрыть форму решения"
+                          className="rounded-lg border border-white/10 px-2 py-1 text-sm text-slate-300 hover:text-white"
+                          onClick={() => setResolutionCloseDraft(null)}
+                          type="button"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="mt-4 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-2 text-sm leading-6 text-blue-100">
+                        Переход в статус «Решено» всё равно пройдёт через workflow, approval и closure policy. Если не хватает evidence,
+                        worklog или согласования, сервер вернёт точное требование.
+                      </div>
+
+                      <div className="mt-5 space-y-4">
+                        <label className="block text-sm font-medium text-slate-300">
+                          Код решения
+                          <input
+                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const resolutionCode = event.currentTarget.value;
+                              setResolutionCloseDraft((draft) => draft ? { ...draft, resolutionCode } : draft);
+                            }}
+                            placeholder="Например: fixed_remote"
+                            value={resolutionCloseDraft.resolutionCode}
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Итог для заявителя
+                          <textarea
+                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const requesterResolutionSummary = event.currentTarget.value;
+                              setResolutionCloseDraft((draft) => draft ? { ...draft, requesterResolutionSummary } : draft);
+                            }}
+                            placeholder="Коротко и понятно: что исправлено, как проверить результат."
+                            value={resolutionCloseDraft.requesterResolutionSummary}
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Внутренний итог
+                          <textarea
+                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const resolutionSummary = event.currentTarget.value;
+                              setResolutionCloseDraft((draft) => draft ? { ...draft, resolutionSummary } : draft);
+                            }}
+                            placeholder="Причина, действия оператора, технические детали и риски повторения."
+                            value={resolutionCloseDraft.resolutionSummary}
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Причина перевода
+                          <input
+                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const reason = event.currentTarget.value;
+                              setResolutionCloseDraft((draft) => draft ? { ...draft, reason } : draft);
+                            }}
+                            placeholder="Например: решение проверено оператором"
+                            value={resolutionCloseDraft.reason}
+                          />
+                        </label>
+
+                        {!resolutionCloseReady ? (
+                          <p className="text-xs text-amber-200">
+                            Заполните код решения, оба итога и причину перевода. Это защитит от случайного закрытия без паспорта.
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-5 flex justify-end gap-2">
+                        <button
+                          className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-slate-300 hover:text-white"
+                          onClick={() => setResolutionCloseDraft(null)}
+                          type="button"
+                        >
+                          Отмена
+                        </button>
+                        <button
+                          className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={resolutionCloseSubmitDisabled}
+                          onClick={() => resolutionCloseMutation.mutate(resolutionCloseDraft)}
+                          type="button"
+                        >
+                          {resolutionCloseMutation.isPending ? "Переводим..." : "Перевести в решение"}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
     </section>
   );
 }

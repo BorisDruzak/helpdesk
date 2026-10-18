@@ -1,3 +1,25 @@
+# 2026-10-19 UI-SUPPORT-001
+
+Goal: everyday support queue, compact three-area ticket and clean conversation.
+Scope: existing TicketListPage, typed support APIs and canonical workflow only.
+Constraints: preserve FSM, audit, internal visibility, SLA and closure policies;
+no dependencies, production deployment or real-ticket mutations. Preserve unrelated
+registry branch and untracked work. User approved the reference-based approach.
+Decisions: five simple filters, explicit take-in-work through status/in_progress,
+public reply guarded by status/ownership under the ticket lock; advanced functions
+remain reachable. Use existing state, mutations and design primitives.
+Current State: implemented on codex/ui-support-001 from main 520b6218. Existing
+advanced modes are retained; shared dialogs and typed mutations are reused.
+Next Steps: frozen-candidate full CI, then draft PR. No production deployment.
+Verification: workspace sanity and diff check pass; frontend suite 840 tests
+plus the added stable-ID regression; server no-DB 1532 passed, 1 existing skip.
+Focused browser 10/10 covers simple 1366/1920/390, existing advanced modes and
+normal-shell navigation, with synthetic fixtures. Source workflow PostgreSQL
+concurrency 3/3 passed through an owned staging tunnel, now closed. Additional
+API/DB acceptance is running in a disposable staging directory; no deployed
+service or real ticket is changed. Full CI must bind to the committed candidate.
+Handoff: task active through CI/PR; preserve unrelated untracked files.
+
 # 2026-10-18 Build answer branches from an empty decision
 
 Actor/job: an administrator starts with only a yes/no question connected to a
