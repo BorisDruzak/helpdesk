@@ -4,7 +4,8 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import type { ScenarioCatalog } from "./scenario-api";
-import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioPolicyKind } from "./scenario-contract";
+import type { ScenarioBlock, ScenarioCondition, ScenarioDraftDefinition, ScenarioPolicyKind } from "./scenario-contract";
+import { answerBranchChoices, appendAnswerBranchStep, connectAnswerBranch, defaultAnswerBranchField } from "./scenario-answer-branches";
 import { duplicateBlock } from "./scenario-builder-model";
 import { ScenarioBlockEditor } from "./scenario-block-editor";
 import { ScenarioPurpose } from "./scenario-purpose";
@@ -24,7 +25,8 @@ import { ScenarioWorkbenchCatalog, type WorkbenchCatalogProps } from "./scenario
 type Props = { definition: ScenarioDraftDefinition; catalog: ScenarioCatalog; existing: boolean; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void; focusBlockId?: string; issueBlockId?: string; issueTransitions?: boolean; issuePolicy?: ScenarioPolicyKind; issueProcessing?: boolean; issueRequestId?: number; path?: string[]; current?: string; inspectorPanel?: ReactNode; catalogPanel?: WorkbenchCatalogProps; explorerTab?: "catalog" | "blocks"; onExplorerTab?: (tab: "catalog" | "blocks") => void; onTest?: () => void; onCheck?: () => void; onInspect?: () => void; onCategoryDirty?: (dirty: boolean) => void; onCategoryOpen?: (open: boolean) => void; onCategoryCreated?: () => Promise<void> };
 export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, onChange, focusBlockId, issueBlockId, issueTransitions, issuePolicy, issueProcessing, issueRequestId, path, current, inspectorPanel, catalogPanel, explorerTab = "blocks", onExplorerTab, onTest, onCheck, onInspect, ...categoryProps }: Props) {
   const [selected, setSelected] = useState(!existing ? definition.blocks?.[0]?.id ?? metadataNodeId : metadataNodeId);
-  const [stepMenu, setStepMenu] = useState<{ source: string | null; index?: number } | null>(null);
+  const [stepMenu, setStepMenu] = useState<{ source: string | null; index?: number; when?: ScenarioCondition } | null>(null);
+  const [answerSources, setAnswerSources] = useState<Record<string, string>>({});
   const [bindingFocus, setBindingFocus] = useState(false);
   const [processingOpen, setProcessingOpen] = useState(false);
   const [processingFocus, setProcessingFocus] = useState<ScenarioPolicyKind>();
@@ -51,7 +53,7 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
   useEffect(() => { if (hasInspectorPanel) setRightCollapsed(false); }, [hasInspectorPanel]);
   useEffect(() => { if (focusBlockId) { setSelected(focusBlockId); setEntranceLink(null); setInspectorTab("settings"); } }, [focusBlockId]);
   useEffect(() => { if (issueBlockId) { setProcessingOpen(false); setProcessingFocus(undefined); setRightCollapsed(false); setSelected(issueBlockId); setEntranceLink(null); setInspectorTab("settings"); setEdge(issueTransitions && definition.blocks?.find(item => item.id === issueBlockId)?.transitions?.length ? { source: issueBlockId, index: 0 } : null); } else if (issuePolicy || issueProcessing) { setSelected(metadataNodeId); setEdge(null); setEntranceLink(null); setInspectorTab("settings"); setRightCollapsed(false); setProcessingOpen(true); setProcessingFocus(issuePolicy); } }, [issueBlockId, issueTransitions, issuePolicy, issueProcessing, issueRequestId]);
-  useEffect(() => { if (emitted.current.scenario_key !== definition.scenario_key) { setPast([]); setFuture([]); setSelected(metadataNodeId); setEdge(null); setPendingInsert(null); setRemoving(false); setError(""); setEntranceLink(null); setFullPreview(false); setInspectorTab("settings"); setProcessingOpen(false); setProcessingFocus(undefined); } emitted.current = definition; }, [definition]);
+  useEffect(() => { if (emitted.current.scenario_key !== definition.scenario_key) { setPast([]); setFuture([]); setSelected(metadataNodeId); setEdge(null); setStepMenu(null); setAnswerSources({}); setPendingInsert(null); setRemoving(false); setError(""); setEntranceLink(null); setFullPreview(false); setInspectorTab("settings"); setProcessingOpen(false); setProcessingFocus(undefined); } emitted.current = definition; }, [definition]);
   useEffect(()=>{if(!entranceLink)return;const target=entranceLink.key===null?definition.entry_block_id:definition.entry_points?.find(entry=>entry.key===entranceLink.key)?.target_block_id;
     if(!target||(entranceLink.key===null&&definition.entry_points?.some(entry=>entry.target_block_id===target))){setEntranceLink(null);return;}
     if(target!==entranceLink.target){setEntranceLink({...entranceLink,target});setSelected(target);}
@@ -78,9 +80,13 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
   function addContextStep(kind: ScenarioBlock["kind"]) {
     if (!stepMenu || disabled) return;
     try {
-      const next = stepMenu.index !== undefined && stepMenu.source ? insertOnTransition(definition, stepMenu.source, stepMenu.index, kind) : appendMapStep(definition, stepMenu.source, kind);
+      const next = stepMenu.when && stepMenu.source ? appendAnswerBranchStep(definition, stepMenu.source, kind, stepMenu.when) : stepMenu.index !== undefined && stepMenu.source ? insertOnTransition(definition, stepMenu.source, stepMenu.index, kind) : appendMapStep(definition, stepMenu.source, kind);
       change(next); choose(next.blocks!.at(-1)!.id); setInspectorTab("settings"); onInspect?.();
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Не удалось добавить шаг"); setSeparateStep(kind); }
+  }
+  function addAnswer(source: string, when: ScenarioCondition) {
+    if (disabled || legacy) return;
+    choose(source); setStepMenu({ source, when }); setInspectorTab("settings"); onInspect?.();
   }
   const entrances = definition.entry_points ?? [];
   return <div className="min-w-0 space-y-3" onKeyDown={event => {
@@ -116,12 +122,18 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
       {geometry.handle("left")}
       <div className="studio-map-main">
       <ScenarioMapGuidance key={definition.scenario_key} definition={definition} onCheck={onCheck} onHint={hint=>{setInspectorTab("settings");setEntranceLink(null);onInspect?.();choose(hint.blockId??metadataNodeId);if((hint.code==="offering"||hint.code==="template")&&!hint.blockId)setBindingFocus(true);if(hint.code==="entry_target"){const entry=entrances.find(item=>item.target_block_id===hint.blockId);if(entry)setEntranceLink({key:entry.key,target:entry.target_block_id});}if(hint.code==="blocks"||hint.code==="result")setStepMenu({source:null});}} />
-      {stepMenu && <ScenarioStepMenu inserting={stepMenu.index !== undefined || !!blocks.find(item => item.id === stepMenu.source)?.transitions?.length} onChoose={addContextStep} onClose={() => setStepMenu(null)} />}
+      {stepMenu && <ScenarioStepMenu inserting={!stepMenu.when && (stepMenu.index !== undefined || !!blocks.find(item => item.id === stepMenu.source)?.transitions?.length)} onChoose={addContextStep} onClose={() => setStepMenu(null)} />}
       {geometry.measured && <ScenarioMapCanvas definition={definition} disabled={disabled} selected={edge||entranceLink ? "" : selected} selectedEdge={entranceLink?entranceEdgeId(entranceLink.key):edge ? transitionId(edge.source, edge.index) : null} issueBlockId={issueBlockId} path={path} current={current} onReady={instance => { flow.current = instance; }} onSelect={id=>{choose(id);setInspectorTab("settings");onInspect?.();}} onEdge={(source, index) => { choose(source); setEdge({ source, index }); setInspectorTab("settings"); }}
         onAdd={(source,index)=>{setStepMenu({source,index});setError("");setSeparateStep(null);}}
+        answerSources={answerSources} onAnswerAdd={addAnswer}
         onEntrance={(key,target)=>{choose(target||metadataNodeId);setEntranceLink(target?{key,target}:null);setInspectorTab("settings");}} onEntranceTitle={(key,title)=>change({...definition,entry_points:entrances.map(entry=>entry.key===key?{...entry,title}:entry)})} onEntranceReconnect={(key,target)=>perform(()=>reconnectStart(definition,key,target))}
         onMove={(id, point) => perform(() => positionBlock(definition, id === metadataNodeId ? "system_start" : id, point))}
-        onConnect={(source, target, handle) => perform(() => source===metadataNodeId ? (()=>{const next=connectStart(definition,target);choose(target);const entry=next.entry_points?.find(item=>item.target_block_id===target);if(entry)setEntranceLink({key:entry.key,target});setInspectorTab("settings");return next;})() : handle?.startsWith("route-") ? reconnectTransition(definition, source, Number(handle.slice(6)), target) : (()=>{const next=connectBlocks(definition,source,target);const from=next.blocks?.find(item=>item.id===source);if(from&&(from.kind==="decision"||from.kind==="resolution_check")){choose(source);setEdge({source,index:(from.transitions?.length??1)-1});setInspectorTab("settings");}return next;})())}
+        onConnect={(source, target, handle) => perform(() => source===metadataNodeId ? (()=>{const next=connectStart(definition,target);choose(target);const entry=next.entry_points?.find(item=>item.target_block_id===target);if(entry)setEntranceLink({key:entry.key,target});setInspectorTab("settings");return next;})() : handle?.startsWith("answer-") ? (() => {
+          const field = defaultAnswerBranchField(definition, source, answerSources[source]);
+          const choice = field && answerBranchChoices(field)[Number(handle.slice(7))];
+          if (!choice) throw new Error("Выберите доступный ответ связанного вопроса");
+          return connectAnswerBranch(definition, source, target, choice.when);
+        })() : handle?.startsWith("route-") ? reconnectTransition(definition, source, Number(handle.slice(6)), target) : (()=>{const next=connectBlocks(definition,source,target);const from=next.blocks?.find(item=>item.id===source);if(from&&(from.kind==="decision"||from.kind==="resolution_check")){choose(source);setEdge({source,index:(from.transitions?.length??1)-1});setInspectorTab("settings");}return next;})())}
         onReconnect={(source, index, target) => perform(() => reconnectTransition(definition, source, index, target))}
         onDropBlock={(value, point, edgeId) => { const kind = mapPalette.find(item => item.kind === value)?.kind; if (!kind) return; const position = flow.current?.screenToFlowPosition(point) ?? point; if(edgeId?.startsWith("studio:")){setError("Связь с началом назначает точку входа. Новый шаг добавьте на карту и соедините обычным переходом.");return;} if (edgeId) { const [source, index] = edgeId.split(":"); setPendingInsert({ kind, source, index: Number(index), position }); } else add(kind, position); }} />}
       </div>
@@ -134,7 +146,7 @@ export function ScenarioMapWorkbench({ definition, catalog, existing, disabled, 
           {block.kind === "submit_ticket" && <><p className="text-sm">Перед отправкой сотрудник проверит собранные ответы. Очередь, приоритет и сроки определяются действующими правилами обработки.</p><Button variant="outline" onClick={openProcessing}>Открыть правила обработки</Button></>}
           <ScenarioBlockEditor key={block.id} block={block} definition={definition} disabled={disabled || legacy} focusTitle={block.id === issueBlockId && !issueTransitions} hideTransitions onChange={next => change({ ...definition, blocks: blocks.map(item => item.id === block.id ? next : item) })} />
           {!terminal(block.kind) && ((block.kind === "decision" || block.kind === "resolution_check")
-            ? <ScenarioBlockRoutes key={`routes:${block.id}`} definition={definition} block={block} disabled={disabled || legacy} onChange={next => perform(() => next)} />
+            ? <ScenarioBlockRoutes key={`routes:${block.id}`} definition={definition} block={block} disabled={disabled || legacy} sourceFieldKey={answerSources[block.id]} onSourceField={key => setAnswerSources(previous => ({ ...previous, [block.id]: key }))} onAddAnswer={when => addAnswer(block.id, when)} onChange={next => perform(() => next)} />
             : <><p className="text-sm text-slate-500">Продолжите маршрут через + или соедините блок линией.</p><details open={issueTransitions ? true : undefined}><summary>Подключение с клавиатуры</summary><label>Следующий шаг<Select disabled={disabled} value="" onChange={event=>perform(()=>connectBlocks(definition,block.id,event.target.value))}><option value="">Выберите блок</option>{blocks.filter(item=>item.id!==block.id).map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</Select></label></details></>)}
           <div className="flex flex-wrap gap-2"><Button disabled={disabled || legacy || blocks.length >= 256} variant="ghost" onClick={() => perform(() => { const next = duplicateBlock(definition, block.id); const copy = next.blocks!.find(item => !blocks.some(old => old.id === item.id))!; choose(copy.id); return positionBlock(next, copy.id, { x: positions[block.id].x + 40, y: positions[block.id].y + 120 }); })}>Копировать блок</Button><Button disabled={disabled || legacy} variant="ghost" onClick={() => setRemoving(true)}>Удалить блок</Button></div>
 

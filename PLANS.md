@@ -1,3 +1,21 @@
+# 2026-10-18 Build answer branches from an empty decision
+
+Actor/job: an administrator starts with only a yes/no question connected to a
+decision and builds a separate next step for each answer. Live staging reproduced
+the dead end: target-first branch creation offered only the ancestor question,
+which is a forbidden cycle. No answer editor appeared before a target existed.
+Scope: show incoming question and typed answer outputs on the node and inspector;
+create a new step plus conditional transition atomically, or connect an existing
+target. Separate sibling creation from insertion into an existing transition.
+Preserve existing rules/processing, bounded undo, cycle guards, unknown/fallback
+semantics, canonical server execution and schema/API contracts. No dependencies.
+Verification: live RED saved in an owned unpublished draft. GREEN: frontend832
+(Studio191), fresh TypeScript/Vite build and eight fixture-browser cases at1366/1920,
+including two-node startup, typed false, independent siblings, undo/redo, save/reload
+and real answer/route-handle drag with processing metadata retained.
+Independent review, exact-candidate staging acceptance and hosted CI remain in the
+candidate receipt. Preserve user maps and leave authorized staging running.
+
 # 2026-10-15 Connected question choices in condition rules
 
 Actor/job: an administrator builds a question-to-condition route in the existing

@@ -176,6 +176,11 @@
   React Flow geometry, bounded undo/redo, atomic insertion/reconnection/deletion
   and cycle guards. `scenario-delete-dialog` keeps destructive draft edits and errors
   visible; `scenario-block-routes` exposes decision/check conditions and fallback routes
+  and `scenario-answer-branches-editor` offers typed incoming-question answers before
+  any target exists. `scenario-answer-branches` discovers the nearest answer source
+  and creates/reconnects canonical conditional transitions atomically with a new step;
+  canvas answer handles share these mutations. Existing transition metadata and
+  missing-answer semantics remain unchanged. Advanced rules remain
   in independently collapsible cards with accessible summaries supplied by
   `scenario-condition-summary` (labels only, no client evaluator). A decision can
   be inserted into a transition, preserving its original condition, priority and

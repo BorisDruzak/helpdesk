@@ -4,7 +4,8 @@ import { Select } from "../../components/ui/select";
 import { conditionFields, conditionFieldAvailability } from "./scenario-builder-model";
 import { newAnswerCondition, ScenarioConditionEditor } from "./scenario-condition-editor";
 import { conditionSummary } from "./scenario-condition-summary";
-import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioTransition } from "./scenario-contract";
+import type { ScenarioBlock, ScenarioCondition, ScenarioDraftDefinition, ScenarioTransition } from "./scenario-contract";
+import { ScenarioAnswerBranches } from "./scenario-answer-branches-editor";
 import { replaceTransitions } from "./scenario-map-model";
 import { ScenarioBranchProcessingEditor, ProcessingFactsEditor } from "./scenario-branch-processing";
 
@@ -22,7 +23,7 @@ function BranchCard({ title, description, target, expanded, onToggle, children }
   </div>;
 }
 
-export function ScenarioBlockRoutes({ definition, block, disabled, onChange }: { definition: ScenarioDraftDefinition; block: ScenarioBlock; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void }) {
+export function ScenarioBlockRoutes({ definition, block, disabled, onChange, sourceFieldKey, onSourceField, onAddAnswer }: { definition: ScenarioDraftDefinition; block: ScenarioBlock; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void; sourceFieldKey?: string; onSourceField?: (key: string) => void; onAddAnswer?: (when: ScenarioCondition) => void }) {
   const transitions = block.transitions ?? [], fields = conditionFields(definition, block.id);
   const targets = definition.blocks?.filter(item => item.id !== block.id) ?? [];
   const [expanded, setExpanded] = useState<number[]>([]);
@@ -40,6 +41,7 @@ export function ScenarioBlockRoutes({ definition, block, disabled, onChange }: {
   const maybeMissing = conditionFieldAvailability(definition, block.id).filter(item => item.mayBeMissing);
   const processingSummary = (edge: ScenarioTransition) => [edge.processing?.route ? definition.processing?.routes[edge.processing.route]?.title ?? "Направление не найдено" : null, edge.processing?.sla_profile ? `SLA: ${definition.processing?.sla_profiles[edge.processing.sla_profile]?.title ?? "профиль не найден"}` : null, edge.processing?.approval_required === true ? "согласование" : edge.processing?.approval_required === false ? "без согласования" : null].filter(Boolean).join(" · ");
   return <section className="space-y-3" aria-label="Ветви логического блока">
+    {block.kind === "decision" && <ScenarioAnswerBranches definition={definition} block={block} disabled={disabled} sourceFieldKey={sourceFieldKey} onSourceField={onSourceField} onChange={onChange} onAdd={onAddAnswer} />}
     <h3 className="font-semibold">Куда идти дальше</h3>
     {error && <p role="alert">{error}</p>}
     <p className="text-xs text-slate-500">Каждая ветвь — ответ и следующий шаг. Нажмите на неё, чтобы изменить. Следующим шагом может быть другое условие. Если ни одна ветвь не подходит, сервер использует «Иначе».</p>

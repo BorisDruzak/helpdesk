@@ -49,7 +49,7 @@ it("creates a branch for a selected answer and preserves the fallback last", () 
   const next = change.mock.calls[0][0];
   expect(next.blocks[1].transitions).toEqual([{ to: "mail", when: { op: "eq", source: "answer", field: "issue", value: "mail" } }, { to: "other" }]);
   view.rerender(<ScenarioBlockRoutes definition={next} block={next.blocks[1]} disabled={false} onChange={change} />);
-  expect(screen.getByRole("option", { name: "Что не работает?" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Источник")).toHaveDisplayValue("Что не работает?");
   expect(screen.getByLabelText("Значение условия")).toHaveDisplayValue("Почта");
   fireEvent.change(screen.getByLabelText("Значение условия"), { target: { value: "vpn" } });
   expect(change.mock.calls[1][0].blocks[1].transitions[0].when.value).toBe("vpn");

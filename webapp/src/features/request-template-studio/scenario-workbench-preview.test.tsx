@@ -1,4 +1,5 @@
 import { fireEvent,render,screen,waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach,expect,it,vi } from "vitest";
 import { ScenarioMapWorkbench } from "./scenario-map-workbench";
@@ -7,6 +8,35 @@ vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitio
 const definition:ScenarioDraftDefinition={scenario_key:"s",title:"Карта",service_code:"it",offering_full_code:"it.p",process_binding:{request_template_key:"p"},entry_block_id:"q",entry_points:[{key:"named",title:"Вход",target_block_id:"q"}],blocks:[{id:"q",kind:"instruction",title:"Проверка",content:{body:"Шаг"},transitions:[]},{id:"done",kind:"finish",title:"Готово"}]};
 const catalog={services:[],offerings:[],categories:[],scenarios:[],total:0,offset:0,limit:100};
 afterEach(()=>vi.unstubAllGlobals());
+it("builds independent yes and no steps from an empty condition and undoes each addition atomically", () => {
+ const initial:ScenarioDraftDefinition={...definition,schema_version:3,blocks:[
+  {id:"q",kind:"form_page",title:"Вопрос",fields:[{key:"working",label:"Работает?",type:"checkbox"}],transitions:[{to:"branch"}]},
+  {id:"branch",kind:"decision",title:"Условие",transitions:[]},
+ ]};
+ const change=vi.fn();
+ function Harness(){const [draft,setDraft]=useState(initial);return <MemoryRouter><ScenarioMapWorkbench definition={draft} catalog={catalog} existing disabled={false} onChange={next=>{change(next);setDraft(next);}}/></MemoryRouter>;}
+ render(<Harness/>);
+ fireEvent.click(screen.getByRole("button",{name:"Выбрать второе условие"}));
+ fireEvent.click(screen.getByRole("button",{name:"Добавить шаг для «Да»"}));
+ fireEvent.click(screen.getByRole("button",{name:/^Показать инструкцию/}));
+ const yes=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition;
+ expect(yes.blocks).toHaveLength(3);
+ const yesEdge=yes.blocks![1].transitions![0];
+ expect(yesEdge.when).toEqual({source:"answer",field:"working",op:"eq",value:true});
+ fireEvent.click(screen.getByRole("button",{name:"Выбрать второе условие"}));
+ fireEvent.click(screen.getByRole("button",{name:"Добавить шаг для «Нет»"}));
+ fireEvent.click(screen.getByRole("button",{name:/^Спросить сотрудника/}));
+ const both=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition;
+ expect(both.blocks).toHaveLength(4);
+ expect(both.blocks![1].transitions![0]).toEqual(yesEdge);
+ expect(both.blocks![1].transitions![1].when).toEqual({source:"answer",field:"working",op:"eq",value:false});
+ expect(both.blocks![2]).toEqual(yes.blocks![2]);
+ expect(both.blocks![0].transitions).toEqual([{to:"branch"}]);
+ fireEvent.click(screen.getByRole("button",{name:"Отменить изменение"}));
+ expect(change.mock.calls.at(-1)![0]).toEqual(yes);
+ fireEvent.click(screen.getByRole("button",{name:"Отменить изменение"}));
+ expect(change.mock.calls.at(-1)![0]).toEqual(initial);
+});
 it("keeps exactly one block editor when switching between decision blocks",()=>{
  const d:ScenarioDraftDefinition={...definition,schema_version:2,blocks:[{id:"q",kind:"decision",title:"Первое",transitions:[{to:"branch"}]},{id:"branch",kind:"decision",title:"Второе",transitions:[{to:"done"}]},definition.blocks![1]]};
  render(<MemoryRouter><ScenarioMapWorkbench definition={d} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);

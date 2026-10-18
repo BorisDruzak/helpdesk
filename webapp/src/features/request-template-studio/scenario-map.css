@@ -47,6 +47,16 @@
 .studio-route-label { position:absolute; pointer-events:all; display:flex; flex-direction:column; align-items:center; gap:3px; background:#fff; padding:2px 5px; border-radius:8px; font-size:11px; color:#475569; }
 .studio-step-plus { width:30px; height:30px; border:3px solid #fff; border-radius:50%; background:#087443; color:white; font-size:22px; line-height:20px; box-shadow:0 2px 5px #0f172a30; }
 .studio-node-add { display:block; width:100%; border-top:1px solid #e5ede9; margin-top:10px; padding-top:8px; text-align:left; color:#087443; font-size:11px; font-weight:600; }
+.studio-node-answers { margin-top:10px; border-top:1px solid #e5ede9; padding-top:8px; }
+.studio-node-answers__source,.studio-node-answers__more { display:block; font-size:11px; color:#64748b; overflow-wrap:anywhere; }
+.studio-node-answer { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px; min-height:36px; margin-top:5px; border-top:1px solid #edf2ef; font-size:12px; }
+.studio-node-answer__label,.studio-node-answer__target { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.studio-node-answer__target { max-width:110px; font-size:11px; color:#087443; }
+.studio-node-answer__add { border:1px solid #cce6d6; border-radius:7px; padding:4px 7px; color:#087443; background:#f1f8f4; font-size:11px; white-space:nowrap; }
+.studio-node-answer__add:disabled { opacity:.55; cursor:default; }
+.studio-node-answer__add:focus-visible { outline:2px solid #087443; outline-offset:2px; }
+.studio-node-other-routes { position:relative; }
+.studio-map-node .studio-node-answer .react-flow__handle-right,.studio-map-node .studio-node-other-routes .react-flow__handle-right { right:-19px; }
 .studio-map-node.is-selected { border-color:#087443; }
 .studio-map-node__hint { display:block; margin-top:8px; color:#935c14; font-size:11px; line-height:1.4; }
 .studio-map-empty { position:absolute; inset:25% 10% auto; z-index:4; display:grid; justify-items:center; gap:12px; padding:24px; text-align:center; border:1px dashed #b4cfc0; border-radius:16px; background:#ffffffee; }
