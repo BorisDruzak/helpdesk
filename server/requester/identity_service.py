@@ -23,6 +23,8 @@ from app.repos.registry_repo import RegistryRepo
 from consent.service import UserConsentService
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
+from registry.organization_trust import organization_value, propose_fields, public_organization_status
+from registry.admin_operations_service import RegistryAdminOperationsService
 from tickets.requester_policy import annotate_requester_ticket_policy_state, requester_ticket_actions
 from tickets.ticket_context import requester_legacy_scope_clause, requester_neutral_scope_clause
 
@@ -307,6 +309,8 @@ class RequesterIdentityResolver:
             "workplace_label": metadata.get("workplace_label"),
             "preferred_contact_method": metadata.get("preferred_contact_method"),
             "custom_fields": schema_service.profile_custom_fields(metadata, profile_schema),
+            "value_issues": schema_service.profile_value_issues(metadata, profile_schema) if profile_schema else [],
+            "organization_status": public_organization_status(person),
         }
 
     def account_summary(self, *, actor_id: str, person: RegistryPerson | None) -> dict[str, Any]:
@@ -422,6 +426,8 @@ class RequesterIdentityResolver:
             raise RequesterProfileValidationError("Не удалось определить пользователя", {"actor": "missing"})
 
         current = await self.resolve_person_for_web_user(actor_login)
+        if current is not None:
+            current = await self.session.get(RegistryPerson, current.person_id, with_for_update=True, populate_existing=True)
         existing_ui_identity = await self.registration_repo.find_identity("ui_login", actor_login)
         if current is None and existing_ui_identity is not None:
             existing_person = await self.registry_repo.get_person(existing_ui_identity.person_id)
@@ -440,7 +446,11 @@ class RequesterIdentityResolver:
         workplace_label = _clean_text(payload.get("workplace_label"), max_length=160)
         preferred_contact_method = _clean_text(payload.get("preferred_contact_method"), max_length=80)
         schema_service = RequesterProfileSchemaService(self.session)
-        profile_schema = await schema_service.get_schema()
+        profile_schema = await schema_service.get_schema(for_update=True)
+        editable_profile_keys = {field["key"] for field in profile_schema["fields"] if field.get("visible", True) and field.get("editable", True)}
+        if "internal_extension" not in editable_profile_keys:
+            existing_metadata = current.metadata_json if current is not None and isinstance(current.metadata_json, dict) else {}
+            internal_extension = _clean_text(existing_metadata.get("internal_extension"), max_length=80)
         schema_details, custom_values = schema_service.validate_profile_payload(profile_schema, payload)
 
         details: dict[str, str] = {}
@@ -471,10 +481,8 @@ class RequesterIdentityResolver:
 
         now = datetime.now(timezone.utc)
         metadata_patch = {
-            "position": position or None,
-            "workplace_label": workplace_label or None,
-            "preferred_contact_method": preferred_contact_method or None,
-            "internal_extension": internal_extension or None,
+            **{key: value or None for key, value in {"position": position, "workplace_label": workplace_label, "preferred_contact_method": preferred_contact_method, "internal_extension": internal_extension}.items()
+               if key in payload and key in editable_profile_keys},
             "profile_updated_from": "requester_web",
             "profile_updated_by": actor_login,
             "profile_updated_at": now.isoformat(),
@@ -493,8 +501,8 @@ class RequesterIdentityResolver:
                 full_name=full_name,
                 phone=phone or None,
                 email=actor_login if "@" in actor_login else None,
-                department_id=department.department_id,
-                location_id=location.location_id,
+                department_id=None,
+                location_id=None,
                 source="web_profile",
                 status="self_reported",
                 profile_key=actor_login,
@@ -518,8 +526,6 @@ class RequesterIdentityResolver:
             current.display_name = full_name
             current.full_name = full_name
             current.phone = phone or None
-            current.department_id = department.department_id
-            current.location_id = location.location_id
             current.last_seen_at = now
             current.metadata_json = {**metadata, **metadata_patch}
             identity = await self.registration_repo.create_or_update_person_identity(
@@ -534,6 +540,14 @@ class RequesterIdentityResolver:
                 raise PermissionError("ui login already belongs to another profile")
             await self.session.flush()
 
+        proposals = propose_fields(current, {"department_id": department.department_id, "location_id": location.location_id}, actor_id=actor_login)
+        if proposals:
+            await RegistryAdminOperationsService(self.session).append_event(
+                object_type="person", object_id=current.person_id, event_type="organization_change_proposed",
+                actor_id=actor_login, actor_role="user", related_person_id=current.person_id,
+                payload={"fields": {key: {"proposal_id": value["proposal_id"], "value": value["value"]} for key, value in proposals.items()}},
+            )
+        await self.session.flush()
         return {
             "profile": self.serialize_person(current, profile_schema=profile_schema),
             "profile_completion": self.build_profile_completion(current, profile_schema=profile_schema),
@@ -767,9 +781,9 @@ class RequesterIdentityResolver:
             "form_prefill": {key: value for key, value in form_prefill.items() if value not in (None, "")},
             "routing_facts": {
                 "person_id": profile["person_id"],
-                "department_id": profile["department_id"],
-                "department_code": profile["department_code"],
-                "location_id": profile["location_id"],
+                "department_id": organization_value(person, "department_id", allow_legacy=True),
+                "department_code": profile["department_code"] if organization_value(person, "department_id", allow_legacy=True) else None,
+                "location_id": organization_value(person, "location_id", allow_legacy=True),
                 "device_id": (device_context or {}).get("device_id"),
                 "asset_id": (device_context or {}).get("asset_id"),
                 "asset_type": (device_context or {}).get("asset_type"),

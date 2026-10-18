@@ -1,9 +1,20 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as testingRender, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
 import { RegistryQualityTab } from "./registry-quality-tab";
 
+function render(element: ReactElement) {
+  return testingRender(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{element}</QueryClientProvider>);
+}
+
 describe("RegistryQualityTab", () => {
+  it("offers an explicit read-only readiness check in the existing quality surface", () => {
+    render(<RegistryQualityTab issues={[]} suggestions={[]} onFix={() => {}} onIgnore={() => {}} onSelect={() => {}} onSnooze={() => {}} />);
+    expect(screen.getByRole("button", { name: "Проверить готовность к сценариям" })).toBeEnabled();
+    expect(screen.queryByText("Registry не готов")).not.toBeInTheDocument();
+  });
   it("wires remediation actions and object selection for active quality issues", () => {
     const issue = {
       issue_key: "binding_inactive_person:binding:binding-1",

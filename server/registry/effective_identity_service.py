@@ -18,6 +18,8 @@ from app.db.models import (
 from app.repos.access_control_repo import AccessControlRepo
 from app.repos.registration_repo import normalize_identifier
 from registry.audience_contracts import EffectiveAudience, EffectiveIdentity, WarningItem
+from registry.organization_trust import field_trust, organization_value
+from registry.policy_service import RegistryPolicyService
 
 
 REQUESTER_IDENTITY_PERSON_STATUSES = {"active", "self_reported"}
@@ -124,8 +126,9 @@ class EffectiveIdentityService:
             )
 
         access_groups = await self._actor_group_codes(str(actor_id or "").strip()) if actor_id else []
-        department_path = await self._department_path(getattr(person, "department_id", None))
-        location = await self._location_payload(getattr(person, "location_id", None))
+        department_id, location_id = await self._organization_ids(person, warnings)
+        department_path = await self._department_path(department_id)
+        location = await self._location_payload(location_id)
         audience_groups = await self._audience_groups_for_person(
             person=person,
             department_path=department_path,
@@ -178,8 +181,9 @@ class EffectiveIdentityService:
         warnings: list[WarningItem],
         sources: dict[str, Any],
     ) -> EffectiveIdentity:
-        department_path = await self._department_path(getattr(person, "department_id", None))
-        location = await self._location_payload(getattr(person, "location_id", None))
+        department_id, location_id = await self._organization_ids(person, warnings)
+        department_path = await self._department_path(department_id)
+        location = await self._location_payload(location_id)
         audience_groups = await self._audience_groups_for_person(
             person=person,
             department_path=department_path,
@@ -191,7 +195,7 @@ class EffectiveIdentityService:
             actor_id=actor_id,
             actor_role=_normalize_role(actor_role),
             identity_source=identity_source,
-            person=self._person_payload(person),
+            person={**self._person_payload(person), "department_id": department_id if department_path else None, "location_id": location_id if location else None} if person else None,
             department_path=department_path,
             location=location,
             access_groups=access_groups,
@@ -199,6 +203,20 @@ class EffectiveIdentityService:
             warnings=warnings,
             sources={**sources, "audience_groups": audience_groups},
         )
+
+    async def _organization_ids(self, person: RegistryPerson | None, warnings: list[WarningItem]) -> tuple[str | None, str | None]:
+        if person is None:
+            return None, None
+        policy = await RegistryPolicyService(self.session).get_policies()
+        allow_legacy = not policy["organizational_trust"]["strict_legacy_audiences"]
+        values = []
+        for key in ("department_id", "location_id"):
+            state = field_trust(person, key).get("state")
+            value = organization_value(person, key, allow_legacy=allow_legacy)
+            if state != "confirmed" and getattr(person, key, None):
+                warnings.append(_warning(f"organization_{key}_{state}", "Организационные сведения не подтверждены. Старые аудитории сохраняются до отдельного включения строгого режима.", source="registry"))
+            values.append(value)
+        return values[0], values[1]
 
     async def _load_ui_user(self, actor_id: str) -> UiUser | None:
         if not actor_id:
@@ -251,6 +269,8 @@ class EffectiveIdentityService:
             department = await self.session.get(RegistryDepartment, current_id)
             if department is None:
                 break
+            if department.status != "active":
+                break
             path.append(
                 {
                     "department_id": department.department_id,
@@ -268,7 +288,7 @@ class EffectiveIdentityService:
         if not location_id:
             return None
         location = await self.session.get(RegistryLocation, str(location_id))
-        if location is None:
+        if location is None or location.status != "active":
             return None
         return {
             "location_id": location.location_id,
@@ -319,13 +339,13 @@ class EffectiveIdentityService:
         ).all()
 
         person_id = _normalize_token(getattr(person, "person_id", None))
-        current_department_id = _normalize_token(getattr(person, "department_id", None))
+        current_department_id = _normalize_token(department_path[-1].get("department_id")) if department_path else ""
         department_path_ids = {
             _normalize_token(item.get("department_id"))
             for item in department_path
             if isinstance(item, dict) and _normalize_token(item.get("department_id"))
         }
-        raw_location_id = _normalize_token(getattr(person, "location_id", None))
+        raw_location_id = _normalize_token(location.get("location_id")) if isinstance(location, dict) else ""
         location_active = isinstance(location, dict) and str(location.get("status") or "active") == "active"
         location_id = raw_location_id if location_active else ""
         access_group_codes = {_normalize_token(code) for code in access_groups if _normalize_token(code)}

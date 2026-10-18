@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
 import { Badge } from "../../../components/ui/badge";
+import { RegistryOrganizationReview } from "./registry-organization-review";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { fetchAdminRegistryTimeline, type AdminRegistryPayload, type AdminRegistryTimelineItem } from "../api";
@@ -205,6 +206,12 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
               <Field label="Статус" value={registryStatusLabel(person.status)} />
               <Field label="Основные устройства" value={person.primary_device_count ?? 0} />
             </div>
+            <RegistryOrganizationReview key={person.person_id} personId={person.person_id} fields={[
+              { key: "department_id", label: "Подразделение", value: person.department_id, currentLabel: person.department_name, state: person.organization_trust?.department_id?.state ?? "legacy_unknown", pending: person.organization_trust?.department_id?.pending,
+                pendingLabel: registry.departments.find(row => row.department_id === person.organization_trust?.department_id?.pending?.value)?.name },
+              { key: "location_id", label: "Локация", value: person.location_id, currentLabel: person.location_name, state: person.organization_trust?.location_id?.state ?? "legacy_unknown", pending: person.organization_trust?.location_id?.pending,
+                pendingLabel: registry.locations.find(row => row.location_id === person.organization_trust?.location_id?.pending?.value)?.display_name },
+            ]} />
             <section>
               <p className="mb-2 text-sm font-semibold text-slate-950">Идентичности</p>
               <div className="space-y-2">

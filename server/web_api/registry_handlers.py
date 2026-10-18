@@ -287,6 +287,20 @@ async def handle_web_admin_registry(_request: web.Request) -> web.Response:
 
 
 @require_auth("admin")
+async def handle_web_admin_registry_scenario_readiness(_request: web.Request) -> web.Response:
+    from registry.scenario_readiness_service import RegistryScenarioReadinessService
+    from sqlalchemy import text
+    try:
+        async with get_session() as session:
+            await session.execute(text("SET TRANSACTION READ ONLY"))
+            payload = await RegistryScenarioReadinessService(session).preview()
+    except Exception as exc:
+        logger.warning("[registry] scenario readiness read failed: {}", type(exc).__name__)
+        return web.json_response({"status": "error", "error": "Не удалось завершить проверку готовности. Повторите попытку.", "error_code": "REGISTRY_READINESS_UNAVAILABLE"}, status=503)
+    return _success(payload)
+
+
+@require_auth("admin")
 async def handle_web_admin_registry_profile_schema(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
@@ -866,6 +880,8 @@ async def handle_web_admin_registry_people_create(request: web.Request) -> web.R
             },
         )
         session.add(person)
+        from registry.organization_trust import confirm_fields
+        confirm_fields(person, [field for field in ("department_id", "location_id", "manager_person_id") if field in data], actor_id=auth_context.actor_id)
         await session.flush()
         await RegistryAdminOperationsService(session).append_event(
             object_type="person",
@@ -904,9 +920,20 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
     data = await request.json() if request.can_read_body else {}
     auth_context = request["auth_context"]
     async with get_session() as session:
-        person = await session.get(RegistryPerson, person_id)
+        person = await session.get(RegistryPerson, person_id, with_for_update=True, populate_existing=True)
         if person is None:
             return web.json_response({"status": "error", "error": "person not found", "error_code": "NOT_FOUND"}, status=404)
+        if "organization_review" in data:
+            from registry.organization_service import review_organization_proposal
+            if any(field in data for field in ("department_id", "location_id", "manager_person_id")):
+                return web.json_response({"status": "error", "error": "Рассмотрите предложение отдельно от редактирования профиля.", "error_code": "VALIDATION_ERROR"}, status=400)
+            try:
+                await review_organization_proposal(session, person, data["organization_review"], actor_id=auth_context.actor_id, reason=_text(data.get("reason"), max_length=1000))
+            except ValueError as exc:
+                await session.rollback()
+                return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+            await session.commit()
+            return _success({"person": {"person_id": person.person_id, "display_name": person.display_name}})
         previous_status = person.status
         before = {
             "display_name": person.display_name,
@@ -947,6 +974,8 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
             else:
                 metadata.pop(field, None)
         person.metadata_json = metadata
+        from registry.organization_trust import confirm_fields
+        confirm_fields(person, [field for field in ("department_id", "location_id", "manager_person_id") if field in data], actor_id=auth_context.actor_id)
         if not person.display_name:
             return web.json_response({"status": "error", "error": "display_name is required", "error_code": "VALIDATION_ERROR"}, status=400)
         revoked_bindings: list[dict[str, object]] = []

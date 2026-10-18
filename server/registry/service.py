@@ -18,6 +18,7 @@ from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import normalize_identifier
 from registry.audience_group_service import RegistryAudienceService
 from registry.profile_schema_service import RequesterProfileSchemaService
+from registry.organization_trust import field_trust
 
 
 def _clean(value: Any) -> str | None:
@@ -165,20 +166,20 @@ class RegistrySnapshotService:
         self.session = session
         self.repo = RegistryRepo(session)
 
-    async def build_snapshot(self) -> dict[str, Any]:
+    async def build_snapshot(self, *, full_scan: bool = False) -> dict[str, Any]:
         from registry.registration_service import RegistrationService
 
         registration_service = RegistrationService(self.session)
-        assets = await self.repo.list_assets()
+        assets = await self.repo.list_assets(**({"limit": None} if full_scan else {}))
         mappings = (await self.session.execute(select(RegistryEndpointDeviceMapping.device_id,
             RegistryEndpointDeviceMapping.endpoint_device_ref))).all()
         endpoint_refs = dict(mappings)
-        people = await self.repo.list_people()
-        locations = await self.repo.list_locations()
+        people = await self.repo.list_people(**({"limit": None} if full_scan else {}))
+        locations = await self.repo.list_locations(**({"limit": None} if full_scan else {}))
         departments = await self.repo.list_departments()
         services = await self.repo.list_services()
         vendors = await self.repo.list_vendors()
-        claims = await registration_service.repo.list_claims(limit=300)
+        claims = await registration_service.repo.list_claims(limit=None if full_scan else 300)
         bindings = []
         for asset in assets:
             if asset.device_id:
@@ -186,7 +187,7 @@ class RegistrySnapshotService:
         ui_users = list(
             (
                 await self.session.execute(
-                    select(UiUser).order_by(UiUser.user_login).limit(500)
+                    select(UiUser).order_by(UiUser.user_login).limit(None if full_scan else 500)
                 )
             ).scalars().all()
         )
@@ -195,7 +196,7 @@ class RegistrySnapshotService:
                 await self.session.execute(
                     select(RegistryAudienceGroup)
                     .order_by(RegistryAudienceGroup.code.asc())
-                    .limit(500)
+                    .limit(None if full_scan else 500)
                 )
             ).scalars().all()
         )
@@ -615,6 +616,7 @@ class RegistrySnapshotService:
                 "internal_extension": context["internal_extension"],
                 "manager_person_id": context["manager_person_id"],
                 "manager_name": context["manager_name"],
+                "organization_trust": {key: field_trust(person, key) for key in ("department_id", "location_id", "manager_person_id")},
                 "production_context": context,
                 "profile_completion": person_profile_completion_payload(person),
                 "status": person.status,

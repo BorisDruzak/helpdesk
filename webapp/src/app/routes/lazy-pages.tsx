@@ -55,6 +55,7 @@ export const RequesterTicketChatPage = lazy(() =>
 export const RequesterProfilePage = lazy(() =>
   import("../../pages/requester/profile-page").then((module) => ({ default: module.RequesterProfilePage })),
 );
+export const RequesterApprovalsPage = lazy(() => import("../../pages/requester/approvals-page").then(module => ({ default: module.RequesterApprovalsPage })));
 
 export const RequesterDevicesPage = lazy(() =>
   import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDevicesPage })),

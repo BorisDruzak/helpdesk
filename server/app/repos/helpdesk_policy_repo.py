@@ -373,6 +373,8 @@ def _validate_approval_source(source: Any, *, field_name: str) -> None:
         return
     if source_type not in _APPROVAL_SOURCE_TYPES:
         raise ValueError(f"approval policy {field_name}.type is unsupported")
+    if "allow_department_fallback" in source and not isinstance(source["allow_department_fallback"], bool):
+        raise ValueError(f"approval policy {field_name}.allow_department_fallback must be boolean")
     if source_type == "form_field" and not str(source.get("field") or source.get("field_key") or "").strip():
         raise ValueError(f"approval policy {field_name}.field is required")
     if source_type in {"group", "approval_group"} and not str(

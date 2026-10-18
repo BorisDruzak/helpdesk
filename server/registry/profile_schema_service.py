@@ -6,9 +6,11 @@ import re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-from app.db.models import RegistryAdminPolicy
+from app.db.models import RegistryAdminPolicy, RegistryPerson
 from registry.admin_operations_service import RegistryAdminOperationsService
+from registry.profile_values import CONTACT_OPTIONS, clean_profile_value, safe_pattern
 
 
 PROFILE_SCHEMA_POLICY_KEY = "requester_profile_schema"
@@ -18,6 +20,7 @@ CUSTOM_STORAGE_PREFIX_LEGACY = "registry_person.metadata_json.profile_custom_fie
 
 _FIELD_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 _CUSTOM_FIELD_TYPES = {"text", "textarea", "select", "phone", "email", "url", "number", "date", "checkbox"}
+_PROFILE_WRITE_LIMITS = {"full_name": 240, "phone": 80, "internal_extension": 80, "position": 160, "workplace_label": 160, "preferred_contact_method": 80}
 
 
 class ProfileSchemaValidationError(ValueError):
@@ -104,6 +107,10 @@ DEFAULT_PROFILE_FIELDS: tuple[dict[str, Any], ...] = (
 
 def default_profile_schema() -> dict[str, Any]:
     fields = [deepcopy(field) for field in DEFAULT_PROFILE_FIELDS]
+    for field in fields:
+        if field["key"] in _PROFILE_WRITE_LIMITS:
+            field["validation"] = {"max_length": _PROFILE_WRITE_LIMITS[field["key"]]}
+    next(field for field in fields if field["key"] == "preferred_contact_method")["options"] = deepcopy(CONTACT_OPTIONS)
     return {
         "schema_key": PROFILE_SCHEMA_KEY,
         "version": "default",
@@ -124,8 +131,8 @@ class RequesterProfileSchemaService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_schema(self) -> dict[str, Any]:
-        row = await self.session.get(RegistryAdminPolicy, PROFILE_SCHEMA_POLICY_KEY)
+    async def get_schema(self, *, for_update: bool = False) -> dict[str, Any]:
+        row = await self.session.get(RegistryAdminPolicy, PROFILE_SCHEMA_POLICY_KEY, **({"with_for_update": True, "populate_existing": True} if for_update else {}))
         config = row.config_json if row is not None and isinstance(row.config_json, dict) else {}
         schema = self.normalize_config(config, strict=False)
         if row is not None and row.updated_at:
@@ -135,14 +142,17 @@ class RequesterProfileSchemaService:
         return schema
 
     async def preview_schema(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"schema": self.normalize_config(payload, strict=True), "dry_run": True}
+        normalized = self.normalize_config(payload, strict=True)
+        await self._check_schema_changes(await self.get_schema(), normalized)
+        return {"schema": normalized, "dry_run": True}
 
     async def save_schema(self, payload: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         reason = _text(payload.get("reason"), max_length=1000) or None
-        before = await self.get_schema()
+        before = await self.get_schema(for_update=True)
         normalized = self.normalize_config(payload, strict=True)
+        await self._check_schema_changes(before, normalized)
         config = {
-            "field_overrides": self._stored_field_overrides(payload.get("field_overrides")),
+            "field_overrides": self._stored_field_overrides({field["key"]: field for field in normalized["fields"] if not field.get("custom")}),
             "custom_fields": normalized["custom_fields"],
             "updated_at": _now_iso(),
             "updated_by": actor_id,
@@ -174,6 +184,38 @@ class RequesterProfileSchemaService:
         await self.session.flush()
         saved = await self.get_schema()
         return {"schema": saved, "updated": True}
+
+    async def _check_schema_changes(self, before: dict[str, Any], after: dict[str, Any]) -> None:
+        previous = before.get("custom_fields") or []
+        if not previous or previous == after.get("custom_fields"):
+            return
+        metadata = (await self.session.execute(select(RegistryPerson.metadata_json))).scalars().all()
+        issues = self.schema_change_issues(before, after, metadata)
+        if issues:
+            raise ProfileSchemaValidationError("Изменение затрагивает сохранённые значения профилей. Сначала исправьте значения или скройте необязательное поле.", issues)
+
+    def schema_change_issues(self, before: dict[str, Any], after: dict[str, Any], metadata_rows: list[Any]) -> dict[str, str]:
+        old_fields = {field["key"]: field for field in before.get("custom_fields") or []}
+        new_fields = {field["key"]: field for field in after.get("custom_fields") or []}
+        counts: dict[str, int] = {}
+        for metadata in metadata_rows:
+            values = metadata.get("profile_custom_fields") if isinstance(metadata, dict) else None
+            if not isinstance(values, dict):
+                continue
+            for key, old in old_fields.items():
+                value = values.get(key)
+                if value is None or value == "":
+                    continue
+                new = new_fields.get(key)
+                incompatible = new is None or old["type"] != new["type"]
+                if not incompatible and old != new:
+                    try:
+                        self._clean_field_value(new, value)
+                    except ValueError:
+                        incompatible = True
+                if incompatible:
+                    counts[key] = counts.get(key, 0) + 1
+        return {key: f"Изменение затрагивает профили: {count}. Сохраните тип и используемые значения." for key, count in counts.items()}
 
     def normalize_config(self, config: dict[str, Any] | None, *, strict: bool) -> dict[str, Any]:
         config = config if isinstance(config, dict) else {}
@@ -213,7 +255,12 @@ class RequesterProfileSchemaService:
             if "help_text" in raw_override:
                 field["help_text"] = _text(raw_override.get("help_text"), max_length=500) or None
             if "validation" in raw_override:
-                field["validation"] = self._normalize_validation(raw_override.get("validation"), details, field_key)
+                validation = self._normalize_validation(raw_override.get("validation"), details, field_key)
+                cap = _PROFILE_WRITE_LIMITS.get(field_key)
+                if cap and validation.get("max_length", cap) > cap:
+                    details[f"{field_key}.validation.max_length"] = f"Для этого поля допустимо не более {cap} символов."
+                    validation["max_length"] = cap
+                field["validation"] = {**field["validation"], **validation}
             section = _text(raw_override.get("section"), max_length=120)
             if section:
                 field["section"] = section
@@ -228,6 +275,8 @@ class RequesterProfileSchemaService:
         custom_fields = self._normalize_custom_fields(config.get("custom_fields") or [], details)
         if details and strict:
             raise ProfileSchemaValidationError("Некорректная схема профиля.", details)
+        if details:
+            schema["warnings"] = [f"{key}: {message}" for key, message in details.items()]
         schema["fields"] = list(fields.values()) + custom_fields
         schema["custom_fields"] = custom_fields
         schema["required_fields"] = [
@@ -239,6 +288,8 @@ class RequesterProfileSchemaService:
 
     def validate_profile_payload(self, schema: dict[str, Any], payload: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any]]:
         details: dict[str, str] = {}
+        if "custom_fields" in payload and not isinstance(payload["custom_fields"], dict):
+            details["custom_fields"] = "Пользовательские значения должны быть объектом."
         custom_payload = payload.get("custom_fields") if isinstance(payload.get("custom_fields"), dict) else {}
         normalized_custom: dict[str, Any] = {}
         for field in schema.get("fields") or []:
@@ -248,17 +299,25 @@ class RequesterProfileSchemaService:
             label = str(field.get("label") or key)
             if field.get("custom"):
                 value = custom_payload.get(key)
-                cleaned = self._clean_field_value(field, value)
-                if field.get("required") and cleaned in {"", None}:
+                try:
+                    cleaned = self._clean_field_value(field, value)
+                except ValueError as exc:
+                    details[f"custom_fields.{key}"] = str(exc)
+                    continue
+                if field.get("required") and cleaned is None:
                     details[f"custom_fields.{key}"] = f"Заполните поле: {label}."
                     continue
-                if cleaned not in {"", None}:
+                if key in custom_payload:
                     normalized_custom[key] = cleaned
                 continue
-            if field.get("required") and key not in {"full_name", "department_id", "location_id", "phone"}:
+            if field.get("editable", True) and (key in payload or field.get("required")):
                 value = payload.get(key)
-                cleaned = self._clean_field_value(field, value)
-                if cleaned in {"", None}:
+                try:
+                    cleaned = self._clean_field_value(field, value)
+                except ValueError as exc:
+                    details[key] = str(exc)
+                    continue
+                if field.get("required") and key not in {"full_name", "department_id", "location_id", "phone"} and cleaned is None:
                     details[key] = f"Заполните поле: {label}."
         return details, normalized_custom
 
@@ -270,6 +329,19 @@ class RequesterProfileSchemaService:
             return values
         allowed = {field["key"] for field in schema.get("custom_fields") or [] if isinstance(field, dict)}
         return {key: value for key, value in values.items() if key in allowed}
+
+    def profile_value_issues(self, person_metadata: dict[str, Any] | None, schema: dict[str, Any]) -> list[dict[str, str]]:
+        values = self.profile_custom_fields(person_metadata, schema)
+        issues = []
+        for field in schema.get("custom_fields") or []:
+            key = field["key"]
+            if key not in values or values[key] is None:
+                continue
+            try:
+                self._clean_field_value(field, values[key])
+            except ValueError as exc:
+                issues.append({"key": key, "label": field["label"], "message": str(exc), "code": "legacy_value_needs_correction"})
+        return issues
 
     def completion_missing_fields(self, person: Any | None, schema: dict[str, Any]) -> list[dict[str, str]]:
         metadata = getattr(person, "metadata_json", None) if person is not None else {}
@@ -292,7 +364,7 @@ class RequesterProfileSchemaService:
                 value = value or metadata.get("internal_extension") or metadata.get("extension")
             else:
                 value = getattr(person, key, None) if person is not None else None
-            if not _text(value):
+            if value is None or value == "":
                 missing.append({"key": key, "label": label})
         return missing
 
@@ -342,7 +414,7 @@ class RequesterProfileSchemaService:
                 "storage_target": expected_target,
                 "help_text": _text(raw.get("help_text"), max_length=500) or None,
                 "validation": self._normalize_validation(raw.get("validation"), details, prefix),
-                "options": raw.get("options") if isinstance(raw.get("options"), list) else [],
+                "options": self._normalize_options(raw.get("options"), details, prefix) if field_type == "select" else [],
                 "audit_behavior": "profile_custom_field_change",
             }
             section = _text(raw.get("section"), max_length=120)
@@ -363,27 +435,55 @@ class RequesterProfileSchemaService:
             details[f"{prefix}.validation"] = "Правила проверки должны быть объектом."
             return {}
         validation: dict[str, Any] = {}
-        if raw.get("max_length") is not None:
+        for length_key in ("min_length", "max_length"):
+            if raw.get(length_key) is None:
+                continue
             try:
-                max_length = int(raw.get("max_length"))
+                max_length = int(raw[length_key])
+                if isinstance(raw[length_key], bool) or str(max_length) != str(raw[length_key]):
+                    raise ValueError
             except (TypeError, ValueError):
-                details[f"{prefix}.validation.max_length"] = "Максимальная длина должна быть числом."
+                details[f"{prefix}.validation.{length_key}"] = "Длина должна быть целым числом."
             else:
                 if not 1 <= max_length <= 1000:
-                    details[f"{prefix}.validation.max_length"] = "Максимальная длина должна быть от 1 до 1000."
+                    details[f"{prefix}.validation.{length_key}"] = "Длина должна быть от 1 до 1000."
                 else:
-                    validation["max_length"] = max_length
+                    validation[length_key] = max_length
+        if validation.get("min_length", 0) > validation.get("max_length", 1000):
+            details[f"{prefix}.validation"] = "Минимальная длина превышает максимальную."
+        if set(raw) - {"min_length", "max_length", "pattern"}:
+            details[f"{prefix}.validation"] = "Неподдерживаемое правило проверки."
         if raw.get("pattern") is not None:
-            pattern = _text(raw.get("pattern"), max_length=300)
+            pattern = raw["pattern"]
             if pattern:
-                validation["pattern"] = pattern
+                try:
+                    safe_pattern(pattern)
+                except ValueError as exc:
+                    details[f"{prefix}.validation.pattern"] = str(exc)
+                else:
+                    validation["pattern"] = pattern
         return validation
 
     def _clean_field_value(self, field: dict[str, Any], value: Any) -> Any:
-        if field.get("type") == "checkbox":
-            return bool(value)
-        text = _text(value, max_length=int((field.get("validation") or {}).get("max_length") or 500))
-        return text or None
+        return clean_profile_value(field, value)
+
+    def _normalize_options(self, raw: Any, details: dict[str, str], prefix: str) -> list[dict[str, str]]:
+        if not isinstance(raw, list) or not 1 <= len(raw) <= 100:
+            details[f"{prefix}.options"] = "Добавьте от 1 до 100 вариантов списка."
+            return []
+        options = []
+        seen = set()
+        for index, option in enumerate(raw):
+            value = option.get("value") if isinstance(option, dict) else option
+            label = option.get("label") if isinstance(option, dict) else option
+            if (not isinstance(value, str) or not value.strip() or len(value) > 120
+                    or not isinstance(label, str) or not label.strip() or len(label) > 160
+                    or value.strip() in seen):
+                details[f"{prefix}.options.{index}"] = "Укажите уникальное значение и название варианта."
+                continue
+            seen.add(value.strip())
+            options.append({"value": value.strip(), "label": label.strip()})
+        return options
 
     def _stored_field_overrides(self, raw: Any) -> dict[str, Any]:
         if not isinstance(raw, dict):

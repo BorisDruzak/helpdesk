@@ -149,7 +149,7 @@ async def test_linked_ui_login_resolves_registry_person_department_path_and_acce
     assert audience_payload["audience_groups"] == [
         {"audience_group_id": audience_group.audience_group_id, "code": "identity_readers"}
     ]
-    assert payload["warnings"] == []
+    assert _warning_codes(payload) == {"organization_department_id_legacy_unknown"}
 
 
 @pytest.mark.asyncio

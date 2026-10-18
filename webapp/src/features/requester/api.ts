@@ -67,6 +67,21 @@ export class RequesterApiError extends Error {
   }
 }
 
+export type AssignedApproval = {
+  approval_id: number; ticket_id: string; ticket_code?: string | null; title: string; description: string;
+  status: string; requested_at?: string | null; can_decide: boolean; reject_requires_comment: boolean;
+};
+
+export async function fetchAssignedApprovals(): Promise<{ items: AssignedApproval[] }> {
+  return readSuccess(await fetch("/api/web/requester/approvals", { credentials: "same-origin", cache: "no-store" }), "Не удалось загрузить назначенные согласования");
+}
+
+export async function decideAssignedApproval(approval: AssignedApproval, decision: "approved" | "rejected", comment: string): Promise<unknown> {
+  return readSuccess(await fetch(`/api/web/support/tickets/${encodeURIComponent(approval.ticket_id)}/approvals/${approval.approval_id}/decision`, {
+    method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, comment }),
+  }), "Не удалось сохранить решение");
+}
+
 export async function linkRequesterDevice(code: string): Promise<{ binding_status: "active" | "pending_admin_review"; next_path: string }> {
   const response = await fetch("/api/web/requester/devices/link", {
     method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },

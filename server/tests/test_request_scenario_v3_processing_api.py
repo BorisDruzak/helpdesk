@@ -12,6 +12,89 @@ from tests.test_request_scenario_session_api import BASE as SESSION_BASE
 pytestmark = [pytest.mark.db_cleanup("full"), pytest.mark.light_app]
 
 
+@pytest.mark.asyncio
+async def test_profile_to_v3_ticket_to_ordinary_manager_approval_and_organization_audience(test_client_light, test_engine):
+    import uuid
+    from app.db.models import (AccessGroup, AccessGroupMember, AccessGroupPermission, HelpdeskService, RegistryAudienceGroup, RegistryAudienceGroupMember, RegistryDepartment, RegistryLocation, RegistryPerson, RegistryPersonIdentity, UiUser)
+    from registry.effective_identity_service import EffectiveIdentityService
+    from requester.identity_service import RequesterIdentityResolver
+    identifier, definition, _, _ = await configured(test_engine)
+    manager_id, old_id, new_id, location_id = [str(uuid.uuid4()) for _ in range(4)]
+    login = "ordinary-manager-" + manager_id[:8]
+    fallback_login = "fallback-manager-" + manager_id[:8]
+    async with async_sessionmaker(test_engine)() as session:
+        session.add_all([
+            RegistryDepartment(department_id=old_id, code="old-" + old_id[:8], name="Old department", status="active"),
+            RegistryDepartment(department_id=new_id, code="new-" + new_id[:8], name="New department", status="active"),
+            RegistryLocation(location_id=location_id, building="Synthetic office", floor="1", room="101", display_name="Synthetic office", status="active"),
+            RegistryPerson(person_id=manager_id, display_name="Ordinary manager", status="active", metadata_json={}),
+            RegistryPersonIdentity(person_id=manager_id, provider="ui_login", identifier=login, normalized_identifier=login, verified=True),
+            UiUser(user_login=login, password_hash="test", actor_role="user", is_active=True),
+            UiUser(user_login=fallback_login, password_hash="test", actor_role="admin", is_active=True),
+        ])
+        group = AccessGroup(code="decide-" + manager_id[:8], name="Synthetic explicit approvers", is_active=True)
+        audience_code = "dept-" + new_id[:8]
+        audience = RegistryAudienceGroup(audience_group_id=str(uuid.uuid4()), code=audience_code, name="New department audience", source="manual", status="active")
+        session.add_all([group, audience]); await session.flush()
+        session.add_all([AccessGroupMember(group_id=group.id, actor_id=login), AccessGroupPermission(group_id=group.id, permission_code="approval.decide.assigned"),
+            RegistryAudienceGroupMember(audience_group_id=audience.audience_group_id, member_type="department", member_id=new_id, source="manual")])
+        approval_policy = await session.scalar(select(ApprovalPolicy).where(ApprovalPolicy.code == definition["scenario_key"] + "_approval"))
+        approval_policy.config_json = {"required": False, "approver_source": {"type": "requester_manager", "fallback": {"type": "explicit_user", "user_id": fallback_login}}}
+        await session.commit()
+    profile_payload = {"full_name": "Synthetic employee", "department_id": old_id, "location_id": location_id, "phone": "123"}
+    response = await test_client_light.put("/api/web/requester/profile", headers=OWNER, json=profile_payload)
+    assert response.status == 200, await response.text()
+    employee_id = (await response.json())["data"]["profile"]["person_id"]
+    confirmed = await test_client_light.patch(f"/api/web/admin/registry/people/{employee_id}", headers=ADMIN, json={"department_id": old_id, "location_id": location_id, "manager_person_id": manager_id, "reason": "Synthetic official context"})
+    assert confirmed.status == 200, await confirmed.text()
+    await publish(test_client_light, identifier, definition)
+    requester = await at_submit(test_client_light, definition, "team")
+    created = await test_client_light.post(requester + "/submit", headers=OWNER, json={"revision": 3, "confirm": True})
+    assert created.status == 200, await created.text()
+    ticket_id = (await created.json())["data"]["linked_ticket_id"]
+    async with async_sessionmaker(test_engine)() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        historical_context = ticket.custom_fields
+        assert ticket.device_id is None
+        assignment = await session.scalar(select(TicketApproval).where(TicketApproval.ticket_id == ticket_id))
+        assert assignment.approver_id == login
+        approval_id = assignment.id
+    manager_headers = {"Authorization": "Bearer test-ui-user:" + login}
+    pending = await test_client_light.get("/api/web/requester/approvals", headers=manager_headers)
+    assert pending.status == 200 and any(item["approval_id"] == approval_id for item in (await pending.json())["data"]["items"])
+    decided = await test_client_light.post(f"/api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision", headers=manager_headers, json={"decision": "approved", "comment": "Approved by ordinary manager"})
+    assert decided.status == 200, await decided.text()
+    # A later profile proposal cannot expand the audience or mutate retained ticket context.
+    proposed = await test_client_light.put("/api/web/requester/profile", headers=OWNER, json={**profile_payload, "department_id": new_id})
+    assert proposed.status == 200, await proposed.text()
+    async with async_sessionmaker(test_engine)() as session:
+        employee = await session.get(RegistryPerson, employee_id)
+        proposal = employee.metadata_json["organization_context_v1"]["fields"]["department_id"]["pending"]
+        identity = await EffectiveIdentityService(session).resolve_actor_identity("scenario-owner", "user")
+        assert not any(item["code"] == audience_code for item in identity.audience_groups)
+        assert (await session.get(Ticket, ticket_id)).custom_fields == historical_context
+        # Restricted catalog visibility is independent of organizational audiences.
+        service = await session.scalar(select(HelpdeskService).where(HelpdeskService.code == definition["service_code"]))
+        service.visibility = "restricted"; await session.commit()
+    before = await (await test_client_light.get("/api/service-catalog/current", headers=OWNER)).json()
+    assert not any(item["service_code"] == definition["service_code"] for item in before["services"])
+    approved = await test_client_light.patch(f"/api/web/admin/registry/people/{employee_id}", headers=ADMIN, json={"organization_review": {"field": "department_id", "proposal_id": proposal["proposal_id"], "decision": "approve"}, "reason": "Synthetic department move"})
+    assert approved.status == 200, await approved.text()
+    async with async_sessionmaker(test_engine)() as session:
+        identity = await EffectiveIdentityService(session).resolve_actor_identity("scenario-owner", "user")
+        assert any(item["code"] == audience_code for item in identity.audience_groups)
+        assert (await session.get(Ticket, ticket_id)).custom_fields == historical_context
+        employee = await RequesterIdentityResolver(session).resolve_person_for_web_user("scenario-owner")
+        assert employee.department_id == new_id
+    after = await (await test_client_light.get("/api/service-catalog/current", headers=OWNER)).json()
+    assert not any(item["service_code"] == definition["service_code"] for item in after["services"])
+    report = await test_client_light.get("/api/web/admin/registry/scenario-readiness", headers=ADMIN)
+    assert report.status == 200, await report.text()
+    issues = (await report.json())["data"]["issues"]
+    assert not any(item["kind"] == "scenario_map_unavailable" and item["object_id"] == identifier for item in issues)
+    assert any(item["kind"] == "scenario_manager_unavailable" and item["object_type"] == "request_scenario" and item["object_id"] == identifier for item in issues)
+
+
 async def configured(engine, *, business=False, draft_offering=False):
     identifier, definition = await ready(engine)
     code = definition["scenario_key"]
@@ -143,6 +226,9 @@ async def test_manager_approval_uses_registry_identity_then_explicit_fallback_an
             RegistryPerson(person_id=manager_id, display_name="Known manager", status="active"),
             RegistryPerson(person_id=employee_id, display_name="Employee", status="active", metadata_json={"manager_person_id": manager_id}),
         ])
+        from registry.organization_trust import confirm_fields
+        employee = next(row for row in session.new if isinstance(row, RegistryPerson) and row.person_id == employee_id)
+        confirm_fields(employee, ["manager_person_id"], actor_id="admin")
         await session.flush()
         session.add_all([
             RegistryPersonIdentity(person_id=manager_id, provider="ui_login", identifier="Support-Test", normalized_identifier="support-test", verified=True),

@@ -346,6 +346,8 @@ export type RequesterDevice = {
 };
 
 export type RequesterProfile = {
+  organization_status?: Record<string, { state: string; pending_value?: string | null }>;
+  value_issues?: Array<{ key: string; label: string; message: string; code: string }>;
   person_id: string;
   display_name?: string | null;
   full_name?: string | null;

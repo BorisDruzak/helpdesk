@@ -1,3 +1,28 @@
+# 2026-10-18 REGISTRY-READY-001
+
+Goal: trusted employee context and manager approval for Guided Request Studio v3.
+Scope: existing profile/Registry/approval/quality surfaces, separate task branch
+from main520b6218; production and all real-data publication/rewrites excluded.
+Decisions: explicit typed writes and safe patterns; retain legacy reads and used
+values; per-field provenance and proposals; legacy audience compatibility remains
+default, strict activation requires current impact and separate acknowledgement;
+explicit assigned-decision grant, no support role escalation; read-only readiness
+over existing quality/Policy Health with aggregate-only export.
+Current State: A–D implemented. Browser12 at1366/1920 covers profile/schema,
+organizational review, ordinary manager, explicit department fallback and readiness.
+Verification: frontend840, backendnoDB1580+one existing skip, targeted PostgreSQL
+profile/proposals, exact assigned decisions, manager/fallback, read-only report and
+strict activation checks. Combined profile→v3→ticket→ordinary-manager acceptance
+passed in disposable PostgreSQL; historical context remained unchanged. Workspace,
+build and test inventory checks passed. Hosted CI is pending publication.
+Draft PR #45 is open. A follow-up closes the readiness gap for map-selected
+policies and approval-requiring branches; PostgreSQL regressions and workspace
+checks passed. Next: commit/push and verify hosted CI for the final revision.
+No extra review agents.
+Handoff: docs/REGISTRY_READY_001.md and the dated plan contain contracts and
+remaining resource-picker limitation. No runtime services were started by this
+task; owned fixture browser servers exit after checks. Preserve unrelated files.
+
 # 2026-10-18 Build answer branches from an empty decision
 
 Actor/job: an administrator starts with only a yes/no question connected to a

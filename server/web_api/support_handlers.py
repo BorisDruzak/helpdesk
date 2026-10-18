@@ -5941,7 +5941,7 @@ async def handle_web_support_reroute_ticket(request: web.Request):
         return _support_json_error("Не удалось пересчитать маршрут", status=503, error_code="REROUTE_ACTION_FAILED")
 
 
-@require_auth("admin", "support", "auditor")
+@require_auth("admin", "support", "auditor", "user")
 async def handle_web_support_approval_decision(request: web.Request):
     try:
         data = await request.json()
@@ -5987,14 +5987,30 @@ async def handle_web_support_approval_decision(request: web.Request):
     reason = str(data.get("reason") or data.get("comment") or "").strip()
     try:
         async with get_session() as session:
-            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
-            if error:
-                return error
-            denied = await _require_permission(session, auth_context, "ticket.status.change")
-            if denied:
-                return denied
+            auth_context = request["auth_context"]
+            assigned_only = auth_context.actor_role == "user" or not await can(session, auth_context, "ticket.status.change")
+            if assigned_only:
+                from approvals.service import assigned_actor_allowed
+                if not await assigned_actor_allowed(session, auth_context):
+                    return _support_json_error("Право согласования назначенных обращений не предоставлено либо профиль недоступен.", status=403, error_code="FORBIDDEN")
+                candidate = await session.get(TicketApproval, approval_id)
+                ticket_id = str(request.match_info.get("ticket_id") or "")
+                if candidate is None or str(candidate.ticket_id) != ticket_id or candidate.approver_id != auth_context.actor_id:
+                    return _support_json_error("Назначенное согласование не найдено.", status=404, error_code="APPROVAL_NOT_FOUND")
+                ticket = await session.get(Ticket, ticket_id, with_for_update=True, populate_existing=True)
+                if ticket is None:
+                    return _support_json_error("Назначенное согласование не найдено.", status=404, error_code="APPROVAL_NOT_FOUND")
+                repo = TicketEventsRepo(session)
+            else:
+                ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+                if error:
+                    return error
+                denied = await _require_permission(session, auth_context, "ticket.status.change")
+                if denied:
+                    return denied
+                await session.refresh(ticket, with_for_update=True)
 
-            approval = await session.get(TicketApproval, approval_id)
+            approval = await session.get(TicketApproval, approval_id, with_for_update=True, populate_existing=True)
             if approval is None or str(approval.ticket_id) != str(ticket.ticket_id):
                 return web.json_response(
                     {"status": "error", "error": "approval not found", "error_code": "APPROVAL_NOT_FOUND"},
@@ -6029,7 +6045,7 @@ async def handle_web_support_approval_decision(request: web.Request):
                 for item in (summary_before or {}).get("items", [])
                 if item.get("current")
             }
-            if current_ids and approval_id not in current_ids:
+            if approval_id not in current_ids and (current_ids or assigned_only):
                 return web.json_response(
                     {
                         "status": "error",
@@ -6113,12 +6129,12 @@ async def handle_web_support_approval_decision(request: web.Request):
                             "approval_type": approval.approval_type,
                             "approver_id": approval.approver_id,
                             "status": decision,
-                            "reason": approval.reason,
+                            "reason": (reason or None) if assigned_only else approval.reason,
                             "decided_at": now.isoformat(),
                         },
-                        "approval_summary": summary_after,
+                        "approval_summary": None if assigned_only else summary_after,
                         "event_type": event_type,
-                        "next_requested_approval_id": next_requested_id,
+                        "next_requested_approval_id": None if assigned_only else next_requested_id,
                     }
                 )
             )

@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Change, ChangeApproval, Operation, RegistryEndpointDeviceMapping, Ticket, TicketApproval
+from app.db.models import Change, ChangeApproval, Operation, RegistryEndpointDeviceMapping, Ticket, TicketApproval, UiUser
+from access_control.service import can
+from registry.manager_resolution import ASSIGNED_APPROVAL_PERMISSION
 from web_api.dto.approvals import (
     ApprovalConsentAction,
     ApprovalConsentBlocking,
@@ -20,6 +22,30 @@ from web_api.dto.approvals import (
 
 PENDING_STATUSES = {"pending", "requested", "waiting", "waiting_consent"}
 HIGH_RISKS = {"high", "critical"}
+
+
+async def assigned_actor_allowed(session, auth_context) -> bool:
+    from requester.identity_service import RequesterIdentityResolver
+    if not await can(session, auth_context, ASSIGNED_APPROVAL_PERMISSION):
+        return False
+    user = await session.get(UiUser, auth_context.actor_id)
+    return bool(user is not None and user.is_active and await RequesterIdentityResolver(session).resolve_person_for_web_user(auth_context.actor_id))
+
+
+async def assigned_ticket_approvals(session, auth_context) -> dict:
+    from tickets.approval_policy import build_approval_summary
+    rows = (await session.execute(select(TicketApproval, Ticket).join(Ticket, Ticket.ticket_id == TicketApproval.ticket_id).where(
+        TicketApproval.approver_id == auth_context.actor_id, TicketApproval.status.in_(["requested", "pending", "waiting"]),
+    ).order_by(TicketApproval.requested_at.asc(), TicketApproval.id.asc()).limit(100))).all()
+    items = []
+    for approval, ticket in rows:
+        summary = await build_approval_summary(session, ticket, requester_safe=True)
+        current = any(item["id"] == approval.id and item.get("current") for item in (summary or {}).get("items", []))
+        items.append({"approval_id": approval.id, "ticket_id": ticket.ticket_id, "ticket_code": ticket.ticket_code,
+                      "title": ticket.title, "description": (ticket.description or "")[:2000], "status": approval.status,
+                      "requested_at": _iso(approval.requested_at), "can_decide": current,
+                      "reject_requires_comment": bool((summary or {}).get("require_comment_on_reject"))})
+    return {"items": items, "limit": 100}
 
 
 @dataclass(frozen=True)

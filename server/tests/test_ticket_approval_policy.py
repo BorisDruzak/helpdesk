@@ -325,9 +325,21 @@ async def test_approval_policy_creates_request_from_form_field_source(test_engin
 
 @pytest.mark.asyncio
 async def test_approval_policy_uses_fallback_source_without_duplicate_requests(test_engine) -> None:
+    from app.db.models import RegistryPerson, RegistryPersonIdentity, UiUser
+    from registry.organization_trust import confirm_fields
     ticket_id = str(uuid.uuid4())
+    manager_login = "manager-" + ticket_id[:8]
+    requester_login = "employee-" + ticket_id[:8]
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
+        manager = RegistryPerson(person_id=str(uuid.uuid4()), display_name="Manager", status="active", metadata_json={})
+        employee = RegistryPerson(person_id=str(uuid.uuid4()), display_name="Employee", status="active", metadata_json={"manager_person_id": manager.person_id})
+        confirm_fields(employee, ["manager_person_id"], actor_id="admin")
+        session.add_all([manager, employee,
+            UiUser(user_login=manager_login, password_hash="test", actor_role="admin", is_active=True),
+            RegistryPersonIdentity(person_id=manager.person_id, provider="ui_login", identifier=manager_login, normalized_identifier=manager_login, verified=True),
+            RegistryPersonIdentity(person_id=employee.person_id, provider="ui_login", identifier=requester_login, normalized_identifier=requester_login, verified=True),
+        ])
         session.add(
             Ticket(
                 ticket_id=ticket_id,
@@ -335,7 +347,7 @@ async def test_approval_policy_uses_fallback_source_without_duplicate_requests(t
                 title="Fallback approval",
                 description="Service owner is missing, requester manager should approve.",
                 status="new",
-                requester_id="requester-approval",
+                requester_id=requester_login,
                 ticket_type="access_request",
                 custom_fields={
                     "request_template": {
@@ -358,7 +370,7 @@ async def test_approval_policy_uses_fallback_source_without_duplicate_requests(t
                         },
                     },
                     "requester_profile": {
-                        "manager_id": "manager-1",
+                        "manager_id": "untrusted-manager",
                     },
                 },
             )
@@ -384,7 +396,7 @@ async def test_approval_policy_uses_fallback_source_without_duplicate_requests(t
 
     assert len(approvals) == 1
     assert approvals[0].approval_type == "requester_manager"
-    assert approvals[0].approver_id == "manager-1"
+    assert approvals[0].approver_id == manager_login
     assert first["event_payload"]["approval_policy"]["requests_created"] == 1
     assert second["event_payload"]["approval_policy"]["requests_created"] == 0
 
