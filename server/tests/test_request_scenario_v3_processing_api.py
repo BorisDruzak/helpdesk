@@ -88,6 +88,11 @@ async def test_profile_to_v3_ticket_to_ordinary_manager_approval_and_organizatio
         assert employee.department_id == new_id
     after = await (await test_client_light.get("/api/service-catalog/current", headers=OWNER)).json()
     assert not any(item["service_code"] == definition["service_code"] for item in after["services"])
+    report = await test_client_light.get("/api/web/admin/registry/scenario-readiness", headers=ADMIN)
+    assert report.status == 200, await report.text()
+    issues = (await report.json())["data"]["issues"]
+    assert not any(item["kind"] == "scenario_map_unavailable" and item["object_id"] == identifier for item in issues)
+    assert any(item["kind"] == "scenario_manager_unavailable" and item["object_type"] == "request_scenario" and item["object_id"] == identifier for item in issues)
 
 
 async def configured(engine, *, business=False, draft_offering=False):

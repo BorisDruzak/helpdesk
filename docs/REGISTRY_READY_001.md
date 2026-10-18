@@ -89,7 +89,9 @@ The existing Registry **Качество данных** tab offers an explicit c
 `GET /api/web/admin/registry/scenario-readiness` (admin role). It runs in a PostgreSQL
 read-only transaction, uses an untruncated Registry snapshot, existing issue keys
 and overrides, Policy Health and canonical published-map graph/queue/calendar
-validation. It checks nine dimensions and separates a concrete function blocker,
+validation. Published maps also resolve their selected policy references and
+manager dependencies, including branches that require approval when the base
+policy does not. It checks nine dimensions and separates a concrete function blocker,
 attention and informational findings. Missing device links do not block ordinary
 device-optional requests. The report includes remediation and links to Registry,
 Policy Health or Studio. It does not persist a separate findings database.

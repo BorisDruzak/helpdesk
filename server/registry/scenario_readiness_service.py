@@ -15,7 +15,7 @@ from registry.profile_schema_service import RequesterProfileSchemaService
 from registry.service import RegistrySnapshotService, _quality_issue_key
 from tickets.policy_health_service import PolicyHealthService
 from tickets.approval_policy import _resolve_approval_source
-from tickets.request_scenario_processing import validate_map_processing_references
+from tickets.request_scenario_processing import apply_scenario_policy_refs, validate_map_processing_references
 from tickets.request_scenario_validation import validate_scenario
 from web_api.dto.request_scenario import ScenarioDefinition
 
@@ -108,8 +108,8 @@ class RegistryScenarioReadinessService:
                     f"Обработка услуги «{obj.get('title') or obj.get('template_name') or reference}» требует проверки",
                     "Действующий Policy Health обнаружил отсутствующую ссылку или конфликт настройки.", function="Маршрутизация, SLA или зависимая политика услуги",
                     action="Откройте Policy Health для конкретной услуги.", fix_href="/app/admin/policy-health"))
-        await self._published_scenarios(issues)
-        await self._managers(issues, people)
+        scenario_targets = await self._published_scenarios(issues)
+        await self._managers(issues, people, scenario_targets)
         # Apply the existing exceptions and stable issue-key mechanism; never save findings.
         unique = {issue.get("issue_key") or _quality_issue_key(issue): issue for issue in issues}
         issues = await snapshot_service._apply_quality_issue_overrides(list(unique.values()))
@@ -119,6 +119,8 @@ class RegistryScenarioReadinessService:
 
     async def _published_scenarios(self, issues):
         repo = TicketAdminConfigRepo(self.session)
+        policies = HelpdeskPolicyRepo(self.session)
+        manager_targets = []
         queues = [{"code": row.code, "is_active": row.is_active} for row in await repo.list_queues(include_inactive=True)]
         calendars = [{"id": row.id, "is_active": row.is_active, "timezone": row.timezone, "weekly_hours_json": row.weekly_hours_json, "holidays_json": row.holidays_json} for row in await repo.list_calendars(include_inactive=True)]
         rows = (await self.session.execute(select(RequestStudioScenario, RequestStudioScenarioVersion).outerjoin(RequestStudioScenarioVersion, RequestStudioScenarioVersion.id == RequestStudioScenario.published_version_id).where(RequestStudioScenario.enabled.is_(True), RequestStudioScenario.archived.is_(False)))).all()
@@ -128,20 +130,36 @@ class RegistryScenarioReadinessService:
                     raise ValueError("missing published version")
                 definition = ScenarioDefinition.model_validate(version.definition)
                 failures = [*validate_scenario(definition), *validate_map_processing_references(definition, queues, calendars)]
+                effective = await policies.resolve_effective_request_template(template_code=definition.process_binding.request_template_key, raise_if_missing=False)
+                template = effective.get("request_template") or {}
+                if not template.get("published_at"):
+                    raise ValueError("unpublished template")
+                references = definition.process_binding.policy_refs
+                if definition.schema_version == 3:
+                    references = {key: value for key, value in references.items() if key not in {"routing", "sla"}}
+                selected = await apply_scenario_policy_refs(self.session, {"template_context": {}}, references)
+                approval = (selected.get("template_context") or {}).get("approval_policy") or (effective.get("resolved_policies") or {}).get("approval") or {}
+                # A map branch may require approval even when its base policy does not.
+                assignments = [transition.processing for block in definition.blocks for transition in block.transitions if transition.processing]
+                if approval and any(item.approval_required is True for item in assignments):
+                    approval = {**approval, "required": True}
+                manager_targets.append({"template_code": scenario.id, "public_title": scenario.title, "published_at": True,
+                    "config": {"approval_policy": approval}, "object_type": "request_scenario"})
             except ValueError:
                 failures = [True]
             if failures:
                 issues.append(_issue("scenario_map_unavailable", "v3_cards", "blocks_function", "request_scenario", scenario.id,
                     f"Карта услуги «{scenario.title}» требует исправления", "Недоступны опубликованная версия, маршрут, срок обработки или зависимые настройки.", function="Выполнение конкретной карты обращения",
                     action="Откройте карту услуги и проверьте направления, сроки и зависимости.", fix_href="/app/admin/request-template-studio"))
+        return manager_targets
 
-    async def _managers(self, issues, people):
+    async def _managers(self, issues, people, scenario_targets=()):
         repo = HelpdeskPolicyRepo(self.session)
         templates = await repo.list_request_templates(include_inactive=False)
         policies = await repo.list_policies(include_inactive=False)
         approval_by_code = {item["code"]: item.get("config") or {} for item in reversed(policies.get("approval", []))}
         cache: dict[tuple[str, bool], dict[str, Any]] = {}
-        for template in templates:
+        for template in [*templates, *scenario_targets]:
             if not template.get("published_at"):
                 continue
             policy = approval_by_code.get(template.get("approval_policy_code")) or (template.get("config") or {}).get("approval_policy") or {}
@@ -161,7 +179,7 @@ class RegistryScenarioReadinessService:
             if failures:
                 fallback = source.get("fallback")
                 fallback_ids = (await _resolve_approval_source(self.session, SimpleNamespace(custom_fields={}, queue_id=None), fallback))[1] if fallback else []
-                issues.append(_issue("scenario_manager_unavailable", "managers", "attention" if fallback_ids else "blocks_function", "request_template", template["template_code"],
+                issues.append(_issue("scenario_manager_unavailable", "managers", "attention" if fallback_ids else "blocks_function", template.get("object_type", "request_template"), template["template_code"],
                     f"Для услуги «{template.get('public_title') or template['template_code']}» не определён руководитель" + ("; настроен резервный процесс" if fallback_ids else " requester_manager"),
                     f"Сотрудников с недостающей связью: {len(failures)}. {' '.join(REASONS.get(reason, 'Проверьте организационную связь.') for reason in sorted(set(failures)))}", function="Согласование руководителем по конкретной услуге",
                     action="Подтвердите руководителя сотрудника или подразделения, проверьте активность и предметное право; настройте резервного согласующего.", fix_href="/app/admin/registry?tab=people", related_people=related_people))

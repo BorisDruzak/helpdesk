@@ -42,7 +42,7 @@ readiness are covered by regression tests. No data migration or deployment.
 GitNexus was consulted; its Helpdesk index is behind main, so dynamic boundaries
 were checked in current source and tests. No manual index/group synchronization.
 
-Verified: 840 frontend units; 1578 backend no-DB tests plus one existing skip;
+Verified: 840 frontend units; 1580 backend no-DB tests plus one existing skip;
 12 fixture browser tests at 1366/1920 with clean JS/network checks;
 PostgreSQL profile/schema/proposal5, assigned decisions2, v3 manager/fallback2,
 read-only readiness1, effective-identity2. Broader Registry tests passed26 and
@@ -57,7 +57,11 @@ GREEN rerun passed. Local Windows DB commands hit the configured
 DNS placeholder; actual DB checks use isolated staging via the existing secret
 channel. A workspace run correctly required matching docs; docs are now updated.
 
-Remaining: finish inline diff review, stage only task files, commit/push verified
-source, create and attach draft PR, verify required hosted CI. No independent
+Draft PR #45 is attached. A readiness follow-up checks published maps' own policy
+references and manager dependencies, including approval-requiring branches.
+Its PostgreSQL read-only and full-chain regressions passed (2 + 1 tests), including
+the published map's manager readiness finding. Workspace validation passed again.
+Remaining: commit/push verified source and
+verify required hosted CI for the final revision. No independent
 review agents or extra gates, no production or real-data changes. Owned fixture
 servers exit with Playwright; no Helpdesk/Endpoint runtime services were started.
