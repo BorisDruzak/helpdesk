@@ -17,6 +17,7 @@ import { ScenarioActionBar } from "../../features/request-template-studio/scenar
 import { catalogEntries } from "../../features/request-template-studio/offering-card";
 import { createScenarioStarter } from "../../features/request-template-studio/scenario-starter";
 import { ScenarioDocumentPanel } from "../../features/request-template-studio/scenario-document-panel";
+import { ScenarioServiceImportDialog } from "../../features/request-template-studio/scenario-service-import-dialog";
 
 export function AdminRequestTemplateStudioPage() {
   const { offeringCode } = useParams();
@@ -42,6 +43,8 @@ function StudioWorkspace() {
   const [pending, setPending] = useState<Selection | null>(null);
   const [entryFocus, setEntryFocus] = useState<string | undefined>();
   const [catalogDirty, setCatalogDirty] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importDirty, setImportDirty] = useState(false);
   const [explorerTab, setExplorerTab] = useState<"catalog" | "blocks">("blocks");
   const [selecting, setSelecting] = useState(false);
   const [selectionNotice, setSelectionNotice] = useState("");
@@ -51,7 +54,7 @@ function StudioWorkspace() {
   const catalog = useQuery({ queryKey: ["scenario-catalog", offeringCode, deferredQuery, status, offset, category], queryFn: () => offeringCode ? fetchScenarioCatalog("", "all", 0, null, offeringCode) : fetchScenarioCatalog(deferredQuery, status, offset, category), placeholderData: previous => previous });
   const editor = useScenarioEditor(canEdit && !categoryDirty && !inlineCategoryOpen && !selecting && !confirm, false);
   const contextNotice = useScenarioContext(catalog.data, editor, canEdit, createForOffering);
-  useScenarioDirtyGuard(editor.dirty || categoryDirty || catalogDirty);
+  useScenarioDirtyGuard(editor.dirty || categoryDirty || catalogDirty || importDirty);
   const createdFromLink=useRef(false);
   useEffect(()=>{if(params.get("create")==="1"&&catalog.data&&canEdit&&!createdFromLink.current){createdFromLink.current=true;newService();}},[catalog.data,canEdit,params]);
   const editing = !!editor.definition;
@@ -118,9 +121,10 @@ function StudioWorkspace() {
       {categoryEditor ? <ScenarioCategoryForm key={categoryEditor} catalog={catalog.data} category={catalog.data.categories.find(item => item.id === categoryEditor)} onDirty={setCategoryDirty} onCancel={() => setCategoryEditor(null)} onDone={async () => { await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); setCategoryEditor(null); }} /> : editing && editor.definition ? <>
         <ScenarioWizard entryFocus={entryFocus} key={editor.definition.scenario_key} definition={editor.definition} detail={editor.detail} catalog={workbenchCatalog} disabled={!canEdit || editor.loading || (!editor.detail && editor.save.isPending) || selecting || !!confirm || editor.archive.isPending || !!editor.detail?.scenario.archived} simulationDisabled={editor.busy || selecting || !!editor.detail?.scenario.archived || !(canEdit || session?.actor_role === "auditor")} dirty={editor.dirty} onChange={editor.change} onAccept={editor.accept} onCatalog={leave} explorerTab={explorerTab} onExplorerTab={setExplorerTab} catalogPanel={{ data: chooserData ?? catalog.data, query, category, status, canEdit, busy: editor.busy || selecting || !!confirm || inlineCategoryOpen, selectedOffering: editor.definition.offering_full_code, onQuery: value => { setChooserData(null); setQuery(value); setOffset(0); }, onStatus: value => { setChooserData(null); setStatus(value); setOffset(0); }, onCategory: value => { setChooserData(null); setCategory(value); setOffset(0); }, onOffering: item => requestSelection({ kind: "offering", offering: item }), onScenario: item => requestSelection({ kind: "scenario", id: item.id }), onNew: () => requestSelection({ kind: "new" }), onNewCategory: () => setCategoryEditor("new"), onPage: setOffset, onBack: chooserData ? () => setChooserData(null) : undefined }} onCategoryDirty={setCategoryDirty} onCategoryOpen={setInlineCategoryOpen} onCategoryCreated={async () => { await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }} />
         {canEdit && editor.detail && <div className="flex flex-wrap gap-2"><Button variant="ghost" disabled={editor.busy || selecting || !!confirm || editor.dirty || inlineCategoryOpen} onClick={() => editor.create(editor.definition!)}>Создать копию</Button>{!editor.detail.scenario.archived && <Button variant="ghost" disabled={editor.busy || selecting || !!confirm || editor.dirty || inlineCategoryOpen} onClick={() => setConfirm("archive")}>Архивировать сценарий</Button>}</div>}
-      </> : <ScenarioCatalogExplorer data={chooserData ?? catalog.data} query={query} status={status} category={category} canEdit={canEdit} onQuery={value => { setQuery(value); setOffset(0); }} onStatus={value => { setStatus(value); setOffset(0); }} onCategory={value => { setCategory(value); setOffset(0); }} initialOffering={offeringCode} onDirty={setCatalogDirty} onNewMap={newService} onOpen={(item,blockId) => { setEntryFocus(blockId); void editor.open(item.id); }} onCreateForOffering={createForOffering} onEditCategory={setCategoryEditor} onPage={setOffset} />}
+      </> : <ScenarioCatalogExplorer data={chooserData ?? catalog.data} query={query} status={status} category={category} canEdit={canEdit} onQuery={value => { setQuery(value); setOffset(0); }} onStatus={value => { setStatus(value); setOffset(0); }} onCategory={value => { setCategory(value); setOffset(0); }} initialOffering={offeringCode} onDirty={setCatalogDirty} onNewMap={newService} onNewFromDocument={() => setImportOpen(true)} onOpen={(item,blockId) => { setEntryFocus(blockId); void editor.open(item.id); }} onCreateForOffering={createForOffering} onEditCategory={setCategoryEditor} onPage={setOffset} />}
     </>}
     {editing && editor.definition && <ScenarioDocumentPanel definition={editor.definition} detail={editor.detail} dirty={editor.dirty} disabled={!canEdit||editor.busy||!!editor.detail?.scenario.archived} onChange={editor.change}/>}
+    {canEdit && importOpen && !editing && catalog.data && <ScenarioServiceImportDialog catalog={catalog.data} initialCategory={category} onDirty={setImportDirty} onClose={() => { setImportDirty(false); setImportOpen(false); }} onCreated={detail => { setImportDirty(false); setImportOpen(false); setEntryFocus(undefined); setChooserData(null); editor.accept(detail); setExplorerTab("blocks"); void cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }} />}
     {confirm && <div role="alert" className="rounded-xl border border-amber-300 p-4"><p>{confirm === "leave" ? "Уйти без сохранения локальных изменений?" : confirm === "switch" ? "Переключить карту без сохранения локальных изменений?" : "Архивировать сценарий? Новые пользовательские сеансы будут недоступны."}</p><div className="mt-3 flex flex-wrap gap-2"><Button disabled={editor.busy || selecting} onClick={() => { if (confirm === "leave") editor.close(); else if (confirm === "switch" && pending) { editor.close(); void select(pending); } else editor.archive.mutate(); setPending(null); setConfirm(null); }}>{confirm === "leave" ? "Уйти без сохранения" : confirm === "switch" ? "Переключить без сохранения" : "Подтвердить архивирование"}</Button><Button variant="ghost" onClick={() => { setPending(null); setConfirm(null); }}>Отмена</Button></div></div>}
   </PageShell>;
 }

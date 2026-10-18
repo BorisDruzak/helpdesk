@@ -24,6 +24,31 @@ async function start(kind="Простая заявка", _bound=false) {
 
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 describe("Guided Studio workflow",()=>{
+ it("protects an unsaved import from unload and navigation and clears the guard after explicit discard",async()=>{
+  const fetcher=mock();fetcher.mockImplementation(async(url:unknown)=>String(url).endsWith("/services/document-preview")?response(null,400):response(catalog));const router=mount();await ready();fireEvent.click(screen.getByRole("button",{name:"Создать услугу из JSON/YAML"}));
+  fireEvent.change(screen.getByLabelText("Документ новой услуги"),{target:{value:"title: Мой документ"}});
+  fireEvent.click(screen.getByRole("button",{name:"Проверить документ"}));await screen.findByRole("alert");
+  const event=new Event("beforeunload",{cancelable:true});window.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+  const confirm=vi.spyOn(window,"confirm").mockReturnValue(false);await act(()=>router.navigate("/other"));expect(router.state.location.pathname).toBe("/");
+  expect(screen.getByLabelText("Документ новой услуги")).toHaveValue("title: Мой документ");
+  confirm.mockReturnValue(true);fireEvent.click(screen.getByRole("button",{name:"Отмена"}));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();const clean=new Event("beforeunload",{cancelable:true});window.dispatchEvent(clean);expect(clean.defaultPrevented).toBe(false);
+ });
+ it("imports a new service from the catalog only after preview and explicit draft creation",async()=>{
+  const definition={schema_version:3,scenario_key:"imported",title:"Импортированная печать",service_code:"it",offering_full_code:"it.imported",process_binding:{request_template_key:"imported"},blocks:[{id:"first",kind:"decision",title:"Первый шаг"}],entry_block_id:"first",entry_points:[]};
+  const fetcher=vi.fn(async(url:unknown,init?:RequestInit)=>String(url).endsWith("/services/document-preview")?response({creation_key:JSON.parse(String(init?.body)).creation_key,source_hash:"checked",definition,issues:[]}):String(url).endsWith("/services/from-document")?response({scenario:{id:"imported",archived:false},draft:{revision:1,definition}}):response(catalog));
+  vi.stubGlobal("fetch",fetcher);mount("/?service=it");await ready();
+  fireEvent.click(screen.getByRole("button",{name:"Создать услугу из JSON/YAML"}));
+  expect(screen.getByRole("dialog",{name:"Создать услугу из JSON/YAML"})).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Документ новой услуги"),{target:{value:"schema_version: 3\ntitle: Импортированная печать"}});
+  fireEvent.click(screen.getByRole("button",{name:"Проверить документ"}));
+  const create=await screen.findByRole("button",{name:"Создать услугу-черновик"});
+  expect(fetcher.mock.calls.filter(([url,init])=>init?.method==="POST").map(([url])=>url)).toEqual(["/api/web/admin/request-studio/services/document-preview"]);
+  fireEvent.click(create);await screen.findByLabelText("Визуальная карта сценария");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"Создать услугу из JSON/YAML"})).not.toBeInTheDocument();
+  const clean=new Event("beforeunload",{cancelable:true});window.dispatchEvent(clean);expect(clean.defaultPrevented).toBe(false);
+  expect(fetcher.mock.calls.some(([url])=>String(url).includes("publish"))).toBe(false);
+ });
  it("starts in the catalog with a compact new-map action",async()=>{mock();mount();await ready();expect(screen.getByRole("button",{name:"Создать услугу"})).toBeVisible();expect(screen.queryByRole("button",{name:"Новая карта"})).not.toBeInTheDocument();expect(screen.queryByLabelText("Визуальная карта сценария")).not.toBeInTheDocument();});
  it("updates category filtering when URL changes",async()=>{const fetcher=mock();const router=mount("/?service=it");await ready();expect(fetcher.mock.calls.some(([url])=>String(url).includes("service_code=it"))).toBe(true);await act(()=>router.navigate("/?service=mail"));await waitFor(()=>expect(fetcher.mock.calls.some(([url])=>String(url).includes("service_code=mail"))).toBe(true));});
  it("does not bind from incomplete paginated deep-link context",async()=>{const fetcher=mock();fetcher.mockResolvedValue(response({...catalog,total:200}));mount("/?offering=it.printer");expect(await screen.findByText(/Каталог содержит несколько страниц/)).toBeVisible();expect(screen.queryByRole("dialog")).not.toBeInTheDocument();});

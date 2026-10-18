@@ -23,10 +23,10 @@ export function categoryDescendants(data: ScenarioCatalog, id: string): Set<stri
 }
 type Props = {data:ScenarioCatalog;query:string;status:string;category:string|null;canEdit:boolean;
   onQuery:(value:string)=>void;onStatus:(value:string)=>void;onCategory:(id:string|null)=>void;
-  onOpen:(item:ScenarioItem,blockId?:string)=>void;onCreateForOffering:(item:AdminServiceCatalogOffering)=>void;onEditCategory:(id:string)=>void;onPage:(offset:number)=>void;onNewMap?:()=>void;initialOffering?:string;onDirty?:(dirty:boolean)=>void};
+  onOpen:(item:ScenarioItem,blockId?:string)=>void;onCreateForOffering:(item:AdminServiceCatalogOffering)=>void;onEditCategory:(id:string)=>void;onPage:(offset:number)=>void;onNewMap?:()=>void;onNewFromDocument?:()=>void;initialOffering?:string;onDirty?:(dirty:boolean)=>void};
 type Editor={kind:"section";code?:string}|{kind:"category";id?:string;service?:string;parent?:string|null}|{kind:"create"};
 const noDirty=()=>{};
-export function ScenarioCatalogExplorer({data,query,status,category,canEdit,onQuery,onStatus,onCategory,onOpen,onCreateForOffering,onPage,onNewMap,initialOffering,onDirty=noDirty}:Props) {
+export function ScenarioCatalogExplorer({data,query,status,category,canEdit,onQuery,onStatus,onCategory,onOpen,onCreateForOffering,onPage,onNewMap,onNewFromDocument,initialOffering,onDirty=noDirty}:Props) {
   const [collapsed,setCollapsed]=useState<Set<string>>(new Set());
   const [selected,setSelected]=useState<string|null>(initialOffering??null),[editor,setEditor]=useState<Editor|null>(null),[dirty,setDirty]=useState(false),[sort,setSort]=useState("name");
   const [epoch,setEpoch]=useState(0),[busy,setBusy]=useState(false);
@@ -63,7 +63,7 @@ export function ScenarioCatalogExplorer({data,query,status,category,canEdit,onQu
   }
   return <div className="catalog-services" aria-busy={busy}>
     {busy&&<p role="status" className="catalog-field-help">Сохранение настроек…</p>}
-    <div className="catalog-toolbar"><div className="catalog-search"><Search size={18}/><Input aria-label="Поиск услуг" value={query} onChange={event=>guarded(()=>onQuery(event.target.value))} placeholder="Поиск по услугам, описаниям и словам для поиска"/></div><Select aria-label="Статус" value={status} onChange={event=>guarded(()=>onStatus(event.target.value))}><option value="all">Все состояния</option><option value="available">Доступны сотрудникам</option><option value="hidden">Недоступны сотрудникам</option><option value="draft">Есть черновик карты</option><option value="errors">Ошибки черновика карты</option><option value="archived">Есть архив карт</option></Select></div>
+    <div className="catalog-toolbar">{canEdit&&onNewFromDocument&&<Button variant="outline" className="h-auto min-h-11 max-w-full whitespace-normal" disabled={busy} onClick={()=>guarded(onNewFromDocument)}>Создать услугу из JSON/YAML</Button>}<div className="catalog-search"><Search size={18}/><Input aria-label="Поиск услуг" value={query} onChange={event=>guarded(()=>onQuery(event.target.value))} placeholder="Поиск по услугам, описаниям и словам для поиска"/></div><Select aria-label="Статус" value={status} onChange={event=>guarded(()=>onStatus(event.target.value))}><option value="all">Все состояния</option><option value="available">Доступны сотрудникам</option><option value="hidden">Недоступны сотрудникам</option><option value="draft">Есть черновик карты</option><option value="errors">Ошибки черновика карты</option><option value="archived">Есть архив карт</option></Select></div>
     <div ref={grid} className="catalog-services-grid" style={geometry.style}>
       <nav aria-label="Категории услуг" className="catalog-structure"><div className="catalog-panel-heading"><h2>Структура каталога</h2>{canEdit&&<Button variant="outline" size="sm" aria-label="Создать раздел" onClick={()=>edit({kind:"section"})}><Plus size={16}/></Button>}</div>
         <Button className="mb-3 w-full justify-start" variant={!category?"secondary":"ghost"} onClick={()=>guarded(()=>onCategory(null))}>Все услуги</Button>

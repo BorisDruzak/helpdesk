@@ -60,6 +60,17 @@ class ScenarioDocumentInput(StrictModel):
     content: str = Field(max_length=1048576)
 
 
+class ServiceScenarioDocumentPreview(ScenarioDocumentInput):
+    service_code: CatalogCode
+    category_id: Identifier | None = None
+    creation_key: Identifier | None = None
+
+
+class ServiceScenarioDocumentCreate(ServiceScenarioDocumentPreview):
+    creation_key: Identifier
+    source_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+
 class ServiceScenarioCreate(StrictModel):
     definition: dict
 

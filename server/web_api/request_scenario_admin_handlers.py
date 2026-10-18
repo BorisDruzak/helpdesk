@@ -17,7 +17,7 @@ from web_api.dto.request_scenario import CatalogCode, StrictModel
 from web_api.dto.request_scenario_admin import CategoryInput, Identifier, RevisionInput, ScenarioCreate, ScenarioSave, SimulationInput, ScenarioPublish, ScenarioRollback
 from tickets.request_scenario_publication import ScenarioPublicationService
 from tickets.request_studio_publication import RequestStudioConfirmationError
-from web_api.dto.request_scenario_admin import ScenarioDocumentInput, ServiceScenarioCreate, ScenarioConversionInput
+from web_api.dto.request_scenario_admin import ScenarioDocumentInput, ServiceScenarioCreate, ScenarioConversionInput, ServiceScenarioDocumentPreview, ServiceScenarioDocumentCreate
 
 
 class CatalogQuery(StrictModel):
@@ -116,6 +116,20 @@ async def handle_scenario_create(request):
 async def handle_scenario_service_create(request):
     async def operation(repo):
         return await repo.create_service((await _payload(request, ServiceScenarioCreate)).definition)
+    return await _run(request, operation, write=True)
+
+
+@require_auth("admin")
+async def handle_scenario_service_document_preview(request):
+    async def operation(repo):
+        return await repo.preview_service_document(await _payload(request, ServiceScenarioDocumentPreview))
+    return await _run(request, operation)
+
+
+@require_auth("admin")
+async def handle_scenario_service_from_document(request):
+    async def operation(repo):
+        return await repo.create_service_document(await _payload(request, ServiceScenarioDocumentCreate))
     return await _run(request, operation, write=True)
 
 

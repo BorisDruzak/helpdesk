@@ -114,6 +114,18 @@
   existing/archived maps are never overwritten and conversion never publishes.
   `request_scenario_document` validates/export JSON/YAML against the same DTO;
   `scenario-document-panel` applies imports through existing revision/CAS saving.
+  `scenario-service-import-dialog` creates a new service from a portable document
+  without a pre-existing offering. `RequestScenarioRepo.preview_service_document`
+  uses shared read-only binding preparation and graph/resource validation;
+  `create_service_document` repeats validation under the service lock and persists
+  offering/scenario/draft/audit in the canonical transaction. Source identities
+  are replaced only in this new-service flow; all entrance categories follow the
+  explicit destination. A creation key provides retry idempotence and a hash binds
+  the normalized document plus inherited processing configuration. Preview never
+  writes, and creation never publishes or creates queues/policies/calendars.
+  Admin-only POST `/request-studio/services/document-preview` and
+  `/request-studio/services/from-document` extend the existing API; ordinary
+  `/documents/validate?scenario_id=...` retains immutable binding checks.
   Admin routes add POST `/request-studio/services`, `/convert-forms`,
   `/documents/validate`, GET `/scenarios/{id}/document`. Migration 149 permits
   version 1/2 without rewriting rows; downgrade refuses persisted v2 versions.
