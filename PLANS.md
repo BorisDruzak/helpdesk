@@ -1,3 +1,15 @@
+# 2026-10-18 Make pending publication visible
+
+Live user report: the publication panel appeared frozen after confirmation.
+Observed result: version 1 was published successfully and browser errors were
+absent. Pending requests only disabled controls without visible progress text.
+Scope: phase-specific checking/publishing status and button labels; retain all
+confirmation, stale-response, revision, transaction and duplicate-action guards.
+Verify deferred success/error/reset paths and browser layouts at1366/1920.
+No backend optimization without measurements, no automatic retry or extra live
+publication. Deploy the checked candidate to isolated staging; preserve the
+user's published version and leave the authorized service running.
+
 # 2026-10-18 Create a service from a JSON/YAML document
 
 Actor/job: an administrator imports an AI-authored scenario as a new service,
