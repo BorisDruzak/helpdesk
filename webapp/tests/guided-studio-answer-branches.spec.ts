@@ -1,4 +1,4 @@
-import { expect, test } from "playwright/test";
+import { expect, test, type Request } from "playwright/test";
 import { installStudioV3Fixture } from "./fixtures/studio-v3";
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
@@ -40,7 +40,20 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
   });
   test(`build yes and no branches from an empty condition ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);
+    let phase = "initial catalog";
+    const pendingCatalog = new Set<Request>();
+    const networkFailures: { phase: string; url: string; error: string | undefined }[] = [];
+    const isCatalog = (url: string) => new URL(url).pathname === "/api/web/admin/request-studio/catalog";
+    page.on("request", request => { if (isCatalog(request.url())) pendingCatalog.add(request); });
+    page.on("requestfinished", request => pendingCatalog.delete(request));
+    page.on("requestfailed", request => { pendingCatalog.delete(request); networkFailures.push({ phase, url: request.url(), error: request.failure()?.errorText }); });
     const state = await installStudioV3Fixture(page);
+    // Exercise a real asynchronous refresh instead of relying on an immediate
+    // mock response. The saved-mutation/refetch barrier below must finish it.
+    await page.route(/\/request-studio\/catalog\?/, async route => {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await route.fallback();
+    });
     state.definition().blocks = [
       { id: "q1", kind: "form_page", title: "123", fields: [{ key: "working", label: "Работает принтер?", type: "checkbox", required: true }], transitions: [{ to: "logic" }] },
       { id: "logic", kind: "decision", title: "Условие", transitions: [] },
@@ -48,6 +61,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     state.definition().entry_points = [{ key: "main", title: "Проверка принтера", target_block_id: "q1" }];
     await page.goto("/app/admin/request-template-studio");
     await page.getByRole("region", { name: "Каталог услуг", exact: true }).getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true }).click();
+    phase = "open original map";
     await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
     const library = page.getByRole("list", { name: "Блоки сценария", exact: true });
     await library.getByRole("button", { name: "Условие", exact: true }).click();
@@ -69,24 +83,38 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await expect(library.getByRole("button")).toHaveCount(3);
     await page.getByRole("button", { name: "Повторить изменение", exact: true }).click();
     await expect(library.getByRole("button")).toHaveCount(4);
+    phase = "save constructed branches";
+    let finalSaveReceived = false;
+    const savedResponse = page.waitForResponse(response => {
+      const request = response.request();
+      if (request.method() !== "PUT" || !new URL(request.url()).pathname.endsWith("/scenarios/v3/draft") || request.postDataJSON()?.definition?.blocks?.length !== 4) return false;
+      finalSaveReceived = true;
+      return true;
+    });
+    const refreshedCatalog = page.waitForResponse(response => finalSaveReceived && isCatalog(response.url()) && response.request().method() === "GET");
     await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
+    const saved = await savedResponse, refreshed = await refreshedCatalog;
+    expect(saved.status()).toBe(200); expect(refreshed.status()).toBe(200);
+    expect(await saved.finished()).toBeNull(); expect(await refreshed.finished()).toBeNull();
     await expect.poll(() => state.definition().blocks?.length).toBe(4);
-    const saved = structuredClone(state.definition());
-    const decision = saved.blocks!.find(block => block.id === "logic")!;
+    const savedDefinition = structuredClone(state.definition());
+    const decision = savedDefinition.blocks!.find(block => block.id === "logic")!;
     expect(decision.transitions).toHaveLength(2);
     const [yes, no] = decision.transitions!;
     expect(yes.when).toEqual({ source: "answer", field: "working", op: "eq", value: true });
     expect(no.when).toEqual({ source: "answer", field: "working", op: "eq", value: false });
     expect(yes.to).not.toBe(no.to);
-    expect(saved.blocks!.find(block => block.id === yes.to)!.kind).toBe("instruction");
-    expect(saved.blocks!.find(block => block.id === no.to)!.kind).toBe("form_page");
-    expect(saved.blocks!.find(block => block.id === yes.to)!.transitions ?? []).toEqual([]);
-    expect(saved.blocks![0].transitions).toEqual([{ to: "logic" }]);
-    // Save also refreshes the catalog. Let that request finish before the
-    // deliberate full reload so navigation does not abort our own refresh.
-    await page.waitForLoadState("networkidle");
+    expect(savedDefinition.blocks!.find(block => block.id === yes.to)!.kind).toBe("instruction");
+    expect(savedDefinition.blocks!.find(block => block.id === no.to)!.kind).toBe("form_page");
+    expect(savedDefinition.blocks!.find(block => block.id === yes.to)!.transitions ?? []).toEqual([]);
+    expect(savedDefinition.blocks![0].transitions).toEqual([{ to: "logic" }]);
+    await expect.poll(() => pendingCatalog.size).toBe(0);
+    phase = "reload saved draft";
+    const restoredCatalog = page.waitForResponse(response => isCatalog(response.url()) && response.request().method() === "GET");
     await page.reload();
+    expect(await (await restoredCatalog).finished()).toBeNull();
     await page.getByRole("region", { name: "Каталог услуг", exact: true }).getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true }).click();
+    phase = "open restored map";
     await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
     await library.getByRole("button", { name: "Условие", exact: true }).click();
     await expect(branches.getByRole("group", { name: "Ответ «Да»", exact: true }).getByRole("combobox", { name: "Следующий шаг", exact: true })).toHaveValue(yes.to);
@@ -96,9 +124,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await expect(canvas.getByText("Работает принтер? равно «Нет»", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${viewport.width}-answer-branches.png`) });
+    await expect.poll(() => pendingCatalog.size).toBe(0);
     expect(state.writes.length).toBeGreaterThan(0);
     expect(state.writes.every(write => write === "draft")).toBe(true);
-    expect(state.errors).toEqual([]);
+    expect(state.errors, JSON.stringify(networkFailures)).toEqual([]);
     expect(state.unexpected).toEqual([]);
   });
 }
