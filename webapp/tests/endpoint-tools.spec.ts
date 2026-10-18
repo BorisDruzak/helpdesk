@@ -5,7 +5,7 @@ async function login(page:Page) {
  await page.goto("/app/tickets/ticket-1");await expect(page.getByTestId("support-workspace-root")).toBeVisible();
 }
 async function openTools(page:Page) {
- const inspector=page.getByTestId("support-inspector-panel");if(!await inspector.isVisible())await page.getByRole("button",{name:"Inspector",exact:true}).click();
+ const inspector=page.getByTestId("support-inspector-panel");if(!await inspector.isVisible())await page.getByTestId("support-command-strip").getByRole("button",{name:"Контекст",exact:true}).click();await expect(inspector).toBeVisible();
  await page.getByRole("button",{name:"Инструменты",exact:true}).click();await page.getByRole("tab",{name:"Диагностика",exact:true}).click();await expect(page.getByRole("heading",{name:"Инструменты Endpoint"})).toBeVisible();
 }
 for(const width of [390,1366,1920,2582]) {

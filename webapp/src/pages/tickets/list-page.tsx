@@ -1252,7 +1252,7 @@ export function TicketListPage() {
   const [scope, setScope] = useState<SupportQueueScope>("all");
   const [smartView, setSmartView] = useState(() => initialUrlStateRef.current.smartView ?? getInitialWorkspaceSelectedView("my_action"));
   const [activeQueueId, setActiveQueueId] = useState<string | null>(() => getInitialWorkspaceSelectedQueue());
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(params.ticketId ?? null);
+  const selectedTicketId = params.ticketId ?? null;
   const [search, setSearch] = useState(() => initialUrlStateRef.current.search ?? initialUrlStateRef.current.similarGroup ?? "");
   const [composerMode, setComposerMode] = useState<ComposerMode>("public");
   const [composerText, setComposerText] = useState("");
@@ -1261,7 +1261,8 @@ export function TicketListPage() {
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => getInitialTicketsWorkspaceMode(params.ticketId, initialUrlStateRef.current));
+  const [selectedWorkspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => getInitialTicketsWorkspaceMode(params.ticketId, initialUrlStateRef.current));
+  const workspaceMode: WorkspaceMode = selectedTicketId ? selectedWorkspaceMode : "queue";
   const [showClosureRequirements, setShowClosureRequirements] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
@@ -1299,7 +1300,6 @@ export function TicketListPage() {
   const canResizeWorkspace = workspaceViewportWidth >= 1200 && workspaceMode !== "queue";
 
   useEffect(() => {
-    setSelectedTicketId(params.ticketId ?? null);
     setWorkspaceMode(getInitialTicketsWorkspaceMode(params.ticketId, getTicketsWorkspaceUrlState(searchParams)));
     setShowClosureRequirements(false);
   }, [params.ticketId, searchParams]);

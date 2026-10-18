@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { useLayoutEffect } from "react";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import {
   fetchSupportQueue,
@@ -378,7 +379,16 @@ function timelinePayload(overrides: Partial<SupportTicketTimelinePayload> = {}):
   };
 }
 
-function renderTicketListPage(initialEntry = "/app/tickets") {
+type RouteCommit = { path: string; mode: string | undefined; hasTicket: string | undefined };
+function RouteCommitProbe({ onCommit }: { onCommit: (commit: RouteCommit) => void }) {
+  const location = useLocation(), navigate = useNavigate();
+  useLayoutEffect(() => {
+    const workspace = document.querySelector<HTMLElement>('[data-testid="support-workspace-root"]');
+    onCommit({ path: location.pathname, mode: workspace?.dataset.mode, hasTicket: workspace?.dataset.hasTicket });
+  }, [location, onCommit]);
+  return <><output aria-label="Текущий маршрут">{location.pathname}</output><button onClick={() => navigate(-1)}>Test Back</button><button onClick={() => navigate(1)}>Test Forward</button></>;
+}
+function renderTicketListPage(initialEntry = "/app/tickets", onRouteCommit?: (commit: RouteCommit) => void) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -396,6 +406,7 @@ function renderTicketListPage(initialEntry = "/app/tickets") {
           <Route path="/app/tickets/:ticketId" element={<TicketListPage />} />
           <Route path="/app/login" element={<div>Login page</div>} />
         </Routes>
+        {onRouteCommit ? <RouteCommitProbe onCommit={onRouteCommit} /> : null}
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -433,6 +444,27 @@ afterEach(() => {
 });
 
 describe("TicketListPage", () => {
+  it("commits queue mode immediately on Back while the reused ticket workspace has an unfinished request", async () => {
+    const commits: RouteCommit[] = [];
+    let resolveWorkspace!: (payload: SupportTicketWorkspacePayload) => void;
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockImplementation(() => new Promise(resolve => { resolveWorkspace = resolve; }));
+    renderTicketListPage("/app/tickets", commit => commits.push(commit));
+    fireEvent.click(await screen.findByRole("row", { name: /Проверить OLA очередь/ }));
+    await waitFor(() => expect(screen.getByLabelText("Текущий маршрут")).toHaveTextContent("/app/tickets/ticket-1"));
+    await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Test Back" }));
+    await waitFor(() => expect(screen.getByLabelText("Текущий маршрут")).toHaveTextContent(/^\/app\/tickets$/));
+    expect(commits.filter(commit => commit.path === "/app/tickets")).toHaveLength(2);
+    expect(commits.filter(commit => commit.path === "/app/tickets").map(commit => commit.mode)).toEqual(["queue", "queue"]);
+    expect(commits.filter(commit => commit.path === "/app/tickets").map(commit => commit.hasTicket)).toEqual(["false", "false"]);
+    await act(async () => { resolveWorkspace(workspacePayload()); });
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-mode", "queue");
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-has-ticket", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Test Forward" }));
+    expect(await screen.findByTestId("support-reply-composer")).toBeInTheDocument();
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-mode", "ticket");
+  });
   it("keeps the general queue open instead of automatically navigating to a ticket", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
@@ -480,6 +512,11 @@ describe("TicketListPage", () => {
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(root).toHaveAttribute("data-mode", "ticket");
+
+    fireEvent.click(screen.getByRole("button", { name: /Развернуть очередь/i }));
+    fireEvent.click(screen.getByRole("row", { name: /Проверить OLA очередь/ }));
+    expect(root).toHaveAttribute("data-mode", "ticket");
+    expect(screen.getByTestId("support-reply-composer")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Инструменты" }));
     expect(root).toHaveAttribute("data-mode", "tools");

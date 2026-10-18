@@ -274,6 +274,9 @@
 - The active support workspace uses route-based queue/card selection: `/app/tickets`
   opens the full-width queue without automatically selecting a ticket; a ticket URL
   opens the conversation regardless of a previously persisted queue mode.
+  Ticket selection is derived directly from the route; a URL without a ticket ID
+  synchronously renders queue mode, including Back during an unfinished detail
+  request. Late responses cannot restore a stale card on the list URL.
   `url-state.ts` resolves initial queue filters and view state. The workspace grid
   reserves an automatic command row and a bounded, scrollable working row.
 - `features/queues/support-conversation.ts` classifies human chat from trusted
