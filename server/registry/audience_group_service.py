@@ -22,6 +22,8 @@ from app.db.models import (
 )
 from app.repos.registration_repo import normalize_identifier
 from registry.admin_operations_service import RegistryAdminOperationsService
+from registry.organization_trust import organization_value
+from registry.policy_service import RegistryPolicyService
 
 
 ALLOWED_MEMBER_TYPES = {"person", "department", "department_tree", "location", "access_group", "role", "service"}
@@ -254,7 +256,7 @@ class RegistryAudienceService:
         member_id = str(member.get("member_id") or "").strip()
         if member_type == "person":
             person = await self.session.get(RegistryPerson, member_id)
-            if person is None or person.status != "active":
+            if person is None or person.status not in {"active", "self_reported"}:
                 return [], [_warning("unknown_person", "Referenced person was not found or is not active.", member=member)]
             return [person], []
         if member_type in {"department", "department_tree"}:
@@ -266,9 +268,9 @@ class RegistryAudienceService:
             if location.status != "active":
                 return [], [_warning("archived_location", "Referenced location is archived.", member=member)]
             result = await self.session.execute(
-                select(RegistryPerson).where(RegistryPerson.location_id == location.location_id, RegistryPerson.status == "active")
+                select(RegistryPerson).where(RegistryPerson.location_id == location.location_id, RegistryPerson.status.in_(["active", "self_reported"]))
             )
-            return list(result.scalars().all()), []
+            return await self._trusted_organization_members(list(result.scalars().all()), "location_id"), []
         if member_type == "access_group":
             return await self._resolve_access_group_member(member)
         if member_type == "role":
@@ -293,9 +295,14 @@ class RegistryAudienceService:
         if include_tree:
             department_ids.update(await self._department_descendants(department.department_id))
         result = await self.session.execute(
-            select(RegistryPerson).where(RegistryPerson.department_id.in_(sorted(department_ids)), RegistryPerson.status == "active")
+            select(RegistryPerson).where(RegistryPerson.department_id.in_(sorted(department_ids)), RegistryPerson.status.in_(["active", "self_reported"]))
         )
-        return list(result.scalars().all()), []
+        return await self._trusted_organization_members(list(result.scalars().all()), "department_id"), []
+
+    async def _trusted_organization_members(self, people: list[RegistryPerson], key: str) -> list[RegistryPerson]:
+        policy = await RegistryPolicyService(self.session).get_policies()
+        allow_legacy = not policy["organizational_trust"]["strict_legacy_audiences"]
+        return [person for person in people if organization_value(person, key, allow_legacy=allow_legacy)]
 
     async def _department_descendants(self, department_id: str) -> set[str]:
         rows = (
@@ -367,7 +374,7 @@ class RegistryAudienceService:
                 RegistryPersonIdentity.provider == "ui_login",
                 RegistryPersonIdentity.normalized_identifier == normalized,
                 RegistryPersonIdentity.verified.is_(True),
-                RegistryPerson.status == "active",
+                RegistryPerson.status.in_(["active", "self_reported"]),
             )
             .limit(1)
         )

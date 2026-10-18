@@ -36,6 +36,35 @@ const schema: RequesterProfileSchema = {
 };
 
 describe("requester profile runtime", () => {
+  it("accepts the server managed controls in the default schema", () => {
+    expect(validateRequesterProfileSchema({ schema_key: "requester_profile", fields: [
+      { key: "department_id", label: "Подразделение", type: "department_picker", system: true },
+      { key: "location_id", label: "Локация", type: "location_picker", system: true },
+      { key: "login_identity", label: "Логин", type: "identity", editable: false, system: true },
+      { key: "active_device_links", label: "Устройства", type: "device_links", editable: false, system: true },
+    ] }).canPublish).toBe(true);
+  });
+
+  it("treats explicit false as a completed boolean answer and preserves numeric payloads", () => {
+    const fields = [
+      { key: "confirmed", label: "Ответ", type: "checkbox", custom: true, required: true },
+      { key: "amount", label: "Число", type: "number", custom: true },
+    ];
+    const values = buildProfileValues({ person_id: "p", custom_fields: { confirmed: false, amount: 12.5 } });
+    expect(missingProfileFields({ schema_key: "requester_profile", fields, required_fields: [{ key: "confirmed", label: "Ответ" }] }, values)).toEqual([]);
+    expect(buildProfilePayload(values, null, fields).custom_fields).toEqual({ confirmed: false, amount: 12.5 });
+  });
+
+  it("rejects duplicate option values locally", () => {
+    expect(validateRequesterProfileSchema({ schema_key: "requester_profile", fields: [{ key: "choice", label: "Выбор", type: "select", options: ["a", "a"] }] }).canPublish).toBe(false);
+  });
+
+  it("keeps a retired select value visible until explicitly corrected", () => {
+    render(<RequesterProfileFieldControl field={{ key: "choice", label: "Выбор", type: "select", options: ["new"] }} value="retired" onChange={() => {}} />);
+    expect(screen.getByLabelText("Выбор")).toHaveValue("retired");
+    expect(screen.getByRole("option", { name: /retired.*требует исправления/ })).toBeInTheDocument();
+  });
+
   it("renders every requester profile field type through one registry", () => {
     for (const type of ALL_REQUESTER_PROFILE_FIELD_TYPES) {
       render(

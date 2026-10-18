@@ -646,6 +646,9 @@ class RegistryAdminOperationsService:
         )
         self.session.add(row)
         await self.append_event(object_type="department", object_id=row.department_id, event_type="department_created", actor_id=actor_id, reason=reason)
+        if "manager_person_id" in data:
+            from registry.organization_trust import confirm_fields
+            confirm_fields(row, ["manager_person_id"], actor_id=actor_id or "admin")
         await self.session.flush()
         return {"department": self._department_payload(row)}
 
@@ -670,6 +673,9 @@ class RegistryAdminOperationsService:
             if key in data:
                 metadata[key] = _text(data.get(key), max_length=limit)
         row.metadata_json = metadata
+        if "manager_person_id" in data:
+            from registry.organization_trust import confirm_fields
+            confirm_fields(row, ["manager_person_id"], actor_id=actor_id or "admin")
         row.updated_at = _now()
         await self.append_event(
             object_type="department",
@@ -814,11 +820,25 @@ class RegistryAdminOperationsService:
 
     async def preview_policies(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         config = data.get("policies") if isinstance(data.get("policies"), dict) else data
-        return build_registry_policy_response(config, dry_run=True)
+        current = await RegistryPolicyService(self.session).get_policies()
+        if not isinstance(config.get("organizational_trust", {}), dict):
+            raise ValueError("organizational_trust must be an object")
+        config = {**config, "organizational_trust": {**current["organizational_trust"], **config.get("organizational_trust", {})}}
+        from registry.organization_service import organization_trust_impact
+        return {**build_registry_policy_response(config, dry_run=True), "organization_trust_impact": await organization_trust_impact(self.session)}
 
     async def update_policies(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         reason = _require_reason(data.get("reason"))
         config = data.get("policies") if isinstance(data.get("policies"), dict) else data
+        current = await RegistryPolicyService(self.session).get_policies()
+        if not isinstance(config.get("organizational_trust", {}), dict):
+            raise ValueError("organizational_trust must be an object")
+        strict = (config.get("organizational_trust") or {}).get("strict_legacy_audiences")
+        if strict is True and not current["organizational_trust"]["strict_legacy_audiences"]:
+            from registry.organization_service import organization_trust_impact
+            impact = await organization_trust_impact(self.session)
+            if data.get("confirm_strict_legacy_audiences") is not True or data.get("organization_impact_counts") != impact["counts"]:
+                raise ValueError("Включение строгого режима требует отдельного подтверждения и актуальных organization_impact_counts из предпросмотра влияния.")
         effective = await RegistryPolicyService(self.session).update_policies(config, actor_id=actor_id)
         response = build_registry_policy_response(effective)
         await self.append_event(

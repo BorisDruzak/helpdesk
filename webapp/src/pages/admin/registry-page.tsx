@@ -127,7 +127,10 @@ function registryActionErrorMessage(error: unknown, fallback: string): string {
 export function AdminRegistryPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<RegistryTabKey>("overview");
+  const [tab, setTab] = useState<RegistryTabKey>(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    return tabs.find(item => item.key === requested)?.key ?? "overview";
+  });
   const [selection, setSelection] = useState<RegistrySelection>(null);
   const [bindDialog, setBindDialog] = useState<BindPersonDialogState>(null);
   const [transferDialog, setTransferDialog] = useState<{ deviceId: string; hostname?: string | null } | null>(null);

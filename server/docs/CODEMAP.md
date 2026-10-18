@@ -1,5 +1,28 @@
 # Helpdesk server code map
 
+## Registry readiness and assigned approval
+
+- `registry/profile_schema_service.py` and `profile_values.py` validate the
+  existing employee profile contract, protect used schema values, and report
+  legacy correction needs without rewriting stored data.
+- `registry/organization_trust.py` owns versioned per-field provenance in Registry
+  metadata. `organization_service.py` reviews exact pending proposals through the
+  existing admin person PATCH/audit. Effective identity and audience services keep
+  legacy access compatible while excluding newly self-declared organizational
+  access. Strict legacy audience enforcement requires a separate impact preview
+  and explicit activation through Registry policies.
+- `registry/manager_resolution.py` resolves confirmed personal/department manager
+  links and unique active UI accounts. `approvals/service.py` projects own pending
+  assignments for `GET /api/web/requester/approvals`; the existing support decision
+  handler accepts an ordinary actor only under `approval.decide.assigned` and an
+  exact assignment. Queue/detail/status permissions are independent.
+- `registry/scenario_readiness_service.py` powers the admin-only GET
+  `/api/web/admin/registry/scenario-readiness`, a PostgreSQL read-only scan reusing
+  Registry quality issue keys/exceptions, Policy Health, and published-map
+  validation. Only this explicit scan removes ordinary snapshot display limits.
+  The quality tab groups concrete function impacts and downloads aggregates only.
+  See `docs/REGISTRY_READY_001.md` for transition and verification boundaries.
+
 ## Endpoint module discovery and inputs
 
 - `domain_ports/endpoint_modules.py` declares read-only primitive/published-module
@@ -129,10 +152,15 @@
   queues/calendars without saving or publishing. `service_catalog_search` ranks
   only the authorized published catalog exposed by `/api/service-catalog/current?q=`;
   requester catalog search opens a selected offering/entry without authority input.
-  `approval_policy` resolves a missing requester-manager snapshot through trusted
-  Registry/UI identity; policy health and actual creation share canonical approver
-  fallback resolution. Requester preview supplies authenticated requester context,
-  never manager authority from form answers. The generated machine contract lives
+  `approval_policy` resolves requester managers through confirmed field provenance
+  in `registry/organization_trust.py` and `registry/manager_resolution.py`, including
+  an explicitly enabled department fallback and the policy's configured fallback.
+  Submitted requester metadata cannot appoint an approver. Existing assigned
+  decisions use the same TicketApproval/history; `approval.decide.assigned` allows
+  only the assigned actor to read a minimal projection and decide. It is not a user
+  role default. `GET /api/web/requester/approvals` and the requester approvals page
+  expose that projection; the existing support decision handler verifies the exact
+  assignment without granting ticket/queue/status access. The generated machine contract lives
   at `docs/contracts/request-scenario.schema.json`; regenerate/check it with
   `scripts/export_request_scenario_schema.py` after DTO changes.
   Catalog metadata uses the immutable version referenced by the active pointer

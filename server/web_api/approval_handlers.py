@@ -4,6 +4,7 @@ from aiohttp import web
 from loguru import logger
 
 from approvals.service import ApprovalConsentCenterService, ApprovalConsentQuery
+from approvals.service import assigned_actor_allowed, assigned_ticket_approvals
 from app.db import get_session
 from auth.middleware import require_auth
 from web_api.dto.approvals import ApprovalConsentCenterPayload
@@ -22,6 +23,15 @@ def _optional_int_query(value: str | None, *, minimum: int, maximum: int) -> int
     if value is None or str(value).strip() == "":
         return None
     return _int_query(value, default=minimum, minimum=minimum, maximum=maximum)
+
+
+@require_auth("admin", "support", "auditor", "user")
+async def handle_web_requester_approvals(request: web.Request) -> web.Response:
+    async with get_session() as session:
+        if not await assigned_actor_allowed(session, request["auth_context"]):
+            return web.json_response({"status": "error", "error": "Право согласования назначенных обращений не предоставлено либо профиль недоступен.", "error_code": "FORBIDDEN"}, status=403)
+        payload = await assigned_ticket_approvals(session, request["auth_context"])
+    return web.json_response({"status": "success", "data": payload})
 
 
 @require_auth("admin", "support")

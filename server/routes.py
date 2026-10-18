@@ -98,7 +98,7 @@ from web_api.change_handlers import (
     handle_web_changes_create,
     handle_web_changes_list,
 )
-from web_api.approval_handlers import handle_web_support_approvals
+from web_api.approval_handlers import handle_web_requester_approvals, handle_web_support_approvals
 from customer_history.handlers import (
     handle_web_admin_history_search,
     handle_web_requester_history,
@@ -448,6 +448,7 @@ from web_api.registry_handlers import (
     handle_web_admin_registry_registrations,
     handle_web_admin_registry_timeline,
     handle_web_admin_registry,
+    handle_web_admin_registry_scenario_readiness,
 )
 from web_api.reports_handlers import handle_web_reports_summary
 from web_api.settings_handlers import handle_web_settings_payload, handle_web_settings_workflow_profiles_put
@@ -578,6 +579,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/support/bootstrap', handle_web_support_bootstrap),
         web.get('/api/web/support/command-center', handle_web_support_command_center),
         web.get('/api/web/support/approvals', handle_web_support_approvals),
+        web.get('/api/web/requester/approvals', handle_web_requester_approvals),
         web.get('/api/web/support/workspace/summary', handle_web_support_workspace_summary),
         web.post('/api/web/support/workspace/cleanup-noise', handle_web_support_cleanup_noise),
         web.get('/api/web/support/queue', handle_web_support_queue),
@@ -696,6 +698,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/endpoint/devices/{device_id}/context/history', handle_admin_endpoint_history),
         web.get('/api/web/admin/endpoint/devices/{device_id}/context/compare', handle_admin_endpoint_compare),
         web.get('/api/web/admin/registry', handle_web_admin_registry),
+        web.get('/api/web/admin/registry/scenario-readiness', handle_web_admin_registry_scenario_readiness),
         web.get('/api/web/admin/registry/profile-schema', handle_web_admin_registry_profile_schema),
         web.put('/api/web/admin/registry/profile-schema', handle_web_admin_registry_profile_schema),
         web.post('/api/web/admin/registry/profile-schema/preview', handle_web_admin_registry_profile_schema_preview),

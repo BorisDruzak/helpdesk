@@ -10,13 +10,14 @@ it("requires confirmation and preserves unfamiliar source configuration in a new
   const onChange = vi.fn();
   render(<QueryClientProvider client={new QueryClient()}><ScenarioApprovals definition={{ scenario_key: "s", title: "S", service_code: "it", offering_full_code: "it.print", process_binding: { request_template_key: "t", policy_refs: { approval: "manager" } } }} disabled={false} onChange={onChange} /></QueryClientProvider>);
   fireEvent.click(await screen.findByRole("button", { name: "Новая версия схемы" }));
+  fireEvent.click(screen.getByLabelText("Разрешить подтверждённого руководителя подразделения, если персональный не указан"));
   fireEvent.change(screen.getByLabelText("Режим согласования"), { target: { value: "sequential" } });
   fireEvent.click(screen.getByRole("button", { name: "Опубликовать схему" }));
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "Подтвердить публикацию схемы" }));
   await screen.findByRole("button", { name: "Создать схему согласования" });
   const call = fetcher.mock.calls.find(([, init]) => init?.method === "POST");
-  expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ scope_level: "service", scope_ref: "it", config: { approval_mode: "sequential", custom: { preserved: true }, timeout: { reminder_after: "4h" }, approver_source: { fallback: "queue_lead" } } });
+  expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ scope_level: "service", scope_ref: "it", config: { approval_mode: "sequential", custom: { preserved: true }, timeout: { reminder_after: "4h" }, approver_source: { fallback: "queue_lead", allow_department_fallback: true } } });
 });
 
 it("publishes authoritative account logins selected by human-readable names", async () => {

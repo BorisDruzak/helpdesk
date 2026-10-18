@@ -30,6 +30,7 @@ DEFAULT_REGISTRY_POLICIES: dict[str, dict[str, Any]] = {
     "diagnostic_target": {
         "allow_single_active_binding_fallback": False,
     },
+    "organizational_trust": {"strict_legacy_audiences": False},
 }
 
 REGISTRY_POLICY_VALIDATION: dict[str, dict[str, Any]] = {
@@ -82,6 +83,8 @@ def _validate_mode(value: Any, *, field: str) -> str:
 
 
 def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
+    if "organizational_trust" in value and not isinstance(value["organizational_trust"], dict):
+        raise ValueError("organizational_trust must be an object")
     merged = _deep_merge_defaults(value)
     registration = merged["registration"]
     ticket_visibility = merged["ticket_visibility"]
@@ -121,6 +124,9 @@ def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
     diagnostic_target["allow_single_active_binding_fallback"] = _validate_bool(
         diagnostic_target.get("allow_single_active_binding_fallback"),
         field="diagnostic_target.allow_single_active_binding_fallback",
+    )
+    merged["organizational_trust"]["strict_legacy_audiences"] = _validate_bool(
+        merged["organizational_trust"].get("strict_legacy_audiences"), field="organizational_trust.strict_legacy_audiences",
     )
     return merged
 
@@ -173,8 +179,11 @@ class RegistryPolicyService:
         return validate_registry_policies(row.config_json if row else {})
 
     async def update_policies(self, value: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
-        config = validate_registry_policies(value)
         row = await self.session.get(RegistryAdminPolicy, REGISTRY_POLICY_KEY)
+        raw = dict(value)
+        if row is not None and isinstance(row.config_json, dict) and isinstance(raw.get("organizational_trust", {}), dict):
+            raw["organizational_trust"] = {**(row.config_json.get("organizational_trust") or {}), **raw.get("organizational_trust", {})}
+        config = validate_registry_policies(raw)
         now = datetime.now(timezone.utc)
         if row is None:
             row = RegistryAdminPolicy(
@@ -192,4 +201,4 @@ class RegistryPolicyService:
         return config
 
     async def reset_to_defaults(self, *, actor_id: str | None = None) -> dict[str, Any]:
-        return await self.update_policies({}, actor_id=actor_id)
+        return await self.update_policies({"organizational_trust": {"strict_legacy_audiences": False}}, actor_id=actor_id)

@@ -216,6 +216,15 @@ export function RequesterProfilePage() {
       </header>
 
       <ProfileCompletionAlert completion={completion} />
+      {Object.values(profile?.organization_status ?? {}).some(field => field.pending_value) ? (
+        <InlineAlert role="status" tone="warning">Изменение подразделения или локации ожидает проверки организацией. До подтверждения используются прежние сведения. Создание обычного обращения остаётся доступным.</InlineAlert>
+      ) : null}
+      {profile?.value_issues?.length ? (
+        <InlineAlert role="status" tone="warning">
+          <p>Сохранённые значения требуют исправления. Остальные сведения профиля сохранены.</p>
+          {profile.value_issues.map((issue) => <p key={issue.key}>{issue.label}: {issue.message}</p>)}
+        </InlineAlert>
+      ) : null}
 
       {notice ? (
         <InlineAlert aria-live="polite" role="status" tone="success">

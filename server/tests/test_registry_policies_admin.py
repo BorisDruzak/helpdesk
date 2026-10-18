@@ -15,6 +15,22 @@ pytestmark = pytest.mark.db_cleanup("registry_access")
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 
+@pytest.mark.asyncio
+async def test_strict_organization_mode_requires_explicit_current_impact_acknowledgement(test_client):
+    policies = {"organizational_trust": {"strict_legacy_audiences": True}}
+    preview = await test_client.post("/api/web/admin/registry/policies/preview", headers=ADMIN_HEADERS, json={"policies": policies})
+    assert preview.status == 200, await preview.text()
+    impact = (await preview.json())["data"]["organization_trust_impact"]
+    for extra in ({}, {"confirm_strict_legacy_audiences": True, "organization_impact_counts": {"stale": 999}}):
+        denied = await test_client.patch("/api/web/admin/registry/policies", headers=ADMIN_HEADERS, json={"policies": policies, "reason": "Synthetic strict transition", **extra})
+        assert denied.status == 400, await denied.text()
+    saved = await test_client.patch("/api/web/admin/registry/policies", headers=ADMIN_HEADERS, json={"policies": policies, "reason": "Synthetic explicit strict transition", "confirm_strict_legacy_audiences": True, "organization_impact_counts": impact["counts"]})
+    assert saved.status == 200, await saved.text()
+    other = await test_client.patch("/api/web/admin/registry/policies", headers=ADMIN_HEADERS, json={"policies": {"registration": {"stale_after_days": 30}}, "reason": "Unrelated synthetic setting"})
+    assert other.status == 200, await other.text()
+    assert (await other.json())["data"]["effective"]["organizational_trust"]["strict_legacy_audiences"] is True
+
+
 def _device(device_id: str) -> Device:
     now = datetime.now(timezone.utc)
     return Device(

@@ -22,6 +22,7 @@ export const ALL_REQUESTER_PROFILE_FIELD_TYPES = [
 ] as const;
 
 const SUPPORTED_PROFILE_FIELD_TYPES = new Set<string>(ALL_REQUESTER_PROFILE_FIELD_TYPES);
+const MANAGED_PROFILE_FIELD_TYPES = new Set(["department_picker", "location_picker", "identity", "device_links"]);
 
 const EDITABLE_BUILT_IN_FIELDS = new Set([
   "full_name",
@@ -93,7 +94,7 @@ function isEditable(field: RequesterProfileSchemaField): boolean {
 
 function isValuePresent(field: RequesterProfileSchemaField | { type?: string }, value: RequesterProfileValue): boolean {
   if (field.type === "checkbox") {
-    return value === true;
+    return typeof value === "boolean";
   }
   return trimText(value).length > 0;
 }
@@ -212,7 +213,8 @@ export function buildProfilePayload(
       continue;
     }
     const rawValue = values.custom_fields[field.key];
-    customFields[field.key] = field.type === "checkbox" ? rawValue === true : trimText(rawValue);
+    customFields[field.key] = field.type === "checkbox" ? (typeof rawValue === "boolean" ? rawValue : rawValue ?? null)
+      : field.type === "number" && typeof rawValue === "number" ? rawValue : trimText(rawValue);
   }
   if (Object.keys(customFields).length) {
     payload.custom_fields = customFields;
@@ -235,7 +237,7 @@ export function validateRequesterProfileSchema(schema: RequesterProfileSchema): 
     if (!trimText(field.label)) {
       issues.push({ code: "empty_profile_field_label", message: "Название поля обязательно.", path });
     }
-    if (!SUPPORTED_PROFILE_FIELD_TYPES.has(field.type)) {
+    if (!SUPPORTED_PROFILE_FIELD_TYPES.has(field.type) && !(field.system && MANAGED_PROFILE_FIELD_TYPES.has(field.type))) {
       issues.push({ code: "unsupported_profile_field_type", message: "Тип поля не поддерживается профилем заявителя.", path });
     }
     if (field.required && field.visible === false) {
@@ -243,6 +245,12 @@ export function validateRequesterProfileSchema(schema: RequesterProfileSchema): 
     }
     if (field.type === "select" && !(field.options ?? []).length) {
       issues.push({ code: "empty_profile_select_options", message: "Для списка нужны варианты выбора.", path });
+    }
+    if (field.type === "select") {
+      const options = (field.options ?? []).map(normalizeProfileOption);
+      if (options.some((option) => !option.value.trim() || !option.label.trim()) || new Set(options.map((option) => option.value.trim())).size !== options.length) {
+        issues.push({ code: "invalid_profile_select_options", message: "Названия и уникальные значения вариантов обязательны.", path });
+      }
     }
     if (field.system && field.can_hide === false && field.visible === false) {
       issues.push({ code: "protected_profile_field_hidden", message: "Защищенное системное поле нельзя скрыть.", path });
@@ -331,6 +339,8 @@ export function RequesterProfileFieldControl({
           value={String(value ?? "")}
         >
           <option value="">Выберите...</option>
+          {value != null && value !== "" && !(field.options ?? []).map(normalizeProfileOption).some((option) => option.value === value)
+            ? <option value={String(value)}>{String(value)} — требует исправления</option> : null}
           {(field.options ?? []).map((option) => {
             const normalized = normalizeProfileOption(option);
             return (
@@ -392,7 +402,7 @@ export function RequesterProfileFieldControl({
 
 export function formatProfileValue(field: RequesterProfileSchemaField, value: RequesterProfileValue): string {
   if (field.type === "checkbox") {
-    return value === true ? "Да" : "Нет";
+    return typeof value === "boolean" ? (value ? "Да" : "Нет") : trimText(value) ? `${trimText(value)} — требует исправления` : "Не указано";
   }
   if (field.type === "select") {
     const selected = (field.options ?? []).map(normalizeProfileOption).find((option) => option.value === value);

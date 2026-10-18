@@ -241,14 +241,16 @@ async def test_requester_manager_uses_trusted_registry_and_rejects_ambiguous_ide
     from sqlalchemy.ext.asyncio import AsyncSession
     from tickets.approval_policy import _resolve_approval_source
     from requester.identity_service import RequesterIdentityResolver
-    from app.repos.ui_users_repo import UiUsersRepo
-    monkeypatch.setattr(UiUsersRepo, "get_by_login", AsyncMock(return_value=SimpleNamespace(user_login="manager-login", actor_role="admin", is_active=True)))
-    import access_control.service as access
+    from app.db.models import UiUser
+    from registry.organization_trust import confirm_fields
+    import registry.manager_resolution as access
     monkeypatch.setattr(access, "can", AsyncMock(return_value=True))
-    resolver = AsyncMock(return_value=SimpleNamespace(person_id="employee", metadata_json={"manager_person_id": "manager"}))
+    employee = SimpleNamespace(person_id="employee", department_id=None, metadata_json={"manager_person_id": "manager"})
+    confirm_fields(employee, ["manager_person_id"], actor_id="admin")
+    resolver = AsyncMock(return_value=employee)
     monkeypatch.setattr(RequesterIdentityResolver, "resolve_person_for_web_user", resolver)
     session = AsyncMock(spec=AsyncSession)
-    session.get.return_value = SimpleNamespace(person_id="manager", status="active")
+    session.get.side_effect = lambda model, key: SimpleNamespace(user_login="manager-login", actor_role="admin", is_active=True) if model is UiUser else SimpleNamespace(person_id="manager", status="active")
     session.scalars.return_value = SimpleNamespace(all=lambda: identities)
     source, values = await _resolve_approval_source(session, SimpleNamespace(requester_id="trusted-actor", custom_fields={
         "request_form_data": {"manager_id": "forged-manager", "requester_id": "forged-actor"}}), {"type": "requester_manager"})
@@ -268,15 +270,17 @@ async def test_registry_manager_without_canonical_decision_access_is_unavailable
     from sqlalchemy.ext.asyncio import AsyncSession
     from tickets.approval_policy import _resolve_approval_source
     from requester.identity_service import RequesterIdentityResolver
-    from app.repos.ui_users_repo import UiUsersRepo
+    from app.db.models import UiUser
+    from registry.organization_trust import confirm_fields
     from app.repos.ticket_events_repo import TicketEventsRepo
-    import access_control.service as access
-    monkeypatch.setattr(RequesterIdentityResolver, "resolve_person_for_web_user", AsyncMock(return_value=SimpleNamespace(metadata_json={"manager_person_id": "manager"})))
-    monkeypatch.setattr(UiUsersRepo, "get_by_login", AsyncMock(return_value=account))
-    monkeypatch.setattr(access, "can", AsyncMock(return_value=permission))
+    import registry.manager_resolution as access
+    employee = SimpleNamespace(department_id=None, metadata_json={"manager_person_id": "manager"})
+    confirm_fields(employee, ["manager_person_id"], actor_id="admin")
+    monkeypatch.setattr(RequesterIdentityResolver, "resolve_person_for_web_user", AsyncMock(return_value=employee))
+    monkeypatch.setattr(access, "can", AsyncMock(side_effect=lambda session, actor, code: permission and code == "ticket.status.change"))
     monkeypatch.setattr(TicketEventsRepo, "is_actor_in_queue", AsyncMock(return_value=queue_allowed))
     session = AsyncMock(spec=AsyncSession)
-    session.get.return_value = SimpleNamespace(person_id="manager", status="active")
+    session.get.side_effect = lambda model, key: account if model is UiUser else SimpleNamespace(person_id="manager", status="active")
     session.scalars.return_value = SimpleNamespace(all=lambda: ["manager-login"])
     _, values = await _resolve_approval_source(session, SimpleNamespace(requester_id="employee", custom_fields={}, queue_id=7, assignee_id=None), {"type": "requester_manager"})
     assert values == []

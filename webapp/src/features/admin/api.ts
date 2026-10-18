@@ -91,6 +91,7 @@ export type AdminRegistryPayload = {
     workplace_label?: string | null;
     internal_extension?: string | null;
     manager_person_id?: string | null;
+    organization_trust?: Record<string, { state: string; value?: string | null; pending?: { proposal_id: string; value: string; base_value?: string | null } }>;
     manager_name?: string | null;
     production_context?: {
       position?: string | null;
@@ -187,6 +188,13 @@ export type AdminRegistryPayload = {
     updated_at: string | null;
   }>;
   data_quality: Array<{
+    scenario_readiness?: boolean;
+    impact?: "blocks_function" | "attention" | "information";
+    dimension?: string;
+    affected_function?: string;
+    remediation?: string;
+    fix_href?: string;
+    related_people?: Array<{ person_id: string; label: string; reason: string }>;
     issue_key: string;
     issue_state?: string | null;
     issue_state_reason?: string | null;
@@ -762,6 +770,8 @@ export async function createAdminRegistryPerson(payload: {
 }
 
 export async function updateAdminRegistryPerson(personId: string, payload: {
+  organization_review?: { field: string; proposal_id: string; decision: "approve" | "reject" };
+  reason?: string;
   full_name?: string | null;
   display_name?: string | null;
   email?: string | null;
@@ -781,6 +791,18 @@ export async function updateAdminRegistryPerson(personId: string, payload: {
     body: JSON.stringify(payload),
   });
   await readSuccessResponse(response, "Не удалось обновить пользователя");
+}
+
+export type AdminRegistryReadiness = {
+  read_only: boolean; issues: AdminRegistryPayload["data_quality"];
+  counts: Record<"blocks_function" | "attention" | "information", number>;
+  dimensions: Array<{ key: string; label: string; counts: Record<"blocks_function" | "attention" | "information", number> }>;
+  export: Record<string, unknown>;
+  organization_trust_impact?: { counts: { legacy_people: number; self_reported_people: number; pending_people: number }; message: string };
+};
+
+export async function fetchAdminRegistryScenarioReadiness(): Promise<AdminRegistryReadiness> {
+  return readSuccessResponse(await fetch("/api/web/admin/registry/scenario-readiness", { credentials: "same-origin", cache: "no-store" }), "Не удалось завершить проверку готовности");
 }
 
 export async function archiveAdminRegistryPerson(personId: string, reason: string): Promise<void> {

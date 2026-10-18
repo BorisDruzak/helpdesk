@@ -184,6 +184,11 @@ export const appNavigation: AppNavItem[] = [
     order: 30,
   },
   {
+    label: "Мои согласования", description: "Обращения, ожидающие вашего решения", icon: ClipboardCheck,
+    section: "requester", workspace: "requester", domainId: "requester-primary", to: "/app/requester/approvals",
+    permission: "approval.decide.assigned", order: 35,
+  },
+  {
     label: "Устройства",
     description: "Привязанные компьютеры и подключение по коду",
     icon: MonitorCog,

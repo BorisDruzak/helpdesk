@@ -31,6 +31,7 @@ import {
   RequesterHomePage,
   RequesterNewRequestPage,
   RequesterProfilePage,
+  RequesterApprovalsPage,
   RequesterTicketPage,
   RequesterTicketsPage,
   RequesterTicketChatPage,
@@ -277,6 +278,10 @@ export const appRoutes: RouteObject[] = [
                 <RequesterTicketChatPage />
               </WorkspaceAccessGate>
             )
+          },
+          {
+            path: "requester/approvals",
+            element: <WorkspaceAccessGate workspace="requester"><RequesterApprovalsPage /></WorkspaceAccessGate>,
           },
           {
             path: "requester/profile",

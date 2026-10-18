@@ -49,6 +49,82 @@ pytestmark = pytest.mark.db_cleanup("web_support")
 
 
 @pytest.mark.asyncio
+async def test_organization_change_requires_review_and_does_not_expand_audience(test_client, test_engine):
+    from registry.effective_identity_service import EffectiveIdentityService
+    from registry.organization_trust import confirm_fields, field_trust
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "organization-proposal@example.test"
+    async with session_maker() as session:
+        person = await _person_for_login(session, login=login)
+        original = person.department_id
+        alternative = RegistryDepartment(department_id=str(uuid.uuid4()), code="new-org", name="New organization", status="active", source="test", metadata_json={})
+        session.add(alternative)
+        confirm_fields(person, ["department_id", "location_id"], actor_id="admin")
+        person_id, location_id = person.person_id, person.location_id
+        await session.commit()
+    response = await test_client.put("/api/web/requester/profile", headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"), json={
+        "full_name": "Synthetic Employee", "department_id": alternative.department_id, "location_id": location_id, "phone": "123",
+    })
+    assert response.status == 200, await response.text()
+    body = (await response.json())["data"]
+    assert body["profile"]["department_id"] == original
+    assert body["profile"]["organization_status"]["department_id"]["pending_value"] == alternative.department_id
+    assert body["profile_completion"]["complete"] is True
+    async with session_maker() as session:
+        person = await session.get(RegistryPerson, person_id)
+        pending = field_trust(person, "department_id")["pending"]
+        identity = await EffectiveIdentityService(session).resolve_actor_identity(login, "user")
+        assert identity.person["department_id"] == original
+    review = {"organization_review": {"field": "department_id", "proposal_id": pending["proposal_id"], "decision": "approve"}, "reason": "Confirm synthetic move"}
+    forbidden = await test_client.patch(f"/api/web/admin/registry/people/{person_id}", headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"), json=review)
+    assert forbidden.status == 403
+    approved = await test_client.patch(f"/api/web/admin/registry/people/{person_id}", headers=_admin_headers(), json=review)
+    assert approved.status == 200, await approved.text()
+    async with session_maker() as session:
+        person = await session.get(RegistryPerson, person_id)
+        assert person.department_id == alternative.department_id
+        assert field_trust(person, "department_id")["state"] == "confirmed"
+        assert await session.scalar(select(func.count()).select_from(RegistryAdminEvent).where(RegistryAdminEvent.event_type == "organization_proposal_approved")) == 1
+
+
+@pytest.mark.asyncio
+async def test_profile_schema_roundtrip_and_used_option_protection(test_client, test_engine):
+    from registry.profile_schema_service import RequesterProfileSchemaService
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    initial = await test_client.get("/api/web/admin/registry/profile-schema", headers=_admin_headers())
+    fields = (await initial.json())["data"]["schema"]["fields"]
+    payload = {"fields": fields}
+    preview = await test_client.post("/api/web/admin/registry/profile-schema/preview", headers=_admin_headers(), json=payload)
+    assert preview.status == 200, await preview.text()
+    saved = await test_client.put("/api/web/admin/registry/profile-schema", headers=_admin_headers(), json=payload)
+    assert saved.status == 200, await saved.text()
+    reread = await test_client.get("/api/web/admin/registry/profile-schema", headers=_admin_headers())
+    assert next(f for f in (await reread.json())["data"]["schema"]["fields"] if f["key"] == "preferred_contact_method")["options"][1]["value"] == "chat"
+    custom = {"key": "choice", "label": "Выбор", "type": "select", "options": ["old", "new"],
+              "storage_target": "registry_people.metadata_json.profile_custom_fields.choice"}
+    async with session_maker() as session:
+        service = RequesterProfileSchemaService(session)
+        await service.save_schema({"custom_fields": [custom]}, actor_id="test-admin")
+        person = await _person_for_login(session, login="schema-preserve@example.test")
+        person.metadata_json = {**(person.metadata_json or {}), "position": "Keep hidden position", "profile_custom_fields": {"choice": "old"}}
+        person_id, department_id, location_id = person.person_id, person.department_id, person.location_id
+        await session.commit()
+    for candidate in ({"custom_fields": [{**custom, "options": ["new"]}]}, {"custom_fields": []}):
+        for method, route in (("post", "/api/web/admin/registry/profile-schema/preview"), ("put", "/api/web/admin/registry/profile-schema")):
+            response = await getattr(test_client, method)(route, headers=_admin_headers(), json=candidate)
+            assert response.status == 400, await response.text()
+            assert "choice" in str((await response.json())["details"])
+    hidden = await test_client.put("/api/web/admin/registry/profile-schema", headers=_admin_headers(), json={"custom_fields": [custom], "field_overrides": {"position": {"visible": False}}})
+    assert hidden.status == 200, await hidden.text()
+    edited = await test_client.put("/api/web/requester/profile", headers=_headers(f"{TEST_UI_USER_PREFIX}schema-preserve@example.test"), json={"full_name": "Synthetic profile", "department_id": department_id, "location_id": location_id, "phone": "123", "position": "Must not overwrite hidden value"})
+    assert edited.status == 200, await edited.text()
+    async with session_maker() as session:
+        person = await session.get(RegistryPerson, person_id)
+        assert person.metadata_json["profile_custom_fields"] == {"choice": "old"}
+        assert person.metadata_json["position"] == "Keep hidden position"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("route", ["/api/web/requester/tickets", "/api/tickets/create"])
 @pytest.mark.parametrize("stage", ["routing", "sla", "ola"])
 async def test_ticket_create_initialization_failure_rolls_back_ticket_and_events(

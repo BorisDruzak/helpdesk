@@ -498,6 +498,11 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await page.getByRole("button", { name: "Согласования", exact: true }).click();
     await page.getByRole("button", { name: "Создать схему согласования", exact: true }).click();
     await page.getByLabel("Название", { exact: true }).fill("Руководитель отдела");
+    const departmentFallback = page.getByLabel("Разрешить подтверждённого руководителя подразделения, если персональный не указан", { exact: true });
+    await expect(departmentFallback).not.toBeChecked();
+    await departmentFallback.check();
+    await expect(departmentFallback).toBeChecked();
+    await page.screenshot({ path: info.outputPath(`manager-department-fallback-${viewport.width}.png`) });
     await page.getByRole("combobox", { name: "Источник согласующего", exact: true }).selectOption("explicit_users");
     await page.getByRole("checkbox", { name: "Анна Согласующая", exact: true }).check();
     await page.getByRole("combobox", { name: "Режим согласования", exact: true }).selectOption("sequential");

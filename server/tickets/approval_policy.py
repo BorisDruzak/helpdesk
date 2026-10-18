@@ -137,47 +137,20 @@ async def _resolve_approval_source(
         field = str(source.get("field") or source.get("field_key") or "").strip()
         return source_type, _extract_actor_ids(_form_field_value(ticket, field)) if field else []
     if source_type == "requester_manager":
-        custom_fields = _ticket_custom_fields(ticket)
-        requester_profile = custom_fields.get("requester_profile") or {}
-        if not isinstance(requester_profile, dict):
-            requester_profile = {}
-        values = _extract_actor_ids(
-            requester_profile.get("manager_id")
-            or requester_profile.get("manager_login")
-            or custom_fields.get("requester_manager_id")
-            or getattr(ticket, "requester_manager_id", None)
-        )
-        if not values:
-            # The authenticated requester is recorded by canonical creation.
-            # Never resolve management authority from submitted form values.
-            from sqlalchemy.ext.asyncio import AsyncSession
-            if isinstance(session, AsyncSession):
-                from requester.identity_service import RequesterIdentityResolver
-                from app.db.models import RegistryPerson, RegistryPersonIdentity
-                from app.repos.registration_repo import is_person_active
-                requester = await RequesterIdentityResolver(session).resolve_person_for_web_user(str(getattr(ticket, "requester_id", "") or ""))
-                metadata = requester.metadata_json if requester is not None and isinstance(requester.metadata_json, dict) else {}
-                manager_id = metadata.get("manager_person_id") or metadata.get("manager_id") or metadata.get("reports_to_person_id")
-                manager = await session.get(RegistryPerson, manager_id) if isinstance(manager_id, str) and manager_id else None
-                if is_person_active(manager):
-                    identities = (await session.scalars(select(RegistryPersonIdentity.normalized_identifier).where(
-                        RegistryPersonIdentity.person_id == manager.person_id,
-                        RegistryPersonIdentity.provider == "ui_login", RegistryPersonIdentity.verified.is_(True),
-                    ).order_by(RegistryPersonIdentity.normalized_identifier))).all()
-                    # Multiple actor identities require an explicit source;
-                    # arbitrary ordering must never choose an approver.
-                    if len(identities) == 1:
-                        from app.repos.ui_users_repo import UiUsersRepo, normalize_user_login
-                        from app.repos.ticket_events_repo import TicketEventsRepo
-                        from access_control.service import can
-                        from auth.context import AuthContext, AuthType
-                        from tickets.handlers import can_read_ui_ticket
-                        user = await UiUsersRepo(session).get_by_login(identities[0])
-                        if user is not None and user.is_active and user.actor_role in {"admin", "support", "auditor"}:
-                            actor = AuthContext(actor_id=normalize_user_login(user.user_login), actor_role=user.actor_role, auth_type=AuthType.UI_TOKEN)
-                            if await can(session, actor, "ticket.status.change") and await can_read_ui_ticket(TicketEventsRepo(session), ticket, actor):
-                                values = [actor.actor_id]
-        return source_type, values
+        from requester.identity_service import RequesterIdentityResolver
+        from registry.manager_resolution import resolve_person_manager
+        from app.repos.ticket_events_repo import TicketEventsRepo
+        from auth.context import AuthContext, AuthType
+        from tickets.handlers import can_read_ui_ticket
+        requester = await RequesterIdentityResolver(session).resolve_person_for_web_user(str(getattr(ticket, "requester_id", "") or ""))
+        result = await resolve_person_manager(session, requester, allow_department_fallback=source.get("allow_department_fallback") is True)
+        if result["status"] != "available":
+            return source_type, []
+        if not result["assigned_only"]:
+            actor = AuthContext(actor_id=result["actor_id"], actor_role=result["actor_role"], auth_type=AuthType.UI_TOKEN)
+            if not await can_read_ui_ticket(TicketEventsRepo(session), ticket, actor):
+                return source_type, []
+        return source_type, [result["actor_id"]]
     if source_type == "service_owner":
         request_template = _request_template_context(ticket)
         values = _extract_actor_ids(
@@ -443,6 +416,21 @@ async def ensure_approval_requests(
     source_type, approver_ids = await _resolve_approvers(session, ticket, policy)
     approval_mode = _approval_mode(policy)
     active_keys = await _active_approval_keys(session, ticket.ticket_id)
+    source = policy.get("approver_source") or policy.get("approvers") or {}
+    contains_manager = False
+    current_source = source
+    while current_source:
+        if isinstance(current_source, str):
+            contains_manager = current_source == "requester_manager"
+            break
+        if not isinstance(current_source, dict):
+            break
+        if current_source.get("type") == "requester_manager":
+            contains_manager = True
+            break
+        current_source = current_source.get("fallback")
+    if not approver_ids and not active_keys and contains_manager:
+        raise ValueError("Согласующий requester_manager не определён: проверьте подтверждённую связь, действующую учётную запись и право согласования. Настройте резервного согласующего в политике.")
     sequential_has_requested = any(status == "requested" for status in active_keys.values())
     now = datetime.now(timezone.utc)
     created: list[dict[str, Any]] = []

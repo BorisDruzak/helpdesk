@@ -6,6 +6,7 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
+import { ProfileSelectOptions } from "./registry-profile-options";
 import {
   RequesterProfileFieldControl,
   buildProfileValues,
@@ -213,6 +214,9 @@ export function RegistryProfileSchemaTab() {
     },
   });
 
+  if (query.isError && !draft) {
+    return <p role="alert" className="text-sm text-rose-700">Не удалось загрузить схему профиля.</p>;
+  }
   if (query.isLoading || !draft) {
     return <p className="text-sm text-slate-500">Загружаем схему профиля...</p>;
   }
@@ -225,6 +229,14 @@ export function RegistryProfileSchemaTab() {
 
   return (
     <div className="space-y-4">
+      <div className="sticky top-0 z-10 flex flex-wrap items-end gap-3 rounded-lg border border-border bg-white p-3">
+        <label className="min-w-48 flex-1 text-sm font-medium">
+          Причина изменения
+          <Input className="mt-1" onChange={(event) => setReason(event.target.value)} placeholder="Например: вводим обязательный центр затрат" value={reason} />
+        </label>
+        <Button disabled={!localValidation.canPublish || previewMutation.isPending} leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} type="button" variant="outline">Предпросмотр</Button>
+        <Button disabled={!reason.trim() || !localValidation.canPublish || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()} type="button">Сохранить схему</Button>
+      </div>
       {error ? <p className="text-sm text-rose-600">{error instanceof Error ? error.message : "Не удалось обработать схему профиля"}</p> : null}
       <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
         <p className="font-semibold">Системные поля защищены</p>
@@ -265,6 +277,7 @@ export function RegistryProfileSchemaTab() {
               <label className="block text-sm font-medium">
                 Ключ поля
                 <Input
+                  aria-label="Ключ поля"
                   className="mt-1"
                   onChange={(event) => setNewCustom((current) => ({ ...current, key: event.target.value }))}
                   placeholder="cost_center"
@@ -286,6 +299,7 @@ export function RegistryProfileSchemaTab() {
               <label className="block text-sm font-medium">
                 Тип
                 <select
+                  aria-label="Тип"
                   className="mt-1 w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
                   onChange={(event) => setNewCustom((current) => ({ ...current, type: event.target.value }))}
                   value={newCustom.type}
@@ -357,23 +371,6 @@ export function RegistryProfileSchemaTab() {
                     }
                   />
                 ))}
-              </div>
-              <label className="block text-sm font-medium">
-                Причина изменения
-                <Input
-                  className="mt-1"
-                  onChange={(event) => setReason(event.target.value)}
-                  placeholder="Например: вводим обязательный центр затрат"
-                  value={reason}
-                />
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <Button disabled={!localValidation.canPublish || previewMutation.isPending} leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} type="button" variant="outline">
-                  Предпросмотр
-                </Button>
-                <Button disabled={!reason.trim() || !localValidation.canPublish || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()} type="button">
-                  Сохранить схему
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -454,6 +451,7 @@ function FieldRow({
           />
         </label>
       </div>
+      {field.custom && field.type === "select" ? <ProfileSelectOptions options={field.options ?? []} onChange={(options) => onChange({ options })} /> : null}
     </div>
   );
 }
