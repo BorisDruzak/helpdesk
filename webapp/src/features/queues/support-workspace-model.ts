@@ -93,6 +93,7 @@ export type SupportWorkspaceTimelineItem = {
   actor: string;
   fromRole?: string;
   timestampLabel: string;
+  occurredAt?: string | null;
   body: string;
   visibility: string;
   tone: TicketBadgeTone;

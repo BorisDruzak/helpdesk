@@ -661,6 +661,7 @@ export function mapSupportTimelineEntries(
       actor: entry.sender_display_name ?? entry.from_role,
       fromRole: entry.from_role,
       timestampLabel: formatDateTime(entry.ts),
+      occurredAt: entry.ts,
       body: entry.text,
       visibility: entry.visibility,
       tone: isDiagnostic ? operationTone : isInternal ? "warning" : entry.visibility === "system" ? historyTone : "brand",

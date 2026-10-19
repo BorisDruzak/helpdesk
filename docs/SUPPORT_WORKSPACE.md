@@ -24,6 +24,16 @@ permissions and the canonical transition. Unassigned work also requires
 operators cannot silently take the same ticket. An administrator can help with
 assigned work without changing its assignee.
 
+Queue items and ticket `actions` expose the additive `take_in_work` object
+(`allowed`, `reason_code`, `reason`). It evaluates the same permissions,
+ownership, queue membership, active-load limit and workflow transition used by
+the command. Queue projection caches reads for this request only. The status
+command validates again under the ticket lock. An unassigned new/queued ticket
+also checks the destination active load before starting work. Membership and
+capacity denials return `ASSIGNEE_NOT_IN_QUEUE` and `ASSIGNEE_CAPACITY_REACHED`
+with safe, actionable text. The UI uses the projection in both queue and card
+and refetches it after a failed command; it does not grant queue membership.
+
 ## Conversation and privacy
 
 `handle_web_support_send_message` checks the appropriate comment permission,
@@ -43,6 +53,14 @@ system events. Deduplication uses message/event identities, preserves attachment
 and takes internal visibility when duplicate projections disagree. Real public
 service messages, including solution-confirmation requests, remain in Dialog.
 Public/internal composer drafts and pending attachments are separate.
+
+The Messenger layout keeps only the message feed scrolling, with the editor
+anchored below it. Bubbles have bounded line lengths, sender/time labels and
+date separators. Description and structured answers open in a keyboard-accessible
+dialog; an identical initial chat message is collapsible. Attachments retain
+their canonical download links. Ctrl/Command+Enter sends an allowed nonempty
+draft, while Enter inserts a line break. New messages preserve the reading
+position when the operator has scrolled back and offer a return-to-latest button.
 
 ## Resolution and additional functions
 

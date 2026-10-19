@@ -18,6 +18,10 @@ MAX_ACTIVE_TICKETS_PER_OPERATOR = 3
 class TicketAssignmentError(ValueError):
     """Ошибка назначения тикета."""
 
+    def __init__(self, message: str, *, code: str = "ASSIGNMENT_CONFLICT"):
+        super().__init__(message)
+        self.code = code
+
 
 class TicketAssignmentService:
     def __init__(self, ticket_repo):
@@ -37,21 +41,23 @@ class TicketAssignmentService:
         is_member = await self.ticket_repo.is_actor_in_queue(queue_id, actor_id)
         if not is_member:
             raise TicketAssignmentError(
-                f"Пользователь {actor_id} не состоит в очереди и не может работать с этим тикетом"
+                f"Пользователь {actor_id} не состоит в очереди и не может работать с этим тикетом",
+                code="ASSIGNEE_NOT_IN_QUEUE",
             )
 
-    async def validate_manual_assignment(self, ticket: Any, assignee_id: Optional[str]) -> None:
+    async def validate_manual_assignment(self, ticket: Any, assignee_id: Optional[str], *, activating: bool = False) -> None:
         if not assignee_id:
             return
         await self._ensure_actor_in_queue(getattr(ticket, "queue_id", None), assignee_id)
-        if not is_active_operator_status(getattr(ticket, "status", None)):
+        if not activating and not is_active_operator_status(getattr(ticket, "status", None)):
             return
         if getattr(ticket, "assignee_id", None) == assignee_id:
             return
         active_count = await self.ticket_repo.count_active_tickets_for_assignee(assignee_id)
         if active_count >= MAX_ACTIVE_TICKETS_PER_OPERATOR:
             raise TicketAssignmentError(
-                f"Оператор {assignee_id} уже достиг лимита {MAX_ACTIVE_TICKETS_PER_OPERATOR} активных тикетов"
+                f"Оператор {assignee_id} уже достиг лимита {MAX_ACTIVE_TICKETS_PER_OPERATOR} активных тикетов",
+                code="ASSIGNEE_CAPACITY_REACHED",
             )
 
     async def resolve_assignee(

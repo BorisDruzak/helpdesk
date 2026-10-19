@@ -57,16 +57,22 @@ for (const width of [1366, 1920, 390]) {
     await expect(reply).toBeDisabled();
     const take = page.getByRole("button", { name: "Взять в работу", exact: true });
     await expect(take).toBeInViewport();
+    await page.getByRole("button", { name: /Описание и ответы сотрудника/ }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByText("205", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Закрыть описание", exact: true }).click();
     await expect(page.getByText("Расчёт SLA для теста")).toHaveCount(0);
     await expect(page.getByText("Проверить картридж — только для поддержки")).toHaveCount(0);
     await expect(page.getByText("Принтер не печатает", { exact: true })).toHaveCount(1);
-    await expect(page.getByRole("link", { name: "↗ Ошибка.png" })).toHaveAttribute("href", "/api/artifacts/fixture-attachment/download");
+    await expect(page.getByRole("link", { name: "Ошибка.png" })).toHaveAttribute("href", "/api/artifacts/fixture-attachment/download");
+    await expect(reply).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeInViewport();
+    expect((await page.getByRole("tabpanel", { name: "Диалог", exact: true }).boundingBox())?.height).toBeGreaterThan(width < 760 ? 110 : 180);
     await page.screenshot({ path: info.outputPath(`ticket-before-take-${width}.png`), fullPage: true });
     await take.click();
     await expect(reply).toBeEnabled();
     await reply.fill("Бумага добавлена. Проверьте печать.");
-    await page.getByRole("button", { name: "Отправить", exact: true }).click();
+    await reply.press("Control+Enter");
     await expect(page.getByText("Бумага добавлена. Проверьте печать.", { exact: true })).toBeVisible();
     await page.getByRole("tab", { name: "Внутренние заметки", exact: true }).click();
     await expect(page.getByText("Проверить картридж — только для поддержки")).toBeVisible();
@@ -87,3 +93,56 @@ for (const width of [1366, 1920, 390]) {
     expect(pageErrors).toEqual([]); expect(failures).toEqual([]); expect(consoleErrors).toEqual([]);
   });
 }
+
+test("queue and card explain an unavailable take before sending a command", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 768 });
+  await page.route("**/api/web/support/tickets/ticket-1/timeline?*", (route) => route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", filter: "all", items: [], total: 0, limit: 200 } } }));
+  const reason = "Вы не состоите в очереди обращения. Назначить исполнителем можно участника этой очереди.";
+  const availability = { allowed: false, reason_code: "ASSIGNEE_NOT_IN_QUEUE", reason };
+  let commands = 0;
+  await page.route("**/api/web/support/queue?*", async (route) => {
+    const response = await route.fetch(); const payload = await response.json();
+    for (const ticket of payload.data.tickets) ticket.take_in_work = availability;
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route("**/api/web/support/tickets/ticket-1/workspace", async (route) => {
+    const response = await route.fetch(); const payload = await response.json();
+    payload.data.detail.actions.take_in_work = availability;
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route("**/api/web/support/tickets/ticket-1/status", (route) => { commands++; return route.abort(); });
+  await login(page);
+  const row = page.getByRole("row", { name: /T-200001/ });
+  await expect(row.getByRole("button", { name: "Взять в работу", exact: true })).toHaveCount(0);
+  await expect(row.getByText("Не состоите в очереди", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "T-200001" }).click();
+  await expect(page.getByRole("button", { name: "Взять в работу", exact: true })).toHaveCount(0);
+  await expect(page.getByText(reason, { exact: true }).first()).toBeVisible();
+  await expect(page.locator('textarea[aria-label="Сообщение сотруднику"]')).toBeDisabled();
+  expect((await page.getByRole("tabpanel", { name: "Диалог", exact: true }).boundingBox())?.height).toBeGreaterThan(110);
+  await page.getByRole("tab", { name: "Внутренние заметки", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Внутренняя заметка", exact: true })).toBeEnabled();
+  expect(commands).toBe(0);
+});
+
+test("a stale take refreshes availability and shows the specific server error", async ({ page }) => {
+  let rejected = false;
+  const reason = "Достигнут лимит активных обращений (3). Завершите работу с одной из текущих заявок.";
+  await page.route("**/api/web/support/tickets/ticket-1/workspace", async (route) => {
+    const response = await route.fetch(); const payload = await response.json();
+    payload.data.detail.actions.take_in_work = rejected
+      ? { allowed: false, reason_code: "ASSIGNEE_CAPACITY_REACHED", reason }
+      : { allowed: true, reason_code: null, reason: null };
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route("**/api/web/support/tickets/ticket-1/status", (route) => {
+    rejected = true;
+    return route.fulfill({ status: 409, json: { status: "error", error: reason, error_code: "ASSIGNEE_CAPACITY_REACHED" } });
+  });
+  await login(page);
+  await page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "T-200001" }).click();
+  await page.getByRole("button", { name: "Взять в работу", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: reason })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Взять в работу", exact: true })).toHaveCount(0);
+  await expect(page.locator('textarea[aria-label="Сообщение сотруднику"]')).toBeDisabled();
+});

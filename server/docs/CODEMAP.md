@@ -9,6 +9,11 @@
 - `web_api/support_handlers.py` locks status/ownership before take-in-work and
   public reply. Rejected replies write no event and do not finish first-response
   SLA. `web_api/dto/support.py` projects `actions.can_send_public_message`.
+- Queue rows and ticket actions also project `take_in_work` through a
+  request-local read cache of canonical assignment/workflow checks. The command
+  revalidates membership and destination load and returns specific safe denial
+  codes. The Messenger conversation anchors its composer, preserves scroll and
+  separate audience drafts, and opens structured description in a native dialog.
 - `test_support_work.py` covers PostgreSQL competing operators, persisted
   ownership, SLA and administrator access; the no-DB companion covers error
   ordering. Existing FSM, assignment, closure, audit and internal visibility stay

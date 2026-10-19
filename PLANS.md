@@ -1,3 +1,17 @@
+# 2026-10-19 Support Messenger and take availability
+
+User selected reference 1 (Messenger) and authorized implementation, verification
+and isolated staging deployment. Preserve canonical queue membership, assignment,
+FSM, SLA, public/internal privacy, attachments and all additional tools.
+Implemented: readable bubbles, sender/date/time hierarchy, anchored composer,
+Ctrl/Command+Enter, scroll preservation, collapsed structured description; shared
+server take availability and specific membership/capacity errors. No dependency
+or migration. Existing admin is outside the affected queue; retain that policy.
+Verification: no-DB server 1537 passed / 1 existing skip; frontend 846 passed;
+PostgreSQL 3/3 (concurrency, persistence, queue/detail/command denial parity).
+Next: finish responsive visual checks, freeze candidate, exact-commit full CI,
+canonical staging release and installed browser acceptance. Leave staging running.
+
 # 2026-10-19 UI-SUPPORT-001
 
 Goal: everyday support queue, compact three-area ticket and clean conversation.

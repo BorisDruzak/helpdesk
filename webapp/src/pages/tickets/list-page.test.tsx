@@ -285,6 +285,7 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
       actions: {
         status_options: [{ value: "waiting_on_user", label: "Ждёт пользователя" }],
         can_send_internal_note: true,
+        take_in_work: { allowed: true, reason_code: null, reason: null },
         can_hide_from_workspace: true,
         can_unhide_from_workspace: false,
         can_archive_ticket: false,

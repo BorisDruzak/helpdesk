@@ -30,6 +30,8 @@ export type SupportQueueCountItem = {
   count: number;
 };
 
+export type SupportTakeInWorkAvailability = { allowed: boolean; reason_code: string | null; reason: string | null };
+
 export type SupportQueuePayload = {
   scope: SupportQueueScope;
   query: string;
@@ -49,6 +51,7 @@ export type SupportQueuePayload = {
     smart_view_options: SupportFilterOption[];
   };
   tickets: Array<{
+    take_in_work?: SupportTakeInWorkAvailability | null;
     ticket_id: string;
     ticket_code: string | null;
     title: string;
@@ -552,6 +555,7 @@ export type SupportTicketDetailPayload = {
     }>;
   };
   actions: {
+    take_in_work?: SupportTakeInWorkAvailability | null;
     status_options: Array<{
       value: string;
       label: string;

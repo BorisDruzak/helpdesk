@@ -1915,6 +1915,12 @@ export function TicketListPage() {
       }
       return postSupportTicketReroute(selectedTicketId, { reason });
     },
+    onError: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+      ]);
+    },
     onSuccess: async () => {
       setMoreOpen(false);
       setOperatorActionDraft(null);
@@ -1928,6 +1934,12 @@ export function TicketListPage() {
 
   const takeTicketMutation = useMutation({
     mutationFn: (ticketId: string) => postSupportTicketStatus(ticketId, "in_progress", { reason: "Взять обращение в работу" }),
+    onError: async (_error, ticketId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+      ]);
+    },
     onSuccess: async (_result, ticketId) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
@@ -2334,7 +2346,7 @@ export function TicketListPage() {
       />
 
       {!simpleMode ? <button className="simple-advanced-return" type="button" onClick={() => { setSimpleMode(true); setWorkspaceMode(selectedTicketId ? "ticket" : "queue"); }}>← Вернуться к обычной работе</button> : null}
-      {simpleMode ? <div className="support-simple" data-testid="simple-support-workspace">
+      {simpleMode ? <div className="support-simple" data-view={workspaceMode === "queue" ? "queue" : "ticket"} data-testid="simple-support-workspace">
         {workspaceMode === "queue" || !selectedTicketId ? <>
           {actionError ? <p className="simple-notice simple-risk" role="alert">{actionError instanceof Error ? actionError.message : "Действие не выполнено"}</p> : null}
           <SimpleSupportQueue {...simpleQueueProps} onAdvanced={() => { setSimpleMode(false); setWorkspaceMode("queue"); }} />
@@ -2351,6 +2363,8 @@ export function TicketListPage() {
             onManage={openOperatorAction} onQueue={() => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); }}
             conversation={<SimpleSupportConversation key={selectedTicket.id}
               items={mapSupportTimelineEntries([...(timelineQuery.data?.items ?? workspaceQuery.data.detail.timeline)].sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0)))}
+              initialDescription={rawTicket?.description}
+              replyBlockedReason={rawTicket && ["new", "queued", "assigned"].includes(rawTicket.status) ? workspaceQuery.data.detail.actions.take_in_work?.reason : rawTicket && ["resolved", "closed", "canceled"].includes(rawTicket.status) ? "Обращение завершено. Переписка доступна для просмотра." : undefined}
               mode={composerMode} text={composerText} canReply={publicReplyAllowed} canNote={hasPermission("ticket.comment.internal") && internalNoteAllowed}
               pending={messageMutation.isPending || uploadingAttachments} loading={timelineQuery.isLoading} error={timelineQuery.isError}
               onTextChange={(text) => { simpleTextDraftsRef.current[composerMode] = text; setComposerText(text); }}

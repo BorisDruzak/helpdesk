@@ -4,10 +4,17 @@ import type { SupportTicketDetailPayload } from "../../../features/queues/api";
 import { SimpleSupportTicket } from "./simple-support-ticket";
 
 const detail = { ticket: { ticket_id: "one", ticket_code: "T-001", title: "Принтер", description: "Не печатает", status: "queued", status_label: "В очереди", assignee_id: null, priority: "P2", queue: { name: "Поддержка" } },
-  request_form: { rows: [{ key: "room", label: "Кабинет", value: "205" }] }, actions: { status_options: [{ value: "in_progress", label: "В работе" }], can_send_internal_note: true }, snapshot: { device: {} }, timeline: [],
+  request_form: { rows: [{ key: "room", label: "Кабинет", value: "205" }] }, actions: { status_options: [{ value: "in_progress", label: "В работе" }], take_in_work: { allowed: true, reason_code: null, reason: null }, can_send_internal_note: true }, snapshot: { device: {} }, timeline: [],
 } as unknown as SupportTicketDetailPayload;
 
 describe("simple support ticket", () => {
+  it("uses the server denial instead of offering an impossible take action", () => {
+    const blocked = { ...detail, actions: { ...detail.actions, take_in_work: { allowed: false, reason_code: "ASSIGNEE_NOT_IN_QUEUE", reason: "Вы не состоите в очереди обращения." } } };
+    render(<SimpleSupportTicket detail={blocked} actorId="operator" canWork canAssign onStatus={vi.fn()} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={null} />);
+    expect(screen.queryByRole("button", { name: "Взять в работу" })).not.toBeInTheDocument();
+    expect(screen.getByText("Вы не состоите в очереди обращения.")).toBeVisible();
+    expect(screen.queryByText(/нажмите «Взять/)).not.toBeInTheDocument();
+  });
   it("does not offer self-assignment without assignment permission", () => {
     render(<SimpleSupportTicket detail={detail} actorId="operator" canWork canAssign={false} onStatus={vi.fn()} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={null} />);
     expect(screen.queryByRole("button", { name: "Взять в работу" })).not.toBeInTheDocument();

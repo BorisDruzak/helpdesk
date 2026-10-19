@@ -12,6 +12,35 @@ from web_api import support_handlers as support
 pytestmark = pytest.mark.no_db
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("member,load,code", [(False, 0, "ASSIGNEE_NOT_IN_QUEUE"), (True, 3, "ASSIGNEE_CAPACITY_REACHED"), (True, 0, None)])
+async def test_take_projection_uses_membership_and_target_active_load(work, monkeypatch, member, load, code):
+    work.repo.is_actor_in_queue.return_value = member
+    work.repo.count_active_tickets_for_assignee.return_value = load
+    monkeypatch.setattr(support, "can", AsyncMock(return_value=True))
+    auth = AuthContext(actor_id="support1", actor_role="admin", auth_type=AuthType.UI_TOKEN, token="synthetic")
+    projector = support._SupportTakeProjector(work.session, work.repo, auth)
+    result = await projector.project(work.ticket, transition_allowed=True)
+    assert result.allowed == (code is None)
+    assert result.reason_code == code
+    await projector.project(work.ticket, transition_allowed=True)
+    assert work.repo.is_actor_in_queue.await_count == 1
+    assert work.repo.count_active_tickets_for_assignee.await_count == (1 if member else 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("member,load,code", [(False, 0, "ASSIGNEE_NOT_IN_QUEUE"), (True, 3, "ASSIGNEE_CAPACITY_REACHED")])
+async def test_take_denial_is_specific_and_precedes_workflow(web_support_client, work, member, load, code):
+    work.repo.is_actor_in_queue.return_value = member
+    work.repo.count_active_tickets_for_assignee.return_value = load
+    response = await web_support_client.post(f"/api/web/support/tickets/{work.ticket.ticket_id}/status", json={"to_status": "in_progress"})
+    assert response.status == 409
+    assert (await response.json())["error_code"] == code
+    assert work.ticket.status == "new"
+    work.repo.add_event.assert_not_awaited()
+    work.session.commit.assert_not_awaited()
+
+
 @pytest.fixture
 def work(mutations, monkeypatch):
     mutations.repo.add_event.return_value = (1, datetime.now(timezone.utc))

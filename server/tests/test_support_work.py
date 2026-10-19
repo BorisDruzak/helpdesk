@@ -27,8 +27,10 @@ async def work_client(test_engine, monkeypatch):
         async with maker() as session:
             try:
                 yield session
-            finally:
+                await session.commit()
+            except Exception:
                 await session.rollback()
+                raise
 
     @web.middleware
     async def actors(request, handler):
@@ -43,14 +45,34 @@ async def work_client(test_engine, monkeypatch):
         yield client
 
 
-async def seed_work(engine, *, status="new", assignee=None):
+async def seed_work(engine, *, status="new", assignee=None, members=None):
     async with async_sessionmaker(engine, expire_on_commit=False)() as session:
         session.add_all([UiUser(user_login=actor, password_hash="!", actor_role="admin" if actor == "admin" else "support", is_active=True) for actor in ("support1", "support2", "admin")])
-        queue = await _seed_queue(session, code="work_" + uuid.uuid4().hex[:12], name="Synthetic support", members=["support1", "support2", "admin"], auto_assign_enabled=False)
+        queue = await _seed_queue(session, code="work_" + uuid.uuid4().hex[:12], name="Synthetic support", members=members if members is not None else ["support1", "support2", "admin"], auto_assign_enabled=False)
         ticket_id = str(uuid.uuid4())
         session.add(Ticket(ticket_id=ticket_id, device_id=None, title="UI-SUPPORT-001 synthetic", description="No agent", requester_id="synthetic-requester", status=status, assignee_id=assignee, queue_id=queue.id, custom_fields={}, first_response_due_at=datetime.now(timezone.utc) + timedelta(hours=1)))
         await session.commit()
     return ticket_id
+
+
+@pytest.mark.asyncio
+async def test_nonmember_admin_has_same_denial_in_queue_detail_and_command(work_client, test_engine):
+    ticket_id = await seed_work(test_engine, members=["support1", "support2"])
+    headers = {"X-Test-Actor": "admin"}
+    queue = await work_client.get("/api/web/support/queue", headers=headers)
+    assert queue.status == 200, await queue.text()
+    item = next(item for item in (await queue.json())["data"]["tickets"] if item["ticket_id"] == ticket_id)
+    detail = await work_client.get(f"/api/web/support/tickets/{ticket_id}", headers=headers)
+    assert detail.status == 200, await detail.text()
+    action = (await detail.json())["data"]["actions"]["take_in_work"]
+    assert action == item["take_in_work"]
+    assert action["allowed"] is False and action["reason_code"] == "ASSIGNEE_NOT_IN_QUEUE"
+    response = await work_client.post(f"/api/web/support/tickets/{ticket_id}/status", headers=headers, json={"to_status": "in_progress"})
+    assert response.status == 409
+    assert (await response.json())["error_code"] == action["reason_code"]
+    async with async_sessionmaker(test_engine)() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket.status == "new" and ticket.assignee_id is None and ticket.first_response_at is None
 
 
 @pytest.mark.asyncio

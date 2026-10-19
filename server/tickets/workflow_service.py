@@ -268,8 +268,9 @@ async def _validate_transition_gate(
     }
 
 
-async def load_ticket_workflow_profile(session, ticket) -> WorkflowProfile:
-    profiles = await load_workflow_profiles(session)
+async def load_ticket_workflow_profile(session, ticket, *, profiles=None) -> WorkflowProfile:
+    if profiles is None:
+        profiles = await load_workflow_profiles(session)
     profile_key = getattr(ticket, "ticket_type", None) if ticket else None
     custom_fields = getattr(ticket, "custom_fields", None) or {}
     if isinstance(custom_fields, dict):

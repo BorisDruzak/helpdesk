@@ -7,6 +7,32 @@ import { SimpleSupportConversation } from "./simple-support-conversation";
 const raw = (extra: Record<string, unknown>) => ({ event_type: "chat_message", visibility: "public", text: "Здравствуйте", attachments: [], from_role: "support", message_id: null, event_id: null, ts: null, direction: "to_agent", reply_to: null, ...extra }) as SupportTicketDetailPayload["timeline"][number];
 
 describe("clean support conversation", () => {
+  it("preserves reading position when a new message arrives and can return to the latest", () => {
+    const props = { items: mapSupportTimelineEntries([raw({ event_id: 1 })]), text: "", onTextChange: vi.fn(), onModeChange: vi.fn(), mode: "public" as const, canReply: true, canNote: true, onSend: vi.fn(), pending: false, attachments: [], onRemoveAttachment: vi.fn() };
+    const view = render(<SimpleSupportConversation {...props} />);
+    const feed = screen.getByRole("tabpanel", { name: "Диалог" });
+    Object.defineProperties(feed, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 } });
+    feed.scrollTop = 120;
+    fireEvent.scroll(feed);
+    view.rerender(<SimpleSupportConversation {...props} items={mapSupportTimelineEntries([raw({ event_id: 1 }), raw({ event_id: 2, text: "Новое сообщение" })])} />);
+    expect(feed.scrollTop).toBe(120);
+    fireEvent.click(screen.getByRole("button", { name: "К новым сообщениям" }));
+    expect(feed.scrollTop).toBe(1600);
+    expect(screen.queryByRole("button", { name: "К новым сообщениям" })).not.toBeInTheDocument();
+  });
+  it("sends with Ctrl+Enter, keeps plain Enter for multiline, and explains the server denial", () => {
+    const send = vi.fn();
+    const props = { items: [], text: "Ответ", onTextChange: vi.fn(), onModeChange: vi.fn(), mode: "public" as const, canReply: true, canNote: true, onSend: send, pending: false, attachments: [], onRemoveAttachment: vi.fn(), replyBlockedReason: "Вы не состоите в очереди обращения." };
+    const view = render(<SimpleSupportConversation {...props} />);
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", ctrlKey: true });
+    expect(send).toHaveBeenCalledTimes(1);
+    view.rerender(<SimpleSupportConversation {...props} canReply={false} />);
+    expect(screen.getByText(props.replyBlockedReason)).toBeVisible();
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", ctrlKey: true });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
   it("puts internal diagnostic and status events in history rather than operator notes", () => {
     const items = mapSupportTimelineEntries([
       raw({ event_id: 20, event_type: "tool_call_result", visibility: "internal" }),

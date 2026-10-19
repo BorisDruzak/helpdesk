@@ -7,7 +7,7 @@ const rows = [
   { ticket_id: "new", ticket_code: "T-001", title: "Принтер", status: "queued", status_label: "В очереди", assignee_id: null },
   { ticket_id: "mine", ticket_code: "T-002", title: "Почта", status: "in_progress", status_label: "В работе", assignee_id: "operator" },
   { ticket_id: "other", ticket_code: "T-003", title: "VPN", status: "in_progress", status_label: "В работе", assignee_id: "colleague" },
-].map((row) => ({ ...row, priority: "P2", requester_display_name: "Сотрудник", queue_code: "Поддержка", unread_user_messages: 2,
+].map((row) => ({ ...row, take_in_work: { allowed: true, reason_code: null, reason: null }, priority: "P2", requester_display_name: "Сотрудник", queue_code: "Поддержка", unread_user_messages: 2,
   device_id: null, updated_at: null, created_at: null, requires_operator_action: true }));
 const queue = { tickets: rows, summary: { visible_count: 3, queue_counts: [] } } as unknown as SupportQueuePayload;
 
