@@ -201,7 +201,7 @@ const CLOSURE_BLOCKER_VISIBLE_LIMIT = 4;
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
 const SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY = "support-workspace-columns";
 const DEFAULT_WORKSPACE_COLUMNS_BY_MODE: Record<WorkspaceMode, WorkspaceColumnSizes> = {
-  ticket: { left: 300, right: 340 },
+  ticket: { left: 260, right: 300 },
   queue: { left: 760, right: 72 },
   tools: { left: 300, right: 760 },
   sla: { left: 300, right: 760 },
@@ -229,8 +229,8 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
-function normalizeWorkspaceColumnsForMode(mode: WorkspaceMode, sizes: WorkspaceColumnSizes, viewportWidth: number): WorkspaceColumnSizes {
-  const limits = WORKSPACE_COLUMN_LIMITS_BY_MODE[mode];
+function normalizeWorkspaceColumnsForMode(mode: WorkspaceMode, sizes: WorkspaceColumnSizes, viewportWidth: number, centerMin?: number): WorkspaceColumnSizes {
+  const limits = { ...WORKSPACE_COLUMN_LIMITS_BY_MODE[mode], ...(centerMin === undefined ? {} : { centerMin }) };
   let left = clampNumber(sizes.left, limits.leftMin, limits.leftMax);
   let right = clampNumber(sizes.right, limits.rightMin, limits.rightMax);
   const maxSidebarsWidth = Math.max(
@@ -1302,7 +1302,10 @@ export function TicketListPage() {
   const resizeStateRef = useRef<WorkspaceResizeState | null>(null);
   const deferredSearch = useDeferredValue(search);
   const deferredAutomationCatalogSearch = useDeferredValue(automationCatalogSearch);
-  const workspaceColumns = workspaceColumnsByMode[workspaceMode] ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE[workspaceMode];
+  const savedWorkspaceColumns = workspaceColumnsByMode[workspaceMode] ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE[workspaceMode];
+  const workspaceColumns = simpleMode && workspaceMode === "ticket"
+    ? normalizeWorkspaceColumnsForMode("ticket", savedWorkspaceColumns, workspaceViewportWidth, 420)
+    : savedWorkspaceColumns;
   const isCompactWorkspace = workspaceViewportWidth < 1200;
   const rightPanelInDrawer = isCompactWorkspace && workspaceMode !== "queue";
   const canResizeWorkspace = workspaceViewportWidth >= 1200;
@@ -1424,10 +1427,11 @@ export function TicketListPage() {
         return;
       }
       const delta = event.clientX - resizeState.startX;
-      const viewportWidth = window.innerWidth || 1366;
+      const viewportWidth = workspaceRootRef.current?.getBoundingClientRect().width || window.innerWidth || 1366;
       setWorkspaceColumnsByMode((current) => {
-        const currentSizes = current[workspaceMode] ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE[workspaceMode];
-        const limits = WORKSPACE_COLUMN_LIMITS_BY_MODE[workspaceMode];
+        const savedSizes = current[workspaceMode] ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE[workspaceMode];
+        const currentSizes = simpleMode ? normalizeWorkspaceColumnsForMode("ticket", savedSizes, viewportWidth, 420) : savedSizes;
+        const limits = simpleMode ? { ...WORKSPACE_COLUMN_LIMITS_BY_MODE.ticket, centerMin: 420 } : WORKSPACE_COLUMN_LIMITS_BY_MODE[workspaceMode];
         if (resizeState.pane === "left") {
           const maxLeft = Math.min(
             limits.leftMax,
@@ -1470,7 +1474,7 @@ export function TicketListPage() {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [resizingPane, workspaceMode]);
+  }, [resizingPane, workspaceMode, simpleMode]);
 
   const effectiveQueueScope = simpleMode ? (simpleFilter === "mine" ? "mine" : "all") : scope;
   const effectiveSmartView = simpleMode ? (simpleFilter === "mine" ? "open" : simpleFilter) : smartView;
@@ -1657,7 +1661,7 @@ export function TicketListPage() {
     [activeQueueId, queueQuery.data, selectedTicketId, smartView, workspaceQuery.data],
   );
 
-  const visibleTickets = activeQueueId
+  const visibleTickets = activeQueueId && queueQuery.data?.queue_mode !== "unified"
     ? viewModel.left.tickets.filter((ticket) => ticket.queueLabel === activeQueueId)
     : viewModel.left.tickets;
 
@@ -1769,9 +1773,9 @@ export function TicketListPage() {
   }, [queryClient, selectedTicketId]);
 
   function selectRightTab(tab: SidebarTab) {
-    setSimpleMode(false);
     setCompactInspectorOpen(true);
     setSidebarTab(tab);
+    if (simpleMode) return;
     if (tab === "tools" || tab === "sla" || tab === "passport") {
       setWorkspaceMode(tab);
       return;
@@ -2317,849 +2321,11 @@ export function TicketListPage() {
     }));
   }
 
-  const simpleQueueData = queueQuery.data && activeQueueId ? { ...queueQuery.data,
-    tickets: queueQuery.data.tickets.filter((item) => item.queue_code === activeQueueId) } : queueQuery.data;
-  const simpleQueueProps = {
-    queue: simpleQueueData, actorId: session?.user_login, canWork: hasPermission("ticket.status.change") && hasPermission("ticket.assign"),
-    filter: simpleFilter, search, loading: queueQuery.isLoading, error: queueQuery.isError,
-    pending: takeTicketMutation.isPending, selectedTicketId, activeQueueId,
-    onFilterChange: setSimpleFilter, onSearchChange: setSearch, onOpenTicket: openTicket,
-    onTakeTicket: (id: string) => takeTicketMutation.mutate(id), onQueueChange: setActiveQueueId,
-    onAdvanced: () => setSimpleMode(false),
-  };
-
-  return (
-    <section
-      className={`support-workspace flex h-full min-h-0 flex-1 flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
-      ref={workspaceRootRef}
-      data-testid="support-workspace-root"
-      data-compact-layout={isCompactWorkspace ? "true" : "false"}
-      data-has-ticket={selectedTicket ? "true" : "false"}
-      data-mode={workspaceMode}
-      data-theme={workspaceTheme}
-    >
-      <SupportWorkspaceTopbar
-        theme={workspaceTheme}
-        onToggleTheme={toggleWorkspaceTheme}
-        onRefresh={refreshAll}
-        refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
-      />
-
-      {!simpleMode ? <button className="simple-advanced-return" type="button" onClick={() => { setSimpleMode(true); setWorkspaceMode(selectedTicketId ? "ticket" : "queue"); }}>← Вернуться к обычной работе</button> : null}
-      {simpleMode ? <div className="support-simple" data-view={workspaceMode === "queue" ? "queue" : "ticket"} data-testid="simple-support-workspace">
-        {workspaceMode === "queue" || !selectedTicketId ? <>
-          {actionError ? <p className="simple-notice simple-risk" role="alert">{actionError instanceof Error ? actionError.message : "Действие не выполнено"}</p> : null}
-          <SimpleSupportQueue {...simpleQueueProps} onAdvanced={() => { setSimpleMode(false); setWorkspaceMode("queue"); }} />
-        </> : <div className="simple-workspace">
-          <SimpleSupportQueue {...simpleQueueProps} compact />
-          {workspaceQuery.data && selectedTicket ? <SimpleSupportTicket detail={workspaceQuery.data.detail} ticket={selectedTicket} context={viewModel.right.context}
-            actorId={session?.user_login} isAdmin={isAdmin} canWork={hasPermission("ticket.status.change") && !workspaceErrorState}
-            canAssign={hasPermission("ticket.assign")}
-            pending={operatorActionMutation.isPending || takeTicketMutation.isPending}
-            error={workspaceErrorState ? "Не удалось обновить обращение. Обновите данные перед действием." : actionError instanceof Error ? actionError.message : null}
-            onStatus={(value) => operatorActionMutation.mutate({ kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" })}
-            onResolve={() => setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket))}
-            onAdvanced={(mode = "ticket") => { setSimpleMode(false); setWorkspaceMode(mode); if (mode !== "ticket") setSidebarTab(mode); }}
-            onManage={openOperatorAction} onQueue={() => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); }}
-            conversation={<SimpleSupportConversation key={selectedTicket.id}
-              items={mapSupportTimelineEntries([...(timelineQuery.data?.items ?? workspaceQuery.data.detail.timeline)].sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0)))}
-              initialDescription={rawTicket?.description}
-              replyBlockedReason={rawTicket && ["new", "queued", "assigned"].includes(rawTicket.status) ? workspaceQuery.data.detail.actions.take_in_work?.reason : rawTicket && ["resolved", "closed", "canceled"].includes(rawTicket.status) ? "Обращение завершено. Переписка доступна для просмотра." : undefined}
-              mode={composerMode} text={composerText} canReply={publicReplyAllowed} canNote={hasPermission("ticket.comment.internal") && internalNoteAllowed}
-              pending={messageMutation.isPending || uploadingAttachments} loading={timelineQuery.isLoading} error={timelineQuery.isError}
-              onTextChange={(text) => { simpleTextDraftsRef.current[composerMode] = text; setComposerText(text); }}
-              onModeChange={(mode) => { simpleTextDraftsRef.current[composerMode] = composerText; simpleAttachmentDraftsRef.current[composerMode] = pendingAttachments; setComposerMode(mode); setComposerText(simpleTextDraftsRef.current[mode]); setPendingAttachments(simpleAttachmentDraftsRef.current[mode]); }}
-              onSend={() => { if (composerCanSend) messageMutation.mutate(); }}
-              attachments={pendingAttachments} inputRef={attachmentInputRef} onUpload={handleAttachmentInputChange} uploadError={attachmentError}
-              onRemoveAttachment={(id) => setPendingAttachments((items) => items.filter((item) => item.artifact_id !== id))}
-            />}
-          /> : <main className="simple-empty"><p role={workspaceErrorState ? "alert" : "status"}>{workspaceErrorState?.body ?? "Загружаем обращение…"}</p><button className="simple-button" type="button" onClick={() => workspaceQuery.refetch()}>Обновить</button></main>}
-        </div>}
-      </div> : (
-      <div
-        className="relative grid min-h-0 flex-1 overflow-hidden support-workspace__mode-grid"
-        data-overlay-right={rightPanelInDrawer ? "true" : "false"}
-        style={{...getWorkspaceGridStyle(workspaceMode, workspaceColumns, workspaceViewportWidth),...(effectiveListCollapsed?{"--support-left":"52px","--support-center":"minmax(0, 1fr)"}: {})} as CSSProperties}
-      >
-        <section
-          aria-label="Operator command console"
-          className="col-span-full flex min-h-14 flex-wrap items-center gap-3 border-b border-white/10 bg-[#081321]/90 px-4 py-2"
-          data-layout="operator-command-console"
-          data-testid="support-command-strip"
-        >
-          <div className="min-w-0 pr-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Рабочая очередь</p>
-            <p className="truncate text-sm font-semibold text-white">
-              {selectedTicket ? `${selectedTicket.code} · ${selectedTicket.subject}` : "Queue focus"}
-            </p>
-          </div>
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            {selectedTicket ? (
-              <>
-                <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${toneClasses(selectedTicket.statusTone)}`}>
-                  {selectedTicket.statusLabel}
-                </span>
-                <span className={`rounded-lg border px-2.5 py-1 text-xs font-bold ${toneClasses(selectedTicket.priorityTone)}`}>
-                  {selectedTicket.priority}
-                </span>
-                <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
-                  SLA {selectedTicket.timers.filter((timer) => timer.status === "at_risk" || timer.status === "breached").length}
-                </span>
-                <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
-                  Passport {selectedTicket.closurePlan.missingCount}/{selectedTicket.closurePlan.total || selectedTicket.closurePlan.missingCount}
-                </span>
-              </>
-            ) : (
-              <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
-                {visibleTickets.length} visible tickets
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-300 hover:text-white"
-              onClick={() => setWorkspaceMode("queue")}
-              type="button"
-            >
-              <ClipboardList className="h-4 w-4" />
-              Queue
-            </button>
-            <button
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!selectedTicket}
-              onClick={() => {
-                setSidebarTab("context");
-                setWorkspaceMode("ticket");
-                setCompactInspectorOpen(true);
-              }}
-              type="button"
-            >
-              <Eye className="h-4 w-4" />
-              Inspector
-            </button>
-          </div>
-        </section>
-        {canResizeWorkspace && !effectiveListCollapsed ? <button
-          aria-label="Изменить ширину левой колонки"
-          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-6 -translate-x-1/2 cursor-col-resize ${
-            resizingPane === "left" ? "support-workspace__column-resizer--active" : ""
-          }`}
-          onPointerDown={(event) => startColumnResize("left", event)}
-          onDoubleClick={resetWorkspaceColumnsForCurrentMode}
-          style={{ left: `${workspaceColumns.left}px` }}
-          title="Потяните, чтобы изменить ширину списка тикетов; двойной клик сбрасывает колонки"
-          type="button"
-        >
-          <span className="support-workspace__column-resizer-line">
-            <GripVertical className="h-4 w-4" />
-          </span>
-        </button> : null}
-        {canResizeWorkspace ? <button
-          aria-label="Изменить ширину правой колонки"
-          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-6 translate-x-1/2 cursor-col-resize ${
-            resizingPane === "right" ? "support-workspace__column-resizer--active" : ""
-          }`}
-          onPointerDown={(event) => startColumnResize("right", event)}
-          onDoubleClick={resetWorkspaceColumnsForCurrentMode}
-          style={{ right: `${workspaceColumns.right}px` }}
-          title="Потяните, чтобы изменить ширину контекстной панели; двойной клик сбрасывает колонки"
-          type="button"
-        >
-          <span className="support-workspace__column-resizer-line">
-            <GripVertical className="h-4 w-4" />
-          </span>
-        </button> : null}
-        <aside aria-label="Список заявок" data-collapsed={effectiveListCollapsed?"true":"false"} className="support-workspace__ticket-list flex min-h-0 flex-col border-r border-white/10 bg-[#0b1624]">
-          {selectedTicket && workspaceMode!=="queue" ? <button aria-label={effectiveListCollapsed?"Показать список заявок":"Скрыть список заявок"} aria-expanded={!effectiveListCollapsed} className="m-2 rounded-lg border border-white/10 p-2 text-xs font-semibold" onClick={toggleTicketList} type="button">{effectiveListCollapsed?<><ClipboardList className="mx-auto h-4 w-4"/><span className="sr-only">Заявки</span></>:"Скрыть список заявок"}</button>:null}
-          {effectiveListCollapsed?<span className="text-center text-xs text-slate-500">{visibleTickets.length}</span>:<>
-          {workspaceMode === "queue" ? (
-            <QueueExplorer
-              activeQueueId={activeQueueId}
-              cleanupNoisePending={cleanupNoiseMutation.isPending}
-              defaultColumns={queueSavedViewsQuery.data?.default_columns}
-              defaultViewId={queueSavedViewsQuery.data?.default_view_id ?? null}
-              massActionPending={queueMassActionMutation.isPending}
-              massActionResult={queueMassActionMutation.data ?? null}
-              onActiveQueueChange={setActiveQueueId}
-              onCleanupNoise={() => cleanupNoiseMutation.mutate()}
-              onDeleteSavedView={(viewId) => queueSavedViewDeleteMutation.mutate(viewId)}
-              onMassAction={(request) => queueMassActionMutation.mutate(request)}
-              onOpenTicket={openTicket}
-              onPersistDefaultColumns={(viewId, request) => {
-                if (viewId) {
-                  queueSavedViewUpdateMutation.mutate({ viewId, request });
-                  return;
-                }
-                queueSavedViewCreateMutation.mutate(request);
-              }}
-              onSaveSavedView={(request) => queueSavedViewCreateMutation.mutate(request)}
-              onScopeChange={setScope}
-              onSearchChange={setSearch}
-              onShowArchiveChange={setShowArchive}
-              onSelectTicket={(ticketId) => {
-                setWorkspaceMode("queue");
-                startTransition(() => {
-                  navigate(`/app/tickets/${ticketId}`);
-                });
-              }}
-              onSmartViewChange={setSmartView}
-              queues={viewModel.left.queues}
-              scope={scope}
-              search={search}
-              selectedTicket={selectedTicket}
-              selectedViewId={smartView}
-              savedViewMutationPending={queueSavedViewCreateMutation.isPending || queueSavedViewUpdateMutation.isPending || queueSavedViewDeleteMutation.isPending}
-              savedViews={queueSavedViewsQuery.data?.views ?? []}
-              savedViewsError={queueSavedViewsQuery.isError}
-              savedViewsLoading={queueSavedViewsQuery.isLoading}
-              showArchive={showArchive}
-              slices={viewModel.left.slices}
-              tickets={visibleTickets}
-            />
-          ) : (
-          <>
-          <div className="border-b border-white/10 px-4 py-4">
-            <button
-              className="mb-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-500"
-              onClick={() => setWorkspaceMode("queue")}
-              type="button"
-            >
-              Развернуть очередь
-            </button>
-            <label className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-slate-400">
-              <Search className="h-4 w-4 shrink-0" />
-              <input
-                className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none placeholder:text-slate-500"
-                onChange={(event) => setSearch(event.currentTarget.value)}
-                placeholder="Поиск по моим тикетам..."
-                type="search"
-                value={search}
-              />
-            </label>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${scope === "mine" ? "border-blue-400/60 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.04] text-slate-300"}`}
-                onClick={() => setScope("mine")}
-                type="button"
-              >
-                Мои тикеты
-              </button>
-              <button
-                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${smartView === "sla_risk" ? "border-amber-400/60 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.04] text-slate-300"}`}
-                onClick={() => setSmartView("sla_risk")}
-                type="button"
-              >
-                SLA риск
-              </button>
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-            <div className="mb-2 flex items-center justify-between px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              <span>Мой рабочий список</span>
-              <span>{visibleTickets.length}</span>
-            </div>
-
-            {queueQuery.isLoading ? (
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-center text-sm text-slate-400">
-                Загружаем очередь...
-              </div>
-            ) : null}
-
-            {queueQuery.isError ? (
-              <div className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-4 text-sm text-red-100">
-                {queueQuery.error instanceof Error ? queueQuery.error.message : "Не удалось загрузить очередь"}
-              </div>
-            ) : null}
-
-            {!queueQuery.isLoading && visibleTickets.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-center text-sm text-slate-400">
-                По текущим фильтрам тикеты не найдены.
-              </div>
-            ) : null}
-
-            <div className="space-y-2">
-              {visibleTickets.map((ticket) => {
-                const slaLabel = getCompactTicketSlaLabel(ticket);
-                return (
-                <button
-                  className={`w-full rounded-xl border p-3 text-left transition ${
-                    ticket.active
-                      ? "border-blue-500 bg-blue-600/15 shadow-lg shadow-blue-950/20"
-                      : "border-white/10 bg-[#0d1828] hover:border-white/20 hover:bg-[#111f33]"
-                  }`}
-                  key={ticket.id}
-                  onClick={() => openTicket(ticket.id)}
-                  type="button"
-                >
-                  <div className="mb-2 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-blue-200">{ticket.code}</p>
-                      <p className="mt-0.5 truncate text-sm font-semibold text-white">{ticket.subject}</p>
-                    </div>
-                    {ticket.unread ? <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" /> : null}
-                  </div>
-                  <p className="truncate text-xs text-slate-400">{ticket.requester}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold ${toneClasses(ticket.priorityTone)}`}>{ticket.priority}</span>
-                    <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${toneClasses(ticket.statusTone)}`}>
-                      {ticket.statusLabel}
-                    </span>
-                    {ticket.archivedAt ? (
-                      <span className="rounded-md border border-slate-400/30 bg-slate-500/10 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
-                        Архив
-                      </span>
-                    ) : null}
-                    {ticket.hiddenFromWorkspace ? (
-                      <span className="rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
-                        Скрыт
-                      </span>
-                    ) : null}
-                    <span className={`ml-auto text-xs font-semibold ${getCompactTicketSlaClassName(slaLabel, ticket)}`}>
-                      {slaLabel}
-                    </span>
-                  </div>
-                </button>
-                );
-              })}
-            </div>
-          </div>
-          </>
-          )}
-          </>}
-        </aside>
-
-        <main className="flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#07111f]">
-          {workspaceMode === "queue" ? (
-            <TicketPreviewPanel
-              canTakeTicket={selectedTicketIsUnassigned}
-              onAssignTicket={() => openOperatorAction("assign_self")}
-              onOpenTicket={openTicket}
-              onTakeTicket={() => openOperatorAction("assign_self")}
-              selectedTicket={selectedTicket}
-            />
-          ) : null}
-
-          {workspaceMode !== "queue" && !selectedTicketId ? (
-            <div className="flex flex-1 items-center justify-center px-8 text-center">
-              <div>
-                <Inbox className="mx-auto h-10 w-10 text-slate-500" />
-                <h2 className="mt-4 text-xl font-semibold text-white">Выберите тикет из очереди</h2>
-                <p className="mt-2 max-w-md text-sm text-slate-400">Центральная рабочая область появится после выбора обращения.</p>
-              </div>
-            </div>
-          ) : null}
-
-          {workspaceMode !== "queue" && selectedTicketId && workspaceQuery.isLoading ? (
-            <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Загружаем тикет...</div>
-          ) : null}
-
-          {workspaceMode !== "queue" && selectedTicketId && workspaceErrorState ? (
-            <div
-              className={`m-6 rounded-2xl border px-5 py-5 text-sm ${
-                workspaceErrorState.tone === "warning"
-                  ? "border-amber-400/30 bg-amber-500/10 text-amber-50"
-                  : "border-red-400/30 bg-red-500/10 text-red-50"
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <span
-                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
-                    workspaceErrorState.tone === "warning"
-                      ? "border-amber-300/30 bg-amber-400/10 text-amber-200"
-                      : "border-red-300/30 bg-red-400/10 text-red-200"
-                  }`}
-                >
-                  <AlertTriangle className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-base font-semibold text-white">{workspaceErrorState.title}</h2>
-                  <p className="mt-1 leading-6 text-slate-300">{workspaceErrorState.body}</p>
-                  <button
-                    className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/20"
-                    onClick={() => {
-                      if (workspaceErrorState.action === "queue") {
-                        navigate("/app/tickets");
-                        return;
-                      }
-                      void workspaceQuery.refetch();
-                    }}
-                    type="button"
-                  >
-                    {workspaceErrorState.actionLabel}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {workspaceMode !== "queue" && selectedTicket ? (
-            <>
-              <div className="min-h-[176px] max-h-[48vh] resize-y overflow-auto border-b border-white/10 bg-[#0b1624]/70 px-5 py-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="mb-2 flex items-center gap-3 text-sm text-slate-400">
-                      <Link className="hover:text-white" to="/app/tickets">Очередь</Link>
-                      <span>/</span>
-                      <span>{selectedTicket.code}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <h2 className="truncate text-xl font-semibold tracking-tight text-white min-[1600px]:text-2xl">
-                        {selectedTicket.code} {selectedTicket.subject}
-                      </h2>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                      <span className={`rounded-md border px-2 py-1 font-bold ${toneClasses(selectedTicket.priorityTone)}`}>{selectedTicket.priority}</span>
-                      <span>Очередь: {selectedTicket.queueLabel}</span>
-                      <span>Исполнитель: {selectedTicket.assigneeLabel}</span>
-                      <span className={`rounded-md border px-2 py-1 font-semibold ${toneClasses(selectedTicket.statusTone)}`}>{selectedTicket.statusLabel}</span>
-                      {selectedTicket.archivedAt ? (
-                        <span className="rounded-md border border-slate-400/30 bg-slate-500/10 px-2 py-1 font-semibold text-slate-200">Архив</span>
-                      ) : null}
-                      {selectedTicket.hiddenFromWorkspace ? (
-                        <span className="rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 font-semibold text-amber-100">Скрыт из списков</span>
-                      ) : null}
-                      <span>SLA: {selectedTicket.nextAction.remainingLabel}</span>
-                    </div>
-                  </div>
-                  <div className="relative shrink-0">
-                    <button
-                      aria-expanded={moreOpen}
-                      className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
-                      disabled={operatorActionMutation.isPending || ticketVisibilityMutation.isPending}
-                      onClick={() => setMoreOpen((open) => !open)}
-                      type="button"
-                    >
-                      Ещё
-                    </button>
-                    {moreOpen ? (
-                      <div className="absolute right-0 z-20 mt-2 max-h-[min(70vh,520px)] w-[340px] overflow-y-auto rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
-                        <button
-                          className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
-                            selectedTicketIsUnassigned ? "bg-blue-600 text-white hover:bg-blue-500" : "text-slate-500"
-                          }`}
-                          disabled={!session?.user_login || !selectedTicketIsUnassigned}
-                          onClick={() => openOperatorAction("assign_self")}
-                          type="button"
-                        >
-                          Взять себе
-                        </button>
-                        <div className="my-1 border-t border-white/10" />
-                        {selectedTicket.hiddenFromWorkspace ? (
-                          <button
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!selectedTicket.canUnhideFromWorkspace || ticketVisibilityMutation.isPending}
-                            onClick={() => ticketVisibilityMutation.mutate("unhide")}
-                            type="button"
-                          >
-                            <Eye className="h-4 w-4" />
-                            Вернуть в списки
-                          </button>
-                        ) : (
-                          <button
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!selectedTicket.canHideFromWorkspace || ticketVisibilityMutation.isPending}
-                            onClick={() => ticketVisibilityMutation.mutate("hide")}
-                            type="button"
-                          >
-                            <EyeOff className="h-4 w-4" />
-                            Скрыть у всех
-                          </button>
-                        )}
-                        {isAdmin && selectedTicket.archivedAt ? (
-                          <button
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!selectedTicket.canUnarchiveTicket || ticketVisibilityMutation.isPending}
-                            onClick={() => ticketVisibilityMutation.mutate("unarchive")}
-                            type="button"
-                          >
-                            <ArchiveRestore className="h-4 w-4" />
-                            Вернуть из архива
-                          </button>
-                        ) : null}
-                        {isAdmin && !selectedTicket.archivedAt ? (
-                          <button
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!selectedTicket.canArchiveTicket || ticketVisibilityMutation.isPending}
-                            onClick={() => ticketVisibilityMutation.mutate("archive")}
-                            type="button"
-                          >
-                            <Archive className="h-4 w-4" />
-                            Архивировать
-                          </button>
-                        ) : null}
-                        <button
-                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={statusActionOptions.length === 0}
-                          onClick={() => openOperatorAction("status")}
-                          type="button"
-                        >
-                          Сменить статус
-                        </button>
-                        <button
-                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={queueActionOptions.length === 0}
-                          onClick={() => openOperatorAction("queue")}
-                          type="button"
-                        >
-                          Сменить очередь
-                        </button>
-                        <button
-                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
-                          onClick={() => openOperatorAction("priority")}
-                          type="button"
-                        >
-                          Изменить приоритет
-                        </button>
-                        <button
-                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
-                          onClick={() => openOperatorAction("reroute")}
-                          type="button"
-                        >
-                          Пересчитать маршрут
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                <section className={`mt-3 grid gap-3 rounded-xl border p-3 2xl:grid-cols-[auto_minmax(0,1fr)_minmax(170px,240px)] 2xl:items-center ${toneClasses(selectedTicket.nextAction.tone)}`}>
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10">
-                    <Play className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Следующее действие</p>
-                    <p className="mt-1 break-words text-base font-semibold leading-6 text-white">{selectedTicket.nextAction.label}</p>
-                    <p className="mt-1 text-sm leading-5 text-slate-300">{selectedTicket.nextAction.hint}</p>
-                    <p className="mt-1 text-xs text-slate-400">Владелец: {selectedTicket.nextAction.ownerLabel}</p>
-                  </div>
-                  <div className="min-w-0 border-white/10 2xl:border-l 2xl:pl-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Осталось времени</p>
-                    <p className="mt-1 text-xl font-semibold leading-7 text-white">{selectedTicket.nextAction.remainingLabel}</p>
-                    <p className="mt-1 text-xs text-slate-400">до контрольного срока</p>
-                    <button
-                      className="mt-2 inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-lg border border-white/10 bg-white/[0.06] px-3 text-xs font-semibold text-slate-100 hover:bg-white/[0.1]"
-                      onClick={() => {
-                        if (selectedTicket.nextAction.owner === "operator") {
-                          openOperatorAction(selectedTicketIsUnassigned ? "assign_self" : "status");
-                          return;
-                        }
-                        composerTextareaRef.current?.focus();
-                      }}
-                      type="button"
-                    >
-                      Выполнить действие
-                    </button>
-                  </div>
-                </section>
-
-                {actionError ? (
-                  <p className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-                    {actionError instanceof Error ? actionError.message : "Действие не выполнено"}
-                  </p>
-                ) : null}
-
-                {selectedTicket.closurePlan.missingCount > 0 ? (
-                  <section
-                    className={`mt-4 rounded-xl p-4 ${
-                      isLightTheme
-                        ? "border border-amber-300 bg-amber-50 text-slate-950 shadow-sm"
-                        : "border border-amber-400/25 bg-amber-500/10"
-                    }`}
-                    data-testid="closure-plan-panel"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className={`h-4 w-4 ${isLightTheme ? "text-amber-700" : "text-amber-200"}`} />
-                          <p
-                            className={`font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}
-                            data-testid="closure-plan-title"
-                          >
-                            Перед закрытием
-                          </p>
-                        </div>
-                        <p
-                          className={`mt-1 text-sm leading-6 ${isLightTheme ? "text-amber-900" : "text-amber-100/90"}`}
-                          data-testid="closure-plan-summary"
-                        >
-                          Осталось требований: {selectedTicket.closurePlan.missingCount}/{selectedTicket.closurePlan.total || selectedTicket.closurePlan.missingCount}.
-                          {selectedTicket.closurePlan.evidenceCandidateCount
-                            ? ` Доступно кандидатов evidence: ${selectedTicket.closurePlan.evidenceCandidateCount}.`
-                            : " Evidence-кандидаты не найдены."}
-                        </p>
-                      </div>
-                      <button
-                        className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${
-                          isLightTheme
-                            ? "border border-amber-300 bg-white/80 text-amber-900 hover:bg-white"
-                            : "border border-amber-300/30 bg-white/[0.06] text-amber-50 hover:bg-white/[0.1]"
-                        }`}
-                        onClick={() => selectRightTab("passport")}
-                        type="button"
-                      >
-                        <FileCheck2 className="mr-2 inline h-4 w-4" />
-                        Открыть паспорт
-                      </button>
-                    </div>
-                    <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      {visibleClosureBlockers.map((blocker) => (
-                        <div
-                          className={`rounded-lg px-3 py-2 ${
-                            isLightTheme ? "border border-amber-200 bg-white/80" : "border border-white/10 bg-white/[0.04]"
-                          }`}
-                          data-testid="closure-blocker-card"
-                          key={blocker.key}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <p className={`min-w-0 break-words text-sm font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>
-                              {blocker.label}
-                            </p>
-                            <button
-                              className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                                isLightTheme
-                                  ? "border border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100"
-                                  : "border border-white/10 bg-white/[0.05] text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.1]"
-                              }`}
-                              onClick={() => openClosureBlocker(blocker)}
-                              type="button"
-                            >
-                              {blocker.actionLabel}
-                            </button>
-                          </div>
-                          {blocker.detail ? (
-                            <p className={`mt-1 break-words text-xs leading-5 ${isLightTheme ? "text-amber-900/80" : "text-amber-100/75"}`}>
-                              {blocker.detail}
-                            </p>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                    {hiddenClosureBlockerCount > 0 ? (
-                      <button
-                        className={`mt-3 rounded-lg px-3 py-2 text-xs font-semibold ${
-                          isLightTheme
-                            ? "border border-amber-300 bg-white/80 text-amber-900 hover:bg-white"
-                            : "border border-amber-300/25 bg-white/[0.04] text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.08]"
-                        }`}
-                        onClick={() => setClosureBlockersExpanded((expanded) => !expanded)}
-                        type="button"
-                      >
-                        {closureBlockersExpanded ? "Скрыть" : `Показать ещё ${hiddenClosureBlockerCount}`}
-                      </button>
-                    ) : null}
-                  </section>
-                ) : null}
-              </div>
-
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="flex items-center gap-5 border-b border-white/10 px-5">
-                  {timelineTabs.map((tab) => (
-                    <button
-                      className={`border-b-2 px-1 py-3 text-sm font-semibold transition ${
-                        timelineFilter === tab.value ? "border-blue-500 text-blue-200" : "border-transparent text-slate-400 hover:text-white"
-                      }`}
-                      key={tab.value}
-                      onClick={() => setTimelineFilter(tab.value)}
-                      type="button"
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                  <button className="ml-auto rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300" type="button">
-                    Фильтр
-                  </button>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-                  {timelineEmptyState ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center text-sm text-slate-400">
-                      <Inbox className="mx-auto h-9 w-9 text-slate-500" />
-                      <p className="mt-4 text-base font-semibold text-white">{timelineEmptyState.title}</p>
-                      <p className="mx-auto mt-2 max-w-md leading-6">{timelineEmptyState.body}</p>
-                      {timelineEmptyState.actionLabel ? (
-                        <button
-                          className="mt-4 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 font-semibold text-slate-100 transition hover:border-blue-400/40 hover:bg-blue-500/20"
-                          onClick={() => setTimelineFilter("all")}
-                          type="button"
-                        >
-                          {timelineEmptyState.actionLabel}
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="space-y-4">
-                    {visibleTimeline.map((item) => (
-                      <article className="grid grid-cols-[36px_minmax(0,1fr)_110px] gap-4" key={item.id}>
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-full border ${toneClasses(item.tone)}`}>
-                          {item.kind === "diagnostics" ? <Wrench className="h-4 w-4" /> : item.kind === "internal" ? <Lock className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
-                        </div>
-                        <div className="min-w-0 rounded-xl border border-white/10 bg-[#0d1828] px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2 text-sm">
-                            <span className="font-semibold text-white">{item.actor}</span>
-                            <span className="text-slate-500">·</span>
-                            <span className="text-slate-400">{item.title}</span>
-                            {item.visibility === "internal" ? <Lock className="h-3.5 w-3.5 text-amber-300" /> : null}
-                          </div>
-                          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-200">{item.body}</p>
-                          {item.operation ? (
-                            <div className="mt-3 rounded-lg border border-white/10 bg-[#111f33] p-3 text-sm">
-                              <div className="grid gap-3 md:grid-cols-3">
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Операция</p>
-                                  <p className="mt-1 font-semibold text-white">{item.operation.name}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Статус</p>
-                                  <span className={`mt-1 inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(item.operation.statusTone)}`}>
-                                    {item.operation.statusLabel}
-                                  </span>
-                                </div>
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Итог</p>
-                                  <p className={`mt-1 break-all font-semibold ${operationResultTextClass(item.operation)}`}>
-                                    {item.operation.summary ?? item.operation.preview ?? "Нет результата"}
-                                  </p>
-                                </div>
-                              </div>
-                              {item.operation.preview && item.operation.summary && item.operation.preview !== item.operation.summary ? (
-                                <p className="mt-3 break-all rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-slate-400">
-                                  {item.operation.preview}
-                                </p>
-                              ) : null}
-                              {item.operation.resultPayload !== undefined && item.operation.resultPayload !== null ? (
-                                <ToolResultEventCard
-                                  result={item.operation.resultPayload}
-                                  presentationSchema={item.operation.presentationSchema}
-                                />
-                              ) : null}
-                              {item.operation.metaLabels.length ? (
-                                <div className="mt-3 flex flex-wrap gap-1.5">
-                                  {item.operation.metaLabels.slice(0, 6).map((label) => (
-                                    <span className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
-                                      {label}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                              {item.operation.steps?.length ? (
-                                <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 md:grid-cols-3">
-                                  {item.operation.steps.map((step) => (
-                                    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2" key={`${item.id}:${step.name}:${step.status}`}>
-                                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{step.name}</p>
-                                      <p className={`mt-1 font-semibold ${diagnosticStepTextClass(step.status)}`}>
-                                        {diagnosticStepStatusLabel(step.status)}
-                                      </p>
-                                      <p className="mt-1 break-words text-xs leading-5 text-slate-400">{step.value}</p>
-                                      {step.details ? <p className="mt-1 break-words text-xs leading-5 text-slate-500">{step.details}</p> : null}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {item.attachments.length ? (
-                            <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
-                              <Paperclip className="h-4 w-4" />
-                              {item.attachments.length} влож.
-                            </div>
-                          ) : null}
-                        </div>
-                        <time className="pt-2 text-right text-xs text-slate-500">{item.timestampLabel}</time>
-                      </article>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="border-t border-white/10 bg-[#0b1624] p-3">
-                  <div className="rounded-xl border border-white/10 bg-[#0d1828]">
-                    <textarea
-                      aria-label="Сообщение в тикет"
-                      className="min-h-10 max-h-44 w-full resize-y overflow-y-auto bg-transparent px-4 py-2.5 text-sm leading-5 text-white outline-none placeholder:text-slate-500"
-                      data-testid="support-reply-composer"
-                      onChange={(event) => setComposerText(event.currentTarget.value)}
-                      placeholder={composerMode === "public" ? "Напишите сообщение пользователю..." : "Внутренняя заметка для команды..."}
-                      rows={1}
-                      value={composerText}
-                      ref={composerTextareaRef}
-                    />
-                    {pendingAttachments.length ? (
-                      <div className="mx-4 mb-2 flex flex-wrap gap-2">
-                        {pendingAttachments.map((attachment) => (
-                          <span
-                            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300"
-                            key={attachment.artifact_id}
-                          >
-                            <Paperclip className="h-3.5 w-3.5 shrink-0" />
-                            <span className="max-w-[220px] truncate">{attachment.name || attachment.filename}</span>
-                            <span className="shrink-0 text-slate-500">{formatAttachmentSize(attachment.size)}</span>
-                            <button
-                              aria-label={`Убрать вложение ${attachment.name || attachment.filename}`}
-                              className="rounded text-slate-500 hover:text-white"
-                              onClick={() => setPendingAttachments((current) => current.filter((item) => item.artifact_id !== attachment.artifact_id))}
-                              type="button"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                    {attachmentError ? (
-                      <p className="mx-4 mb-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">{attachmentError}</p>
-                    ) : null}
-                    <div className="flex items-center gap-2 px-4 pb-3">
-                      <input
-                        aria-label="Файлы для сообщения"
-                        className="hidden"
-                        multiple
-                        onChange={handleAttachmentInputChange}
-                        ref={attachmentInputRef}
-                        type="file"
-                      />
-                      <button
-                        aria-label="Прикрепить файлы"
-                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={!selectedTicketId || uploadingAttachments}
-                        onClick={() => attachmentInputRef.current?.click()}
-                        title={uploadingAttachments ? "Прикрепляем..." : "Прикрепить файлы"}
-                        type="button"
-                      >
-                        <Paperclip className="h-4 w-4" />
-                      </button>
-                      <button
-                        aria-label={composerMode === "internal" ? "Переключить на публичный ответ" : "Переключить на внутреннюю заметку"}
-                        className={`flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 ${
-                          composerMode === "internal" ? "bg-amber-400/15 text-amber-200" : "text-slate-400 hover:text-white"
-                        } disabled:cursor-not-allowed disabled:opacity-50`}
-                        disabled={!internalNoteAllowed}
-                        onClick={() => setComposerMode((mode) => (mode === "internal" ? "public" : "internal"))}
-                        title={composerMode === "internal" ? "Внутренняя заметка" : "Публичный ответ"}
-                        type="button"
-                      >
-                        <Lock className="h-4 w-4" />
-                      </button>
-                      <button
-                        className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50"
-                        disabled={!composerCanSend}
-                        onClick={() => messageMutation.mutate()}
-                        type="button"
-                      >
-                        Отправить
-                        <Send className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : null}
-        </main>
-
+  const ticketInspector = (
         <aside
           aria-label="Ticket inspector"
           className={`flex min-h-0 flex-col bg-[#0b1624] ${
-            rightPanelInDrawer ? "support-workspace__right-panel--drawer" : ""
+            !simpleMode && rightPanelInDrawer ? "support-workspace__right-panel--drawer" : ""
           }`}
           data-layout={rightPanelInDrawer ? "drawer-inspector" : "side-inspector"}
           data-open={compactInspectorOpen}
@@ -3186,10 +2352,10 @@ export function TicketListPage() {
           ) : (
             <>
           <div className="border-b border-white/10 bg-[#081321]/70 px-3 py-3" data-testid="support-inspector-summary">
-            {rightPanelInDrawer ? <button className="mb-3 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300" onClick={() => { setCompactInspectorOpen(false); setWorkspaceMode("ticket"); }} type="button">Вернуться к переписке</button> : null}
+            {!simpleMode && rightPanelInDrawer ? <button className="mb-3 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300" onClick={() => { setCompactInspectorOpen(false); setWorkspaceMode("ticket"); }} type="button">Вернуться к переписке</button> : null}
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Ticket inspector</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Сведения об обращении</p>
                 <p className="mt-1 truncate text-sm font-semibold text-white">
                   {selectedTicket ? selectedTicket.code : "No ticket selected"}
                 </p>
@@ -3207,7 +2373,7 @@ export function TicketListPage() {
                   onClick={() => selectRightTab("context")}
                   type="button"
                 >
-                  Context
+                  Контекст
                 </button>
                 <button
                   aria-label="Open SLA inspector"
@@ -3222,7 +2388,7 @@ export function TicketListPage() {
                   onClick={() => selectRightTab("tools")}
                   type="button"
                 >
-                  Actions
+                  Действия
                 </button>
               </div>
             ) : null}
@@ -4506,6 +3672,856 @@ export function TicketListPage() {
             </>
           )}
         </aside>
+  );
+
+  const unifiedQueue = queueQuery.data?.queue_mode === "unified";
+  const simpleQueueData = queueQuery.data && activeQueueId && !unifiedQueue ? { ...queueQuery.data,
+    tickets: queueQuery.data.tickets.filter((item) => item.queue_code === activeQueueId) } : queueQuery.data;
+  const simpleQueueProps = {
+    queue: simpleQueueData, actorId: session?.user_login, canWork: hasPermission("ticket.status.change") && hasPermission("ticket.assign"),
+    filter: simpleFilter, search, loading: queueQuery.isLoading, error: queueQuery.isError,
+    pending: takeTicketMutation.isPending, selectedTicketId, activeQueueId,
+    onFilterChange: setSimpleFilter, onSearchChange: setSearch, onOpenTicket: openTicket,
+    onTakeTicket: (id: string) => takeTicketMutation.mutate(id), onQueueChange: unifiedQueue ? undefined : setActiveQueueId,
+    onAdvanced: () => setSimpleMode(false),
+    onOpenQueue: () => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); },
+  };
+
+  return (
+    <section
+      className={`support-workspace flex h-full min-h-0 flex-1 flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
+      ref={workspaceRootRef}
+      data-testid="support-workspace-root"
+      data-compact-layout={isCompactWorkspace ? "true" : "false"}
+      data-has-ticket={selectedTicket ? "true" : "false"}
+      data-mode={workspaceMode}
+      data-theme={workspaceTheme}
+    >
+      <SupportWorkspaceTopbar
+        theme={workspaceTheme}
+        onToggleTheme={toggleWorkspaceTheme}
+        onRefresh={refreshAll}
+        refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
+      />
+
+      {!simpleMode ? <button className="simple-advanced-return" type="button" onClick={() => { setSimpleMode(true); setWorkspaceMode(selectedTicketId ? "ticket" : "queue"); }}>← Вернуться к обычной работе</button> : null}
+      {simpleMode ? <div className="support-simple" data-view={workspaceMode === "queue" ? "queue" : "ticket"} data-testid="simple-support-workspace">
+        {workspaceMode === "queue" || !selectedTicketId ? <>
+          {actionError ? <p className="simple-notice simple-risk" role="alert">{actionError instanceof Error ? actionError.message : "Действие не выполнено"}</p> : null}
+          <SimpleSupportQueue {...simpleQueueProps} onAdvanced={() => { setSimpleMode(false); setWorkspaceMode("queue"); }} />
+        </> : <div className="simple-workspace" style={{ "--simple-left": `${workspaceColumns.left}px`, "--simple-right": `${workspaceColumns.right}px` } as CSSProperties}>
+          {(["left", "right"] as const).map((pane) => <button key={pane} type="button" role="separator" aria-orientation="vertical" aria-label={pane === "left" ? "Ширина списка обращений" : "Ширина панели сведений"}
+            aria-valuenow={workspaceColumns[pane]} aria-valuemin={pane === "left" ? 260 : 300} aria-valuemax={pane === "left" ? 420 : 460}
+            className="simple-column-resizer" data-pane={pane} style={pane === "left" ? { left: workspaceColumns.left } : { right: workspaceColumns.right }}
+            onPointerDown={(event) => startColumnResize(pane, event)} onDoubleClick={resetWorkspaceColumnsForCurrentMode}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Home") { event.preventDefault(); resetWorkspaceColumnsForCurrentMode(); } else if (["ArrowLeft", "ArrowRight"].includes(event.key)) { event.preventDefault(); const delta = (event.key === "ArrowRight" ? 20 : -20) * (pane === "right" ? -1 : 1); setWorkspaceColumnsByMode((current) => ({ ...current, ticket: normalizeWorkspaceColumnsForMode("ticket", { ...(current.ticket ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE.ticket), [pane]: (current.ticket ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE.ticket)[pane] + delta }, workspaceViewportWidth, 420) })); } }} title="Потяните или используйте стрелки. Двойной щелчок — сброс ширины."><GripVertical size={14} aria-hidden /></button>)}
+          <SimpleSupportQueue {...simpleQueueProps} compact />
+          {workspaceQuery.data && selectedTicket ? <SimpleSupportTicket detail={workspaceQuery.data.detail} ticket={selectedTicket} context={viewModel.right.context}
+            actorId={session?.user_login} isAdmin={isAdmin} canWork={hasPermission("ticket.status.change") && !workspaceErrorState}
+            canAssign={hasPermission("ticket.assign")}
+            pending={operatorActionMutation.isPending || takeTicketMutation.isPending}
+            error={workspaceErrorState ? "Не удалось обновить обращение. Обновите данные перед действием." : actionError instanceof Error ? actionError.message : null}
+            onStatus={(value) => operatorActionMutation.mutate({ kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" })}
+            onResolve={() => setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket))}
+            onAdvanced={(mode = "ticket") => { setSimpleMode(false); setWorkspaceMode(mode); if (mode !== "ticket") setSidebarTab(mode); }}
+            inspector={ticketInspector} unifiedQueue={unifiedQueue}
+            onManage={openOperatorAction} onQueue={() => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); }}
+            conversation={<SimpleSupportConversation key={selectedTicket.id}
+              items={mapSupportTimelineEntries([...(timelineQuery.data?.items ?? workspaceQuery.data.detail.timeline)].sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0)))}
+              initialDescription={rawTicket?.description}
+              replyBlockedReason={rawTicket && ["new", "queued", "assigned"].includes(rawTicket.status) ? workspaceQuery.data.detail.actions.take_in_work?.reason : rawTicket && ["resolved", "closed", "canceled"].includes(rawTicket.status) ? "Обращение завершено. Переписка доступна для просмотра." : undefined}
+              mode={composerMode} text={composerText} canReply={publicReplyAllowed} canNote={hasPermission("ticket.comment.internal") && internalNoteAllowed}
+              pending={messageMutation.isPending || uploadingAttachments} loading={timelineQuery.isLoading} error={timelineQuery.isError}
+              onTextChange={(text) => { simpleTextDraftsRef.current[composerMode] = text; setComposerText(text); }}
+              onModeChange={(mode) => { simpleTextDraftsRef.current[composerMode] = composerText; simpleAttachmentDraftsRef.current[composerMode] = pendingAttachments; setComposerMode(mode); setComposerText(simpleTextDraftsRef.current[mode]); setPendingAttachments(simpleAttachmentDraftsRef.current[mode]); }}
+              onSend={() => { if (composerCanSend) messageMutation.mutate(); }}
+              attachments={pendingAttachments} inputRef={attachmentInputRef} onUpload={handleAttachmentInputChange} uploadError={attachmentError}
+              onRemoveAttachment={(id) => setPendingAttachments((items) => items.filter((item) => item.artifact_id !== id))}
+            />}
+          /> : <main className="simple-empty"><p role={workspaceErrorState ? "alert" : "status"}>{workspaceErrorState?.body ?? "Загружаем обращение…"}</p><button className="simple-button" type="button" onClick={() => workspaceQuery.refetch()}>Обновить</button></main>}
+        </div>}
+      </div> : (
+      <div
+        className="relative grid min-h-0 flex-1 overflow-hidden support-workspace__mode-grid"
+        data-overlay-right={rightPanelInDrawer ? "true" : "false"}
+        style={{...getWorkspaceGridStyle(workspaceMode, workspaceColumns, workspaceViewportWidth),...(effectiveListCollapsed?{"--support-left":"52px","--support-center":"minmax(0, 1fr)"}: {})} as CSSProperties}
+      >
+        <section
+          aria-label="Operator command console"
+          className="col-span-full flex min-h-14 flex-wrap items-center gap-3 border-b border-white/10 bg-[#081321]/90 px-4 py-2"
+          data-layout="operator-command-console"
+          data-testid="support-command-strip"
+        >
+          <div className="min-w-0 pr-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Рабочая очередь</p>
+            <p className="truncate text-sm font-semibold text-white">
+              {selectedTicket ? `${selectedTicket.code} · ${selectedTicket.subject}` : "Queue focus"}
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {selectedTicket ? (
+              <>
+                <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${toneClasses(selectedTicket.statusTone)}`}>
+                  {selectedTicket.statusLabel}
+                </span>
+                <span className={`rounded-lg border px-2.5 py-1 text-xs font-bold ${toneClasses(selectedTicket.priorityTone)}`}>
+                  {selectedTicket.priority}
+                </span>
+                <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
+                  SLA {selectedTicket.timers.filter((timer) => timer.status === "at_risk" || timer.status === "breached").length}
+                </span>
+                <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
+                  Passport {selectedTicket.closurePlan.missingCount}/{selectedTicket.closurePlan.total || selectedTicket.closurePlan.missingCount}
+                </span>
+              </>
+            ) : (
+              <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
+                {visibleTickets.length} visible tickets
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-300 hover:text-white"
+              onClick={() => setWorkspaceMode("queue")}
+              type="button"
+            >
+              <ClipboardList className="h-4 w-4" />
+              Queue
+            </button>
+            <button
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!selectedTicket}
+              onClick={() => {
+                setSidebarTab("context");
+                setWorkspaceMode("ticket");
+                setCompactInspectorOpen(true);
+              }}
+              type="button"
+            >
+              <Eye className="h-4 w-4" />
+              Inspector
+            </button>
+          </div>
+        </section>
+        {canResizeWorkspace && !effectiveListCollapsed ? <button
+          aria-label="Изменить ширину левой колонки"
+          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-6 -translate-x-1/2 cursor-col-resize ${
+            resizingPane === "left" ? "support-workspace__column-resizer--active" : ""
+          }`}
+          onPointerDown={(event) => startColumnResize("left", event)}
+          onDoubleClick={resetWorkspaceColumnsForCurrentMode}
+          style={{ left: `${workspaceColumns.left}px` }}
+          title="Потяните, чтобы изменить ширину списка тикетов; двойной клик сбрасывает колонки"
+          type="button"
+        >
+          <span className="support-workspace__column-resizer-line">
+            <GripVertical className="h-4 w-4" />
+          </span>
+        </button> : null}
+        {canResizeWorkspace ? <button
+          aria-label="Изменить ширину правой колонки"
+          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-6 translate-x-1/2 cursor-col-resize ${
+            resizingPane === "right" ? "support-workspace__column-resizer--active" : ""
+          }`}
+          onPointerDown={(event) => startColumnResize("right", event)}
+          onDoubleClick={resetWorkspaceColumnsForCurrentMode}
+          style={{ right: `${workspaceColumns.right}px` }}
+          title="Потяните, чтобы изменить ширину контекстной панели; двойной клик сбрасывает колонки"
+          type="button"
+        >
+          <span className="support-workspace__column-resizer-line">
+            <GripVertical className="h-4 w-4" />
+          </span>
+        </button> : null}
+        <aside aria-label="Список заявок" data-collapsed={effectiveListCollapsed?"true":"false"} className="support-workspace__ticket-list flex min-h-0 flex-col border-r border-white/10 bg-[#0b1624]">
+          {selectedTicket && workspaceMode!=="queue" ? <button aria-label={effectiveListCollapsed?"Показать список заявок":"Скрыть список заявок"} aria-expanded={!effectiveListCollapsed} className="m-2 rounded-lg border border-white/10 p-2 text-xs font-semibold" onClick={toggleTicketList} type="button">{effectiveListCollapsed?<><ClipboardList className="mx-auto h-4 w-4"/><span className="sr-only">Заявки</span></>:"Скрыть список заявок"}</button>:null}
+          {effectiveListCollapsed?<span className="text-center text-xs text-slate-500">{visibleTickets.length}</span>:<>
+          {workspaceMode === "queue" ? (
+            <QueueExplorer
+              activeQueueId={activeQueueId}
+              cleanupNoisePending={cleanupNoiseMutation.isPending}
+              defaultColumns={queueSavedViewsQuery.data?.default_columns}
+              defaultViewId={queueSavedViewsQuery.data?.default_view_id ?? null}
+              massActionPending={queueMassActionMutation.isPending}
+              massActionResult={queueMassActionMutation.data ?? null}
+              onActiveQueueChange={setActiveQueueId}
+              onCleanupNoise={() => cleanupNoiseMutation.mutate()}
+              onDeleteSavedView={(viewId) => queueSavedViewDeleteMutation.mutate(viewId)}
+              onMassAction={(request) => queueMassActionMutation.mutate(request)}
+              onOpenTicket={openTicket}
+              onPersistDefaultColumns={(viewId, request) => {
+                if (viewId) {
+                  queueSavedViewUpdateMutation.mutate({ viewId, request });
+                  return;
+                }
+                queueSavedViewCreateMutation.mutate(request);
+              }}
+              onSaveSavedView={(request) => queueSavedViewCreateMutation.mutate(request)}
+              onScopeChange={setScope}
+              onSearchChange={setSearch}
+              onShowArchiveChange={setShowArchive}
+              onSelectTicket={(ticketId) => {
+                setWorkspaceMode("queue");
+                startTransition(() => {
+                  navigate(`/app/tickets/${ticketId}`);
+                });
+              }}
+              onSmartViewChange={setSmartView}
+              queues={viewModel.left.queues}
+              scope={scope}
+              search={search}
+              selectedTicket={selectedTicket}
+              selectedViewId={smartView}
+              savedViewMutationPending={queueSavedViewCreateMutation.isPending || queueSavedViewUpdateMutation.isPending || queueSavedViewDeleteMutation.isPending}
+              savedViews={queueSavedViewsQuery.data?.views ?? []}
+              savedViewsError={queueSavedViewsQuery.isError}
+              savedViewsLoading={queueSavedViewsQuery.isLoading}
+              showArchive={showArchive}
+              slices={viewModel.left.slices}
+              tickets={visibleTickets}
+            />
+          ) : (
+          <>
+          <div className="border-b border-white/10 px-4 py-4">
+            <button
+              className="mb-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-500"
+              onClick={() => setWorkspaceMode("queue")}
+              type="button"
+            >
+              Развернуть очередь
+            </button>
+            <label className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-slate-400">
+              <Search className="h-4 w-4 shrink-0" />
+              <input
+                className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none placeholder:text-slate-500"
+                onChange={(event) => setSearch(event.currentTarget.value)}
+                placeholder="Поиск по моим тикетам..."
+                type="search"
+                value={search}
+              />
+            </label>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${scope === "mine" ? "border-blue-400/60 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.04] text-slate-300"}`}
+                onClick={() => setScope("mine")}
+                type="button"
+              >
+                Мои тикеты
+              </button>
+              <button
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${smartView === "sla_risk" ? "border-amber-400/60 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.04] text-slate-300"}`}
+                onClick={() => setSmartView("sla_risk")}
+                type="button"
+              >
+                SLA риск
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+            <div className="mb-2 flex items-center justify-between px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <span>Мой рабочий список</span>
+              <span>{visibleTickets.length}</span>
+            </div>
+
+            {queueQuery.isLoading ? (
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-center text-sm text-slate-400">
+                Загружаем очередь...
+              </div>
+            ) : null}
+
+            {queueQuery.isError ? (
+              <div className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-4 text-sm text-red-100">
+                {queueQuery.error instanceof Error ? queueQuery.error.message : "Не удалось загрузить очередь"}
+              </div>
+            ) : null}
+
+            {!queueQuery.isLoading && visibleTickets.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-center text-sm text-slate-400">
+                По текущим фильтрам тикеты не найдены.
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              {visibleTickets.map((ticket) => {
+                const slaLabel = getCompactTicketSlaLabel(ticket);
+                return (
+                <button
+                  className={`w-full rounded-xl border p-3 text-left transition ${
+                    ticket.active
+                      ? "border-blue-500 bg-blue-600/15 shadow-lg shadow-blue-950/20"
+                      : "border-white/10 bg-[#0d1828] hover:border-white/20 hover:bg-[#111f33]"
+                  }`}
+                  key={ticket.id}
+                  onClick={() => openTicket(ticket.id)}
+                  type="button"
+                >
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-blue-200">{ticket.code}</p>
+                      <p className="mt-0.5 truncate text-sm font-semibold text-white">{ticket.subject}</p>
+                    </div>
+                    {ticket.unread ? <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" /> : null}
+                  </div>
+                  <p className="truncate text-xs text-slate-400">{ticket.requester}</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold ${toneClasses(ticket.priorityTone)}`}>{ticket.priority}</span>
+                    <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${toneClasses(ticket.statusTone)}`}>
+                      {ticket.statusLabel}
+                    </span>
+                    {ticket.archivedAt ? (
+                      <span className="rounded-md border border-slate-400/30 bg-slate-500/10 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
+                        Архив
+                      </span>
+                    ) : null}
+                    {ticket.hiddenFromWorkspace ? (
+                      <span className="rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                        Скрыт
+                      </span>
+                    ) : null}
+                    <span className={`ml-auto text-xs font-semibold ${getCompactTicketSlaClassName(slaLabel, ticket)}`}>
+                      {slaLabel}
+                    </span>
+                  </div>
+                </button>
+                );
+              })}
+            </div>
+          </div>
+          </>
+          )}
+          </>}
+        </aside>
+
+        <main className="flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#07111f]">
+          {workspaceMode === "queue" ? (
+            <TicketPreviewPanel
+              canTakeTicket={selectedTicketIsUnassigned}
+              onAssignTicket={() => openOperatorAction("assign_self")}
+              onOpenTicket={openTicket}
+              onTakeTicket={() => openOperatorAction("assign_self")}
+              selectedTicket={selectedTicket}
+            />
+          ) : null}
+
+          {workspaceMode !== "queue" && !selectedTicketId ? (
+            <div className="flex flex-1 items-center justify-center px-8 text-center">
+              <div>
+                <Inbox className="mx-auto h-10 w-10 text-slate-500" />
+                <h2 className="mt-4 text-xl font-semibold text-white">Выберите тикет из очереди</h2>
+                <p className="mt-2 max-w-md text-sm text-slate-400">Центральная рабочая область появится после выбора обращения.</p>
+              </div>
+            </div>
+          ) : null}
+
+          {workspaceMode !== "queue" && selectedTicketId && workspaceQuery.isLoading ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Загружаем тикет...</div>
+          ) : null}
+
+          {workspaceMode !== "queue" && selectedTicketId && workspaceErrorState ? (
+            <div
+              className={`m-6 rounded-2xl border px-5 py-5 text-sm ${
+                workspaceErrorState.tone === "warning"
+                  ? "border-amber-400/30 bg-amber-500/10 text-amber-50"
+                  : "border-red-400/30 bg-red-500/10 text-red-50"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+                    workspaceErrorState.tone === "warning"
+                      ? "border-amber-300/30 bg-amber-400/10 text-amber-200"
+                      : "border-red-300/30 bg-red-400/10 text-red-200"
+                  }`}
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-base font-semibold text-white">{workspaceErrorState.title}</h2>
+                  <p className="mt-1 leading-6 text-slate-300">{workspaceErrorState.body}</p>
+                  <button
+                    className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/20"
+                    onClick={() => {
+                      if (workspaceErrorState.action === "queue") {
+                        navigate("/app/tickets");
+                        return;
+                      }
+                      void workspaceQuery.refetch();
+                    }}
+                    type="button"
+                  >
+                    {workspaceErrorState.actionLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {workspaceMode !== "queue" && selectedTicket ? (
+            <>
+              <div className="min-h-[176px] max-h-[48vh] resize-y overflow-auto border-b border-white/10 bg-[#0b1624]/70 px-5 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex items-center gap-3 text-sm text-slate-400">
+                      <Link className="hover:text-white" to="/app/tickets">Очередь</Link>
+                      <span>/</span>
+                      <span>{selectedTicket.code}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <h2 className="truncate text-xl font-semibold tracking-tight text-white min-[1600px]:text-2xl">
+                        {selectedTicket.code} {selectedTicket.subject}
+                      </h2>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                      <span className={`rounded-md border px-2 py-1 font-bold ${toneClasses(selectedTicket.priorityTone)}`}>{selectedTicket.priority}</span>
+                      <span>Очередь: {selectedTicket.queueLabel}</span>
+                      <span>Исполнитель: {selectedTicket.assigneeLabel}</span>
+                      <span className={`rounded-md border px-2 py-1 font-semibold ${toneClasses(selectedTicket.statusTone)}`}>{selectedTicket.statusLabel}</span>
+                      {selectedTicket.archivedAt ? (
+                        <span className="rounded-md border border-slate-400/30 bg-slate-500/10 px-2 py-1 font-semibold text-slate-200">Архив</span>
+                      ) : null}
+                      {selectedTicket.hiddenFromWorkspace ? (
+                        <span className="rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 font-semibold text-amber-100">Скрыт из списков</span>
+                      ) : null}
+                      <span>SLA: {selectedTicket.nextAction.remainingLabel}</span>
+                    </div>
+                  </div>
+                  <div className="relative shrink-0">
+                    <button
+                      aria-expanded={moreOpen}
+                      className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
+                      disabled={operatorActionMutation.isPending || ticketVisibilityMutation.isPending}
+                      onClick={() => setMoreOpen((open) => !open)}
+                      type="button"
+                    >
+                      Ещё
+                    </button>
+                    {moreOpen ? (
+                      <div className="absolute right-0 z-20 mt-2 max-h-[min(70vh,520px)] w-[340px] overflow-y-auto rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
+                        <button
+                          className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
+                            selectedTicketIsUnassigned ? "bg-blue-600 text-white hover:bg-blue-500" : "text-slate-500"
+                          }`}
+                          disabled={!session?.user_login || !selectedTicketIsUnassigned}
+                          onClick={() => openOperatorAction("assign_self")}
+                          type="button"
+                        >
+                          Взять себе
+                        </button>
+                        <div className="my-1 border-t border-white/10" />
+                        {selectedTicket.hiddenFromWorkspace ? (
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedTicket.canUnhideFromWorkspace || ticketVisibilityMutation.isPending}
+                            onClick={() => ticketVisibilityMutation.mutate("unhide")}
+                            type="button"
+                          >
+                            <Eye className="h-4 w-4" />
+                            Вернуть в списки
+                          </button>
+                        ) : (
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedTicket.canHideFromWorkspace || ticketVisibilityMutation.isPending}
+                            onClick={() => ticketVisibilityMutation.mutate("hide")}
+                            type="button"
+                          >
+                            <EyeOff className="h-4 w-4" />
+                            Скрыть у всех
+                          </button>
+                        )}
+                        {isAdmin && selectedTicket.archivedAt ? (
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedTicket.canUnarchiveTicket || ticketVisibilityMutation.isPending}
+                            onClick={() => ticketVisibilityMutation.mutate("unarchive")}
+                            type="button"
+                          >
+                            <ArchiveRestore className="h-4 w-4" />
+                            Вернуть из архива
+                          </button>
+                        ) : null}
+                        {isAdmin && !selectedTicket.archivedAt ? (
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedTicket.canArchiveTicket || ticketVisibilityMutation.isPending}
+                            onClick={() => ticketVisibilityMutation.mutate("archive")}
+                            type="button"
+                          >
+                            <Archive className="h-4 w-4" />
+                            Архивировать
+                          </button>
+                        ) : null}
+                        <button
+                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={statusActionOptions.length === 0}
+                          onClick={() => openOperatorAction("status")}
+                          type="button"
+                        >
+                          Сменить статус
+                        </button>
+                        <button
+                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={queueActionOptions.length === 0}
+                          onClick={() => openOperatorAction("queue")}
+                          type="button"
+                        >
+                          Сменить очередь
+                        </button>
+                        <button
+                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
+                          onClick={() => openOperatorAction("priority")}
+                          type="button"
+                        >
+                          Изменить приоритет
+                        </button>
+                        <button
+                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
+                          onClick={() => openOperatorAction("reroute")}
+                          type="button"
+                        >
+                          Пересчитать маршрут
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <section className={`mt-3 grid gap-3 rounded-xl border p-3 2xl:grid-cols-[auto_minmax(0,1fr)_minmax(170px,240px)] 2xl:items-center ${toneClasses(selectedTicket.nextAction.tone)}`}>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10">
+                    <Play className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Следующее действие</p>
+                    <p className="mt-1 break-words text-base font-semibold leading-6 text-white">{selectedTicket.nextAction.label}</p>
+                    <p className="mt-1 text-sm leading-5 text-slate-300">{selectedTicket.nextAction.hint}</p>
+                    <p className="mt-1 text-xs text-slate-400">Владелец: {selectedTicket.nextAction.ownerLabel}</p>
+                  </div>
+                  <div className="min-w-0 border-white/10 2xl:border-l 2xl:pl-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Осталось времени</p>
+                    <p className="mt-1 text-xl font-semibold leading-7 text-white">{selectedTicket.nextAction.remainingLabel}</p>
+                    <p className="mt-1 text-xs text-slate-400">до контрольного срока</p>
+                    <button
+                      className="mt-2 inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-lg border border-white/10 bg-white/[0.06] px-3 text-xs font-semibold text-slate-100 hover:bg-white/[0.1]"
+                      onClick={() => {
+                        if (selectedTicket.nextAction.owner === "operator") {
+                          openOperatorAction(selectedTicketIsUnassigned ? "assign_self" : "status");
+                          return;
+                        }
+                        composerTextareaRef.current?.focus();
+                      }}
+                      type="button"
+                    >
+                      Выполнить действие
+                    </button>
+                  </div>
+                </section>
+
+                {actionError ? (
+                  <p className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                    {actionError instanceof Error ? actionError.message : "Действие не выполнено"}
+                  </p>
+                ) : null}
+
+                {selectedTicket.closurePlan.missingCount > 0 ? (
+                  <section
+                    className={`mt-4 rounded-xl p-4 ${
+                      isLightTheme
+                        ? "border border-amber-300 bg-amber-50 text-slate-950 shadow-sm"
+                        : "border border-amber-400/25 bg-amber-500/10"
+                    }`}
+                    data-testid="closure-plan-panel"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className={`h-4 w-4 ${isLightTheme ? "text-amber-700" : "text-amber-200"}`} />
+                          <p
+                            className={`font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}
+                            data-testid="closure-plan-title"
+                          >
+                            Перед закрытием
+                          </p>
+                        </div>
+                        <p
+                          className={`mt-1 text-sm leading-6 ${isLightTheme ? "text-amber-900" : "text-amber-100/90"}`}
+                          data-testid="closure-plan-summary"
+                        >
+                          Осталось требований: {selectedTicket.closurePlan.missingCount}/{selectedTicket.closurePlan.total || selectedTicket.closurePlan.missingCount}.
+                          {selectedTicket.closurePlan.evidenceCandidateCount
+                            ? ` Доступно кандидатов evidence: ${selectedTicket.closurePlan.evidenceCandidateCount}.`
+                            : " Evidence-кандидаты не найдены."}
+                        </p>
+                      </div>
+                      <button
+                        className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${
+                          isLightTheme
+                            ? "border border-amber-300 bg-white/80 text-amber-900 hover:bg-white"
+                            : "border border-amber-300/30 bg-white/[0.06] text-amber-50 hover:bg-white/[0.1]"
+                        }`}
+                        onClick={() => selectRightTab("passport")}
+                        type="button"
+                      >
+                        <FileCheck2 className="mr-2 inline h-4 w-4" />
+                        Открыть паспорт
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {visibleClosureBlockers.map((blocker) => (
+                        <div
+                          className={`rounded-lg px-3 py-2 ${
+                            isLightTheme ? "border border-amber-200 bg-white/80" : "border border-white/10 bg-white/[0.04]"
+                          }`}
+                          data-testid="closure-blocker-card"
+                          key={blocker.key}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className={`min-w-0 break-words text-sm font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>
+                              {blocker.label}
+                            </p>
+                            <button
+                              className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                                isLightTheme
+                                  ? "border border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100"
+                                  : "border border-white/10 bg-white/[0.05] text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.1]"
+                              }`}
+                              onClick={() => openClosureBlocker(blocker)}
+                              type="button"
+                            >
+                              {blocker.actionLabel}
+                            </button>
+                          </div>
+                          {blocker.detail ? (
+                            <p className={`mt-1 break-words text-xs leading-5 ${isLightTheme ? "text-amber-900/80" : "text-amber-100/75"}`}>
+                              {blocker.detail}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    {hiddenClosureBlockerCount > 0 ? (
+                      <button
+                        className={`mt-3 rounded-lg px-3 py-2 text-xs font-semibold ${
+                          isLightTheme
+                            ? "border border-amber-300 bg-white/80 text-amber-900 hover:bg-white"
+                            : "border border-amber-300/25 bg-white/[0.04] text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.08]"
+                        }`}
+                        onClick={() => setClosureBlockersExpanded((expanded) => !expanded)}
+                        type="button"
+                      >
+                        {closureBlockersExpanded ? "Скрыть" : `Показать ещё ${hiddenClosureBlockerCount}`}
+                      </button>
+                    ) : null}
+                  </section>
+                ) : null}
+              </div>
+
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex items-center gap-5 border-b border-white/10 px-5">
+                  {timelineTabs.map((tab) => (
+                    <button
+                      className={`border-b-2 px-1 py-3 text-sm font-semibold transition ${
+                        timelineFilter === tab.value ? "border-blue-500 text-blue-200" : "border-transparent text-slate-400 hover:text-white"
+                      }`}
+                      key={tab.value}
+                      onClick={() => setTimelineFilter(tab.value)}
+                      type="button"
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                  <button className="ml-auto rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300" type="button">
+                    Фильтр
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+                  {timelineEmptyState ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center text-sm text-slate-400">
+                      <Inbox className="mx-auto h-9 w-9 text-slate-500" />
+                      <p className="mt-4 text-base font-semibold text-white">{timelineEmptyState.title}</p>
+                      <p className="mx-auto mt-2 max-w-md leading-6">{timelineEmptyState.body}</p>
+                      {timelineEmptyState.actionLabel ? (
+                        <button
+                          className="mt-4 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 font-semibold text-slate-100 transition hover:border-blue-400/40 hover:bg-blue-500/20"
+                          onClick={() => setTimelineFilter("all")}
+                          type="button"
+                        >
+                          {timelineEmptyState.actionLabel}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="space-y-4">
+                    {visibleTimeline.map((item) => (
+                      <article className="grid grid-cols-[36px_minmax(0,1fr)_110px] gap-4" key={item.id}>
+                        <div className={`flex h-9 w-9 items-center justify-center rounded-full border ${toneClasses(item.tone)}`}>
+                          {item.kind === "diagnostics" ? <Wrench className="h-4 w-4" /> : item.kind === "internal" ? <Lock className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                        </div>
+                        <div className="min-w-0 rounded-xl border border-white/10 bg-[#0d1828] px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-semibold text-white">{item.actor}</span>
+                            <span className="text-slate-500">·</span>
+                            <span className="text-slate-400">{item.title}</span>
+                            {item.visibility === "internal" ? <Lock className="h-3.5 w-3.5 text-amber-300" /> : null}
+                          </div>
+                          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-200">{item.body}</p>
+                          {item.operation ? (
+                            <div className="mt-3 rounded-lg border border-white/10 bg-[#111f33] p-3 text-sm">
+                              <div className="grid gap-3 md:grid-cols-3">
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Операция</p>
+                                  <p className="mt-1 font-semibold text-white">{item.operation.name}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Статус</p>
+                                  <span className={`mt-1 inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(item.operation.statusTone)}`}>
+                                    {item.operation.statusLabel}
+                                  </span>
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Итог</p>
+                                  <p className={`mt-1 break-all font-semibold ${operationResultTextClass(item.operation)}`}>
+                                    {item.operation.summary ?? item.operation.preview ?? "Нет результата"}
+                                  </p>
+                                </div>
+                              </div>
+                              {item.operation.preview && item.operation.summary && item.operation.preview !== item.operation.summary ? (
+                                <p className="mt-3 break-all rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-slate-400">
+                                  {item.operation.preview}
+                                </p>
+                              ) : null}
+                              {item.operation.resultPayload !== undefined && item.operation.resultPayload !== null ? (
+                                <ToolResultEventCard
+                                  result={item.operation.resultPayload}
+                                  presentationSchema={item.operation.presentationSchema}
+                                />
+                              ) : null}
+                              {item.operation.metaLabels.length ? (
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                  {item.operation.metaLabels.slice(0, 6).map((label) => (
+                                    <span className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {item.operation.steps?.length ? (
+                                <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 md:grid-cols-3">
+                                  {item.operation.steps.map((step) => (
+                                    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2" key={`${item.id}:${step.name}:${step.status}`}>
+                                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{step.name}</p>
+                                      <p className={`mt-1 font-semibold ${diagnosticStepTextClass(step.status)}`}>
+                                        {diagnosticStepStatusLabel(step.status)}
+                                      </p>
+                                      <p className="mt-1 break-words text-xs leading-5 text-slate-400">{step.value}</p>
+                                      {step.details ? <p className="mt-1 break-words text-xs leading-5 text-slate-500">{step.details}</p> : null}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {item.attachments.length ? (
+                            <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
+                              <Paperclip className="h-4 w-4" />
+                              {item.attachments.length} влож.
+                            </div>
+                          ) : null}
+                        </div>
+                        <time className="pt-2 text-right text-xs text-slate-500">{item.timestampLabel}</time>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-white/10 bg-[#0b1624] p-3">
+                  <div className="rounded-xl border border-white/10 bg-[#0d1828]">
+                    <textarea
+                      aria-label="Сообщение в тикет"
+                      className="min-h-10 max-h-44 w-full resize-y overflow-y-auto bg-transparent px-4 py-2.5 text-sm leading-5 text-white outline-none placeholder:text-slate-500"
+                      data-testid="support-reply-composer"
+                      onChange={(event) => setComposerText(event.currentTarget.value)}
+                      placeholder={composerMode === "public" ? "Напишите сообщение пользователю..." : "Внутренняя заметка для команды..."}
+                      rows={1}
+                      value={composerText}
+                      ref={composerTextareaRef}
+                    />
+                    {pendingAttachments.length ? (
+                      <div className="mx-4 mb-2 flex flex-wrap gap-2">
+                        {pendingAttachments.map((attachment) => (
+                          <span
+                            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300"
+                            key={attachment.artifact_id}
+                          >
+                            <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                            <span className="max-w-[220px] truncate">{attachment.name || attachment.filename}</span>
+                            <span className="shrink-0 text-slate-500">{formatAttachmentSize(attachment.size)}</span>
+                            <button
+                              aria-label={`Убрать вложение ${attachment.name || attachment.filename}`}
+                              className="rounded text-slate-500 hover:text-white"
+                              onClick={() => setPendingAttachments((current) => current.filter((item) => item.artifact_id !== attachment.artifact_id))}
+                              type="button"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {attachmentError ? (
+                      <p className="mx-4 mb-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">{attachmentError}</p>
+                    ) : null}
+                    <div className="flex items-center gap-2 px-4 pb-3">
+                      <input
+                        aria-label="Файлы для сообщения"
+                        className="hidden"
+                        multiple
+                        onChange={handleAttachmentInputChange}
+                        ref={attachmentInputRef}
+                        type="file"
+                      />
+                      <button
+                        aria-label="Прикрепить файлы"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!selectedTicketId || uploadingAttachments}
+                        onClick={() => attachmentInputRef.current?.click()}
+                        title={uploadingAttachments ? "Прикрепляем..." : "Прикрепить файлы"}
+                        type="button"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </button>
+                      <button
+                        aria-label={composerMode === "internal" ? "Переключить на публичный ответ" : "Переключить на внутреннюю заметку"}
+                        className={`flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 ${
+                          composerMode === "internal" ? "bg-amber-400/15 text-amber-200" : "text-slate-400 hover:text-white"
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                        disabled={!internalNoteAllowed}
+                        onClick={() => setComposerMode((mode) => (mode === "internal" ? "public" : "internal"))}
+                        title={composerMode === "internal" ? "Внутренняя заметка" : "Публичный ответ"}
+                        type="button"
+                      >
+                        <Lock className="h-4 w-4" />
+                      </button>
+                      <button
+                        className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50"
+                        disabled={!composerCanSend}
+                        onClick={() => messageMutation.mutate()}
+                        type="button"
+                      >
+                        Отправить
+                        <Send className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </main>
+
+        {ticketInspector}
       </div>)}
                 {operatorActionDraft && operatorActionMeta ? (
                   <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">

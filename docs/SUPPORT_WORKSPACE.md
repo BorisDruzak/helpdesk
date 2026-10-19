@@ -7,6 +7,38 @@ realtime subscriptions, attachment upload and typed mutations. Components in
 three-area ticket and conversation. `simple-resolution-form.tsx` presents policy
 fields and optional internal information.
 
+## Queue partitioning and layout
+
+Queue definitions, members and OLA settings live in `/app/settings`, tab
+**Очереди**. `TICKET_QUEUE_MODE=partitioned` retains the original behavior (default).
+`TICKET_QUEUE_MODE=unified` exposes one logical queue to active support/admin
+operators. Queue rows expose additive `queue_mode`; settings show the current
+mode. Restart the service after changing its environment through the reviewed
+configuration/release workflow. Returning to `partitioned` restores membership
+checks and routing without a data migration.
+On the approved staging host, the reviewed helper is
+`python scripts/configure_helpdesk_queue_mode.py --mode unified` (or
+`--mode partitioned`), followed by the canonical staging service restart. It
+backs up the environment privately and changes only this setting.
+
+In unified mode membership/read scope, manual/automatic assignment candidates,
+queue notifications and saved queue views use the common staff scope. User,
+agent and auditor permissions, ownership/public reply guards, capacity, FSM,
+SLA and closure requirements remain authoritative. Partition selectors, explicit
+queue changes and manual rerouting are disabled (`QUEUE_PARTITIONING_DISABLED`).
+Partition-specific smart-view filters no longer restrict the list. New tickets
+route to the active common queue named by `TICKET_TAKE_QUEUE_COMMON_CODE`;
+its auto-assignment switch still applies. Existing ticket queue IDs, assignments,
+history and running OLA timers are preserved; no bulk rewrite occurs. All queue
+configuration and the partitioned implementation remain available.
+
+The compact list has **Открыть всю очередь**; it uses the existing full-list route
+and retains search/filter state. Ticket mode reuses the existing inspector with
+context, device, SLA, knowledge, tools and passport tabs. Both sidebars support
+pointer resizing and arrow keys, with double-click/Home/Enter to reset. Widths
+persist through the existing layout preference. On small screens the inspector
+opens from **Сведения**; the full queue remains reachable from the ticket header.
+
 ## Queue and actions
 
 Five filters use server-side smart views before the queue limit: `open`, `new`,

@@ -1,5 +1,21 @@
 # Helpdesk server code map
 
+## Reversible unified support queue
+
+- `tickets/queue_mode.py` reads `config.TICKET_QUEUE_MODE` (`partitioned|unified`).
+  `app/repos/ticket_events_repo.py` applies staff scope to queue access, assignment
+  candidates and notifications; role/active checks remain server-side.
+- `tickets/routing_service.py` routes new unified work to the configured common
+  queue and preserves existing routing history/OLA. `assignment_service.py`
+  retains its auto-assign policy and global load limit.
+- `web_api/support_handlers.py` projects `queue_mode`, suppresses partitions and
+  rejects partition commands; legacy handlers use the same guard. Settings
+  report the mode; no migration or Endpoint contract change is required.
+- Simple ticket layout reuses the retained inspector and existing persisted
+  column sizes; compact queue adds explicit full-list navigation. Regression
+  coverage: `test_unified_queue.py`, `test_unified_queue_no_db.py`, and
+  `webapp/tests/support-simple.spec.ts`.
+
 ## Everyday support workspace (UI-SUPPORT-001)
 
 - `webapp/src/pages/tickets/list-page.tsx` keeps the existing support queries,

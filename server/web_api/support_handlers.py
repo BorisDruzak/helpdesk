@@ -1,3 +1,5 @@
+from tickets.queue_mode import unified_queue_enabled, UNIFIED_QUEUE_NAME
+
 import ast
 from dataclasses import dataclass
 import json
@@ -401,6 +403,7 @@ def _is_support_workspace_cleanup_noise(ticket_data: dict[str, Any]) -> bool:
 
 def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str, smart_view: str = "all") -> SupportQueuePayload:
     return SupportQueuePayload(
+        queue_mode="unified" if unified_queue_enabled() else "partitioned",
         scope=scope,
         query=query,
         status_filter=status_filter,
@@ -513,7 +516,7 @@ def _normalize_saved_view_sort(sort: list[dict[str, Any]] | None) -> list[dict[s
 
 
 async def _support_accessible_queue_ids(session, auth_context) -> set[int]:
-    if getattr(auth_context, "actor_role", None) == "admin":
+    if getattr(auth_context, "actor_role", None) == "admin" or (unified_queue_enabled() and getattr(auth_context, "actor_role", None) == "support"):
         rows = (await session.execute(select(TicketQueue.id).where(TicketQueue.is_active.is_(True)))).scalars().all()
         return {int(row) for row in rows if row is not None}
     actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
@@ -981,6 +984,8 @@ def _build_queue_counts(
     queues: list[object],
     entries: list[tuple[dict, SupportQueueTicketItem]],
 ) -> list[SupportQueueCountItem]:
+    if unified_queue_enabled():
+        return []
     counts_by_code: dict[str, int] = {}
     for ticket_data, item in entries:
         code = str(ticket_data.get("queue_code") or item.queue_code or "").strip()
@@ -3282,7 +3287,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     )
     timeline = timeline_payload.items
 
-    queue_name = None
+    queue_name = UNIFIED_QUEUE_NAME if unified_queue_enabled() else None
     ticket_queue_id = ticket_data.get("queue_id")
     for queue in ticket_data.get("available_queues", []):
         if queue.get("id") == ticket_queue_id:
@@ -4096,6 +4101,8 @@ async def handle_web_support_queue_mass_action(request: web.Request):
     reason = raw_reason or "support_queue_mass_action"
     if action == "change_priority" and len(raw_reason) < 3:
         return _support_json_error("Для смены приоритета нужна причина", status=400, error_code="VALIDATION_ERROR")
+    if action == "change_queue" and unified_queue_enabled():
+        return _support_json_error("Включена единая очередь.", status=409, error_code="QUEUE_PARTITIONING_DISABLED")
     if action == "change_queue" and payload.queue_id is None:
         return _support_json_error("Для смены очереди нужен queue_id", status=400, error_code="VALIDATION_ERROR")
     if action == "internal_note" and not (payload.internal_note or "").strip():
@@ -4403,6 +4410,7 @@ async def handle_web_support_queue(request: web.Request):
         typed_items = [item for item in status_filtered_items if _matches_ticket_query(item, query)]
 
         payload = SupportQueuePayload(
+            queue_mode="unified" if unified_queue_enabled() else "partitioned",
             scope=scope,
             query=query,
             status_filter=status_filter,
@@ -5944,6 +5952,8 @@ async def handle_web_support_assign_ticket(request: web.Request):
 
 @require_auth("admin", "support", "auditor")
 async def handle_web_support_change_queue(request: web.Request):
+    if unified_queue_enabled():
+        return _support_json_error("Включена единая очередь. Разделение по очередям отключено.", status=409, error_code="QUEUE_PARTITIONING_DISABLED")
     data = await _read_support_json(request)
     if isinstance(data, web.Response):
         return data
@@ -6020,6 +6030,8 @@ async def handle_web_support_change_priority(request: web.Request):
 
 @require_auth("admin", "support", "auditor")
 async def handle_web_support_reroute_ticket(request: web.Request):
+    if unified_queue_enabled():
+        return _support_json_error("Включена единая очередь. Разделение по очередям отключено.", status=409, error_code="QUEUE_PARTITIONING_DISABLED")
     data = await _read_support_json(request)
     if isinstance(data, web.Response):
         return data

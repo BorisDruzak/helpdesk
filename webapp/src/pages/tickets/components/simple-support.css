@@ -44,9 +44,9 @@
 .simple-queue__card-top b { color:var(--simple-accent); }
 .simple-unread { border-radius:50%; width:7px; height:7px; background:var(--simple-accent); }
 .support-simple[data-view="ticket"] { display:flex; flex-direction:column; overflow:hidden; }
-.simple-workspace { display:grid; grid-template-columns:230px minmax(0,1fr); flex:1; height:100%; min-height:0; overflow:hidden; }
+.simple-workspace { position:relative; display:grid; grid-template-columns:var(--simple-left,300px) minmax(0,1fr); flex:1; height:100%; min-height:0; overflow:hidden; }
 .simple-workspace > .simple-queue--compact { min-height:0; overflow:auto; }
-.simple-ticket { display:grid; grid-template-columns:minmax(0,1fr) 270px; min-width:0; min-height:0; height:100%; position:relative; overflow:hidden; }
+.simple-ticket { display:grid; grid-template-columns:minmax(0,1fr) var(--simple-right,340px); min-width:0; min-height:0; height:100%; position:relative; overflow:hidden; }
 .simple-ticket__main { min-width:0; min-height:0; padding:20px 24px; display:flex; flex-direction:column; background:var(--simple-panel); }
 .simple-ticket__header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-shrink:0; background:var(--simple-panel); padding-bottom:10px; }
 .simple-ticket__title { min-width:0; flex:1; }
@@ -151,9 +151,9 @@
   .simple-queue__table-wrap td:nth-child(6)::before { content:"Исполнитель: "; color:var(--simple-muted); }
   .simple-queue__table-wrap td:nth-child(7)::before { content:"SLA: "; color:var(--simple-muted); }
 }
-@media(max-width:1450px) { .simple-workspace { grid-template-columns:210px minmax(0,1fr); } .simple-ticket { grid-template-columns:minmax(0,1fr) 230px; } .simple-ticket__main { padding:16px; } .simple-ticket__actions { flex-direction:column; align-items:flex-end; flex-shrink:0; } .simple-ticket__title h2 { font-size:21px; margin-bottom:8px; } .simple-ticket__title .simple-eyebrow { margin-top:8px; font-size:10px; } .simple-ticket__facts { padding:14px 10px; } .simple-ticket__facts .simple-panel { padding:14px; } }
+@media(max-width:1450px) { .simple-ticket__main { min-width:0; } .simple-ticket__main { padding:16px; } .simple-ticket__actions { flex-direction:column; align-items:flex-end; flex-shrink:0; } .simple-ticket__title h2 { font-size:21px; margin-bottom:8px; } .simple-ticket__title .simple-eyebrow { margin-top:8px; font-size:10px; } .simple-ticket__facts { padding:14px 10px; } .simple-ticket__facts .simple-panel { padding:14px; } }
 @media(max-width:1100px) { .simple-ticket { grid-template-columns:minmax(0,1fr); } .simple-ticket__facts { display:none; border:0; } .simple-ticket__facts[data-open="true"] { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .simple-ticket__details-toggle { display:inline-flex; } }
-@media(max-width:760px) { .simple-workspace { grid-template-columns:minmax(0,1fr); } .simple-workspace > .simple-queue--compact { display:none; } .simple-ticket__main { padding:14px; } .simple-ticket__facts[data-open="true"] { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:760px) { .simple-workspace { position:relative; grid-template-columns:minmax(0,1fr); } .simple-workspace > .simple-queue--compact { display:none; } .simple-ticket__main { padding:14px; } .simple-ticket__facts[data-open="true"] { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:700px) { .simple-queue { padding:14px; } .simple-queue__heading { flex-wrap:wrap; } .simple-queue h2 { font-size:22px; } .simple-queue__toolbar { padding:10px; } }
 
 @media(max-width:1100px) {
@@ -177,4 +177,33 @@
  .simple-composer textarea { min-height:48px; }
  .simple-composer { padding:8px 10px; }
  .simple-description-dialog .simple-facts > div { grid-template-columns:1fr; gap:6px; }
+}
+
+.simple-queue--compact .simple-queue__heading { flex-direction:column; gap:8px; margin-bottom:12px; }
+.simple-queue__expand { width:100%; white-space:normal; }
+.simple-queue__mode { font-size:12px; color:var(--simple-accent); margin:0 0 12px; }
+.simple-column-resizer { position:absolute; top:0; bottom:0; z-index:15; width:14px; transform:translateX(-50%); cursor:col-resize; touch-action:none; display:flex; align-items:center; justify-content:center; color:var(--simple-muted); }
+.simple-column-resizer[data-pane="right"] { transform:translateX(50%); }
+.simple-column-resizer:hover,.simple-column-resizer:focus-visible { background:var(--simple-soft); outline:2px solid var(--simple-accent); outline-offset:-2px; }
+.simple-ticket__facts:has([data-testid="support-inspector-panel"]) { padding:0; gap:0; }
+.simple-ticket__facts > [data-testid="support-inspector-panel"] { flex:1; min-width:0; overflow:hidden; }
+.simple-ticket__facts [aria-label="Разделы правой панели"] { flex-wrap:wrap; overflow:visible; }
+.simple-ticket__facts [aria-label="Разделы правой панели"] button { min-width:0; flex:1 1 auto; padding:7px 9px; }
+.simple-ticket__facts [data-testid="support-inspector-summary"] { padding:12px; }
+.simple-ticket__facts section { overflow-wrap:anywhere; }
+@media(max-width:1100px) { .simple-column-resizer[data-pane="right"] { display:none; } }
+@media(max-width:760px) { .simple-column-resizer { display:none; } }
+
+.support-simple { container-type:inline-size; }
+@container(max-width:1000px) {
+ .simple-ticket { grid-template-columns:minmax(0,1fr); }
+ .simple-ticket__facts { display:none; border:0; }
+ .simple-ticket__details-toggle { display:inline-flex; }
+ .simple-ticket__facts[data-open="true"] { display:flex; position:absolute; inset:0 0 0 auto; width:min(360px,100%); height:100%; z-index:16; background:var(--simple-panel); box-shadow:-10px 0 35px #0002; }
+ .simple-ticket__facts-close { display:inline-flex; }
+ .simple-column-resizer[data-pane="right"] { display:none; }
+}
+@container(max-width:650px) {
+ .simple-workspace { grid-template-columns:minmax(0,1fr); }
+ .simple-workspace > .simple-queue--compact,.simple-column-resizer { display:none; }
 }

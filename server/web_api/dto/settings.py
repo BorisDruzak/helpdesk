@@ -268,6 +268,7 @@ class WebSettingsTicketOperationalFlags(BaseModel):
     retention_dry_run: bool
     events_hot_retention_days: int
     admin_audit_hot_retention_days: int
+    queue_mode: str = "partitioned"
     take_queue_mode: str
     take_queue_common_code: str
     take_queue_test_code: str

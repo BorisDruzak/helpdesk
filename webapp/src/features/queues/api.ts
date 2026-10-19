@@ -33,6 +33,7 @@ export type SupportQueueCountItem = {
 export type SupportTakeInWorkAvailability = { allowed: boolean; reason_code: string | null; reason: string | null };
 
 export type SupportQueuePayload = {
+  queue_mode?: "partitioned" | "unified";
   scope: SupportQueueScope;
   query: string;
   status_filter: string;

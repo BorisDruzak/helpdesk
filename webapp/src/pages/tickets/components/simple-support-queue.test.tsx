@@ -12,6 +12,15 @@ const rows = [
 const queue = { tickets: rows, summary: { visible_count: 3, queue_counts: [] } } as unknown as SupportQueuePayload;
 
 describe("simple support queue", () => {
+  it("opens the full queue from the compact list and hides partitions in unified mode", () => {
+    const full = vi.fn();
+    render(<SimpleSupportQueue queue={{ ...queue, queue_mode: "unified", summary: { ...queue.summary, queue_counts: [{ id: 1, code: "legacy", name: "Старая очередь", count: 3 }] } }} compact actorId="operator" canWork filter="open" search=""
+      onFilterChange={vi.fn()} onSearchChange={vi.fn()} onOpenTicket={vi.fn()} onTakeTicket={vi.fn()} onAdvanced={vi.fn()} onQueueChange={vi.fn()} onOpenQueue={full} />);
+    fireEvent.click(screen.getByRole("button", { name: /Открыть всю очередь/ }));
+    expect(full).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("combobox", { name: "Очередь" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Единая очередь/)).toBeVisible();
+  });
   it("offers take only for unassigned tickets and keeps other operators' work read-only", () => {
     const take = vi.fn(); const open = vi.fn();
     render(<SimpleSupportQueue queue={queue} actorId="operator" canWork filter="open" search="" onFilterChange={vi.fn()}

@@ -8,6 +8,39 @@ async function login(page: Page) {
   await expect(page.getByRole("heading", { name: "Очередь обращений", exact: true })).toBeVisible();
 }
 
+test("unified queue keeps the full list reachable and restores the resizable inspector", async ({ page }, info) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/web/support/queue?*", async (route) => {
+    const response = await route.fetch(); const payload = await response.json();
+    payload.data.queue_mode = "unified";
+    await route.fulfill({ json: payload });
+  });
+  await login(page);
+  await page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "T-200001", exact: true }).click();
+  await expect(page.getByTestId("support-inspector-panel")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Очередь", exact: true })).toHaveCount(0);
+  const left = page.getByRole("separator", { name: "Ширина списка обращений" });
+  const right = page.getByRole("separator", { name: "Ширина панели сведений" });
+  const before = await right.getAttribute("aria-valuenow");
+  await right.focus(); await page.keyboard.press("ArrowLeft");
+  await expect(right).not.toHaveAttribute("aria-valuenow", before!);
+  const handle = (await left.boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down(); await page.mouse.move(handle.x + 70, handle.y + handle.height / 2); await page.mouse.up();
+  expect(Number(await left.getAttribute("aria-valuenow"))).toBeGreaterThan(260);
+  await page.getByRole("button", { name: "Open SLA inspector" }).click();
+  await expect(page.getByTestId("simple-support-workspace")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Диалог", exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("unified-inspector-1920.png"), fullPage: true });
+  await page.getByRole("button", { name: /Открыть всю очередь/ }).click();
+  await expect(page.getByRole("heading", { name: "Очередь обращений", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/tickets$/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 for (const width of [1366, 1920, 390]) {
   test(`simple support lifecycle without agent at ${width}`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 });

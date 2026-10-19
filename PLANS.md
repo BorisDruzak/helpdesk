@@ -1,3 +1,24 @@
+# 2026-10-19 Unified queue and restored inspector
+
+Actor: support/admin. Primary job: choose an appeal and work in chat. Secondary:
+full-list navigation and contextual inspection. Archetype: list + conversation +
+inspector, with drawer fallback. User explicitly requested one reversible queue,
+full-list access/resizing and the retained right panel. Implement within existing
+repositories, state, routing and inspector; retain roles, ownership, FSM/SLA,
+capacity and closure policies. No production scope or data migration.
+Implemented: TICKET_QUEUE_MODE, global staff access/candidates/notifications,
+common new-ticket routing, partition command guards, mode projection/settings;
+full-list header action, persisted pointer/keyboard resizing, shared rich inspector.
+Checks: frontend847; server no-DB1541 passed/1 existing skip; build;13 fixture
+browser flows at1366/1440/1920/390. PostgreSQL6 plus final focused5 passed
+(unified/partitioned scope, active-role/load guards, concurrency, ownership and
+common routing/auto-assignment policy). Configuration helper2 passed. Review:
+source and docs checked; retained inspector move verified separately from its
+small semantic changes. GitNexus tools unavailable; source boundaries verified.
+Next:
+freeze candidate, exact-SHA full CI, canonical staging deploy, installed acceptance.
+Leave staging running. Preserve unrelated untracked work.
+
 # 2026-10-19 Support Messenger and take availability
 
 User selected reference 1 (Messenger) and authorized implementation, verification

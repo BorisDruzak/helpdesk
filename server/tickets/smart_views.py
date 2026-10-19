@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tickets.queue_mode import unified_queue_enabled
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import re
@@ -421,7 +423,7 @@ def _matches_custom_filter(
         return False
 
     queue_codes = _as_set(filter_config.get("queue_code_in") or filter_config.get("queue_code"))
-    if queue_codes and str(ticket_data.get("queue_code") or "").strip() not in queue_codes:
+    if queue_codes and not unified_queue_enabled() and str(ticket_data.get("queue_code") or "").strip() not in queue_codes:
         return False
 
     assignee_values = _as_set(filter_config.get("assignee_id_in") or filter_config.get("assignee_id"))

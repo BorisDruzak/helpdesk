@@ -423,6 +423,7 @@ export function mapWorkspaceSlices(queue: SupportQueuePayload | undefined, activ
 }
 
 export function mapWorkspaceQueues(queue: SupportQueuePayload | undefined, activeQueueId: string | null): SupportWorkspaceQueue[] {
+  if (queue?.queue_mode === "unified") return [];
   if ((queue?.summary?.queue_counts ?? []).length > 0) {
     return (queue?.summary?.queue_counts ?? []).map((item) => {
       const label = item.name ?? item.code ?? "Без очереди";

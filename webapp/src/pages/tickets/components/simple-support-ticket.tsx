@@ -7,7 +7,7 @@ export type SimpleSupportTicketProps = {
   detail: SupportTicketDetailPayload; ticket?: SupportWorkspaceSelectedTicket | null; context?: SupportWorkspaceContext | null;
   actorId?: string; isAdmin?: boolean; canWork: boolean; canAssign?: boolean; pending?: boolean; error?: string | null;
   onStatus: (value: string) => void; onResolve: () => void; onAdvanced: (mode?: "passport" | "tools" | "sla" | "ticket") => void;
-  onQueue: () => void; onManage?: (kind: "queue" | "priority") => void; conversation: ReactNode;
+  inspector?: ReactNode; unifiedQueue?: boolean; onQueue: () => void; onManage?: (kind: "queue" | "priority") => void; conversation: ReactNode;
 };
 export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
   const { detail, context, ticket, actorId, isAdmin, canWork, onStatus, onAdvanced } = props;
@@ -47,7 +47,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
         <div className="simple-ticket__actions">{primary ? <button className="simple-button simple-button--primary" title={primary.hint} disabled={props.pending} onClick={primary.run} type="button">{props.pending ? "Выполняем…" : primary.label}</button> : null}
           <details className="simple-menu"><summary className="simple-button">Действия ▾</summary><div>
             {raw.status === "in_progress" && allowed("waiting_on_user") && (mine || isAdmin) ? <button type="button" onClick={() => onStatus("waiting_on_user")}>Ожидать ответа сотрудника</button> : null}
-            {props.onManage && canWork ? <><button type="button" onClick={() => props.onManage?.("queue")}>Изменить очередь</button><button type="button" onClick={() => props.onManage?.("priority")}>Изменить приоритет</button></> : null}
+            {props.onManage && canWork ? <>{!props.unifiedQueue ? <button type="button" onClick={() => props.onManage?.("queue")}>Изменить очередь</button> : null}<button type="button" onClick={() => props.onManage?.("priority")}>Изменить приоритет</button></> : null}
             <button type="button" onClick={() => onAdvanced("tools")}>Диагностика</button><button type="button" onClick={() => onAdvanced("ticket")}>Дополнительные возможности</button>
           </div></details>
           <button className="simple-button simple-ticket__details-toggle" type="button" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((value) => !value)}>Сведения</button>
@@ -67,7 +67,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
     </main>
     <aside className="simple-ticket__facts" data-open={detailsOpen} aria-label="Сведения об обращении">
       <button className="simple-button simple-ticket__facts-close" type="button" onClick={() => setDetailsOpen(false)}>Закрыть сведения <X size={15} aria-hidden /></button>
-      <section className="simple-panel"><h3>Заявитель</h3><dl className="simple-facts">
+      {props.inspector ?? <><section className="simple-panel"><h3>Заявитель</h3><dl className="simple-facts">
         <div><dt>ФИО</dt><dd>{context?.requester.name ?? raw.requester_display_name ?? "Не указан"}</dd></div>
         <div><dt>Телефон</dt><dd>{context?.requester.phone ?? "Не указан"}</dd></div><div><dt>Email</dt><dd>{context?.requester.email ?? "Не указан"}</dd></div>
         <div><dt>Подразделение</dt><dd>{context?.requester.department ?? "Не указано"}</dd></div><div><dt>Место</dt><dd>{context?.requester.location ?? "Не указано"}</dd></div>
@@ -75,6 +75,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
       <section className="simple-panel"><h3>Обработка</h3><dl className="simple-facts"><div><dt>Статус</dt><dd>{raw.status_label}</dd></div><div><dt>Исполнитель</dt><dd>{mine ? "Вы" : ticket?.assigneeLabel ?? raw.assignee_id ?? "Не назначен"}</dd></div><div><dt>Очередь</dt><dd>{raw.queue.name ?? raw.queue.code ?? "Не указана"}</dd></div><div><dt>Приоритет</dt><dd>{raw.priority_class ?? raw.priority ?? "P3"}</dd></div></dl></section>
       <section className="simple-panel"><h3>SLA · Срок решения</h3><p className="simple-sla" data-risk={sla?.status === "breached" || sla?.status === "at_risk"}>{sla?.remainingLabel ?? "Не рассчитан"}</p><p className="simple-muted">{sla?.status === "paused" ? "Приостановлен по действующей политике" : "По действующей политике"}</p></section>
       <section className="simple-panel"><h3>Устройство</h3><p>{context?.device.id ? context.device.hostname : "Не указано"}</p><p className="simple-muted">{context?.device.id ? context.device.onlineLabel : "Без агента — обычную заявку можно обработать."}</p></section>
+      </>}
     </aside>
   </div>;
 }

@@ -113,6 +113,8 @@ class SupportQueueTicketItem(BaseModel):
 class SupportQueuePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    queue_mode: Literal["partitioned", "unified"] = "partitioned"
+
     scope: str
     query: str
     status_filter: str

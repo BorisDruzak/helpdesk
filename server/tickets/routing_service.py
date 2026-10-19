@@ -15,6 +15,7 @@ from loguru import logger
 
 from app.db.models import Ticket
 from tickets.public_access import is_public_unbound_ticket
+from tickets.queue_mode import unified_queue_enabled, unified_queue_code
 from tickets.statuses import (
     PRIORITY_CLASS_TO_LEGACY_PRIORITY,
     extract_priority_class,
@@ -466,6 +467,11 @@ class TicketRoutingService:
         ticket: Ticket,
         device_metadata: Optional[dict] = None,
     ) -> Optional[dict]:
+        if unified_queue_enabled():
+            queue = await self.ticket_repo.get_queue_by_code(unified_queue_code())
+            if queue is None or not getattr(queue, "is_active", True):
+                raise ValueError("Активная общая очередь не настроена")
+            return {"source": "unified_queue", "queue_id": queue.id, "actions": {"queue_id": queue.id}, "matched_rule": None}
         if device_metadata is None and ticket.device_id:
             device_metadata = await self.get_device_metadata(ticket.device_id)
         context = _get_ticket_context(ticket, device_metadata)
@@ -563,6 +569,9 @@ class TicketRoutingService:
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         if not ticket:
             return None
+        if unified_queue_enabled() and ticket.queue_id is not None:
+            # Existing assignments, queue history and live OLA timers stay intact.
+            return ticket.queue_id
         template_policy = _get_template_routing_policy(ticket)
         if not force_clear_lock and has_routing_lock(ticket.custom_fields):
             logger.debug(f"[Routing] Ticket {ticket_id} has routing lock, skip auto-routing")

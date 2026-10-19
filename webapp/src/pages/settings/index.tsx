@@ -2308,7 +2308,7 @@ export function SettingsPage() {
               <Card className="h-fit">
                 <CardHeader>
                   <CardTitle>Очереди</CardTitle>
-                  <CardDescription>Выбор очереди, участники и внутренние сроки принятия и обработки.</CardDescription>
+                  <CardDescription>{payload.ticket_settings.operational_flags.queue_mode === "unified" ? "Включена единая очередь: все активные операторы работают с общим списком. Настройки очередей сохранены для возврата к разделению. Режим задаётся параметром TICKET_QUEUE_MODE на сервере." : "Выбор очереди, участники и внутренние сроки принятия и обработки."}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Button
