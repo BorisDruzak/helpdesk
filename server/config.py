@@ -404,6 +404,9 @@ TICKET_AUDITOR_ROLE_ENABLED = os.getenv("TICKET_AUDITOR_ROLE_ENABLED", "false").
 # - common: move to common queue code
 # - test: move to test queue code
 # - <queue_code>: move directly to this queue code
+TICKET_QUEUE_MODE = (os.getenv("TICKET_QUEUE_MODE", "partitioned") or "partitioned").strip().lower()
+if TICKET_QUEUE_MODE not in {"partitioned", "unified"}:
+    raise ValueError("TICKET_QUEUE_MODE must be partitioned or unified")
 TICKET_TAKE_QUEUE_MODE = (os.getenv("TICKET_TAKE_QUEUE_MODE", "common") or "common").strip().lower()
 TICKET_TAKE_QUEUE_COMMON_CODE = (os.getenv("TICKET_TAKE_QUEUE_COMMON_CODE", "servicedesk_l1") or "servicedesk_l1").strip()
 TICKET_TAKE_QUEUE_TEST_CODE = (os.getenv("TICKET_TAKE_QUEUE_TEST_CODE", "servicedesk_test") or "servicedesk_test").strip()

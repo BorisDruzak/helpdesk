@@ -63,6 +63,14 @@ class SupportQueueSummary(BaseModel):
     queue_counts: list[SupportQueueCountItem] = Field(default_factory=list)
 
 
+class SupportTakeInWorkAvailability(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    allowed: bool = False
+    reason_code: str | None = None
+    reason: str | None = None
+
+
 class SupportQueueTicketItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -99,10 +107,13 @@ class SupportQueueTicketItem(BaseModel):
     archive_reason: str | None = None
     requires_operator_action: bool
     unread_user_messages: int
+    take_in_work: SupportTakeInWorkAvailability | None = None
 
 
 class SupportQueuePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    queue_mode: Literal["partitioned", "unified"] = "partitioned"
 
     scope: str
     query: str
@@ -756,6 +767,8 @@ class SupportTicketActions(BaseModel):
 
     status_options: list[SupportStatusAction] = Field(default_factory=list)
     can_send_internal_note: bool = False
+    can_send_public_message: bool = False
+    take_in_work: SupportTakeInWorkAvailability | None = None
     can_hide_from_workspace: bool = False
     can_unhide_from_workspace: bool = False
     can_archive_ticket: bool = False

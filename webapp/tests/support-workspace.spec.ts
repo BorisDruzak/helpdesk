@@ -35,7 +35,7 @@ test("operator shows Endpoint presence and preserves unknown on provider outage"
     await route.fulfill({ response, json: payload });
   });
   await loginSupport(page);
-  await page.goto("/app/tickets/ticket-1");
+  await page.goto("/app/tickets/ticket-1?advanced=1");
   const panel = page.getByRole("heading", { name: "Компьютер · Endpoint", exact: true }).locator("..");
   await expect(panel).toBeVisible();
   await expect(panel.getByText("Windows fixture · ONLINE", { exact: true })).toBeVisible();
@@ -112,18 +112,19 @@ test("оператор открывает tickets workspace через новы�
   await expect(page).toHaveURL(/\/app\/tickets$/);
   await expect(page.getByRole("heading", { name: "Тикеты" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Навигация поддержки" })).toBeVisible();
-  await expect(page.getByText("Мой рабочий список")).toBeVisible();
-  await expect(page.getByRole("button", { name: /T-200001 Ошибка синхронизации/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Очередь обращений" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /T-200001/ })).toBeVisible();
 
   await page.getByRole("button", { name: /T-200001/ }).click();
 
   await expect(page).toHaveURL(/\/app\/tickets\/ticket-1$/);
-  await expect(page.getByText(/T-200001 Ошибка синхронизации/)).toBeVisible();
-  await expect(page.getByText("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Выполнить действие" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Инструменты" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ошибка синхронизации профиля" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Диалог", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Взять в работу", exact: true })).toBeVisible();
+  await expect(page.getByTestId("support-command-strip")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Инструменты" }).click();
+  await page.locator("summary").filter({ hasText: "Действия" }).click();
+  await page.getByRole("button", { name: "Диагностика", exact: true }).click();
   await expect(page.getByText("Диагностика синхронизации профиля")).toBeVisible();
   await expect(page.getByText("Право: запуск безопасных инструментов")).toBeVisible();
 });
@@ -150,7 +151,7 @@ test("оператор видит безопасное состояние диа
   });
 
   await loginSupport(page);
-  await page.goto("/app/tickets/ticket-1");
+  await page.goto("/app/tickets/ticket-1?advanced=1");
   await expect(page.getByText(/T-200001 Ошибка синхронизации/)).toBeVisible();
   await page.getByRole("button", { name: "Инструменты", exact: true }).click();
   await page.getByRole("tab", { name: "Диагностика", exact: true }).click();
@@ -184,7 +185,7 @@ for (const width of [1366, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     await loginSupport(page);
 
-    await page.goto("/app/tickets/ticket-1");
+    await page.goto("/app/tickets/ticket-1?advanced=1");
     await expect(page.getByText(/T-200001 Ошибка синхронизации/)).toBeVisible();
     await expect(page.getByText("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ")).toBeVisible();
     if (width < 1460) await page.getByRole("button", { name: "Inspector", exact: true }).click();

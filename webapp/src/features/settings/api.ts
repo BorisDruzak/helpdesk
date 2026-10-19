@@ -159,6 +159,7 @@ export type WebSettingsPayload = {
       retention_dry_run: boolean;
       events_hot_retention_days: number;
       admin_audit_hot_retention_days: number;
+      queue_mode?: "partitioned" | "unified";
       take_queue_mode: string;
       take_queue_common_code: string;
       take_queue_test_code: string;

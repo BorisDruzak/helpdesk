@@ -423,6 +423,7 @@ export function mapWorkspaceSlices(queue: SupportQueuePayload | undefined, activ
 }
 
 export function mapWorkspaceQueues(queue: SupportQueuePayload | undefined, activeQueueId: string | null): SupportWorkspaceQueue[] {
+  if (queue?.queue_mode === "unified") return [];
   if ((queue?.summary?.queue_counts ?? []).length > 0) {
     return (queue?.summary?.queue_counts ?? []).map((item) => {
       const label = item.name ?? item.code ?? "Без очереди";
@@ -615,12 +616,35 @@ export function mapWorkspaceTimeline(detail: SupportTicketDetailPayload | undefi
 export function mapSupportTimelineEntries(
   entries: SupportTicketDetailPayload["timeline"] | undefined,
 ): SupportWorkspaceTimelineItem[] {
+  const unique: NonNullable<typeof entries> = [];
+  const identities = new Map<string, number>();
+  for (const entry of entries ?? []) {
+    const keys = [entry.message_id ? `message:${entry.message_id}` : null, entry.event_id != null ? `event:${entry.event_id}` : null].filter((key): key is string => key !== null);
+    const found = keys.map((key) => identities.get(key)).find((index) => index !== undefined);
+    const index = found ?? unique.length;
+    if (found === undefined) unique.push(entry);
+    else {
+      const previous = unique[index];
+      const attachments = [...previous.attachments];
+      for (const attachment of entry.attachments) {
+        const id = attachment.artifact_id ?? attachment.url;
+        if (!id || !attachments.some((item) => (item.artifact_id ?? item.url) === id)) attachments.push(attachment);
+      }
+      unique[index] = { ...previous, message_id: previous.message_id ?? entry.message_id, attachments,
+        visibility: previous.visibility === "internal" || entry.visibility === "internal" ? "internal" : previous.visibility };
+    }
+    for (const key of keys) identities.set(key, index);
+  }
+  entries = unique;
   return (entries ?? []).map((entry, index) => {
     const category = entry.event_category ?? null;
     const requesterKind = entry.requester_timeline_kind ?? null;
-    const isInternal = category === "internal" || entry.visibility === "internal";
+    const isInternal = entry.event_type === "chat_message" && entry.from_role !== "system"
+      && (category === "internal" || entry.visibility === "internal");
     const isDiagnostic = requesterKind === "diagnostic_result" || category === "diagnostics" || entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";
-    const kind: SupportWorkspaceTimelineKind = isDiagnostic ? "diagnostics" : isInternal ? "internal" : entry.event_type === "chat_message" ? "message" : "history";
+    const isPublicMessage = entry.event_type === "chat_message" && entry.visibility === "public"
+      && (!category || category === "message") && (entry.from_role !== "system" || requesterKind === "support_message");
+    const kind: SupportWorkspaceTimelineKind = isDiagnostic ? "diagnostics" : isInternal ? "internal" : isPublicMessage ? "message" : "history";
     const operationStatus = entry.tool_status ?? "";
     const operationTone = operationStatusTone(operationStatus);
     const historyTone =
@@ -632,11 +656,13 @@ export function mapSupportTimelineEntries(
             ? "success"
             : "info";
     return {
-      id: entry.message_id ?? String(entry.event_id ?? index),
+      id: entry.message_id ? `message:${entry.message_id}` : entry.event_id != null ? `event:${entry.event_id}` : `missing:${index}`,
       kind,
       title: entry.event_label ?? (isDiagnostic ? entry.tool_name ?? "Диагностика" : isInternal ? "Внутренняя заметка" : entry.visibility === "system" ? "Системное событие" : "Сообщение"),
       actor: entry.sender_display_name ?? entry.from_role,
+      fromRole: entry.from_role,
       timestampLabel: formatDateTime(entry.ts),
+      occurredAt: entry.ts,
       body: entry.text,
       visibility: entry.visibility,
       tone: isDiagnostic ? operationTone : isInternal ? "warning" : entry.visibility === "system" ? historyTone : "brand",

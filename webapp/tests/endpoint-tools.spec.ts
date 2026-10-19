@@ -2,7 +2,7 @@ import {expect,test,type Page} from "playwright/test";
 import {installEndpointToolsFixture} from "./fixtures/endpoint-tools";
 async function login(page:Page) {
  await page.goto("/app/login");await page.getByLabel("Логин").fill("support");await page.getByLabel("Пароль").fill("secret");await page.getByRole("button",{name:"Войти"}).click();await expect(page).not.toHaveURL(/\/app\/login/);
- await page.goto("/app/tickets/ticket-1");await expect(page.getByTestId("support-workspace-root")).toBeVisible();
+ await page.goto("/app/tickets/ticket-1?advanced=1");await expect(page.getByTestId("support-workspace-root")).toBeVisible();
 }
 async function openTools(page:Page) {
  const inspector=page.getByTestId("support-inspector-panel");if(!await inspector.isVisible())await page.getByRole("button",{name:"Inspector",exact:true}).click();

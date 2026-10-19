@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Tuple
 from loguru import logger
 
 from tickets.statuses import is_active_operator_status
+from tickets.queue_mode import unified_queue_enabled, unified_queue_code
 
 
 MAX_ACTIVE_TICKETS_PER_OPERATOR = 3
@@ -17,6 +18,10 @@ MAX_ACTIVE_TICKETS_PER_OPERATOR = 3
 
 class TicketAssignmentError(ValueError):
     """Ошибка назначения тикета."""
+
+    def __init__(self, message: str, *, code: str = "ASSIGNMENT_CONFLICT"):
+        super().__init__(message)
+        self.code = code
 
 
 class TicketAssignmentService:
@@ -32,26 +37,28 @@ class TicketAssignmentService:
         return await self.ticket_repo.get_queue(queue_id)
 
     async def _ensure_actor_in_queue(self, queue_id: Optional[int], actor_id: Optional[str]) -> None:
-        if queue_id is None or not actor_id:
+        if (queue_id is None and not unified_queue_enabled()) or not actor_id:
             return
         is_member = await self.ticket_repo.is_actor_in_queue(queue_id, actor_id)
         if not is_member:
             raise TicketAssignmentError(
-                f"Пользователь {actor_id} не состоит в очереди и не может работать с этим тикетом"
+                f"Пользователь {actor_id} не состоит в очереди и не может работать с этим тикетом",
+                code="ASSIGNEE_NOT_IN_QUEUE",
             )
 
-    async def validate_manual_assignment(self, ticket: Any, assignee_id: Optional[str]) -> None:
+    async def validate_manual_assignment(self, ticket: Any, assignee_id: Optional[str], *, activating: bool = False) -> None:
         if not assignee_id:
             return
         await self._ensure_actor_in_queue(getattr(ticket, "queue_id", None), assignee_id)
-        if not is_active_operator_status(getattr(ticket, "status", None)):
+        if not activating and not is_active_operator_status(getattr(ticket, "status", None)):
             return
         if getattr(ticket, "assignee_id", None) == assignee_id:
             return
         active_count = await self.ticket_repo.count_active_tickets_for_assignee(assignee_id)
         if active_count >= MAX_ACTIVE_TICKETS_PER_OPERATOR:
             raise TicketAssignmentError(
-                f"Оператор {assignee_id} уже достиг лимита {MAX_ACTIVE_TICKETS_PER_OPERATOR} активных тикетов"
+                f"Оператор {assignee_id} уже достиг лимита {MAX_ACTIVE_TICKETS_PER_OPERATOR} активных тикетов",
+                code="ASSIGNEE_CAPACITY_REACHED",
             )
 
     async def resolve_assignee(
@@ -61,10 +68,10 @@ class TicketAssignmentService:
         requested_assignee_id: Optional[str],
         auto_assign: bool,
     ) -> Dict[str, Any]:
-        queue_id = getattr(ticket, "queue_id", None)
+        queue_id = None if unified_queue_enabled() else getattr(ticket, "queue_id", None)
         if auto_assign:
-            queue = await self._get_queue_policy(queue_id)
-            if queue_id is not None and queue is None:
+            queue = await self.ticket_repo.get_queue_by_code(unified_queue_code()) if unified_queue_enabled() else await self._get_queue_policy(queue_id)
+            if (queue_id is not None or unified_queue_enabled()) and queue is None:
                 raise TicketAssignmentError("Очередь тикета не найдена")
             if queue is not None and not getattr(queue, "auto_assign_enabled", True):
                 raise TicketAssignmentError("В этой очереди автоназначение отключено")

@@ -1,5 +1,43 @@
 # Helpdesk server code map
 
+## Reversible unified support queue
+
+- `tickets/queue_mode.py` reads `config.TICKET_QUEUE_MODE` (`partitioned|unified`).
+  `app/repos/ticket_events_repo.py` applies staff scope to queue access, assignment
+  candidates and notifications; role/active checks remain server-side.
+- `tickets/routing_service.py` routes new unified work to the configured common
+  queue and preserves existing routing history/OLA. `assignment_service.py`
+  retains its auto-assign policy and global load limit.
+  Non-queue routing actions remain authoritative; policy-only updates are
+  persisted even when the historical queue stays unchanged. Covered by
+  `test_unified_queue_routing.py` and the no-DB policy regression.
+- `web_api/support_handlers.py` projects `queue_mode`, suppresses partitions and
+  rejects partition commands; legacy handlers use the same guard. Settings
+  report the mode; no migration or Endpoint contract change is required.
+- Simple ticket layout reuses the retained inspector and existing persisted
+  column sizes; compact queue adds explicit full-list navigation. Regression
+  coverage: `test_unified_queue.py`, `test_unified_queue_no_db.py`, and
+  `webapp/tests/support-simple.spec.ts`.
+
+## Everyday support workspace (UI-SUPPORT-001)
+
+- `webapp/src/pages/tickets/list-page.tsx` keeps the existing support queries,
+  realtime and mutations; `components/simple-support-*` compose the default
+  queue, compact ticket and three conversation tabs. Advanced modes stay reachable.
+- `tickets/smart_views.py` adds server-side operational views before queue limits.
+- `web_api/support_handlers.py` locks status/ownership before take-in-work and
+  public reply. Rejected replies write no event and do not finish first-response
+  SLA. `web_api/dto/support.py` projects `actions.can_send_public_message`.
+- Queue rows and ticket actions also project `take_in_work` through a
+  request-local read cache of canonical assignment/workflow checks. The command
+  revalidates membership and destination load and returns specific safe denial
+  codes. The Messenger conversation anchors its composer, preserves scroll and
+  separate audience drafts, and opens structured description in a native dialog.
+- `test_support_work.py` covers PostgreSQL competing operators, persisted
+  ownership, SLA and administrator access; the no-DB companion covers error
+  ordering. Existing FSM, assignment, closure, audit and internal visibility stay
+  authoritative. See [support workflow](../../docs/SUPPORT_WORKSPACE.md).
+
 ## Endpoint module discovery and inputs
 
 - `domain_ports/endpoint_modules.py` declares read-only primitive/published-module

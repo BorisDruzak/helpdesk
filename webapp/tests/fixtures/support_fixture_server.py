@@ -50,6 +50,7 @@ SUPPORT_PERMISSIONS = [
     "ticket.comment.public",
     "ticket.comment.internal",
     "ticket.status.change",
+    "ticket.assign",
     "ticket.playbook.run",
     "ticket.tool.run",
     "module.tool.run.low_risk",
@@ -1539,6 +1540,7 @@ def queue_entry(ticket_state: dict) -> dict:
         "created_at": ticket["created_at"],
         "requires_operator_action": ticket_state["requires_operator_action"],
         "unread_user_messages": ticket_state["unread_user_messages"],
+        "take_in_work": fixture_take_availability(ticket),
     }
 
 
@@ -1567,6 +1569,13 @@ def filtered_ticket_ids(state: dict, *, scope: str, status_filter: str, query: s
     return ticket_ids
 
 
+def fixture_take_availability(ticket: dict) -> dict:
+    assigned_other = ticket.get("assignee_id") not in {None, SUPPORT_LOGIN}
+    allowed = not assigned_other and ticket["status"] in {"new", "queued", "assigned", "waiting_on_user"}
+    return {"allowed": allowed, "reason_code": "ASSIGNEE_CONFLICT" if assigned_other else None,
+            "reason": "Обращение назначено другому оператору." if assigned_other else None}
+
+
 def build_ticket_detail(state: dict, ticket_id: str) -> dict:
     ticket_state = state["tickets"][ticket_id]
     return {
@@ -1581,6 +1590,7 @@ def build_ticket_detail(state: dict, ticket_id: str) -> dict:
                 {"value": "resolved", "label": "Решено"},
             ],
             "can_send_internal_note": True,
+            "take_in_work": fixture_take_availability(ticket_state["ticket"]),
         },
     }
 
@@ -2479,6 +2489,8 @@ async def handle_support_ticket_status(request: web.Request) -> web.Response:
     payload = await request.json()
     to_status = payload.get("to_status", "new")
     ticket_state = state["tickets"][ticket_id]
+    if to_status == "in_progress" and not ticket_state["ticket"].get("assignee_id"):
+        ticket_state["ticket"]["assignee_id"] = SUPPORT_LOGIN
     ticket_state["ticket"]["status"] = to_status
     ticket_state["ticket"]["status_label"] = STATUS_LABELS.get(to_status, to_status)
     ticket_state["ticket"]["updated_at"] = now_iso(minutes=16)

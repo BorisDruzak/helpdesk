@@ -48,6 +48,13 @@ background reads do not replace form drafts or require page reloads.
 
 ## Required change checks
 
+The default support workspace is a compact presentation of the existing support
+API, not an alternate workflow engine. Public replies require started work and
+the assigned operator (or an authorized administrator), checked under the same
+ticket lock as status transitions. The UI's action projection never replaces
+server permission, ownership, SLA or closure checks. Technical panels remain
+reachable from additional actions. See [support workflow](SUPPORT_WORKSPACE.md).
+
 - A Helpdesk diagnostic change must preserve the Endpoint HTTP contract lock
   and the endpoint-only boundary tests.
 - A change affecting Endpoint and Helpdesk together must verify both sides of

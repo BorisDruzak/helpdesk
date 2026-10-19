@@ -1,3 +1,63 @@
+# 2026-10-19 Unified queue and restored inspector
+
+Actor: support/admin. Primary job: choose an appeal and work in chat. Secondary:
+full-list navigation and contextual inspection. Archetype: list + conversation +
+inspector, with drawer fallback. User explicitly requested one reversible queue,
+full-list access/resizing and the retained right panel. Implement within existing
+repositories, state, routing and inspector; retain roles, ownership, FSM/SLA,
+capacity and closure policies. No production scope or data migration.
+Implemented: TICKET_QUEUE_MODE, global staff access/candidates/notifications,
+common new-ticket routing, partition command guards, mode projection/settings;
+full-list header action, persisted pointer/keyboard resizing, shared rich inspector.
+Checks: frontend847; server no-DB1542 passed/1 existing skip; build;13 fixture
+browser flows at1366/1440/1920/390. PostgreSQL6 plus final focused5 passed
+(unified/partitioned scope, active-role/load guards, concurrency, ownership and
+common routing/auto-assignment policy). Final routing policy PostgreSQL/unit6
+passed: retain priority, SLA and approval on new and existing tickets. Configuration
+helper2 passed. Review:
+source and docs checked; retained inspector move verified separately from its
+small semantic changes. GitNexus tools unavailable; source boundaries verified.
+Next:
+freeze candidate, exact-SHA full CI, canonical staging deploy, installed acceptance.
+Leave staging running. Preserve unrelated untracked work.
+
+# 2026-10-19 Support Messenger and take availability
+
+User selected reference 1 (Messenger) and authorized implementation, verification
+and isolated staging deployment. Preserve canonical queue membership, assignment,
+FSM, SLA, public/internal privacy, attachments and all additional tools.
+Implemented: readable bubbles, sender/date/time hierarchy, anchored composer,
+Ctrl/Command+Enter, scroll preservation, collapsed structured description; shared
+server take availability and specific membership/capacity errors. No dependency
+or migration. Existing admin is outside the affected queue; retain that policy.
+Verification: no-DB server 1537 passed / 1 existing skip; frontend 846 passed;
+PostgreSQL 3/3 (concurrency, persistence, queue/detail/command denial parity).
+Next: finish responsive visual checks, freeze candidate, exact-commit full CI,
+canonical staging release and installed browser acceptance. Leave staging running.
+
+# 2026-10-19 UI-SUPPORT-001
+
+Goal: everyday support queue, compact three-area ticket and clean conversation.
+Scope: existing TicketListPage, typed support APIs and canonical workflow only.
+Constraints: preserve FSM, audit, internal visibility, SLA and closure policies;
+no dependencies, production deployment or real-ticket mutations. Preserve unrelated
+registry branch and untracked work. User approved the reference-based approach.
+Decisions: five simple filters, explicit take-in-work through status/in_progress,
+public reply guarded by status/ownership under the ticket lock; advanced functions
+remain reachable. Use existing state, mutations and design primitives.
+Current State: implemented on codex/ui-support-001 from main 520b6218. Existing
+advanced modes are retained; shared dialogs and typed mutations are reused.
+Next Steps: frozen-candidate full CI, then draft PR. No production deployment.
+Verification: workspace sanity and diff check pass; frontend suite 843 tests;
+server no-DB 1532 passed, 1 existing skip. Fresh build and focused browser 13/13
+cover simple 1366/1920/390, existing advanced modes and normal-shell navigation,
+with synthetic fixtures. Source workflow PostgreSQL concurrency 3/3 passed through
+an owned staging tunnel, now closed. The broad staging API/DB selection exceeded
+its runner limit; its owned process was stopped and it is not counted as green.
+No deployed service or real ticket is changed. Full CI must bind to the committed
+candidate. Final regressions cover assignment permission and internal event tabs.
+Handoff: task active through CI/PR; preserve unrelated untracked files.
+
 # 2026-10-18 Build answer branches from an empty decision
 
 Actor/job: an administrator starts with only a yes/no question connected to a
