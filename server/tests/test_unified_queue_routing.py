@@ -33,4 +33,3 @@ async def test_unified_routing_persists_priority_sla_and_approval_for_new_and_ex
             assert ticket.sla_policy_id == sla.id
             assert ticket.custom_fields["priority_class"] == "P1"
             assert ticket.custom_fields["request_template"]["approval_policy"] == approval
-
