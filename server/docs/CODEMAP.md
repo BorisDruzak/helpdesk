@@ -8,6 +8,9 @@
 - `tickets/routing_service.py` routes new unified work to the configured common
   queue and preserves existing routing history/OLA. `assignment_service.py`
   retains its auto-assign policy and global load limit.
+  Non-queue routing actions remain authoritative; policy-only updates are
+  persisted even when the historical queue stays unchanged. Covered by
+  `test_unified_queue_routing.py` and the no-DB policy regression.
 - `web_api/support_handlers.py` projects `queue_mode`, suppresses partitions and
   rejects partition commands; legacy handlers use the same guard. Settings
   report the mode; no migration or Endpoint contract change is required.

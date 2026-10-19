@@ -467,11 +467,27 @@ class TicketRoutingService:
         ticket: Ticket,
         device_metadata: Optional[dict] = None,
     ) -> Optional[dict]:
-        if unified_queue_enabled():
+        decision = await self._resolve_partitioned_routing_decision(ticket, device_metadata)
+        if not unified_queue_enabled():
+            return decision
+        queue_id = getattr(ticket, "queue_id", None)
+        if queue_id is None:
             queue = await self.ticket_repo.get_queue_by_code(unified_queue_code())
             if queue is None or not getattr(queue, "is_active", True):
                 raise ValueError("Активная общая очередь не настроена")
-            return {"source": "unified_queue", "queue_id": queue.id, "actions": {"queue_id": queue.id}, "matched_rule": None}
+            queue_id = queue.id
+        # Keep non-queue actions (including approval/SLA policy) from the same
+        # canonical rule; only partition routing is overridden.
+        actions = {key: value for key, value in (decision or {}).get("actions", {}).items()
+                   if key not in {"queue_id", "target_queue_id", "queue_code", "queue"}}
+        actions["queue_id"] = queue_id
+        return {**(decision or {}), "source": "unified_queue", "queue_id": queue_id, "actions": actions}
+
+    async def _resolve_partitioned_routing_decision(
+        self,
+        ticket: Ticket,
+        device_metadata: Optional[dict] = None,
+    ) -> Optional[dict]:
         if device_metadata is None and ticket.device_id:
             device_metadata = await self.get_device_metadata(ticket.device_id)
         context = _get_ticket_context(ticket, device_metadata)
@@ -569,9 +585,6 @@ class TicketRoutingService:
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         if not ticket:
             return None
-        if unified_queue_enabled() and ticket.queue_id is not None:
-            # Existing assignments, queue history and live OLA timers stay intact.
-            return ticket.queue_id
         template_policy = _get_template_routing_policy(ticket)
         if not force_clear_lock and has_routing_lock(ticket.custom_fields):
             logger.debug(f"[Routing] Ticket {ticket_id} has routing lock, skip auto-routing")
@@ -664,7 +677,10 @@ class TicketRoutingService:
         if merged_tags is not None:
             updates["tags"] = merged_tags
 
-        if new_queue_id == old_queue_id and not any(
+        unified_policy_update = unified_queue_enabled() and any(
+            key in actions for key in ("approval_policy", "suggested_playbook_id", "suggested_playbook", "ola_policy_id", "watchers", "visibility")
+        )
+        if new_queue_id == old_queue_id and not unified_policy_update and not any(
             key in updates for key in ("priority", "sla_policy_id", "assignee_id", "tags")
         ):
             return new_queue_id

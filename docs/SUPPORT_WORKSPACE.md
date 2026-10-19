@@ -31,6 +31,9 @@ route to the active common queue named by `TICKET_TAKE_QUEUE_COMMON_CODE`;
 its auto-assignment switch still applies. Existing ticket queue IDs, assignments,
 history and running OLA timers are preserved; no bulk rewrite occurs. All queue
 configuration and the partitioned implementation remain available.
+Non-queue rule actions (priority, SLA/approval policies, tags and suggestions)
+continue through the canonical routing service, including policy-only updates
+on an existing ticket whose historical queue does not change.
 
 The compact list has **Открыть всю очередь**; it uses the existing full-list route
 and retains search/filter state. Ticket mode reuses the existing inspector with

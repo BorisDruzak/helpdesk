@@ -9,10 +9,12 @@ capacity and closure policies. No production scope or data migration.
 Implemented: TICKET_QUEUE_MODE, global staff access/candidates/notifications,
 common new-ticket routing, partition command guards, mode projection/settings;
 full-list header action, persisted pointer/keyboard resizing, shared rich inspector.
-Checks: frontend847; server no-DB1541 passed/1 existing skip; build;13 fixture
+Checks: frontend847; server no-DB1542 passed/1 existing skip; build;13 fixture
 browser flows at1366/1440/1920/390. PostgreSQL6 plus final focused5 passed
 (unified/partitioned scope, active-role/load guards, concurrency, ownership and
-common routing/auto-assignment policy). Configuration helper2 passed. Review:
+common routing/auto-assignment policy). Final routing policy PostgreSQL/unit6
+passed: retain priority, SLA and approval on new and existing tickets. Configuration
+helper2 passed. Review:
 source and docs checked; retained inspector move verified separately from its
 small semantic changes. GitNexus tools unavailable; source boundaries verified.
 Next:
