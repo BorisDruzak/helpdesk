@@ -54,8 +54,13 @@ def _content_disposition_attachment(filename: str) -> str:
 
 
 async def _can_upload_to_ticket(session, auth_context, ticket) -> bool:
-    if auth_context.actor_role in {"admin", "support"}:
-        return True
+    if auth_context.actor_role in {"admin", "support", "auditor"}:
+        from app.repos.ticket_events_repo import TicketEventsRepo
+        from tickets.handlers import _allow_ticket_write, can_read_ui_ticket
+
+        return _allow_ticket_write(ticket, auth_context) and await can_read_ui_ticket(
+            TicketEventsRepo(session), ticket, auth_context,
+        )
     if auth_context.actor_role == "agent":
         return auth_context.actor_id == getattr(ticket, "device_id", None)
     if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
@@ -199,6 +204,7 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
     original_name = ""
     storage_path = None
     file_processed = False
+    upload_may_be_persisted = False
 
     try:
         reader = await request.multipart()
@@ -223,8 +229,6 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
                             break
                         size_bytes += len(chunk)
                         if size_bytes > ARTIFACT_MAX_BYTES:
-                            f.close()
-                            file_saved_path.unlink(missing_ok=True)
                             return web.json_response(
                                 {
                                     "status": "error",
@@ -316,10 +320,6 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
             if operation_id and sha256_hex:
                 existing = await repo.get_by_sha256_and_operation_id(sha256_hex, operation_id)
                 if existing:
-                    try:
-                        file_saved_path.unlink(missing_ok=True)
-                    except OSError:
-                        pass
                     download_url = f"/api/artifacts/{existing.artifact_id}/download"
                     logger.info(f"Идемпотентный upload: возвращаем существующий артефакт {existing.artifact_id}")
                     return web.json_response({
@@ -347,6 +347,14 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
                 operation_id=operation_id,
                 expires_at=None,
             )
+            # A failed/cancelled commit may already be durable. Retain its blob
+            # for reconciliation instead of risking deletion of committed data.
+            upload_may_be_persisted = True
+            try:
+                await session.commit()
+            except BaseException:
+                logger.warning("Upload commit outcome unknown; reconcile artifact {}", artifact_id)
+                raise
 
         download_url = f"/api/artifacts/{artifact_id}/download"
         logger.success(f"Артефакт загружен: {artifact_id}, size={size_bytes}, kind={kind}")
@@ -363,15 +371,18 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
 
     except Exception as e:
         logger.error(f"Ошибка загрузки файла: {e}", exc_info=True)
-        if file_saved_path and file_saved_path.exists():
-            try:
-                file_saved_path.unlink()
-            except OSError:
-                pass
         return web.json_response(
             {"status": "error", "error": str(e)},
             status=500,
         )
+    finally:
+        # Covers validation returns, duplicates and cancellation before commit.
+        # A commit with an uncertain outcome must be reconciled separately.
+        if file_saved_path is not None and not upload_may_be_persisted:
+            try:
+                file_saved_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Failed to remove uncommitted upload {}", file_saved_path.name)
 
 async def handle_artifact_download(request: web.Request) -> web.StreamResponse:
     """

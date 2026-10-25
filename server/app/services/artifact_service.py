@@ -28,7 +28,7 @@ class ArtifactService:
 
     - Агент (AGENT_TOKEN): базово только свои артефакты (artifact.device_id == actor_id);
       ticket-bound downloads are additionally scoped by active device binding in uploads.handlers.
-    - Staff UI: доступ к артефактам, привязанным к существующему тикету.
+    - Staff UI: доступ к артефактам в пределах канонической видимости тикета.
     - User UI / public ticket token: только свой тикет.
     """
 
@@ -90,7 +90,10 @@ class ArtifactService:
             if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
                 return (artifact, None) if auth_context.ticket_scope == target_ticket_id else (None, FORBIDDEN)
             if auth_context.actor_role in {"admin", "support", "auditor"}:
-                return artifact, None
+                from tickets.handlers import can_read_ui_ticket
+
+                if await can_read_ui_ticket(self._ticket_repo, ticket, auth_context):
+                    return artifact, None
             if auth_context.actor_role == "user" and auth_context.actor_id == getattr(ticket, "requester_id", None):
                 return artifact, None
             logger.warning(
