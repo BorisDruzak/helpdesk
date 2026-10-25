@@ -43,7 +43,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { startTransition, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
@@ -1299,6 +1299,8 @@ export function TicketListPage() {
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const selectedTicketIdRef = useRef<string | null>(null);
   const markedReadRef = useRef<string | null>(null);
+  const attemptedReadRef = useRef<string | null>(null);
+  const composerGenerationRef = useRef(0);
   const resizeStateRef = useRef<WorkspaceResizeState | null>(null);
   const deferredSearch = useDeferredValue(search);
   const deferredAutomationCatalogSearch = useDeferredValue(automationCatalogSearch);
@@ -1331,6 +1333,13 @@ export function TicketListPage() {
       setWorkspaceMode("queue");
     }
   }, [search, searchParams, smartView, workspaceMode]);
+
+  useLayoutEffect(() => {
+    composerGenerationRef.current += 1;
+    setUploadingAttachments(false);
+    setAttachmentError(null);
+    return () => { composerGenerationRef.current += 1; };
+  }, [selectedTicketId, composerMode]);
 
   useEffect(() => {
     selectedTicketIdRef.current = selectedTicketId;
@@ -1542,6 +1551,7 @@ export function TicketListPage() {
     mutationFn: ({ ticketId, lastReadEventId }: { ticketId: string; lastReadEventId: number }) =>
       postSupportTicketRead(ticketId, lastReadEventId),
     onSuccess: (_result, variables) => {
+      markedReadRef.current = `${variables.ticketId}:${variables.lastReadEventId}`;
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", variables.ticketId] }),
@@ -1574,15 +1584,17 @@ export function TicketListPage() {
       return;
     }
     const markKey = `${selectedTicketId}:${latestRequesterMessageEventId}`;
-    if (markedReadRef.current === markKey) {
+    // A failed receipt can retry after fresh data, without retrying on mutation renders.
+    const attemptKey = `${markKey}:${workspaceQuery.dataUpdatedAt}:${timelineQuery.dataUpdatedAt}`;
+    if (markedReadRef.current === markKey || attemptedReadRef.current === attemptKey) {
       return;
     }
-    markedReadRef.current = markKey;
+    attemptedReadRef.current = attemptKey;
     markReadMutation.mutate({
       ticketId: selectedTicketId,
       lastReadEventId: latestRequesterMessageEventId,
     });
-  }, [latestRequesterMessageEventId, markReadMutation, selectedTicketId]);
+  }, [latestRequesterMessageEventId, markReadMutation, selectedTicketId, workspaceQuery.dataUpdatedAt, timelineQuery.dataUpdatedAt]);
 
   const evidenceCandidatesQuery = useQuery({
     queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId],
@@ -1800,29 +1812,37 @@ export function TicketListPage() {
       : null;
 
   const messageMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedTicketId) {
-        return null;
+    mutationFn: (draft: { ticketId: string; mode: ComposerMode; text: string; artifactIds: string[]; generation: number }) =>
+      postSupportTicketMessage(draft.ticketId, draft.text, draft.mode, draft.artifactIds),
+    onSuccess: async (_result, draft) => {
+      if (composerGenerationRef.current === draft.generation) {
+        simpleTextDraftsRef.current[draft.mode] = "";
+        simpleAttachmentDraftsRef.current[draft.mode] = [];
+        setComposerText("");
+        setPendingAttachments([]);
+        setAttachmentError(null);
+        if (attachmentInputRef.current) {
+          attachmentInputRef.current.value = "";
+        }
       }
-      return postSupportTicketMessage(
-        selectedTicketId,
-        composerText.trim(),
-        composerMode,
-        pendingAttachments.map((item) => item.artifact_id).filter(Boolean),
-      );
-    },
-    onSuccess: async () => {
-      simpleTextDraftsRef.current[composerMode] = "";
-      simpleAttachmentDraftsRef.current[composerMode] = [];
-      setComposerText("");
-      setPendingAttachments([]);
-      setAttachmentError(null);
-      if (attachmentInputRef.current) {
-        attachmentInputRef.current.value = "";
-      }
-      await refreshSelectedTicketData();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", draft.ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", draft.ticketId] }),
+      ]);
     },
   });
+
+  const sendComposerMessage = () => {
+    if (!selectedTicketId || !composerCanSend) return;
+    messageMutation.mutate({
+      ticketId: selectedTicketId,
+      mode: composerMode,
+      text: composerText.trim(),
+      artifactIds: pendingAttachments.map((item) => item.artifact_id).filter(Boolean),
+      generation: composerGenerationRef.current,
+    });
+  };
 
   const handleAttachmentInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -1830,19 +1850,26 @@ export function TicketListPage() {
     if (!selectedTicketId || files.length === 0) {
       return;
     }
+    const ticketId = selectedTicketId;
+    const generation = composerGenerationRef.current;
     setUploadingAttachments(true);
     setAttachmentError(null);
     try {
       const uploaded: SupportTicketAttachmentUpload[] = [];
       for (const file of files) {
-        uploaded.push(await uploadSupportTicketAttachment(selectedTicketId, file));
+        uploaded.push(await uploadSupportTicketAttachment(ticketId, file));
+        if (composerGenerationRef.current !== generation) return;
       }
       setPendingAttachments((current) => [...current, ...uploaded]);
     } catch (error) {
-      setAttachmentError(error instanceof Error ? error.message : "Не удалось прикрепить файл");
+      if (composerGenerationRef.current === generation) {
+        setAttachmentError(error instanceof Error ? error.message : "Не удалось прикрепить файл");
+      }
     } finally {
-      setUploadingAttachments(false);
-      input.value = "";
+      if (composerGenerationRef.current === generation) {
+        setUploadingAttachments(false);
+        input.value = "";
+      }
     }
   };
 
@@ -3734,7 +3761,7 @@ export function TicketListPage() {
               pending={messageMutation.isPending || uploadingAttachments} loading={timelineQuery.isLoading} error={timelineQuery.isError}
               onTextChange={(text) => { simpleTextDraftsRef.current[composerMode] = text; setComposerText(text); }}
               onModeChange={(mode) => { simpleTextDraftsRef.current[composerMode] = composerText; simpleAttachmentDraftsRef.current[composerMode] = pendingAttachments; setComposerMode(mode); setComposerText(simpleTextDraftsRef.current[mode]); setPendingAttachments(simpleAttachmentDraftsRef.current[mode]); }}
-              onSend={() => { if (composerCanSend) messageMutation.mutate(); }}
+              onSend={sendComposerMessage}
               attachments={pendingAttachments} inputRef={attachmentInputRef} onUpload={handleAttachmentInputChange} uploadError={attachmentError}
               onRemoveAttachment={(id) => setPendingAttachments((items) => items.filter((item) => item.artifact_id !== id))}
             />}
@@ -4507,7 +4534,7 @@ export function TicketListPage() {
                       <button
                         className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50"
                         disabled={!composerCanSend}
-                        onClick={() => messageMutation.mutate()}
+                        onClick={sendComposerMessage}
                         type="button"
                       >
                         Отправить

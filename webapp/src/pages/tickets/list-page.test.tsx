@@ -13,6 +13,7 @@ import {
   postSupportOperationCancel,
   postSupportOperationRetry,
   postSupportTicketMessage,
+  postSupportTicketRead,
   postSupportTicketPlaybookRun,
   postSupportTicketToolRun,
   postSupportTicketHide,
@@ -71,6 +72,7 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
     postSupportOperationCancel: vi.fn(),
     postSupportOperationRetry: vi.fn(),
     postSupportTicketMessage: vi.fn(),
+    postSupportTicketRead: vi.fn(),
     postSupportTicketPlaybookRun: vi.fn(),
     postSupportTicketToolRun: vi.fn(),
     postSupportTicketHide: vi.fn(),
@@ -119,6 +121,7 @@ const linkSupportTicketPassportEvidenceMock = vi.mocked(linkSupportTicketPasspor
 const postSupportOperationCancelMock = vi.mocked(postSupportOperationCancel);
 const postSupportOperationRetryMock = vi.mocked(postSupportOperationRetry);
 const postSupportTicketMessageMock = vi.mocked(postSupportTicketMessage);
+const postSupportTicketReadMock = vi.mocked(postSupportTicketRead);
 const postSupportTicketPlaybookRunMock = vi.mocked(postSupportTicketPlaybookRun);
 const postSupportTicketToolRunMock = vi.mocked(postSupportTicketToolRun);
 const postSupportTicketHideMock = vi.mocked(postSupportTicketHide);
@@ -403,6 +406,7 @@ function renderTicketListPage(initialEntry = "/app/tickets", advanced = true) {
 }
 
 beforeEach(() => {
+  postSupportTicketReadMock.mockResolvedValue({} as Awaited<ReturnType<typeof postSupportTicketRead>>);
   fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [], total: 0 }));
   fetchSupportQueueSavedViewsMock.mockResolvedValue({
     views: [],
@@ -421,6 +425,134 @@ afterEach(() => {
 });
 
 describe("TicketListPage", () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+    return { promise, resolve, reject };
+  }
+
+  function prepareTwoTickets() {
+    const queue = queuePayload();
+    queue.tickets.push({ ...queue.tickets[0], ticket_id: "ticket-2", ticket_code: "T-000002", title: "Второе обращение" });
+    fetchSupportQueueMock.mockResolvedValue(queue);
+    fetchSupportTicketWorkspaceMock.mockImplementation(async (ticketId) => {
+      const workspace = workspacePayload();
+      workspace.detail.ticket = { ...workspace.detail.ticket, ticket_id: ticketId, title: ticketId === "ticket-2" ? "Второе обращение" : "Проверить OLA очередь" };
+      return workspace;
+    });
+  }
+
+  it("does not attach a late upload to another ticket's reply", async () => {
+    prepareTwoTickets();
+    const upload = deferred<Awaited<ReturnType<typeof uploadSupportTicketAttachment>>>();
+    uploadSupportTicketAttachmentMock.mockReturnValueOnce(upload.promise);
+    postSupportTicketMessageMock.mockResolvedValue({ ticket_id: "ticket-2", message: {} } as any);
+    const view = renderTicketListPage("/app/tickets/ticket-1");
+    await screen.findByTestId("support-reply-composer");
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["log"], "ticket-one.txt")] } });
+    fireEvent.click(await screen.findByText("Второе обращение"));
+    await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
+    fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Reply for ticket two" } });
+    await act(async () => upload.resolve({ artifact_id: "artifact-ticket-one", filename: "ticket-one.txt", name: "ticket-one.txt", url: "/api/artifacts/one/download", size: 3, sha256: "hash", mime_type: "text/plain", kind: "file" }));
+    expect(screen.queryByText("ticket-one.txt")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Отправить" }));
+    await waitFor(() => expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-2", "Reply for ticket two", "public", []));
+  });
+
+  it("preserves another ticket's draft when the previous send completes", async () => {
+    prepareTwoTickets();
+    const send = deferred<Awaited<ReturnType<typeof postSupportTicketMessage>>>();
+    postSupportTicketMessageMock.mockReturnValueOnce(send.promise);
+    renderTicketListPage("/app/tickets/ticket-1");
+    fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Reply for ticket one" } });
+    fireEvent.click(screen.getByRole("button", { name: "Отправить" }));
+    await waitFor(() => expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-1", "Reply for ticket one", "public", []));
+    fireEvent.click(await screen.findByText("Второе обращение"));
+    await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
+    fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Draft for ticket two" } });
+    await act(async () => send.resolve({ ticket_id: "ticket-1", message: {} } as any));
+    expect(screen.getByTestId("support-reply-composer")).toHaveValue("Draft for ticket two");
+  });
+
+  it("ignores an old upload failure while the next ticket is still uploading", async () => {
+    prepareTwoTickets();
+    const uploadA = deferred<Awaited<ReturnType<typeof uploadSupportTicketAttachment>>>();
+    const uploadB = deferred<Awaited<ReturnType<typeof uploadSupportTicketAttachment>>>();
+    uploadSupportTicketAttachmentMock.mockReturnValueOnce(uploadA.promise).mockReturnValueOnce(uploadB.promise);
+    const view = renderTicketListPage("/app/tickets/ticket-1");
+    await screen.findByTestId("support-reply-composer");
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["A"], "ticket-a.txt")] } });
+    fireEvent.click(await screen.findByText("Второе обращение"));
+    await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
+    fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Reply while B uploads" } });
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["B"], "ticket-b.txt")] } });
+    const attach = screen.getByRole("button", { name: "Прикрепить файлы" });
+    expect(attach).toBeDisabled();
+    expect(attach).toHaveAttribute("title", "Прикрепляем...");
+    await act(async () => uploadA.reject(new Error("Old A upload failed")));
+    expect(screen.queryByText("Old A upload failed")).not.toBeInTheDocument();
+    expect(attach).toBeDisabled();
+    expect(attach).toHaveAttribute("title", "Прикрепляем...");
+    expect(screen.getByRole("button", { name: "Отправить" })).toBeDisabled();
+    expect(screen.getByTestId("support-reply-composer")).toHaveValue("Reply while B uploads");
+    await act(async () => uploadB.resolve({ artifact_id: "artifact-b", filename: "ticket-b.txt", name: "ticket-b.txt", url: "/api/artifacts/b/download", size: 1, sha256: "hash", mime_type: "text/plain", kind: "file" }));
+    expect(await screen.findByText("ticket-b.txt")).toBeInTheDocument();
+    expect(attach).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Отправить" })).toBeEnabled();
+  });
+
+  it("discards an upload from an earlier visit after switching A to B and back to A", async () => {
+    prepareTwoTickets();
+    const upload = deferred<Awaited<ReturnType<typeof uploadSupportTicketAttachment>>>();
+    uploadSupportTicketAttachmentMock.mockReturnValueOnce(upload.promise);
+    postSupportTicketMessageMock.mockResolvedValue({ ticket_id: "ticket-1", message: {} } as any);
+    const view = renderTicketListPage("/app/tickets/ticket-1");
+    await screen.findByTestId("support-reply-composer");
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["old"], "previous-visit-a.txt")] } });
+    fireEvent.click(await screen.findByText("Второе обращение"));
+    await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
+    fireEvent.click(screen.getByText("Проверить OLA очередь"));
+    fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "New visit to A" } });
+    await act(async () => upload.resolve({ artifact_id: "old-artifact-a", filename: "previous-visit-a.txt", name: "previous-visit-a.txt", url: "/api/artifacts/old-a/download", size: 3, sha256: "hash", mime_type: "text/plain", kind: "file" }));
+    expect(screen.queryByText("previous-visit-a.txt")).not.toBeInTheDocument();
+    expect(screen.getByTestId("support-reply-composer")).toHaveValue("New visit to A");
+    fireEvent.click(screen.getByRole("button", { name: "Отправить" }));
+    await waitFor(() => expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-1", "New visit to A", "public", []));
+  });
+
+  it("preserves a new visit's draft when an earlier send completes after switching A to B to A", async () => {
+    prepareTwoTickets();
+    const send = deferred<Awaited<ReturnType<typeof postSupportTicketMessage>>>();
+    postSupportTicketMessageMock.mockReturnValueOnce(send.promise);
+    renderTicketListPage("/app/tickets/ticket-1");
+    fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Previous visit to A" } });
+    fireEvent.click(screen.getByRole("button", { name: "Отправить" }));
+    await waitFor(() => expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-1", "Previous visit to A", "public", []));
+    fireEvent.click(await screen.findByText("Второе обращение"));
+    await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
+    fireEvent.click(screen.getByText("Проверить OLA очередь"));
+    fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "New private draft for A" } });
+    await act(async () => send.resolve({ ticket_id: "ticket-1", message: {} } as any));
+    expect(screen.getByTestId("support-reply-composer")).toHaveValue("New private draft for A");
+  });
+
+  it("retries a failed read receipt after an explicit refresh without retrying on every render", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [{ ...timelinePayload().items[0], event_id: 123, event_type: "chat_message", from_role: "user", text: "Unread question" }] }));
+    postSupportTicketReadMock.mockRejectedValueOnce(new Error("Temporary read failure"));
+    renderTicketListPage("/app/tickets/ticket-1");
+    await waitFor(() => expect(postSupportTicketReadMock).toHaveBeenCalledTimes(1));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(postSupportTicketReadMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Обновить очередь" }));
+    await waitFor(() => expect(postSupportTicketReadMock).toHaveBeenCalledTimes(2));
+    expect(postSupportTicketReadMock).toHaveBeenLastCalledWith("ticket-1", 123);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(postSupportTicketReadMock).toHaveBeenCalledTimes(2);
+  });
+
   it("switches between ticket, queue and expanded right-panel workspace modes", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
