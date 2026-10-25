@@ -57,11 +57,13 @@ async def test_unified_auto_assignment_keeps_common_queue_policy_and_global_cand
     monkeypatch.setattr(config, "TICKET_QUEUE_MODE", "unified")
     queue = SimpleNamespace(auto_assign_enabled=False)
     repo = SimpleNamespace(get_queue_by_code=AsyncMock(return_value=queue), select_assignee_for_update=AsyncMock(return_value="support1"), count_active_tickets_for_assignee=AsyncMock(return_value=0))
+    ticket = SimpleNamespace(ticket_id="auto-assignment", queue_id=99)
+    repo.get_ticket = AsyncMock(return_value=ticket)
     service = TicketAssignmentService(repo)
     with pytest.raises(TicketAssignmentError):
-        await service.resolve_assignee(SimpleNamespace(queue_id=99), requested_assignee_id=None, auto_assign=True)
+        await service.resolve_assignee(ticket, requested_assignee_id=None, auto_assign=True)
     repo.select_assignee_for_update.assert_not_awaited()
     queue.auto_assign_enabled = True
-    result = await service.resolve_assignee(SimpleNamespace(queue_id=99), requested_assignee_id=None, auto_assign=True)
+    result = await service.resolve_assignee(ticket, requested_assignee_id=None, auto_assign=True)
     assert result["assignee_id"] == "support1"
     repo.select_assignee_for_update.assert_awaited_once_with(3, queue_id=None)

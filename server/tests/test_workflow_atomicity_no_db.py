@@ -22,6 +22,7 @@ def mutations(monkeypatch):
     repo = SimpleNamespace(get_ticket=AsyncMock(return_value=ticket), update_ticket=AsyncMock(), add_event=AsyncMock())
     repo.is_actor_in_queue = AsyncMock(return_value=True)
     repo.count_active_tickets_for_assignee = AsyncMock(return_value=0)
+    repo.lock_assignee_for_update = AsyncMock(return_value=True)
     auth = AuthContext(actor_id="support1", actor_role="support", auth_type=AuthType.UI_TOKEN, token="synthetic")
 
     @asynccontextmanager

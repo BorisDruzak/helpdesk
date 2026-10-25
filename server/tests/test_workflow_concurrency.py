@@ -2,12 +2,13 @@ import asyncio
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, TicketEvent
+from app.db.models import Ticket, TicketEvent, UiUser
 from app.repos.ticket_events_repo import TicketEventsRepo
 from tests.test_ticket_queue_routing_contracts import _seed_queue
+from tests.pg_lock_probe import wait_for_backend_blocker
 from tickets.workflow_service import TicketWorkflowService, WorkflowTransitionConflict
 
 pytestmark = pytest.mark.db_cleanup("tickets")
@@ -25,14 +26,14 @@ async def test_competing_transitions_have_one_winner_and_refresh_stale_identity(
         await seed.commit()
 
     async with maker() as first, maker() as second:
+        first_pid = await first.scalar(text("SELECT pg_backend_pid()"))
+        second_pid = await second.scalar(text("SELECT pg_backend_pid()"))
         stale = await TicketEventsRepo(second).get_ticket(ticket_id)
         assert stale.status == "new"
         await TicketWorkflowService(first, TicketEventsRepo(first)).apply_status_transition(
             ticket_id, "new", "queued", "first", "support")
-        started = asyncio.Event()
 
         async def competing_transition():
-            started.set()
             try:
                 await TicketWorkflowService(second, TicketEventsRepo(second)).apply_status_transition(
                     ticket_id, "new", losing_target, "second", "support")
@@ -43,18 +44,14 @@ async def test_competing_transitions_have_one_winner_and_refresh_stale_identity(
 
         task = asyncio.create_task(competing_transition())
         try:
-            await asyncio.wait_for(started.wait(), 5)
-            try:
-                with pytest.raises(asyncio.TimeoutError):
-                    await asyncio.wait_for(asyncio.shield(task), 0.2)
-            finally:
-                await first.commit()
+            await wait_for_backend_blocker(test_engine, blocked_pid=second_pid, blocker_pid=first_pid, task=task)
+            await first.commit()
             with pytest.raises(WorkflowTransitionConflict):
                 await asyncio.wait_for(task, 10)
         finally:
             if not task.done():
                 task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+            await asyncio.gather(task, return_exceptions=True)
 
     async with maker() as verification:
         ticket = await verification.get(Ticket, ticket_id)
@@ -74,6 +71,7 @@ async def test_locked_transition_preserves_pending_assignment_without_autoflush(
     async with maker() as session:
         queue = await _seed_queue(session, code="pending_" + uuid.uuid4().hex,
                                   name="Pending assignment", members=[], auto_assign_enabled=False)
+        session.add(UiUser(user_login="test-operator", password_hash="!", actor_role="support", is_active=True))
         session.add(Ticket(ticket_id=ticket_id, device_id=None, title="Pending assignment",
                            description="Isolated acceptance", requester_id="test-requester", status="new",
                            queue_id=queue.id, assignee_id=None, custom_fields={}))

@@ -1767,6 +1767,16 @@ class TicketEventsRepo:
         result = await self.session.execute(stmt)
         return result.first() is not None
 
+    async def lock_assignee_for_update(self, user_login: str, *, skip_locked: bool = False) -> bool:
+        """Lock the common capacity row until transaction end, before recounting.
+
+        Existing-ticket commands acquire their ticket lock first, then this
+        assignee lock. Manual assignment waits; auto-assignment skips busy users.
+        """
+        stmt = select(UiUser).where(UiUser.user_login == user_login).with_for_update(skip_locked=skip_locked)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def touch_user_last_assignment(self, user_login: str, assigned_at: datetime) -> bool:
         stmt = (
             update(UiUser)
@@ -1789,14 +1799,7 @@ class TicketEventsRepo:
             if int(candidate.get("active_count") or 0) >= max_active:
                 continue
             user_login = candidate["user_login"]
-            lock_stmt = (
-                select(UiUser)
-                .where(UiUser.user_login == user_login)
-                .with_for_update(skip_locked=True)
-            )
-            result = await self.session.execute(lock_stmt)
-            locked_user = result.scalar_one_or_none()
-            if locked_user is None:
+            if not await self.lock_assignee_for_update(user_login, skip_locked=True):
                 continue
             actual_count = await self.count_active_tickets_for_assignee(user_login)
             if actual_count < max_active:

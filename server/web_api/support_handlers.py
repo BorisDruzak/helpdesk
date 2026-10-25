@@ -1299,10 +1299,10 @@ class _SupportTakeProjector:
         if not assignee:
             if not await self.permitted("ticket.assign"):
                 return denied("FORBIDDEN", "Для взятия обращения нужно право назначения исполнителя.")
-            try:
-                await TicketAssignmentService(self).validate_manual_assignment(ticket, actor, activating=True)
-            except TicketAssignmentError as exc:
-                return denied(*_assignment_failure(exc))
+        try:
+            await TicketAssignmentService(self).validate_manual_assignment(ticket, assignee or actor, activating=True, lock_capacity=False)
+        except TicketAssignmentError as exc:
+            return denied(*_assignment_failure(exc))
         if transition_allowed is None:
             from tickets.workflow_profiles import load_workflow_profiles
             from tickets.workflow_service import load_ticket_workflow_profile, validate_transition_for_profile
@@ -5656,11 +5656,11 @@ async def handle_web_support_change_status(request: web.Request):
                     denied = await _require_permission(session, auth_context, "ticket.assign")
                     if denied:
                         return denied
-                    try:
-                        await TicketAssignmentService(repo).validate_manual_assignment(ticket, auth_context.actor_id, activating=True)
-                    except TicketAssignmentError as exc:
-                        code, message = _assignment_failure(exc)
-                        return _support_json_error(message, status=409, error_code=code)
+                try:
+                    await TicketAssignmentService(repo).validate_manual_assignment(ticket, assignee or auth_context.actor_id, activating=True)
+                except TicketAssignmentError as exc:
+                    code, message = _assignment_failure(exc)
+                    return _support_json_error(message, status=409, error_code=code)
 
             is_staff = auth_context.actor_role in {"admin", "support"}
             from_status = ticket.status

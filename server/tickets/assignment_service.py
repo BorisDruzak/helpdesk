@@ -46,14 +46,28 @@ class TicketAssignmentService:
                 code="ASSIGNEE_NOT_IN_QUEUE",
             )
 
-    async def validate_manual_assignment(self, ticket: Any, assignee_id: Optional[str], *, activating: bool = False) -> None:
+    async def validate_manual_assignment(
+        self, ticket: Any, assignee_id: Optional[str], *, activating: bool = False, lock_capacity: bool = True
+    ) -> None:
         if not assignee_id:
             return
         await self._ensure_actor_in_queue(getattr(ticket, "queue_id", None), assignee_id)
+        await self.validate_capacity(ticket, assignee_id, activating=activating, lock_capacity=lock_capacity)
+
+    async def validate_capacity(
+        self, ticket: Any, assignee_id: Optional[str], *, activating: bool = False, lock_capacity: bool = True
+    ) -> None:
+        if not assignee_id:
+            return
         if not activating and not is_active_operator_status(getattr(ticket, "status", None)):
             return
-        if getattr(ticket, "assignee_id", None) == assignee_id:
+        if getattr(ticket, "assignee_id", None) == assignee_id and is_active_operator_status(getattr(ticket, "status", None)):
             return
+        # Command callers already hold the ticket lock; hold the target user's
+        # row through commit as auto-assignment does, then count committed load.
+        # The read-only UI projection explicitly opts out of transaction locks.
+        if lock_capacity and not await self.ticket_repo.lock_assignee_for_update(assignee_id):
+            raise TicketAssignmentError("Исполнитель недоступен для назначения")
         active_count = await self.ticket_repo.count_active_tickets_for_assignee(assignee_id)
         if active_count >= MAX_ACTIVE_TICKETS_PER_OPERATOR:
             raise TicketAssignmentError(
@@ -68,6 +82,11 @@ class TicketAssignmentService:
         requested_assignee_id: Optional[str],
         auto_assign: bool,
     ) -> Dict[str, Any]:
+        # Lock order is ticket, then target user, for manual and auto paths.
+        # Refresh first: a concurrent status/assignment change affects capacity.
+        ticket = await self.ticket_repo.get_ticket(ticket.ticket_id, for_update=True)
+        if ticket is None:
+            raise TicketAssignmentError("Обращение не найдено")
         queue_id = None if unified_queue_enabled() else getattr(ticket, "queue_id", None)
         if auto_assign:
             queue = await self.ticket_repo.get_queue_by_code(unified_queue_code()) if unified_queue_enabled() else await self._get_queue_policy(queue_id)

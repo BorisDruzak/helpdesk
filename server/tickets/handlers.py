@@ -2282,17 +2282,21 @@ async def handle_tickets_bulk_assign(request: web.Request) -> web.Response:
         return _validation_error({"ticket_ids": "ticket_ids must be an array"})
     if len(ticket_ids) > 3:
         return _json_error("Максимум 3 тикета для массового назначения", status=400)
+    normalized_ticket_ids = [str(ticket_id).strip() for ticket_id in ticket_ids]
+    ticket_ids = list(dict.fromkeys(ticket_id for ticket_id in normalized_ticket_ids if ticket_id))
     if not ticket_ids:
         return _json_ok(assigned=0)
     async with get_session() as session:
         repo = TicketEventsRepo(session)
         assignment_service = TicketAssignmentService(repo)
         assigned = 0
+        # Acquire the complete ticket set before any operator capacity lock.
+        # Stable ordering also prevents overlapping bulk requests inverting it.
+        locked_tickets = {}
+        for ticket_id in sorted(ticket_ids):
+            locked_tickets[ticket_id] = await repo.get_ticket(ticket_id, for_update=True)
         for ticket_id in ticket_ids:
-            ticket_id = str(ticket_id).strip()
-            if not ticket_id:
-                continue
-            ticket = await repo.get_ticket(ticket_id)
+            ticket = locked_tickets[ticket_id]
             if ticket is None:
                 continue
             status = (getattr(ticket, "status", None) or "").lower()

@@ -41,6 +41,30 @@ async def test_take_denial_is_specific_and_precedes_workflow(web_support_client,
     work.session.commit.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_retained_assignee_cannot_resume_when_active_capacity_is_full(web_support_client, work):
+    work.ticket.status = "waiting_on_user"
+    work.ticket.assignee_id = "support1"
+    work.repo.count_active_tickets_for_assignee.return_value = 3
+    response = await web_support_client.post(f"/api/web/support/tickets/{work.ticket.ticket_id}/status", json={"to_status": "in_progress"})
+    assert response.status == 409
+    assert (await response.json())["error_code"] == "ASSIGNEE_CAPACITY_REACHED"
+    assert work.ticket.status == "waiting_on_user"
+    work.repo.add_event.assert_not_awaited()
+    work.session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_retained_assignee_take_projection_reports_full_capacity(work):
+    work.ticket.status = "waiting_on_user"
+    work.ticket.assignee_id = "support1"
+    work.repo.count_active_tickets_for_assignee.return_value = 3
+    auth = AuthContext(actor_id="support1", actor_role="support", auth_type=AuthType.UI_TOKEN, token="synthetic")
+    result = await support._SupportTakeProjector(work.session, work.repo, auth).project(work.ticket, transition_allowed=True)
+    assert result.allowed is False
+    assert result.reason_code == "ASSIGNEE_CAPACITY_REACHED"
+
+
 @pytest.fixture
 def work(mutations, monkeypatch):
     mutations.repo.add_event.return_value = (1, datetime.now(timezone.utc))
