@@ -1,5 +1,28 @@
 # Helpdesk server code map
 
+## Review hardening (2026-10-26)
+
+- `auth/service.py` resolves token privileges from the current active UI user.
+  Database cooldown and memory-token paths require the explicit development
+  fallback policy. Token fragments are excluded from authentication logs.
+- `websocket/ui_handler.py` guards internal room subscriptions/delivery with
+  current session and canonical ticket visibility checks; user/auditor roles
+  cannot consume raw internal room payloads. Idle heartbeat does not query DB.
+- `tickets/assignment_service.py` and `workflow_service.py` check increasing
+  active load under the operator row lock. `ticket_events_repo.py` shares that
+  lock with auto-assignment; existing-ticket commands lock ticket before operator.
+  Bulk assignment prelocks all requested tickets in sorted order. Availability
+  projection explicitly uses a nonlocking read and commands revalidate it.
+- `app/services/artifact_service.py` and `uploads/handlers.py` reuse canonical
+  ticket read/write authorization. Precommit rejections/cancellation remove
+  temporary blobs. Files survive an uncertain commit result for reconciliation;
+  successful commit is recorded before session-close cleanup can fail.
+- Retired module-administration helpers/handlers were removed from
+  `web_api/admin_handlers.py`; their routes were already absent. Endpoint
+  module ownership and external HTTP contracts are unchanged.
+
+See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
+
 ## Reversible unified support queue
 
 - `tickets/queue_mode.py` reads `config.TICKET_QUEUE_MODE` (`partitioned|unified`).
