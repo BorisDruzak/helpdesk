@@ -1,11 +1,196 @@
 import sys
+import json
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
+import xml.etree.ElementTree as ET
 
 import pytest
 
 from scripts import run_ci_suite
+
+
+@pytest.mark.parametrize("secret", ["synthetic-ci-password-8391", 'synthetic-ci<&"päss/@>'])
+def test_capture_redacts_step_database_credentials_in_output_header_and_junit(tmp_path, capsys, secret):
+    encoded_secret = quote(secret, safe="")
+    database_url = f"postgresql+asyncpg://test_admin:{encoded_secret}@127.0.0.1:54321/postgres"
+    script = tmp_path / "emit_failure.py"
+    junit = tmp_path / "junit-failure.xml"
+    script.write_text(
+        "import os,sys,xml.etree.ElementTree as ET\n"
+        "from urllib.parse import urlsplit,unquote\n"
+        "url=os.environ['TEST_DATABASE_ADMIN_URL']\n"
+        "password=unquote(urlsplit(url).password)\n"
+        "print('db='+url, flush=True)\n"
+        "print('password='+password, flush=True)\n"
+        "root=ET.Element('testsuite'); failure=ET.SubElement(root,'failure')\n"
+        "failure.text='teardown url='+url+' password='+password\n"
+        "ET.ElementTree(root).write(sys.argv[sys.argv.index('--junitxml')+1], encoding='utf-8')\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    log = tmp_path / "layer.log"
+    result = run_ci_suite.run_and_capture(
+        [sys.executable, str(script), "--credential", secret, "--junitxml", str(junit)],
+        cwd=tmp_path, log_path=log, step_name="synthetic-failure", timeout_seconds=5,
+        env_overrides={"TEST_DATABASE_ADMIN_URL": database_url, "PYTHONIOENCODING": "utf-8"},
+    )
+    summary_path = tmp_path / "summary.json"
+    run_ci_suite.write_summary(summary_path, {"steps": [result]})
+    captured = capsys.readouterr()
+    evidence = captured.out + captured.err + log.read_text(encoding="utf-8") + summary_path.read_text(encoding="utf-8")
+    assert result["returncode"] == 1
+    assert secret not in evidence
+    assert encoded_secret not in evidence
+    assert "[REDACTED]" in evidence
+    failure = ET.parse(junit).getroot().find("failure").text
+    assert secret not in failure
+    assert encoded_secret not in failure
+    assert "[REDACTED]" in failure
+    assert "127.0.0.1:54321/postgres" in failure
+
+
+def test_final_summary_and_reports_redact_database_credentials_on_runner_error(tmp_path, monkeypatch, capsys):
+    secret = "synthetic-error-password-5713"
+    database_url = f"postgresql+asyncpg://test_admin:{secret}@127.0.0.1:54321/postgres"
+    summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
+    report = summary_path.parent / "junit-interrupted.xml"
+    detail = summary_path.parent / "playwright-error.json"
+    monkeypatch.setenv("TEST_DATABASE_ADMIN_URL", database_url)
+    monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
+    monkeypatch.setattr(run_ci_suite, "summary_path_for_commit", lambda workspace, commit: summary_path)
+    monkeypatch.setattr(sys, "argv", ["run_ci_suite.py", "--workspace", str(tmp_path), "--commit", "deadbeef",
+                                      "--layer", "verify_workspace"])
+
+    def fail(*args, **kwargs):
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(f"<testsuite><failure>{database_url}</failure></testsuite>", encoding="utf-8")
+        detail.write_text(json.dumps({"message": f"password={secret}"}), encoding="utf-8")
+        raise RuntimeError(f"Database unavailable: {database_url}; password={secret}")
+
+    monkeypatch.setattr(run_ci_suite, "run_and_capture", fail)
+    with pytest.raises(SystemExit) as exc:
+        run_ci_suite.main()
+
+    captured = capsys.readouterr()
+    assert exc.value.code == 1
+    for evidence in (captured.out + captured.err, summary_path.read_text(encoding="utf-8"),
+                     report.read_text(encoding="utf-8"), detail.read_text(encoding="utf-8")):
+        assert secret not in evidence
+    assert json.loads(summary_path.read_text(encoding="utf-8"))["status"] == "red"
+
+
+def test_summary_redaction_preserves_auth_policy_flags_and_typed_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTH_ALLOW_QUERY_TOKEN", "false")
+    monkeypatch.setenv("PC_CLIENT_ALLOW_MEMORY_TOKENS", "0")
+    monkeypatch.setenv("DISABLE_TOKEN_CHECK", "1")
+    monkeypatch.setenv("AUTH_TOKEN_TTL", "300")
+    monkeypatch.setenv("TEST_DATABASE_ADMIN_URL", "postgresql://admin:synthetic-password@127.0.0.1/postgres")
+    path = tmp_path / "summary.json"
+    run_ci_suite.write_summary(path, {"commit": "a012345", "enabled": False, "count": 300,
+                                      "detail": "flags=0/1/false timeout=300 password=synthetic-password"})
+
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    assert summary["commit"] == "a012345"
+    assert summary["enabled"] is False
+    assert summary["count"] == 300
+    assert summary["detail"] == "flags=0/1/false timeout=300 password=[REDACTED]"
+
+
+@pytest.mark.parametrize("secret", ['"', "1"])
+def test_short_database_password_keeps_json_and_junit_well_formed(tmp_path, monkeypatch, secret):
+    monkeypatch.setenv("TEST_DATABASE_ADMIN_URL", f"postgresql://admin:{quote(secret, safe='')}@127.0.0.1/postgres")
+    summary_path = tmp_path / "summary.json"
+    run_ci_suite.write_summary(summary_path, {"commit": "a012345", "log": "run1/report1.xml", "count": 1,
+                                             "detail": f"password={secret}", "password": secret})
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["commit"] == "a012345"
+    assert summary["log"] == "run1/report1.xml"
+    assert summary["count"] == 1
+    assert summary["detail"] == "password=[REDACTED]"
+    assert summary["password"] == "[REDACTED]"
+
+    report = tmp_path / "junit.xml"
+    root = ET.Element("testsuite", {"tests": "1"})
+    ET.SubElement(root, "failure", {"message": f"password={secret}"}).text = f"password={secret}"
+    ET.ElementTree(root).write(report, encoding="utf-8")
+    run_ci_suite._sanitize_ci_artifacts(tmp_path, run_ci_suite._ci_secret_values(dict(run_ci_suite.os.environ)))
+    parsed = ET.parse(report).getroot()
+    assert parsed.attrib["tests"] == "1"
+    assert parsed.find("failure").text == "password=[REDACTED]"
+    assert parsed.find("failure").attrib["message"] == "password=[REDACTED]"
+
+
+def test_capture_interruption_stops_child_before_sanitizing_report(tmp_path, monkeypatch):
+    secret = "synthetic-cancel-password-4631"
+    url = f"postgresql://admin:{secret}@127.0.0.1/postgres"
+    report = tmp_path / "junit-cancel.xml"
+    script = tmp_path / "cancelled_child.py"
+    script.write_text(
+        "import os,sys,time; from pathlib import Path\n"
+        f"report=Path({str(report)!r})\n"
+        "text='<testsuite><failure>'+os.environ['TEST_DATABASE_ADMIN_URL']+'</failure></testsuite>'\n"
+        "report.write_text(text, encoding='utf-8')\n"
+        "print('ready', flush=True)\n"
+        "time.sleep(.4)\n"
+        "report.write_text(text, encoding='utf-8')\n"
+        "time.sleep(30)\n", encoding="utf-8",
+    )
+    original_popen = run_ci_suite.subprocess.Popen
+    original_drain = run_ci_suite._drain_output_queue
+    children = []
+
+    def launch(*args, **kwargs):
+        process = original_popen(*args, **kwargs)
+        children.append(process)
+        return process
+
+    def interrupt(*args, **kwargs):
+        result = original_drain(*args, **kwargs)
+        if result[0]:
+            raise KeyboardInterrupt()
+        return result
+
+    monkeypatch.setattr(run_ci_suite.subprocess, "Popen", launch)
+    monkeypatch.setattr(run_ci_suite, "_drain_output_queue", interrupt)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            run_ci_suite.run_and_capture(
+                [sys.executable, str(script), f"--junitxml={report}"], cwd=tmp_path,
+                log_path=tmp_path / "cancel.log", step_name="cancelled", timeout_seconds=5,
+                env_overrides={"TEST_DATABASE_ADMIN_URL": url},
+            )
+        assert children and all(process.poll() is not None for process in children)
+        assert secret not in report.read_text(encoding="utf-8")
+        assert "[REDACTED]" in ET.parse(report).getroot().find("failure").text
+    finally:
+        for process in children:
+            run_ci_suite._terminate_process_tree(process)
+
+
+@pytest.mark.parametrize("secret", ['"', "1"])
+@pytest.mark.parametrize("suffix", [".json", ".xml"])
+def test_standalone_report_redacts_exact_short_password_field(tmp_path, secret, suffix):
+    path = tmp_path / ("report" + suffix)
+    values = run_ci_suite._ci_secret_values({"TEST_DATABASE_ADMIN_URL":
+                                           f"postgresql://admin:{quote(secret, safe='')}@127.0.0.1/postgres"})
+    if suffix == ".json":
+        path.write_text(json.dumps({"password": secret, "count": 1}), encoding="utf-8")
+    else:
+        root = ET.Element("testsuite", {"tests": "1"})
+        ET.SubElement(root, "failure").text = secret
+        ET.ElementTree(root).write(path, encoding="utf-8")
+
+    run_ci_suite._sanitize_ci_file(path, values)
+
+    if suffix == ".json":
+        result = json.loads(path.read_text(encoding="utf-8"))
+        assert result == {"password": "[REDACTED]", "count": 1}
+    else:
+        result = ET.parse(path).getroot()
+        assert result.attrib["tests"] == "1"
+        assert result.find("failure").text == "[REDACTED]"
 
 
 def test_server_pytest_timeout_allows_the_measured_parallel_db_layer_budget() -> None:
