@@ -1,4 +1,7 @@
 from copy import deepcopy
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -143,3 +146,53 @@ def test_valid_unicode_pattern_and_metadata_survive_normalization(alias):
     assert submit(deepcopy(pack), code="Ёж".replace("Ё", "Е"))["submitted_values"]["code"] == "Еж"
     with pytest.raises(ValueError):
         submit(pack, code="123")
+
+
+@pytest.mark.parametrize("value", [
+    "person@example.test", "имя@пример.рф", "x@...", "x@a..", "x@..a",
+    '"x"@example.test', "x@a\ufeff.b", "  person@example.test\n",
+])
+def test_email_preserves_existing_permissive_policy(value):
+    result = submit(pack_for(field("email", "email")), email=value)
+    assert result["submitted_values"]["email"] == value.strip()
+
+
+@pytest.mark.parametrize("value", [
+    "@example.test", "person@", "person.example.test", "person@@example.test",
+    "x@.a", "x@a.", "x@..", "x@a b.test", "x y@a.test", "x@a\n.b",
+    "x@a\u00a0.b", "x@a\u001c.b", "x@a\u0085.b",
+])
+def test_email_rejects_missing_parts_extra_at_and_python_whitespace(value):
+    with pytest.raises(ValueError, match="Укажите корректный email"):
+        submit(pack_for(field("email", "email")), email=value)
+
+
+def test_email_accepts_long_valid_domain_without_an_implicit_length_limit():
+    value = "x@" + "." * 100_000
+    assert submit(pack_for(field("email", "email")), email=value)["submitted_values"]["email"] == value
+
+
+def test_email_rejects_long_dotted_domain_without_blocking_validation():
+    # A subprocess bounds the regression: the old ambiguous regex exceeds this
+    # timeout; linear validation (including startup) has ample time.
+    script = """
+import sys
+sys.path.insert(0, "server")
+from tickets.form_field_values import validate_form_submission
+pack = {"forms": [{"key": "probe", "fields": [{"key": "email", "type": "email"}]}]}
+try:
+    validate_form_submission(pack, form_key="probe", raw_values={"email": "x@" + "." * 100_000 + "@"})
+except ValueError as exc:
+    assert "Укажите корректный email" in str(exc)
+else:
+    raise AssertionError("Malformed email was accepted")
+"""
+    subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=5,
+        check=True,
+    )

@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 
 import { appRoutes } from "./app/router";
-import { QueryProvider } from "./app/providers/query-provider";
 import { SessionProvider } from "./features/auth/session-provider";
 import { captureDeviceLinkFragment } from "./features/requester/device-link-state";
 import "./styles.css";
@@ -24,10 +23,8 @@ const root = createRoot(container, observability?.rootOptions);
 
 startTransition(() => {
   root.render(
-    <QueryProvider>
-      <SessionProvider>
-        <RouterProvider router={router} />
-      </SessionProvider>
-    </QueryProvider>
+    <SessionProvider>
+      <RouterProvider router={router} />
+    </SessionProvider>
   );
 });

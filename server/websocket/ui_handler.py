@@ -47,6 +47,86 @@ def _extract_session_cookie_token(request: web.Request) -> Optional[str]:
     return token.strip() or None
 
 
+async def _can_read_ticket(ticket_id: str, auth_context: AuthContext) -> bool:
+    if not DB_AVAILABLE or not auth_context.has_role("admin", "support"):
+        return False
+    from tickets.handlers import can_read_ui_ticket
+
+    async with get_session() as session:
+        repo = TicketEventsRepo(session)
+        ticket = await repo.get_ticket(ticket_id)
+        return bool(ticket and await can_read_ui_ticket(repo, ticket, auth_context))
+
+
+class _AuthenticatedSubscriber:
+    """Recheck session and ticket scope before delivering an existing room's data."""
+
+    def __init__(self, ws, state, connection_data):
+        self.ws = ws
+        self.state = state
+        self.connection_data = connection_data
+        self.denied = False
+
+    async def deny(self):
+        self.denied = True
+        if self.state.subscription_registry:
+            await self.state.subscription_registry.cleanup_ws(self)
+        self.state.clear_ticket_presence_key(self.connection_data.get("presence_key"))
+        await self.ws.close(code=4003, message=b"UI session or access changed")
+
+    async def validate(self) -> bool:
+        if self.denied or self.ws.closed:
+            return False
+        context = self.connection_data.get("auth_context")
+        try:
+            info = await AuthService(self.state).verify_ui_token(context.token) if context else None
+        except Exception as exc:
+            logger.warning(f"[UI WebSocket] Session verification unavailable: error_type={type(exc).__name__}")
+            info = None
+        if not info or info["user_login"] != context.actor_id or info["actor_role"] != context.actor_role:
+            await self.deny()
+            return False
+        return True
+
+    async def send_json(self, message, *, ticket_scope: Optional[str] = None) -> bool:
+        if not await self.validate():
+            return False
+        context = self.connection_data["auth_context"]
+        try:
+            allowed = context.has_role("admin", "support")
+            ticket_ids = (
+                {ticket_scope} if ticket_scope else
+                {message["ticket_id"]} if message.get("ticket_id")
+                else self.connection_data.get("ticket_subscriptions", set()).copy()
+            )
+            for ticket_id in ticket_ids:
+                if not await _can_read_ticket(ticket_id, context):
+                    allowed = False
+                    break
+        except Exception as exc:
+            logger.warning(f"[UI WebSocket] Ticket authorization unavailable: error_type={type(exc).__name__}")
+            allowed = False
+        if not allowed:
+            await self.deny()
+            return False
+        await self.ws.send_json(message)
+        return True
+
+
+class _UIAccessRevoked(Exception):
+    """Stop a replay immediately after its authorization guard denies a frame."""
+
+
+class _ReplayWriter:
+    def __init__(self, subscriber, *, ticket_id: Optional[str] = None):
+        self.subscriber = subscriber
+        self.ticket_id = ticket_id
+
+    async def send_json(self, message):
+        if not await self.subscriber.send_json(message, ticket_scope=self.ticket_id):
+            raise _UIAccessRevoked()
+
+
 async def send_ticket_catchup(
     ws: web.WebSocketResponse,
     ticket_id: str,
@@ -109,6 +189,8 @@ async def send_ticket_catchup(
                 f"[send_ticket_catchup] Sent {len(events)} catch-up events "
                 f"for ticket_id={ticket_id} since_event_id={since_event_id}"
             )
+    except _UIAccessRevoked:
+        raise
     except Exception as e:
         logger.error(f"[send_ticket_catchup] Error: {e}", exc_info=True)
         await ws.send_json({
@@ -178,6 +260,8 @@ async def send_chat_catchup(
                 f"[send_chat_catchup] Sent {len(events)} catch-up events "
                 f"for job_id={job_id} since_event_id={since_event_id}"
             )
+    except _UIAccessRevoked:
+        raise
     except Exception as e:
         logger.error(f"[send_chat_catchup] Error: {e}", exc_info=True)
         await ws.send_json({
@@ -248,6 +332,8 @@ async def send_device_catchup(
                 f"[send_device_catchup] Sent {len(events)} catch-up events "
                 f"for device_id={device_id} since_event_id={since_event_id}"
             )
+    except _UIAccessRevoked:
+        raise
     except Exception as e:
         logger.error(f"[send_device_catchup] Error: {e}", exc_info=True)
         await ws.send_json({
@@ -375,6 +461,7 @@ async def websocket_ui_handler(request):
         "ticket_subscriptions": set(),
         "presence_key": f"ws:{connection_id}",
     }
+    subscriber = _AuthenticatedSubscriber(ws, state, connection_data)
     state.register_ui_connection(connection_id, connection_data)
     
     logger.info(f"🟢 Новое UI WebSocket соединение: connection_id={connection_id}")
@@ -390,6 +477,9 @@ async def websocket_ui_handler(request):
                     # a) type == "ui_hello"
                     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     if msg_type == "ui_hello":
+                        if auth_context is not None:
+                            await subscriber.deny()
+                            return ws
                         # Phase 3: Проверяем токен для аутентификации через БД
                         token = data.get("token") or _extract_session_cookie_token(request)
                         
@@ -407,7 +497,7 @@ async def websocket_ui_handler(request):
                         token_info = await auth_service.verify_ui_token(token)
                         
                         if not token_info:
-                            logger.warning(f"🔴 Невалидный токен UI: {token[:8]}... connection_id={connection_id}")
+                            logger.warning(f"🔴 Невалидный токен UI: connection_id={connection_id}")
                             await ws.send_json({
                                 "type": "error",
                                 "error": "Invalid token"
@@ -462,11 +552,18 @@ async def websocket_ui_handler(request):
                             "error": "Authentication required. Send ui_hello first."
                         })
                         continue
+
+                    if msg_type in {"subscribe_ticket", "subscribe_device", "subscribe_chat"}:
+                        if not await subscriber.validate():
+                            return ws
+                        if not auth_context.has_role("admin", "support"):
+                            await ws.send_json({"type": "error", "error": "Access denied"})
+                            continue
                     
                     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     # b) type == "subscribe_ticket"
                     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    elif msg_type == "subscribe_ticket":
+                    if msg_type == "subscribe_ticket":
                         ticket_id = data.get("ticket_id")
                         since_event_id = data.get("since_event_id", 0)  # Default to 0 for full history
                         skip_catchup = bool(data.get("skip_catchup", False))
@@ -480,38 +577,19 @@ async def websocket_ui_handler(request):
                         
                         # КРИТИЧНО: Access check before subscription
                         # Validate ticket exists and user has access
-                        if DB_AVAILABLE:
-                            try:
-                                async with get_session() as session:
-                                    ticket_repo = TicketEventsRepo(session)
-                                    ticket = await ticket_repo.get_ticket(ticket_id)
-                                    
-                                    if not ticket:
-                                        await ws.send_json({
-                                            "type": "error",
-                                            "error": "Ticket not found"
-                                        })
-                                        continue
-                                    
-                                    # Authorization check (role-based)
-                                    # admin/support can subscribe to any ticket
-                                    # user can only subscribe to tickets bound to their device
-                                    # Phase 3: Используем auth_context вместо user_role из payload
-                                    if auth_context and not auth_context.has_role("admin", "support"):
-                                        # user_id check when user_id is implemented (docs/archive/BOTTLENECKS_AND_RISKS.md Phase 3)
-                                        pass
-                            except Exception as e:
-                                logger.error(f"[subscribe_ticket] Error checking access: {e}")
-                                await ws.send_json({
-                                    "type": "error",
-                                    "error": f"Access check failed: {str(e)}"
-                                })
+                        try:
+                            if not await _can_read_ticket(ticket_id, auth_context):
+                                await ws.send_json({"type": "error", "error": "Ticket not found or access denied"})
                                 continue
+                        except Exception:
+                            await ws.send_json({"type": "error", "error": "Access check unavailable"})
+                            continue
                         
                         # КРИТИЧНО: Порядок важен - catch-up ДО регистрации подписки
                         # 1. Send catch-up (replay) from DB FIRST
+                        replay_writer = _ReplayWriter(subscriber, ticket_id=ticket_id)
                         if skip_catchup:
-                            await ws.send_json({
+                            await replay_writer.send_json({
                                 "type": "catchup_done",
                                 "scope": "ticket",
                                 "id": ticket_id,
@@ -519,11 +597,11 @@ async def websocket_ui_handler(request):
                                 "truncated": False
                             })
                         else:
-                            await send_ticket_catchup(ws, ticket_id, since_event_id)
+                            await send_ticket_catchup(replay_writer, ticket_id, since_event_id)
                         
                         # 2. THEN register subscription (after catch-up complete)
                         if state.subscription_registry:
-                            await state.subscription_registry.add_ticket_subscriber(ticket_id, ws)
+                            await state.subscription_registry.add_ticket_subscriber(ticket_id, subscriber)
                         connection_data.setdefault("ticket_subscriptions", set()).add(ticket_id)
                         if auth_context and auth_context.has_role("admin", "support"):
                             state.touch_ticket_presence(
@@ -534,7 +612,7 @@ async def websocket_ui_handler(request):
                             )
                         
                         # 3. Send ack
-                        await ws.send_json({
+                        await replay_writer.send_json({
                             "type": "subscribe_ack",
                             "ticket_id": ticket_id,
                             "since_event_id": since_event_id
@@ -551,7 +629,7 @@ async def websocket_ui_handler(request):
                     elif msg_type == "unsubscribe_ticket":
                         ticket_id = data.get("ticket_id")
                         if ticket_id and state.subscription_registry:
-                            await state.subscription_registry.remove_ticket_subscriber(ticket_id, ws)
+                            await state.subscription_registry.remove_ticket_subscriber(ticket_id, subscriber)
                             connection_data.setdefault("ticket_subscriptions", set()).discard(ticket_id)
                             state.remove_ticket_presence(ticket_id, connection_data.get("presence_key"))
                             await ws.send_json({
@@ -569,7 +647,6 @@ async def websocket_ui_handler(request):
                         device_id = data.get("device_id")
                         since_event_id = data.get("since_event_id", 0)
                         skip_catchup = bool(data.get("skip_catchup", False))
-                        skip_catchup = bool(data.get("skip_catchup", False))
                         
                         if not device_id:
                             await ws.send_json({
@@ -578,16 +655,11 @@ async def websocket_ui_handler(request):
                             })
                             continue
                         
-                        # КРИТИЧНО: Access check
-                        # Phase 3: Используем auth_context вместо user_role из connection_data
-                        if auth_context and not auth_context.has_role("admin", "support"):
-                            # For now, allow all (can be enhanced with user_id later)
-                            pass
-                        
                         # КРИТИЧНО: Порядок важен - catch-up ДО регистрации подписки
                         # 1. Send catch-up FIRST
+                        replay_writer = _ReplayWriter(subscriber)
                         if skip_catchup:
-                            await ws.send_json({
+                            await replay_writer.send_json({
                                 "type": "catchup_done",
                                 "scope": "device",
                                 "id": device_id,
@@ -595,14 +667,14 @@ async def websocket_ui_handler(request):
                                 "truncated": False
                             })
                         else:
-                            await send_device_catchup(ws, device_id, since_event_id)
+                            await send_device_catchup(replay_writer, device_id, since_event_id)
                         
                         # 2. THEN register subscription
                         if state.subscription_registry:
-                            await state.subscription_registry.add_device_subscriber(device_id, ws)
+                            await state.subscription_registry.add_device_subscriber(device_id, subscriber)
                         
                         # 3. Send ack
-                        await ws.send_json({
+                        await replay_writer.send_json({
                             "type": "subscribe_ack",
                             "device_id": device_id,
                             "since_event_id": since_event_id
@@ -619,6 +691,7 @@ async def websocket_ui_handler(request):
                     elif msg_type == "subscribe_chat":
                         job_id = data.get("job_id")
                         since_event_id = data.get("since_event_id", 0)
+                        skip_catchup = bool(data.get("skip_catchup", False))
                         
                         if not job_id:
                             await ws.send_json({
@@ -627,16 +700,11 @@ async def websocket_ui_handler(request):
                             })
                             continue
                         
-                        # КРИТИЧНО: Access check
-                        # Phase 3: Используем auth_context вместо user_role из connection_data
-                        if auth_context and not auth_context.has_role("admin", "support"):
-                            # For now, allow all (can be enhanced with user_id later)
-                            pass
-                        
                         # КРИТИЧНО: Порядок важен - catch-up ДО регистрации подписки
                         # 1. Send catch-up FIRST
+                        replay_writer = _ReplayWriter(subscriber)
                         if skip_catchup:
-                            await ws.send_json({
+                            await replay_writer.send_json({
                                 "type": "catchup_done",
                                 "scope": "chat",
                                 "id": job_id,
@@ -644,14 +712,14 @@ async def websocket_ui_handler(request):
                                 "truncated": False
                             })
                         else:
-                            await send_chat_catchup(ws, job_id, since_event_id)
+                            await send_chat_catchup(replay_writer, job_id, since_event_id)
                         
                         # 2. THEN register subscription
                         if state.subscription_registry:
-                            await state.subscription_registry.add_chat_subscriber(job_id, ws)
+                            await state.subscription_registry.add_chat_subscriber(job_id, subscriber)
                         
                         # 3. Send ack
-                        await ws.send_json({
+                        await replay_writer.send_json({
                             "type": "subscribe_ack",
                             "job_id": job_id,
                             "since_event_id": since_event_id
@@ -668,7 +736,7 @@ async def websocket_ui_handler(request):
                     elif msg_type == "unsubscribe_chat":
                         job_id = data.get("job_id")
                         if job_id and state.subscription_registry:
-                            await state.subscription_registry.remove_chat_subscriber(job_id, ws)
+                            await state.subscription_registry.remove_chat_subscriber(job_id, subscriber)
                             await ws.send_json({
                                 "type": "unsubscribe_ack",
                                 "job_id": job_id
@@ -683,7 +751,7 @@ async def websocket_ui_handler(request):
                     elif msg_type == "unsubscribe_device":
                         device_id = data.get("device_id")
                         if device_id and state.subscription_registry:
-                            await state.subscription_registry.remove_device_subscriber(device_id, ws)
+                            await state.subscription_registry.remove_device_subscriber(device_id, subscriber)
                             await ws.send_json({
                                 "type": "unsubscribe_ack",
                                 "device_id": device_id
@@ -719,6 +787,8 @@ async def websocket_ui_handler(request):
                             "error": f"Unknown message type: {msg_type}"
                         })
                 
+                except _UIAccessRevoked:
+                    return ws
                 except json.JSONDecodeError:
                     logger.warning(f"⚠️  Получено не-JSON сообщение от UI")
                 except Exception as e:
@@ -734,7 +804,7 @@ async def websocket_ui_handler(request):
     finally:
         # КРИТИЧНО: Cleanup subscriptions on disconnect
         if state.subscription_registry:
-            await state.subscription_registry.cleanup_ws(ws)
+            await state.subscription_registry.cleanup_ws(subscriber)
         state.clear_ticket_presence_key(connection_data.get("presence_key"))
         
         # Очистка при отключении

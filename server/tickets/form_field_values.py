@@ -126,6 +126,16 @@ def _is_valid_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+def _is_valid_email(value: str) -> bool:
+    # Preserve the existing permissive shape, including dots-only domains,
+    # without backtracking over every possible domain-dot split.
+    local, separator, domain = value.partition("@")
+    return bool(
+        local and separator and "@" not in domain
+        and "." in domain[1:-1] and not re.search(r"\s", value)
+    )
+
+
 def _field_constraint_error(field_def: dict[str, Any], value: Any) -> str | None:
     try:
         _validate_field_pattern(field_def)
@@ -159,7 +169,7 @@ def _field_constraint_error(field_def: dict[str, Any], value: Any) -> str | None
                     return "Проверьте формат поля."
             except re.error:
                 return "Ошибка настройки формата поля. Обратитесь в поддержку."
-        if field_type == "email" and not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", text_value):
+        if field_type == "email" and not _is_valid_email(text_value):
             return "Укажите корректный email."
         if field_type == "url" and not _is_valid_url(text_value):
             return "Укажите корректную ссылку."

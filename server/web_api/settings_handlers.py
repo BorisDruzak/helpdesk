@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tickets.queue_mode import unified_queue_enabled
+
 from typing import Any
 
 from aiohttp import web
@@ -479,6 +481,7 @@ def _build_ticket_settings_payload(
             retention_dry_run=TICKET_RETENTION_DRY_RUN,
             events_hot_retention_days=TICKET_EVENTS_HOT_RETENTION_DAYS,
             admin_audit_hot_retention_days=TICKET_ADMIN_AUDIT_HOT_RETENTION_DAYS,
+            queue_mode="unified" if unified_queue_enabled() else "partitioned",
             take_queue_mode=TICKET_TAKE_QUEUE_MODE,
             take_queue_common_code=TICKET_TAKE_QUEUE_COMMON_CODE,
             take_queue_test_code=TICKET_TAKE_QUEUE_TEST_CODE,

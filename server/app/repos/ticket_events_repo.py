@@ -1,6 +1,8 @@
 """
 Repository for ticket_events table operations.
 """
+from tickets.queue_mode import unified_queue_enabled
+
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -1305,7 +1307,7 @@ class TicketEventsRepo:
                 stmt = stmt.where(Ticket.device_id == filters["device_id"])
             if "status__in" in filters:
                 stmt = stmt.where(Ticket.status.in_(filters["status__in"]))
-            if "queue_id" in filters:
+            if "queue_id" in filters and not unified_queue_enabled():
                 stmt = stmt.where(Ticket.queue_id == filters["queue_id"])
             if "priority" in filters:
                 stmt = stmt.where(Ticket.priority == filters["priority"])
@@ -1335,7 +1337,7 @@ class TicketEventsRepo:
                 stmt = stmt.join(TicketWatcher, Ticket.ticket_id == TicketWatcher.ticket_id).where(
                     TicketWatcher.actor_id == filters["watching_actor_id"]
                 )
-            if "support_actor_id" in filters:
+            if "support_actor_id" in filters and not unified_queue_enabled():
                 support_actor_id = filters["support_actor_id"]
                 queue_membership_exists = (
                     select(TicketQueueMember.queue_id)
@@ -1657,7 +1659,10 @@ class TicketEventsRepo:
 
     async def list_queue_member_actor_ids(self, queue_id: int) -> List[str]:
         """Список actor_id участников очереди (для уведомлений Stage 6)."""
-        stmt = select(TicketQueueMember.actor_id).where(TicketQueueMember.queue_id == queue_id)
+        if unified_queue_enabled():
+            stmt = select(UiUser.user_login).where(UiUser.is_active.is_(True), UiUser.actor_role.in_(("admin", "support")))
+        else:
+            stmt = select(TicketQueueMember.actor_id).where(TicketQueueMember.queue_id == queue_id)
         result = await self.session.execute(stmt)
         return [r[0] for r in result.all()]
 
@@ -1671,6 +1676,8 @@ class TicketEventsRepo:
         return int(result.scalar_one() or 0)
 
     async def list_assignable_users_with_load(self, queue_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        if unified_queue_enabled():
+            queue_id = None
         role_expr = literal(None).label("role_in_queue")
         active_count_subq = (
             select(
@@ -1742,6 +1749,13 @@ class TicketEventsRepo:
         return rows
 
     async def is_actor_in_queue(self, queue_id: Optional[int], actor_id: str) -> bool:
+        if unified_queue_enabled():
+            stmt = select(UiUser.user_login).where(
+                UiUser.user_login == actor_id,
+                UiUser.is_active.is_(True),
+                UiUser.actor_role.in_(("admin", "support")),
+            )
+            return (await self.session.execute(stmt)).first() is not None
         if queue_id is None or not actor_id:
             return False
         stmt = select(TicketQueueMember.actor_id).where(
@@ -1752,6 +1766,16 @@ class TicketEventsRepo:
         )
         result = await self.session.execute(stmt)
         return result.first() is not None
+
+    async def lock_assignee_for_update(self, user_login: str, *, skip_locked: bool = False) -> bool:
+        """Lock the common capacity row until transaction end, before recounting.
+
+        Existing-ticket commands acquire their ticket lock first, then this
+        assignee lock. Manual assignment waits; auto-assignment skips busy users.
+        """
+        stmt = select(UiUser).where(UiUser.user_login == user_login).with_for_update(skip_locked=skip_locked)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def touch_user_last_assignment(self, user_login: str, assigned_at: datetime) -> bool:
         stmt = (
@@ -1775,14 +1799,7 @@ class TicketEventsRepo:
             if int(candidate.get("active_count") or 0) >= max_active:
                 continue
             user_login = candidate["user_login"]
-            lock_stmt = (
-                select(UiUser)
-                .where(UiUser.user_login == user_login)
-                .with_for_update(skip_locked=True)
-            )
-            result = await self.session.execute(lock_stmt)
-            locked_user = result.scalar_one_or_none()
-            if locked_user is None:
+            if not await self.lock_assignee_for_update(user_login, skip_locked=True):
                 continue
             actual_count = await self.count_active_tickets_for_assignee(user_login)
             if actual_count < max_active:

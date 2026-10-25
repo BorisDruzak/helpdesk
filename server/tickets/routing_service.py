@@ -15,6 +15,7 @@ from loguru import logger
 
 from app.db.models import Ticket
 from tickets.public_access import is_public_unbound_ticket
+from tickets.queue_mode import unified_queue_enabled, unified_queue_code
 from tickets.statuses import (
     PRIORITY_CLASS_TO_LEGACY_PRIORITY,
     extract_priority_class,
@@ -466,6 +467,27 @@ class TicketRoutingService:
         ticket: Ticket,
         device_metadata: Optional[dict] = None,
     ) -> Optional[dict]:
+        decision = await self._resolve_partitioned_routing_decision(ticket, device_metadata)
+        if not unified_queue_enabled():
+            return decision
+        queue_id = getattr(ticket, "queue_id", None)
+        if queue_id is None:
+            queue = await self.ticket_repo.get_queue_by_code(unified_queue_code())
+            if queue is None or not getattr(queue, "is_active", True):
+                raise ValueError("Активная общая очередь не настроена")
+            queue_id = queue.id
+        # Keep non-queue actions (including approval/SLA policy) from the same
+        # canonical rule; only partition routing is overridden.
+        actions = {key: value for key, value in (decision or {}).get("actions", {}).items()
+                   if key not in {"queue_id", "target_queue_id", "queue_code", "queue"}}
+        actions["queue_id"] = queue_id
+        return {**(decision or {}), "source": "unified_queue", "queue_id": queue_id, "actions": actions}
+
+    async def _resolve_partitioned_routing_decision(
+        self,
+        ticket: Ticket,
+        device_metadata: Optional[dict] = None,
+    ) -> Optional[dict]:
         if device_metadata is None and ticket.device_id:
             device_metadata = await self.get_device_metadata(ticket.device_id)
         context = _get_ticket_context(ticket, device_metadata)
@@ -655,7 +677,10 @@ class TicketRoutingService:
         if merged_tags is not None:
             updates["tags"] = merged_tags
 
-        if new_queue_id == old_queue_id and not any(
+        unified_policy_update = unified_queue_enabled() and any(
+            key in actions for key in ("approval_policy", "suggested_playbook_id", "suggested_playbook", "ola_policy_id", "watchers", "visibility")
+        )
+        if new_queue_id == old_queue_id and not unified_policy_update and not any(
             key in updates for key in ("priority", "sla_policy_id", "assignee_id", "tags")
         ):
             return new_queue_id

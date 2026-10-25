@@ -14,6 +14,11 @@ python scripts/verify_workspace.py
 
 For an ordinary change, run the narrowest pytest/browser/build layer that covers the files you changed; `verify_workspace.py` is not a routine commit prerequisite.
 
+Workspace verification prunes generated `tmp/`, `.scannerwork/` and
+`.ruff_cache/` trees, alongside dependency/build caches. These are disposable
+local evidence, not source-validation inputs. Repository source, tests,
+prototypes and harness documentation remain checked.
+
 ## Compatibility detail browser fixture
 
 The active support ticket route uses `TicketListPage`. To exercise the exported
@@ -32,6 +37,71 @@ npm run test:e2e -- tests/detail-compatibility.spec.ts tests/requester-workspace
 Screenshots and traces go to the disposable Playwright output directory. These
 fixture tests check rendered behavior, not live deployment or DB persistence;
 use the isolated PostgreSQL API layer for persistence acceptance.
+
+## Disposable local PostgreSQL (Windows)
+
+`scripts/run_with_local_postgres.py` wraps the existing pytest database harness.
+It uses local binaries, creates a fresh SCRAM-authenticated cluster under ignored
+`.run/postgres-test-runs/`, binds only `127.0.0.1` on a free port and supplies an
+explicit `TEST_DATABASE_ADMIN_URL`. Existing external/shared test URL settings
+are replaced for the child only; shared fallback and template reuse are disabled.
+The normal harness still creates/drops its own `pc_support_test_*` database.
+The new disposable cluster uses `fsync=off`, `full_page_writes=off` and
+`synchronous_commit=off` for schema, business and locking tests. It must not be
+used to claim crash or power-loss durability. These settings never apply to an
+existing/external database. See PostgreSQL16 [non-durable settings](https://www.postgresql.org/docs/16/non-durability.html).
+
+
+The configured runtime is PostgreSQL16.15, matching CI's major16. Its EDB ZIP
+and matching vendor SHA256 were verified before extraction. Binaries live at
+`.run/isolated-postgres/pgsql/bin`; use `--bin-dir <path>` for another prepared
+local runtime. No Windows service, SSH tunnel or production connection is used.
+To prepare binaries on another checkout, use the
+[EDB binary archive](https://get.enterprisedb.com/postgresql/postgresql-16.15-5-windows-x64-binaries.zip)
+and verify its [vendor checksum](https://get.enterprisedb.com/postgresql/postgresql-16.15-5-windows-x64-binaries.zip.sha256)
+before extracting `pgsql/bin`, `pgsql/lib`, and `pgsql/share` under that runtime
+directory. Binary/runtime files must remain untracked.
+
+```powershell
+python scripts/run_with_local_postgres.py -- python -m pytest server/tests/test_ticket_assignment_capacity.py server/tests/test_workflow_concurrency.py server/tests/test_ui_users_repo.py -q
+```
+
+Credentials are generated per run, passed to the child environment and redacted
+from output. The transient `initdb` password file is outside the repository and
+removed before server startup. On elevated Windows, only the current user gets
+an explicit ACE on the dedicated cluster directory so PostgreSQL's restricted
+token can use it. The wrapper stops its own server and removes the cluster after
+the command; if stopping fails, it retains the directory and reports the failure.
+Do not point manual cleanup commands at unrelated PostgreSQL data directories.
+The launcher configures its own stdout/stderr as UTF-8, including redirected
+logs under legacy Windows console encodings; child UTF-8 settings alone do not
+protect the outer pnpm/CI output stream.
+
+The child command is owned by `scripts/owned_child_process.py`: on Windows it
+is assigned atomically to a Job Object and its descendants are stopped on exit
+or cancellation. Output monitoring cannot wait indefinitely for a descendant's
+inherited stdout; credentials are redacted across output chunk boundaries.
+
+For the canonical full CI on that disposable server:
+
+```powershell
+python scripts/run_with_local_postgres.py -- python scripts/run_ci_suite.py --parallel --max-workers 2
+```
+
+The CI runner explicitly enables its migrated template cache for DB layers;
+the cache remains inside the disposable cluster. It redacts environment
+credentials in layer output, command headers, JUnit and final text reports.
+Windows PostgreSQL `DROP DATABASE` waits for a cluster checkpoint to release
+background file handles. Only this admin operation has a bounded 90-second SQL /
+95-second operation budget. Normal admin SQL retains 30/35 seconds and lock
+waiting 5 seconds; test failures and cleanup errors still fail CI.
+
+Concurrency acceptance uses a third connection and `pg_blocking_pids` to prove
+which backend blocks which. A sleep/timeout alone is not evidence of contention.
+UI-token role acceptance exercises real middleware and a protected admin route:
+200 before demotion, 403 afterward, 401 after deactivation, plus persisted token
+revocation. These tests use full DB cleanup because UI tokens have no cascading
+foreign key to UI users.
 
 ## Server Pytest Layers
 

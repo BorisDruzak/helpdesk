@@ -12,12 +12,14 @@ from sqlalchemy import select
 from app.db.models import TicketApproval, TicketEvidenceItem, TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from tickets.approval_policy import ensure_approval_requests, validate_approval_policy
+from tickets.assignment_service import TicketAssignmentService
 from tickets.closure_policy import validate_closure_policy
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.sla_service import TicketSlaService
 from tickets.side_effects import run_workflow_side_effect
 from tickets.statuses import (
     WAITING_STATUSES,
+    is_active_operator_status,
     next_action_owner_for_status,
     requester_status_for_internal,
     wait_type_for_status,
@@ -268,8 +270,9 @@ async def _validate_transition_gate(
     }
 
 
-async def load_ticket_workflow_profile(session, ticket) -> WorkflowProfile:
-    profiles = await load_workflow_profiles(session)
+async def load_ticket_workflow_profile(session, ticket, *, profiles=None) -> WorkflowProfile:
+    if profiles is None:
+        profiles = await load_workflow_profiles(session)
     profile_key = getattr(ticket, "ticket_type", None) if ticket else None
     custom_fields = getattr(ticket, "custom_fields", None) or {}
     if isinstance(custom_fields, dict):
@@ -579,6 +582,10 @@ class TicketWorkflowService:
         ticket = await self.ticket_repo.get_ticket(ticket_id, for_update=True)
         if ticket is None or ticket.status != from_status:
             raise WorkflowTransitionConflict()
+        if is_active_operator_status(to_status):
+            await TicketAssignmentService(self.ticket_repo).validate_capacity(
+                ticket, getattr(ticket, "assignee_id", None), activating=True
+            )
         now = datetime.now(timezone.utc)
         workflow_profile = await load_ticket_workflow_profile(self.session, ticket)
         updates = _build_status_updates(to_status, reason)

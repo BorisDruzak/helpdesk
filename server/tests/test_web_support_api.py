@@ -586,7 +586,7 @@ async def test_web_support_send_message_rejects_long_message_id_before_db(web_su
 async def test_web_support_message_retry_rejects_same_message_id_with_different_payload(web_support_client, monkeypatch):
     message_id = f"support-conflict-{uuid.uuid4().hex}"
     created_at = datetime.now(timezone.utc)
-    fake_ticket = SimpleNamespace(ticket_id="ticket-conflict", device_id="device-conflict")
+    fake_ticket = SimpleNamespace(ticket_id="ticket-conflict", device_id="device-conflict", status="in_progress", assignee_id="support1")
     existing_payload = {
         "message_id": message_id,
         "sender_role": "support",
@@ -597,6 +597,9 @@ async def test_web_support_message_retry_rejects_same_message_id_with_different_
     }
 
     class FakeRepo:
+        async def get_ticket(self, ticket_id, *, for_update=False):
+            return fake_ticket
+
         async def add_event(self, **kwargs):
             return None
 

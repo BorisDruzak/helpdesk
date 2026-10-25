@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tickets.queue_mode import unified_queue_enabled, unified_queue_code
+
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -678,19 +680,21 @@ async def _ticket_payload(
             ticket_data["device_metadata"] = device.device_metadata
     queue_id = getattr(ticket, "queue_id", None)
     admin_repo = TicketAdminConfigRepo(session)
-    if queue_id is not None:
-        queue = await admin_repo.get_queue(queue_id)
+    if queue_id is not None or unified_queue_enabled():
+        queue = await TicketEventsRepo(session).get_queue_by_code(unified_queue_code()) if unified_queue_enabled() else await admin_repo.get_queue(queue_id)
         if queue is not None:
             ticket_data["queue_auto_assign_enabled"] = getattr(queue, "auto_assign_enabled", True)
     if include_assignment_context:
         queue_members = await admin_repo.list_queue_members(queue_id) if queue_id is not None else []
-        available_queues = [queue for queue in await admin_repo.list_queues(include_inactive=False) if getattr(queue, "is_active", True)]
+        available_queues = [] if unified_queue_enabled() else [queue for queue in await admin_repo.list_queues(include_inactive=False) if getattr(queue, "is_active", True)]
         ticket_repo = TicketEventsRepo(session)
         assignable_users = await ticket_repo.list_assignable_users_with_load(queue_id=queue_id)
         ticket_data["queue_members"] = [
             {"actor_id": member.actor_id, "role_in_queue": member.role_in_queue}
             for member in queue_members
         ]
+        if unified_queue_enabled():
+            ticket_data["queue_members"] = [{"actor_id": user["user_login"], "role_in_queue": None} for user in assignable_users]
         ticket_data["assignable_users"] = [
             serialize_datetime_recursive(user)
             for user in assignable_users
@@ -1919,6 +1923,8 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
 
 
 async def handle_ticket_reroute(request: web.Request) -> web.Response:
+    if unified_queue_enabled():
+        return _json_error("Включена единая очередь", status=409, error_code="QUEUE_PARTITIONING_DISABLED")
     async with get_session() as session:
         ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=True)
         if error:
@@ -1998,6 +2004,8 @@ async def handle_ticket_classify(request: web.Request) -> web.Response:
 
 
 async def handle_ticket_queue(request: web.Request) -> web.Response:
+    if unified_queue_enabled():
+        return _json_error("Включена единая очередь", status=409, error_code="QUEUE_PARTITIONING_DISABLED")
     data = await _read_json(request)
     try:
         queue_id = int(data.get("queue_id"))
@@ -2274,17 +2282,21 @@ async def handle_tickets_bulk_assign(request: web.Request) -> web.Response:
         return _validation_error({"ticket_ids": "ticket_ids must be an array"})
     if len(ticket_ids) > 3:
         return _json_error("Максимум 3 тикета для массового назначения", status=400)
+    normalized_ticket_ids = [str(ticket_id).strip() for ticket_id in ticket_ids]
+    ticket_ids = list(dict.fromkeys(ticket_id for ticket_id in normalized_ticket_ids if ticket_id))
     if not ticket_ids:
         return _json_ok(assigned=0)
     async with get_session() as session:
         repo = TicketEventsRepo(session)
         assignment_service = TicketAssignmentService(repo)
         assigned = 0
+        # Acquire the complete ticket set before any operator capacity lock.
+        # Stable ordering also prevents overlapping bulk requests inverting it.
+        locked_tickets = {}
+        for ticket_id in sorted(ticket_ids):
+            locked_tickets[ticket_id] = await repo.get_ticket(ticket_id, for_update=True)
         for ticket_id in ticket_ids:
-            ticket_id = str(ticket_id).strip()
-            if not ticket_id:
-                continue
-            ticket = await repo.get_ticket(ticket_id)
+            ticket = locked_tickets[ticket_id]
             if ticket is None:
                 continue
             status = (getattr(ticket, "status", None) or "").lower()

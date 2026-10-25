@@ -26,7 +26,7 @@ for (const width of [1366, 1920]) {
       payload.data.sla_ola.first_response = { due_at: null, remaining_seconds: null, target_seconds: 900, status: "completed", completed_at: "2026-10-11T08:22:00Z", completed_within_target: true };
       await route.fulfill({ response, json: payload });
     });
-    await page.goto("/app/tickets/ticket-1");
+    await page.goto("/app/tickets/ticket-1?advanced=1");
     await expect(page.getByRole("navigation", { name: "Навигация поддержки" })).toBeVisible();
     await expect(page.getByTestId("support-workspace-root")).toHaveAttribute("data-theme", "light");
     await expect(page.getByRole("button", { name: "Выполнить действие" })).toBeVisible();

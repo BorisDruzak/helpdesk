@@ -1,14 +1,85 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import UiUser
+from app.db.models import UiToken, UiUser
 from app.repos.ui_users_repo import UiUsersRepo
+import auth.admin_users_handlers as admin_users_handlers
+import auth.middleware as auth_middleware_module
+import auth.service as auth_service_module
+import config as config_module
+from auth.service import AuthService
 
 
-pytestmark = pytest.mark.db_cleanup("registry_access")
+pytestmark = pytest.mark.db_cleanup("full")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("current_role", ["support", "user"])
+async def test_existing_ui_token_observes_role_update_and_deactivation(test_engine, monkeypatch, current_role):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    @asynccontextmanager
+    async def isolated_session():
+        async with session_maker() as session:
+            yield session
+
+    monkeypatch.setattr(auth_service_module, "get_session", isolated_session)
+    monkeypatch.setattr(auth_middleware_module, "get_session", isolated_session)
+    monkeypatch.setattr(admin_users_handlers, "get_session", isolated_session)
+    monkeypatch.setattr(admin_users_handlers, "AUTH_UI_DB_USERS_ENABLED", True)
+    monkeypatch.setattr(auth_middleware_module, "_WEB_AUTH_AUDIT_LAST_SEEN", {})
+    monkeypatch.setattr(AuthService, "_UI_DB_COOLDOWN_UNTIL", 0.0)
+    monkeypatch.setattr(config_module, "AUTH_UI_CONFIG_FALLBACK_ENABLED", False)
+    monkeypatch.setattr(config_module, "ALLOW_INSECURE_DEV_DEFAULTS", False)
+    login = "session-role-update@example.test"
+    async with session_maker() as session:
+        assert list((await session.execute(select(UiToken))).scalars()) == []
+        await UiUsersRepo(session).create_user(login, "unused-password-hash", actor_role="admin")
+    auth_service = AuthService(SimpleNamespace(users={}))
+    token = await auth_service.generate_ui_token(login, "admin", expires_hours=24)
+    await auth_service.generate_ui_token(login, "admin", expires_hours=24)
+    assert (await auth_service.verify_ui_token(token))["actor_role"] == "admin"
+
+    app = web.Application(middlewares=[auth_middleware_module.auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    app.router.add_get("/api/admin/users/{user_login}", admin_users_handlers.handle_admin_users_get)
+    headers = {"Authorization": f"Bearer {token}"}
+    async with TestClient(TestServer(app)) as client:
+        allowed = await client.get(f"/api/admin/users/{login}", headers=headers)
+        assert allowed.status == 200
+        assert (await allowed.json())["actor_role"] == "admin"
+
+        async with session_maker() as session:
+            await UiUsersRepo(session).update_user(login, actor_role=current_role, actor_id="admin")
+
+        assert (await auth_service.verify_ui_token(token))["actor_role"] == current_role
+        forbidden = await client.get(f"/api/admin/users/{login}", headers=headers)
+        assert forbidden.status == 403
+        assert (await forbidden.json())["error_code"] == "FORBIDDEN"
+
+        async with session_maker() as session:
+            records = list((await session.execute(select(UiToken))).scalars())
+            assert len(records) == 2
+            assert all(record.actor_role == "admin" and record.revoked_at is None for record in records)
+            await UiUsersRepo(session).update_user(login, is_active=False, actor_id="admin")
+
+        unauthenticated = await client.get(f"/api/admin/users/{login}", headers=headers)
+        assert unauthenticated.status == 401
+        assert (await unauthenticated.json())["error_code"] == "AUTH_REQUIRED"
+
+    async with session_maker() as session:
+        records = list((await session.execute(select(UiToken))).scalars())
+        assert len(records) == 2
+        assert all(record.revoked_at is not None for record in records)
+    assert await auth_service.verify_ui_token(token) is None
 
 
 @pytest.mark.asyncio

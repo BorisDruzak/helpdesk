@@ -30,7 +30,10 @@ export type SupportQueueCountItem = {
   count: number;
 };
 
+export type SupportTakeInWorkAvailability = { allowed: boolean; reason_code: string | null; reason: string | null };
+
 export type SupportQueuePayload = {
+  queue_mode?: "partitioned" | "unified";
   scope: SupportQueueScope;
   query: string;
   status_filter: string;
@@ -49,6 +52,7 @@ export type SupportQueuePayload = {
     smart_view_options: SupportFilterOption[];
   };
   tickets: Array<{
+    take_in_work?: SupportTakeInWorkAvailability | null;
     ticket_id: string;
     ticket_code: string | null;
     title: string;
@@ -552,11 +556,13 @@ export type SupportTicketDetailPayload = {
     }>;
   };
   actions: {
+    take_in_work?: SupportTakeInWorkAvailability | null;
     status_options: Array<{
       value: string;
       label: string;
     }>;
     can_send_internal_note: boolean;
+    can_send_public_message?: boolean;
     can_hide_from_workspace?: boolean;
     can_unhide_from_workspace?: boolean;
     can_archive_ticket?: boolean;

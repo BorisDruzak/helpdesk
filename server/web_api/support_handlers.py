@@ -1,3 +1,5 @@
+from tickets.queue_mode import unified_queue_enabled, UNIFIED_QUEUE_NAME
+
 import ast
 from dataclasses import dataclass
 import json
@@ -11,8 +13,9 @@ from typing import Any
 from aiohttp import web
 from loguru import logger
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import SQLAlchemyError
 
-from access_control.service import can
+from access_control.service import can, can_role
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.db.models import (
@@ -136,6 +139,7 @@ from web_api.dto.support import (
     SupportQueuePayload,
     SupportQueueSummary,
     SupportQueueTicketItem,
+    SupportTakeInWorkAvailability,
     SupportStatusAction,
     SupportStatusActionResult,
     SupportTicketActions,
@@ -400,6 +404,7 @@ def _is_support_workspace_cleanup_noise(ticket_data: dict[str, Any]) -> bool:
 
 def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str, smart_view: str = "all") -> SupportQueuePayload:
     return SupportQueuePayload(
+        queue_mode="unified" if unified_queue_enabled() else "partitioned",
         scope=scope,
         query=query,
         status_filter=status_filter,
@@ -512,7 +517,7 @@ def _normalize_saved_view_sort(sort: list[dict[str, Any]] | None) -> list[dict[s
 
 
 async def _support_accessible_queue_ids(session, auth_context) -> set[int]:
-    if getattr(auth_context, "actor_role", None) == "admin":
+    if getattr(auth_context, "actor_role", None) == "admin" or (unified_queue_enabled() and getattr(auth_context, "actor_role", None) == "support"):
         rows = (await session.execute(select(TicketQueue.id).where(TicketQueue.is_active.is_(True)))).scalars().all()
         return {int(row) for row in rows if row is not None}
     actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
@@ -699,6 +704,7 @@ def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
         archive_reason=ticket_data.get("archive_reason"),
         requires_operator_action=bool(ticket_data.get("requires_operator_action")),
         unread_user_messages=unread_messages,
+        take_in_work=ticket_data.get("take_in_work"),
     )
 
 
@@ -979,6 +985,8 @@ def _build_queue_counts(
     queues: list[object],
     entries: list[tuple[dict, SupportQueueTicketItem]],
 ) -> list[SupportQueueCountItem]:
+    if unified_queue_enabled():
+        return []
     counts_by_code: dict[str, int] = {}
     for ticket_data, item in entries:
         code = str(ticket_data.get("queue_code") or item.queue_code or "").strip()
@@ -1096,6 +1104,7 @@ async def _load_support_queue_state(
     )
 
     accessible_entries: list[tuple[dict, SupportQueueTicketItem]] = []
+    take_projector = _SupportTakeProjector(session, repo, auth_context)
     for ticket in tickets:
         ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
         _apply_support_workspace_visibility(ticket_data, ticket)
@@ -1113,6 +1122,7 @@ async def _load_support_queue_state(
                 "reporting_category": getattr(ticket, "reporting_category", None),
             }
         )
+        ticket_data["take_in_work"] = (await take_projector.project(ticket)).model_dump()
         accessible_entries.append((ticket_data, _build_ticket_item(ticket_data)))
 
     return SupportQueueState(
@@ -1233,7 +1243,81 @@ def _apply_custom_smart_view_sort(
     return sorted(entries, key=cmp_to_key(compare))
 
 
-async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_admin: bool = False) -> SupportTicketActions:
+def _support_public_reply_error(ticket, *, actor_id: str | None, is_admin: bool = False) -> tuple[str, str] | None:
+    if not getattr(ticket, "assignee_id", None) or str(ticket.status) not in {
+        "in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor", "waiting_on_approval",
+    }:
+        return "TICKET_NOT_IN_WORK", "Сначала возьмите обращение в работу."
+    if not is_admin and str(ticket.assignee_id) != str(actor_id or ""):
+        return "ASSIGNEE_CONFLICT", "Обращение назначено другому оператору."
+    return None
+
+
+def _assignment_failure(exc: TicketAssignmentError) -> tuple[str, str]:
+    if exc.code == "ASSIGNEE_NOT_IN_QUEUE":
+        return exc.code, "Вы не состоите в очереди обращения. Назначить исполнителем можно участника этой очереди."
+    if exc.code == "ASSIGNEE_CAPACITY_REACHED":
+        return exc.code, f"Достигнут лимит активных обращений ({MAX_ACTIVE_TICKETS_PER_OPERATOR}). Завершите работу с одной из текущих заявок."
+    return "ASSIGNMENT_CONFLICT", "Назначение исполнителя недоступно. Обновите обращение и проверьте доступность исполнителя."
+
+
+class _SupportTakeProjector:
+    """Request-local read cache; the command always validates again under the lock."""
+
+    def __init__(self, session, repo, auth):
+        self.session, self.repo, self.auth = session, repo, auth
+        self.permissions, self.memberships, self.loads = {}, {}, {}
+        self.profiles = None
+
+    async def permitted(self, code):
+        if code not in self.permissions:
+            self.permissions[code] = can_role(self.auth.actor_role, code) or await can(self.session, self.auth, code)
+        return self.permissions[code]
+
+    async def is_actor_in_queue(self, queue_id, actor_id):
+        key = (queue_id, actor_id)
+        if key not in self.memberships:
+            self.memberships[key] = await self.repo.is_actor_in_queue(queue_id, actor_id)
+        return self.memberships[key]
+
+    async def count_active_tickets_for_assignee(self, actor_id):
+        if actor_id not in self.loads:
+            self.loads[actor_id] = await self.repo.count_active_tickets_for_assignee(actor_id)
+        return self.loads[actor_id]
+
+    async def project(self, ticket, *, transition_allowed=None):
+        def denied(code, reason):
+            return SupportTakeInWorkAvailability(reason_code=code, reason=reason)
+
+        actor = self.auth.actor_id
+        if self.auth.actor_role not in {"admin", "support"} or not actor or not await self.permitted("ticket.status.change"):
+            return denied("FORBIDDEN", "Недостаточно прав для начала работы с обращением.")
+        if ticket.status == "in_progress":
+            return denied("TICKET_ALREADY_IN_WORK", "Обращение уже в работе.")
+        assignee = getattr(ticket, "assignee_id", None)
+        if assignee and assignee != actor and self.auth.actor_role != "admin":
+            return denied("ASSIGNEE_CONFLICT", "Обращение назначено другому оператору.")
+        if not assignee:
+            if not await self.permitted("ticket.assign"):
+                return denied("FORBIDDEN", "Для взятия обращения нужно право назначения исполнителя.")
+        try:
+            await TicketAssignmentService(self).validate_manual_assignment(ticket, assignee or actor, activating=True, lock_capacity=False)
+        except TicketAssignmentError as exc:
+            return denied(*_assignment_failure(exc))
+        if transition_allowed is None:
+            from tickets.workflow_profiles import load_workflow_profiles
+            from tickets.workflow_service import load_ticket_workflow_profile, validate_transition_for_profile
+
+            if self.profiles is None:
+                self.profiles = await load_workflow_profiles(self.session)
+            profile = await load_ticket_workflow_profile(self.session, ticket, profiles=self.profiles)
+            transition_allowed = validate_transition_for_profile(profile, ticket.status, "in_progress", True)
+        if not transition_allowed:
+            return denied("INVALID_TRANSITION", "Текущий статус или политика обращения не допускает начало работы.")
+        return SupportTakeInWorkAvailability(allowed=True)
+
+
+async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_admin: bool = False, actor_id: str | None = None, auth_context=None, repo=None) -> SupportTicketActions:
     if not is_staff:
         return SupportTicketActions(status_options=[], can_send_internal_note=False)
 
@@ -1258,6 +1342,10 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_a
     return SupportTicketActions(
         status_options=options,
         can_send_internal_note=True,
+        can_send_public_message=_support_public_reply_error(ticket, actor_id=actor_id, is_admin=is_admin) is None,
+        take_in_work=await _SupportTakeProjector(session, repo or TicketEventsRepo(session), auth_context).project(
+            ticket, transition_allowed=any(option.value == "in_progress" for option in options)
+        ) if auth_context is not None else None,
         can_hide_from_workspace=not _is_support_workspace_hidden(ticket),
         can_unhide_from_workspace=_is_support_workspace_hidden(ticket),
         can_archive_ticket=is_admin and getattr(ticket, "archived_at", None) is None,
@@ -3200,7 +3288,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     )
     timeline = timeline_payload.items
 
-    queue_name = None
+    queue_name = UNIFIED_QUEUE_NAME if unified_queue_enabled() else None
     ticket_queue_id = ticket_data.get("queue_id")
     for queue in ticket_data.get("available_queues", []):
         if queue.get("id") == ticket_queue_id:
@@ -3213,6 +3301,9 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         ticket,
         is_staff=auth_context.actor_role in {"admin", "support"},
         is_admin=auth_context.actor_role == "admin",
+        actor_id=auth_context.actor_id,
+        auth_context=auth_context,
+        repo=repo,
     )
     request_form = _build_support_request_form_payload(ticket_data)
     custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
@@ -4011,6 +4102,8 @@ async def handle_web_support_queue_mass_action(request: web.Request):
     reason = raw_reason or "support_queue_mass_action"
     if action == "change_priority" and len(raw_reason) < 3:
         return _support_json_error("Для смены приоритета нужна причина", status=400, error_code="VALIDATION_ERROR")
+    if action == "change_queue" and unified_queue_enabled():
+        return _support_json_error("Включена единая очередь.", status=409, error_code="QUEUE_PARTITIONING_DISABLED")
     if action == "change_queue" and payload.queue_id is None:
         return _support_json_error("Для смены очереди нужен queue_id", status=400, error_code="VALIDATION_ERROR")
     if action == "internal_note" and not (payload.internal_note or "").strip():
@@ -4318,6 +4411,7 @@ async def handle_web_support_queue(request: web.Request):
         typed_items = [item for item in status_filtered_items if _matches_ticket_query(item, query)]
 
         payload = SupportQueuePayload(
+            queue_mode="unified" if unified_queue_enabled() else "partitioned",
             scope=scope,
             query=query,
             status_filter=status_filter,
@@ -5371,6 +5465,22 @@ async def handle_web_support_send_message(request: web.Request):
             if denied:
                 return denied
 
+            # Serialize the ownership/status check with status and assignment writes.
+            ticket = await repo.get_ticket(ticket.ticket_id, for_update=True)
+            if ticket is None:
+                return _support_json_error("Обращение не найдено", status=404)
+            # A concurrent queue move can change read scope while the lock is awaited.
+            ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            if visibility == "public":
+                reply_error = _support_public_reply_error(
+                    ticket, actor_id=auth_context.actor_id, is_admin=auth_context.actor_role == "admin",
+                )
+                if reply_error:
+                    code, message = reply_error
+                    return _support_json_error(message, status=403 if code == "ASSIGNEE_CONFLICT" else 409, error_code=code)
+
             artifacts_repo = ArtifactsRepo(session)
             attachments: list[dict[str, Any]] = []
             if attachment_refs:
@@ -5532,6 +5642,27 @@ async def handle_web_support_change_status(request: web.Request):
             if denied:
                 return denied
 
+            ticket = await repo.get_ticket(ticket.ticket_id, for_update=True)
+            if ticket is None:
+                return _support_json_error("Обращение не найдено", status=404)
+            # A concurrent queue move can change read scope while the lock is awaited.
+            ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            if to_status == "in_progress":
+                assignee = getattr(ticket, "assignee_id", None)
+                if assignee and str(assignee) != str(auth_context.actor_id or "") and auth_context.actor_role != "admin":
+                    return _support_json_error("Обращение назначено другому оператору.", status=403, error_code="ASSIGNEE_CONFLICT")
+                if not assignee:
+                    denied = await _require_permission(session, auth_context, "ticket.assign")
+                    if denied:
+                        return denied
+                try:
+                    await TicketAssignmentService(repo).validate_manual_assignment(ticket, assignee or auth_context.actor_id, activating=True)
+                except TicketAssignmentError as exc:
+                    code, message = _assignment_failure(exc)
+                    return _support_json_error(message, status=409, error_code=code)
+
             is_staff = auth_context.actor_role in {"admin", "support"}
             from_status = ticket.status
             if not await validate_transition_for_ticket(session, ticket, to_status, is_staff):
@@ -5616,12 +5747,12 @@ async def handle_web_support_change_status(request: web.Request):
                         close_ola=True,
                     )
                     ticket = await repo.get_ticket(ticket.ticket_id) or ticket
-                except TicketAssignmentError:
+                except TicketAssignmentError as exc:
                     logger.bind(ticket_id=ticket.ticket_id).info("[web_support_status] take_in_work assignment rejected")
                     await session.rollback()
+                    code, message = _assignment_failure(exc)
                     return _support_json_error(
-                        "Не удалось назначить исполнителя. Обращение не переведено в работу.",
-                        status=409, error_code="ASSIGNMENT_CONFLICT",
+                        message, status=409, error_code=code,
                     )
 
             closure_policy_payload = (result.get("event_payload") or {}).get("closure_policy")
@@ -5822,6 +5953,8 @@ async def handle_web_support_assign_ticket(request: web.Request):
 
 @require_auth("admin", "support", "auditor")
 async def handle_web_support_change_queue(request: web.Request):
+    if unified_queue_enabled():
+        return _support_json_error("Включена единая очередь. Разделение по очередям отключено.", status=409, error_code="QUEUE_PARTITIONING_DISABLED")
     data = await _read_support_json(request)
     if isinstance(data, web.Response):
         return data
@@ -5898,6 +6031,8 @@ async def handle_web_support_change_priority(request: web.Request):
 
 @require_auth("admin", "support", "auditor")
 async def handle_web_support_reroute_ticket(request: web.Request):
+    if unified_queue_enabled():
+        return _support_json_error("Включена единая очередь. Разделение по очередям отключено.", status=409, error_code="QUEUE_PARTITIONING_DISABLED")
     data = await _read_support_json(request)
     if isinstance(data, web.Response):
         return data

@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+from contextlib import ExitStack
 import fnmatch
+import html
 import json
 import os
 import queue
@@ -19,6 +21,8 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit
+import xml.etree.ElementTree as ET
 
 try:
     from scripts.ci_artifacts import (
@@ -164,6 +168,127 @@ def _command_text(command: list[str]) -> str:
     return " ".join(command)
 
 
+_URL_CREDENTIALS = re.compile(r"([a-z][a-z0-9+.-]*://[^\s/:@\"'<>]+:)[^\s@\"'<>]*(@)", re.I)
+
+
+def _ci_secret_values(env: dict[str, str]) -> tuple[str, ...]:
+    values: set[str] = set()
+    for key, value in env.items():
+        if not value:
+            continue
+        credential_key = re.search(r"(?:^|_)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY)$", key.upper())
+        policy_key = re.search(r"(?:^|_)(?:ALLOW|ENABLE[D]?|DISABLE[D]?|TTL|TIMEOUT|LENGTH|COUNT|MAX|MIN)(?:_|$)", key.upper())
+        if credential_key and not policy_key:
+            values.add(value)
+        if "URL" in key.upper() and "://" in value:
+            try:
+                password = urlsplit(value).password
+            except ValueError:
+                continue
+            if password:
+                values.update((password, unquote(password)))
+    variants = set(values)
+    for value in values:
+        variants.update((quote(value, safe=""), html.escape(value), html.escape(value, quote=False),
+                         json.dumps(value, ensure_ascii=True)[1:-1], json.dumps(value, ensure_ascii=False)[1:-1],
+                         repr(value)[1:-1]))
+    return tuple(sorted(variants, key=len, reverse=True))
+
+
+def _redact_ci_text(text: str, sensitive_values: tuple[str, ...] = ()) -> str:
+    for value in sensitive_values:
+        if len(value) >= 4:
+            text = text.replace(value, "[REDACTED]")
+        elif text.strip() == value:
+            text = text.replace(value, "[REDACTED]")
+        else:
+            # A one-character password must not rewrite commit hashes, paths,
+            # counters or quote delimiters merely containing that character.
+            pattern = r"((?:password|passwd|secret|token|api_key)\s*[=:]\s*['\"]?)" + re.escape(value)
+            text = re.sub(pattern, lambda match: match.group(1) + "[REDACTED]", text, flags=re.I)
+    return _URL_CREDENTIALS.sub(r"\1[REDACTED]\2", text)
+
+
+def _redact_ci_data(value, sensitive_values: tuple[str, ...]):
+    if isinstance(value, str):
+        return _redact_ci_text(value, sensitive_values)
+    if isinstance(value, dict):
+        return {key: _redact_ci_data(item, sensitive_values) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redact_ci_data(item, sensitive_values) for item in value]
+    return value
+
+
+def _sanitize_ci_file(path: Path, sensitive_values: tuple[str, ...]) -> None:
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    sanitized = _redact_ci_text(text, sensitive_values)
+    if path.suffix.lower() == ".json":
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            pass  # Preserve an invalid-report failure while removing credentials.
+        else:
+            redacted = _redact_ci_data(value, sensitive_values)
+            if redacted == value:
+                return
+            sanitized = json.dumps(redacted, ensure_ascii=False, indent=2) + "\n"
+    elif path.suffix.lower() == ".jsonl":
+        lines = []
+        for line in text.splitlines():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                lines.append(_redact_ci_text(line, sensitive_values))
+            else:
+                redacted = _redact_ci_data(value, sensitive_values)
+                lines.append(line if redacted == value else json.dumps(redacted, ensure_ascii=False))
+        sanitized = "\n".join(lines) + "\n"
+    elif path.suffix.lower() == ".xml":
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            pass
+        else:
+            original = ET.tostring(root, encoding="unicode")
+            metadata = {"tests", "errors", "failures", "skipped", "assertions", "time", "timestamp", "line"}
+            for element in root.iter():
+                if element.text:
+                    element.text = _redact_ci_text(element.text, sensitive_values)
+                if element.tail:
+                    element.tail = _redact_ci_text(element.tail, sensitive_values)
+                for key, value in element.attrib.items():
+                    if key not in metadata:
+                        element.set(key, _redact_ci_text(value, sensitive_values))
+            sanitized = ET.tostring(root, encoding="unicode")
+            if sanitized == original:
+                return
+    if sanitized != text:
+        path.write_text(sanitized, encoding="utf-8")
+
+
+def _sanitize_step_reports(command: list[str], cwd: Path, env: dict[str, str], sensitive_values: tuple[str, ...]) -> None:
+    paths = []
+    for index, argument in enumerate(command):
+        name, separator, value = argument.partition("=")
+        if name in {"--junitxml", "--junit-xml"}:
+            if separator:
+                paths.append(value)
+            elif index + 1 < len(command):
+                paths.append(command[index + 1])
+    paths.extend(env[key] for key in ("PLAYWRIGHT_JSON_OUTPUT_NAME", "PC_CLIENT_TEST_TIMING_PATH") if env.get(key))
+    for name in paths:
+        path = Path(name)
+        _sanitize_ci_file(path if path.is_absolute() else cwd / path, sensitive_values)
+
+
+def _sanitize_ci_artifacts(artifact_dir: Path, sensitive_values: tuple[str, ...]) -> None:
+    for path in artifact_dir.rglob("*"):
+        if path.suffix.lower() in {".xml", ".json", ".jsonl", ".log", ".txt", ".html", ".md"}:
+            _sanitize_ci_file(path, sensitive_values)
+
+
 def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
@@ -203,7 +328,8 @@ def _pump_process_output(
         output_queue.put(None)
 
 
-def _write_output(handle, text: str, *, mirror_output: bool = True) -> None:
+def _write_output(handle, text: str, *, mirror_output: bool = True, sensitive_values: tuple[str, ...] = ()) -> None:
+    text = _redact_ci_text(text, sensitive_values)
     handle.write(text)
     handle.flush()
     if not mirror_output:
@@ -227,6 +353,7 @@ def _drain_output_queue(
     handle,
     *,
     mirror_output: bool = True,
+    sensitive_values: tuple[str, ...] = (),
 ) -> tuple[bool, bool]:
     saw_output = False
     reader_closed = False
@@ -239,7 +366,7 @@ def _drain_output_queue(
             reader_closed = True
             continue
         saw_output = True
-        _write_output(handle, item, mirror_output=mirror_output)
+        _write_output(handle, item, mirror_output=mirror_output, sensitive_values=sensitive_values)
     return saw_output, reader_closed
 
 
@@ -260,6 +387,22 @@ def run_and_capture(
     env_overrides: dict[str, str] | None = None,
     mirror_output: bool = True,
 ) -> dict[str, object]:
+    child_env = os.environ.copy()
+    if env_overrides:
+        child_env.update(env_overrides)
+    sensitive_values = _ci_secret_values(child_env)
+    process = reader = None
+
+    def finish_capture():
+        try:
+            if process is not None:
+                _terminate_process_tree(process)
+            if reader is not None and reader.ident is not None:
+                reader.join(timeout=5)
+        finally:
+            # A child must stop writing reports before they are sanitized.
+            _sanitize_step_reports(command, cwd, child_env, sensitive_values)
+
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started_at = now_iso()
     started_monotonic = time.monotonic()
@@ -274,7 +417,8 @@ def run_and_capture(
         f"idle_timeout={idle_timeout_label} log={log_path}",
         flush=True,
     )
-    with log_path.open("w", encoding="utf-8") as handle:
+    with log_path.open("w", encoding="utf-8") as handle, ExitStack() as cleanup:
+        cleanup.callback(finish_capture)
         handle.write(f"[ci] step={step_name}\n")
         handle.write(f"[ci] started_at={started_at}\n")
         handle.write(f"[ci] cwd={cwd}\n")
@@ -283,12 +427,9 @@ def run_and_capture(
             handle.write("[ci] idle_timeout_seconds=disabled\n")
         else:
             handle.write(f"[ci] idle_timeout_seconds={effective_idle_timeout_seconds:.1f}\n")
-        handle.write(f"[ci] command={_command_text(command)}\n\n")
+        safe_command = [_redact_ci_text(argument, sensitive_values) for argument in command]
+        handle.write(_redact_ci_text(f"[ci] command={_command_text(safe_command)}\n\n", sensitive_values))
         handle.flush()
-
-        child_env = os.environ.copy()
-        if env_overrides:
-            child_env.update(env_overrides)
 
         process = subprocess.Popen(
             command,
@@ -318,6 +459,7 @@ def run_and_capture(
                 output_queue,
                 handle,
                 mirror_output=mirror_output,
+                sensitive_values=sensitive_values,
             )
             if saw_output:
                 last_output_monotonic = time.monotonic()
@@ -329,6 +471,7 @@ def run_and_capture(
                     output_queue,
                     handle,
                     mirror_output=mirror_output,
+                    sensitive_values=sensitive_values,
                 )
                 if saw_output:
                     last_output_monotonic = time.monotonic()
@@ -347,7 +490,7 @@ def run_and_capture(
                 handle.flush()
                 _terminate_process_tree(process)
                 reader.join(timeout=5)
-                _drain_output_queue(output_queue, handle, mirror_output=mirror_output)
+                _drain_output_queue(output_queue, handle, mirror_output=mirror_output, sensitive_values=sensitive_values)
                 break
 
             if (
@@ -363,7 +506,7 @@ def run_and_capture(
                 handle.flush()
                 _terminate_process_tree(process)
                 reader.join(timeout=5)
-                _drain_output_queue(output_queue, handle, mirror_output=mirror_output)
+                _drain_output_queue(output_queue, handle, mirror_output=mirror_output, sensitive_values=sensitive_values)
                 break
 
             time.sleep(OUTPUT_POLL_INTERVAL_SECONDS)
@@ -387,7 +530,7 @@ def run_and_capture(
     )
     return {
         "name": step_name,
-        "command": command,
+        "command": [_redact_ci_text(argument, sensitive_values) for argument in command],
         "started_at": started_at,
         "finished_at": finished_at,
         "duration_seconds": duration_seconds,
@@ -399,10 +542,11 @@ def run_and_capture(
     }
 
 
-def write_summary(summary_path: Path, summary: dict[str, object]) -> None:
+def write_summary(summary_path: Path, summary: dict[str, object], *, sensitive_values: tuple[str, ...] = ()) -> None:
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     with summary_path.open("w", encoding="utf-8") as handle:
-        json.dump(summary, handle, ensure_ascii=False, indent=2)
+        values = tuple(sorted(set(sensitive_values) | set(_ci_secret_values(os.environ)), key=len, reverse=True))
+        json.dump(_redact_ci_data(summary, values), handle, ensure_ascii=False, indent=2)
         handle.write("\n")
 
 
@@ -1550,6 +1694,9 @@ def main() -> None:
     steps = _filter_steps_by_layer(steps, requested_layers)
     effective_layers = [step_name for step_name, *_rest in steps]
     gate_mode = "affected" if affected_mode else ("selected" if args.layer else "full")
+    sensitive_values = set(_ci_secret_values(os.environ))
+    for step in steps:
+        sensitive_values.update(_ci_secret_values(step[5] or {}))
 
     results: list[dict[str, object]] = []
     parallel_groups: list[dict[str, object]] = []
@@ -1571,6 +1718,7 @@ def main() -> None:
 
         if args.require_parent_owned_db_tunnel:
             tunnel = _prepare_windows_parallel_db_tunnel(require_parent_owned=True)
+            sensitive_values.update(_ci_secret_values(tunnel.env_overrides))
             before_steps = _merge_db_tunnel_env(before_steps, tunnel.env_overrides)
             parallel_steps = _merge_db_tunnel_env(parallel_steps, tunnel.env_overrides)
 
@@ -1585,6 +1733,7 @@ def main() -> None:
             if tunnel is None:
                 tunnel = _prepare_windows_parallel_db_tunnel()
             parallel_env = tunnel.env_overrides
+            sensitive_values.update(_ci_secret_values(parallel_env))
             prepared_parallel_steps = [_merge_step_env(step, parallel_env) for step in parallel_steps]
             group_results, group_metadata = _run_parallel_steps(
                 prepared_parallel_steps,
@@ -1609,7 +1758,7 @@ def main() -> None:
         print("[ci] interrupted by user", file=sys.stderr)
     except Exception as exc:
         status = "red"
-        runner_error = f"{type(exc).__name__}: {exc}"
+        runner_error = _redact_ci_text(f"{type(exc).__name__}: {exc}", tuple(sorted(sensitive_values, key=len, reverse=True)))
         print(f"[ci] runner error: {runner_error}", file=sys.stderr)
     finally:
         if tunnel is not None:
@@ -1617,8 +1766,15 @@ def main() -> None:
         try:
             summarize_artifact_dir(artifact_dir)
         except Exception as exc:  # pragma: no cover - defensive CI artifact path.
-            fixture_timings_error = f"{type(exc).__name__}: {exc}"
+            fixture_timings_error = _redact_ci_text(f"{type(exc).__name__}: {exc}", tuple(sorted(sensitive_values, key=len, reverse=True)))
             print(f"[ci] fixture timing summary error: {fixture_timings_error}", file=sys.stderr)
+        try:
+            _sanitize_ci_artifacts(artifact_dir, tuple(sorted(sensitive_values, key=len, reverse=True)))
+        except Exception as exc:
+            status = "red"
+            runner_error = _redact_ci_text(f"Artifact redaction failed: {type(exc).__name__}: {exc}",
+                                         tuple(sorted(sensitive_values, key=len, reverse=True)))
+            print(f"[ci] runner error: {runner_error}", file=sys.stderr)
         flaky_summary = _build_flaky_summary(
             registry_path=flaky_registry_path,
             report_paths={"webapp_fixture_e2e": webapp_fixture_e2e_report},
@@ -1675,7 +1831,7 @@ def main() -> None:
             summary["fixture_timings_error"] = fixture_timings_error
         if flaky_gate_error:
             summary["flaky_gate_error"] = flaky_gate_error
-        write_summary(summary_path, summary)
+        write_summary(summary_path, summary, sensitive_values=tuple(sorted(sensitive_values, key=len, reverse=True)))
 
     if status != "green":
         raise SystemExit(1)

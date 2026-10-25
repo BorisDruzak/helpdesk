@@ -1,5 +1,66 @@
 # Helpdesk server code map
 
+## Review hardening (2026-10-26)
+
+- `auth/service.py` resolves token privileges from the current active UI user.
+  Database cooldown and memory-token paths require the explicit development
+  fallback policy. Token fragments are excluded from authentication logs.
+- `websocket/ui_handler.py` guards internal room subscriptions/delivery with
+  current session and canonical ticket visibility checks; user/auditor roles
+  cannot consume raw internal room payloads. Idle heartbeat does not query DB.
+- `tickets/assignment_service.py` and `workflow_service.py` check increasing
+  active load under the operator row lock. `ticket_events_repo.py` shares that
+  lock with auto-assignment; existing-ticket commands lock ticket before operator.
+  Bulk assignment prelocks all requested tickets in sorted order. Availability
+  projection explicitly uses a nonlocking read and commands revalidate it.
+- `app/services/artifact_service.py` and `uploads/handlers.py` reuse canonical
+  ticket read/write authorization. Precommit rejections/cancellation remove
+  temporary blobs. Files survive an uncertain commit result for reconciliation;
+  successful commit is recorded before session-close cleanup can fail.
+- Retired module-administration helpers/handlers were removed from
+  `web_api/admin_handlers.py`; their routes were already absent. Endpoint
+  module ownership and external HTTP contracts are unchanged.
+
+See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
+
+## Reversible unified support queue
+
+- `tickets/queue_mode.py` reads `config.TICKET_QUEUE_MODE` (`partitioned|unified`).
+  `app/repos/ticket_events_repo.py` applies staff scope to queue access, assignment
+  candidates and notifications; role/active checks remain server-side.
+- `tickets/routing_service.py` routes new unified work to the configured common
+  queue and preserves existing routing history/OLA. `assignment_service.py`
+  retains its auto-assign policy and global load limit.
+  Non-queue routing actions remain authoritative; policy-only updates are
+  persisted even when the historical queue stays unchanged. Covered by
+  `test_unified_queue_routing.py` and the no-DB policy regression.
+- `web_api/support_handlers.py` projects `queue_mode`, suppresses partitions and
+  rejects partition commands; legacy handlers use the same guard. Settings
+  report the mode; no migration or Endpoint contract change is required.
+- Simple ticket layout reuses the retained inspector and existing persisted
+  column sizes; compact queue adds explicit full-list navigation. Regression
+  coverage: `test_unified_queue.py`, `test_unified_queue_no_db.py`, and
+  `webapp/tests/support-simple.spec.ts`.
+
+## Everyday support workspace (UI-SUPPORT-001)
+
+- `webapp/src/pages/tickets/list-page.tsx` keeps the existing support queries,
+  realtime and mutations; `components/simple-support-*` compose the default
+  queue, compact ticket and three conversation tabs. Advanced modes stay reachable.
+- `tickets/smart_views.py` adds server-side operational views before queue limits.
+- `web_api/support_handlers.py` locks status/ownership before take-in-work and
+  public reply. Rejected replies write no event and do not finish first-response
+  SLA. `web_api/dto/support.py` projects `actions.can_send_public_message`.
+- Queue rows and ticket actions also project `take_in_work` through a
+  request-local read cache of canonical assignment/workflow checks. The command
+  revalidates membership and destination load and returns specific safe denial
+  codes. The Messenger conversation anchors its composer, preserves scroll and
+  separate audience drafts, and opens structured description in a native dialog.
+- `test_support_work.py` covers PostgreSQL competing operators, persisted
+  ownership, SLA and administrator access; the no-DB companion covers error
+  ordering. Existing FSM, assignment, closure, audit and internal visibility stay
+  authoritative. See [support workflow](../../docs/SUPPORT_WORKSPACE.md).
+
 ## Endpoint module discovery and inputs
 
 - `domain_ports/endpoint_modules.py` declares read-only primitive/published-module

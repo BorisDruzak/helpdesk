@@ -1,3 +1,146 @@
+# 2026-10-26 Full CI and publication
+
+User authorized full isolated-PostgreSQL CI, fixes, commit and push after checks.
+Branch codex/ui-support-001 was synchronized with its origin tip fee8268c.
+Precommit gate runs in a dedicated local snapshot because bundle generation
+requires committed/clean frontend inputs. The user branch remains uncommitted
+until that gate passes; final exact-HEAD CI is required again before push.
+First attempts stopped at clean-source guard and then exposed a launcher
+UnicodeEncodeError under redirected legacy Windows output. Fixed outer CLI
+stdout/stderr UTF-8; ASCII/CP1251 regression tests pass (runner18).
+Full runs exposed Windows forced-checkpoint cleanup latency (176s;103s sync)
+and raw disposable-DB credentials in pytest CI/JUnit diagnostics. Fixed: scoped
+Windows DROP90/95s budgets; discarded cluster fsync/full_page_writes/synchronous_commit
+OFF; redaction before output and structured report sanitization, with interrupted
+child stopped first. Policy flags, short secrets, typed JSON/XML, SHA and paths
+have regressions. Focused evidence: CI runner41, wrapper19, DB harness46+6,
+actual role/concurrency9; independent review has no remaining findings.
+Precommit snapshot a8c11aacc3bca3a9d54f68866e92178ecf63b2f8 passed18/18
+fullgate:881 frontend,165browser without retry,304scripts,1660server no-DB,
+1manual Endpoint module skip,6migration,375webAPI/384tickets/90observer/29runtime.
+Green artifact validator accepted; no shared DBfallback; ownedcluster stopped
+and removed. Documentation/evidence table refreshed. Publication procedure:
+12 atomic Conventional Commits with per-area focused checks, exact-HEAD fullCI,
+then normal push without history rewrite. Exact commit/files/check receipts and
+final remoteSHA are recorded in artifacts/review-20261026-publication.json and
+the final response. Preserve preexisting untracked scanner/design/tmp artifacts;
+production/staging remain untouched.
+
+# 2026-10-26 Isolated PostgreSQL acceptance and test review
+
+Goal: configure repeatable local PostgreSQL, execute pending real concurrency/
+role-change acceptance, review tests, and fix confirmed findings.
+Scope: disposable loopback-only PostgreSQL16 in ignored .run; no system service,
+production/staging connection, shared database or deployment. Runtime credentials
+are generated per run, redacted and passed only through child environment.
+Implemented: verified EDB16.15 runtime; scripts/run_with_local_postgres.py creates
+and stops its owned cluster. Harness creates/drops pc_support_test_* via explicit
+local TEST_DATABASE_ADMIN_URL. Current-user-only ACL handles Windows restricted
+PostgreSQL token; control output uses a file to avoid inherited pipe EOF waits.
+Test review fixes: real pg_blocking_pids observation replaces timing-as-proof;
+reversed bulk concurrency; full cleanup and real HTTP200/403/401 for token roles;
+strict browser API allowlist; stale catch/finally, ABA upload/send, draft-reset
+coverage with five sensitive in-memory mutants.
+Verification: PostgreSQL acceptance9 passed, expanded regression29 passed,
+then final9 passed again using the completed process-tree wrapper. Two deliberate
+in-memory PostgreSQL mutants failed as expected; normal sources stay unchanged.
+Server no-DB1656 passed/1 skipped; scripts293; focused frontend68; browser5;
+runner lifecycle16; inventory369 files/0 issues; workspace/diff checks passed.
+Handoff: complete; all owned clusters stopped/deleted (run directory empty).
+Keep prepared PG16.15 binaries in ignored .run for repeatable future runs.
+Previous review changes/untracked work preserved; no commit/deploy.
+
+# 2026-10-26 Project review and confirmed defect remediation
+
+Goal: review the current Helpdesk project, fix reproduced defects, remove proven
+unreachable legacy code, and verify the combined result. User authorized local
+code changes. Preserve unrelated untracked files and deployed services.
+Scope: server authentication/authorization, ticket lifecycle and attachments,
+webapp session isolation and asynchronous ticket actions, retired module helpers,
+project scripts and regression coverage. No dependency additions or deployment.
+Constraints: current source and tests override the older indexed branch;
+GitNexus group status is healthy for its tracked revisions. Context7 lookup was
+attempted but its monthly quota is exhausted; use installed APIs/official docs.
+Baseline: workspace verification passed; server no-DB 1542 passed/1 skipped;
+frontend 847 passed; scripts 277 passed. Static F821 check found retired module
+helpers plus a missing SQLAlchemyError import in inventory error handling.
+Next Steps:
+- [x] Fix stale token roles, DB cooldown/memory fallback and WS replay/delivery ACL.
+- [x] Isolate query/mutation caches across authenticated identities.
+- [x] Guard late upload/send results and retry failed read acknowledgements.
+- [x] Fix assignment capacity/bulk lock order and attachment authorization/cleanup.
+- [x] Remove unreachable module-administration and support-workspace code.
+- [x] Replace quadratic email validation and prune generated verification inputs.
+- [x] Review combined diff, docs/CODEMAP and regression/browser evidence.
+Verification: server no-DB1655 passed/1 skipped; frontend877; scripts277;
+fresh TypeScript/build;34 fixture browser cases; F821/static inventory0 errors;
+workspace verification and diff-check passed. Independent review found no
+remaining actionable issues. See docs/PROJECT_REVIEW_2026_10_26.md.
+Handoff: local review/fixes complete; no commit/push/deploy. No configured
+isolated PostgreSQL connection: real DB concurrency and role-change acceptance
+authored but not run. Ambiguous upload commit retains blob for reconciliation;
+WS per-frame authorization adds DB work. Production/staging were not changed.
+
+# 2026-10-19 Unified queue and restored inspector
+
+Actor: support/admin. Primary job: choose an appeal and work in chat. Secondary:
+full-list navigation and contextual inspection. Archetype: list + conversation +
+inspector, with drawer fallback. User explicitly requested one reversible queue,
+full-list access/resizing and the retained right panel. Implement within existing
+repositories, state, routing and inspector; retain roles, ownership, FSM/SLA,
+capacity and closure policies. No production scope or data migration.
+Implemented: TICKET_QUEUE_MODE, global staff access/candidates/notifications,
+common new-ticket routing, partition command guards, mode projection/settings;
+full-list header action, persisted pointer/keyboard resizing, shared rich inspector.
+Checks: frontend847; server no-DB1542 passed/1 existing skip; build;13 fixture
+browser flows at1366/1440/1920/390. PostgreSQL6 plus final focused5 passed
+(unified/partitioned scope, active-role/load guards, concurrency, ownership and
+common routing/auto-assignment policy). Final routing policy PostgreSQL/unit6
+passed: retain priority, SLA and approval on new and existing tickets. Configuration
+helper2 passed. Review:
+source and docs checked; retained inspector move verified separately from its
+small semantic changes. GitNexus tools unavailable; source boundaries verified.
+Next:
+freeze candidate, exact-SHA full CI, canonical staging deploy, installed acceptance.
+Leave staging running. Preserve unrelated untracked work.
+
+# 2026-10-19 Support Messenger and take availability
+
+User selected reference 1 (Messenger) and authorized implementation, verification
+and isolated staging deployment. Preserve canonical queue membership, assignment,
+FSM, SLA, public/internal privacy, attachments and all additional tools.
+Implemented: readable bubbles, sender/date/time hierarchy, anchored composer,
+Ctrl/Command+Enter, scroll preservation, collapsed structured description; shared
+server take availability and specific membership/capacity errors. No dependency
+or migration. Existing admin is outside the affected queue; retain that policy.
+Verification: no-DB server 1537 passed / 1 existing skip; frontend 846 passed;
+PostgreSQL 3/3 (concurrency, persistence, queue/detail/command denial parity).
+Next: finish responsive visual checks, freeze candidate, exact-commit full CI,
+canonical staging release and installed browser acceptance. Leave staging running.
+
+# 2026-10-19 UI-SUPPORT-001
+
+Goal: everyday support queue, compact three-area ticket and clean conversation.
+Scope: existing TicketListPage, typed support APIs and canonical workflow only.
+Constraints: preserve FSM, audit, internal visibility, SLA and closure policies;
+no dependencies, production deployment or real-ticket mutations. Preserve unrelated
+registry branch and untracked work. User approved the reference-based approach.
+Decisions: five simple filters, explicit take-in-work through status/in_progress,
+public reply guarded by status/ownership under the ticket lock; advanced functions
+remain reachable. Use existing state, mutations and design primitives.
+Current State: implemented on codex/ui-support-001 from main 520b6218. Existing
+advanced modes are retained; shared dialogs and typed mutations are reused.
+Next Steps: frozen-candidate full CI, then draft PR. No production deployment.
+Verification: workspace sanity and diff check pass; frontend suite 843 tests;
+server no-DB 1532 passed, 1 existing skip. Fresh build and focused browser 13/13
+cover simple 1366/1920/390, existing advanced modes and normal-shell navigation,
+with synthetic fixtures. Source workflow PostgreSQL concurrency 3/3 passed through
+an owned staging tunnel, now closed. The broad staging API/DB selection exceeded
+its runner limit; its owned process was stopped and it is not counted as green.
+No deployed service or real ticket is changed. Full CI must bind to the committed
+candidate. Final regressions cover assignment permission and internal event tabs.
+Handoff: task active through CI/PR; preserve unrelated untracked files.
+
 # 2026-10-18 Build answer branches from an empty decision
 
 Actor/job: an administrator starts with only a yes/no question connected to a

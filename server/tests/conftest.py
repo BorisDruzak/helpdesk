@@ -58,6 +58,12 @@ WINDOWS_TEST_DB_SSH_KEY = os.getenv(
 TEST_DB_ADMIN_LOCK_TIMEOUT_SECONDS = 5
 TEST_DB_ADMIN_STATEMENT_TIMEOUT_SECONDS = 30
 TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS = 35
+# PostgreSQL's Windows DROP DATABASE forces a cluster checkpoint to release
+# background-process file handles (dbcommands.c). That wait reports
+# IPC/CheckpointDone, not a lock conflict, and can outlast ordinary SQL under
+# concurrent CI I/O. Keep this larger, finite budget specific to Windows DROP.
+TEST_DB_WINDOWS_DROP_STATEMENT_TIMEOUT_SECONDS = 90
+TEST_DB_WINDOWS_DROP_OPERATION_TIMEOUT_SECONDS = 95
 
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
@@ -621,31 +627,44 @@ def _maybe_fallback_to_shared_test_db(
         return shared_url, _resolve_admin_url(shared_url), True
 
 
-async def _run_admin_sql(admin_database_url: str, sql: str, **params) -> None:
+async def _run_admin_sql(
+    admin_database_url: str,
+    sql: str,
+    *,
+    statement_timeout_seconds: float | None = None,
+    operation_timeout_seconds: float | None = None,
+    **params,
+) -> None:
+    statement_timeout_seconds = (
+        TEST_DB_ADMIN_STATEMENT_TIMEOUT_SECONDS if statement_timeout_seconds is None else statement_timeout_seconds
+    )
+    operation_timeout_seconds = (
+        TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS if operation_timeout_seconds is None else operation_timeout_seconds
+    )
     engine = create_async_engine(
         admin_database_url,
         echo=False,
         isolation_level="AUTOCOMMIT",
         pool_pre_ping=True,
         connect_args={
-            "timeout": TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS,
-            "command_timeout": TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS,
+            "timeout": operation_timeout_seconds,
+            "command_timeout": operation_timeout_seconds,
         },
     )
     operation_error: BaseException | None = None
     try:
         try:
-            async with asyncio.timeout(TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS):
+            async with asyncio.timeout(operation_timeout_seconds):
                 async with engine.connect() as conn:
                     await conn.execute(text(f"SET lock_timeout = '{TEST_DB_ADMIN_LOCK_TIMEOUT_SECONDS}s'"))
                     await conn.execute(
-                        text(f"SET statement_timeout = '{TEST_DB_ADMIN_STATEMENT_TIMEOUT_SECONDS}s'")
+                        text(f"SET statement_timeout = '{statement_timeout_seconds}s'")
                     )
                     await conn.execute(text(sql), params)
         except TimeoutError as exc:
             raise TimeoutError(
                 "test DB admin operation timed out after "
-                f"{TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS}s"
+                f"{operation_timeout_seconds}s"
             ) from exc
     except BaseException as exc:
         operation_error = exc
@@ -736,7 +755,13 @@ async def _drop_test_database(admin_database_url: str, db_name: str) -> None:
         db_name=db_name,
     )
     _report_test_database_admin_phase("drop database", db_name)
-    await _run_admin_sql(admin_database_url, f'DROP DATABASE IF EXISTS "{db_name}"')
+    drop_options = {}
+    if os.name == "nt":
+        drop_options = {
+            "statement_timeout_seconds": TEST_DB_WINDOWS_DROP_STATEMENT_TIMEOUT_SECONDS,
+            "operation_timeout_seconds": TEST_DB_WINDOWS_DROP_OPERATION_TIMEOUT_SECONDS,
+        }
+    await _run_admin_sql(admin_database_url, f'DROP DATABASE IF EXISTS "{db_name}"', **drop_options)
 
 
 async def _create_test_database(admin_database_url: str, db_name: str) -> None:
