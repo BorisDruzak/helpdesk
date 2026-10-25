@@ -33,8 +33,14 @@ pytestmark = pytest.mark.no_db
 
 
 @pytest.mark.asyncio
-async def test_admin_sql_sets_bounded_timeouts_before_running_statement(monkeypatch):
+@pytest.mark.parametrize("overrides,statement_budget,operation_budget", [
+    ({}, 30, 35),
+    ({"statement_timeout_seconds": 90, "operation_timeout_seconds": 95}, 90, 95),
+])
+async def test_admin_sql_sets_bounded_timeouts_before_running_statement(monkeypatch, overrides, statement_budget, operation_budget):
     statements = []
+    connection_options = []
+    timeout_budgets = []
 
     class FakeConnection:
         async def execute(self, statement, params=None):
@@ -54,15 +60,29 @@ async def test_admin_sql_sets_bounded_timeouts_before_running_statement(monkeypa
         async def dispose(self):
             return None
 
-    monkeypatch.setattr(test_harness, "create_async_engine", lambda *_args, **_kwargs: FakeEngine())
+    def engine_factory(*_args, **kwargs):
+        connection_options.append(kwargs["connect_args"])
+        return FakeEngine()
 
-    await test_harness._run_admin_sql("postgresql+asyncpg://example/postgres", "DROP DATABASE test_db")
+    real_timeout = asyncio.timeout
+
+    def recorded_timeout(seconds):
+        timeout_budgets.append(seconds)
+        return real_timeout(seconds)
+
+    monkeypatch.setattr(test_harness, "create_async_engine", engine_factory)
+    monkeypatch.setattr(test_harness, "asyncio", SimpleNamespace(**{**vars(asyncio), "timeout": recorded_timeout}))
+
+    await test_harness._run_admin_sql("postgresql+asyncpg://example/postgres", "DROP DATABASE test_db", **overrides)
 
     assert statements == [
         ("SET lock_timeout = '5s'", None),
-        ("SET statement_timeout = '30s'", None),
+        (f"SET statement_timeout = '{statement_budget}s'", None),
         ("DROP DATABASE test_db", {}),
     ]
+    assert connection_options == [{"timeout": operation_budget, "command_timeout": operation_budget}]
+    # Engine disposal retains its existing generic bound even for Windows DROP.
+    assert timeout_budgets == [operation_budget, 35]
 
 
 @pytest.mark.asyncio
@@ -78,6 +98,53 @@ async def test_drop_test_database_reports_each_blocking_admin_phase(monkeypatch,
     stderr = capsys.readouterr().err
     assert "terminate stale connections" in stderr
     assert "drop database" in stderr
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["nt", "posix"])
+async def test_drop_database_only_windows_drop_receives_checkpoint_budget(monkeypatch, platform):
+    monkeypatch.setattr(test_harness, "os", SimpleNamespace(**{**vars(test_harness.os), "name": platform}))
+    run_admin_sql = AsyncMock()
+    monkeypatch.setattr(test_harness, "_run_admin_sql", run_admin_sql)
+    await test_harness._drop_test_database("postgresql+asyncpg://example/postgres", "pc_support_test_checkpoint")
+
+    terminate_call, drop_call = run_admin_sql.await_args_list
+    assert terminate_call.kwargs == {"db_name": "pc_support_test_checkpoint"}
+    assert drop_call.args == ("postgresql+asyncpg://example/postgres", 'DROP DATABASE IF EXISTS "pc_support_test_checkpoint"')
+    assert drop_call.kwargs == ({"statement_timeout_seconds": 90, "operation_timeout_seconds": 95} if platform == "nt" else {})
+
+
+@pytest.mark.asyncio
+async def test_windows_drop_can_finish_checkpoint_wait_longer_than_generic_admin_deadline(monkeypatch):
+    _simulate_windows_harness(monkeypatch)
+    monkeypatch.setattr(test_harness, "TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS", .01)
+    monkeypatch.setattr(test_harness, "TEST_DB_WINDOWS_DROP_STATEMENT_TIMEOUT_SECONDS", .15, raising=False)
+    monkeypatch.setattr(test_harness, "TEST_DB_WINDOWS_DROP_OPERATION_TIMEOUT_SECONDS", .2, raising=False)
+    disposed = []
+
+    class Connection:
+        async def execute(self, statement, params=None):
+            if str(statement).startswith("DROP DATABASE"):
+                # Model a finite Windows checkpoint wait beyond the generic budget.
+                await asyncio.sleep(.03)
+
+    class Context:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *_):
+            return None
+
+    class Engine:
+        def connect(self):
+            return Context()
+
+        async def dispose(self):
+            disposed.append(True)
+
+    monkeypatch.setattr(test_harness, "create_async_engine", lambda *_args, **_kwargs: Engine())
+    await test_harness._drop_test_database("postgresql+asyncpg://example/postgres", "pc_support_test_checkpoint")
+    assert len(disposed) == 2
 
 
 @pytest.mark.asyncio
