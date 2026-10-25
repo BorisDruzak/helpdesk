@@ -13,6 +13,7 @@ from typing import Any
 from aiohttp import web
 from loguru import logger
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from access_control.service import can, can_role
 from app.api.serializers import ticket_to_dict

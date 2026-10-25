@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 from domain_ports.endpoint import EndpointUnavailable, EndpointNotFound
 from domain_ports.endpoint_context import EndpointDeviceContext
 from registry.endpoint_device_overlay import RegistryDeviceOverlay
@@ -36,3 +37,19 @@ async def test_safe_context_uses_exact_endpoint_id_and_canonical_registry(monkey
     assert result.status == "available"
     assert result.context == context and result.registry.status == "unmapped"
     overlay.assert_awaited_once_with(None, (UUID(DEVICE),))
+
+
+@pytest.mark.asyncio
+async def test_registry_failure_preserves_available_endpoint_context(monkeypatch):
+    context = EndpointDeviceContext.model_validate({"device": {"id": DEVICE, "device_identifier": "pc", "display_name": "PC", "retired_at": None, "last_seen_at": None, "online": True}, "profiles": [], "snapshots": []})
+    overlay = AsyncMock(side_effect=SQLAlchemyError("registry unavailable"))
+    monkeypatch.setattr("registry.endpoint_device_overlay.read_registry_device_overlays", overlay)
+
+    result = await support_handlers._build_support_inventory_context(
+        None, SimpleNamespace(endpoint_device_ref=DEVICE), None,
+        endpoint_port=SimpleNamespace(read_device_context=AsyncMock(return_value=context)),
+    )
+
+    assert result.status == "available"
+    assert result.context == context
+    assert result.registry.status == "unavailable"
