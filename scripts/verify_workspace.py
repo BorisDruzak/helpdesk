@@ -38,6 +38,8 @@ SKIP_DIRS = {
     ".yarn",
     ".local-agent",
     ".pytest_cache",
+    ".ruff_cache",
+    ".scannerwork",
     "__pycache__",
     "artifacts",
     "coverage",
@@ -49,6 +51,7 @@ SKIP_DIRS = {
     "uploads",
     "reports",
     "temp",
+    "tmp",
 }
 FORBIDDEN_TRACKED_FILES = ("server/.env", "db_config.json")
 

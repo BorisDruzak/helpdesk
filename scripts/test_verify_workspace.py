@@ -13,7 +13,7 @@ def test_verify_workspace_tracks_harness_text_files() -> None:
 
 def test_iter_files_prunes_dependencies_and_other_worktrees(tmp_path: Path) -> None:
     (tmp_path / "main.py").write_text("pass", encoding="utf-8")
-    for directory in ("node_modules", ".worktrees", "artifacts"):
+    for directory in ("node_modules", ".worktrees", "artifacts", "tmp", ".scannerwork", ".ruff_cache"):
         nested = tmp_path / directory / "nested"
         nested.mkdir(parents=True)
         (nested / "broken.py").write_bytes(b"\x00")
