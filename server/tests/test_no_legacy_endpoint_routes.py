@@ -6,6 +6,7 @@ from aiohttp import web
 import pytest
 
 from routes import setup_routes
+from web_api import admin_handlers
 
 
 pytestmark = pytest.mark.no_db
@@ -76,6 +77,15 @@ def test_endpoint_operation_routes_remain_but_module_authority_is_absent() -> No
 
     assert "/api/web/support/operations/{operation_id}/cancel" in paths
     assert all("endpoint-modules" not in path for path in paths)
+
+
+def test_retired_module_administration_has_no_callable_entrypoints() -> None:
+    for name in (
+        "handle_web_admin_modules",
+        "handle_web_admin_patch_modules_rollout_settings",
+        "handle_web_admin_set_module_preferred_version",
+    ):
+        assert not hasattr(admin_handlers, name)
 
 
 def test_legacy_account_session_admin_client_is_removed() -> None:
