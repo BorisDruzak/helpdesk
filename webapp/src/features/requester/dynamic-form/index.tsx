@@ -264,7 +264,7 @@ export function validateDynamicFormValues(
         issues.push(issue("pattern_mismatch", "Проверьте формат поля.", path));
       }
     }
-    if (field.type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(normalized))) {
+    if (field.type === "email" && !isValidEmail(String(normalized))) {
       issues.push(issue("invalid_email", "Укажите корректный email.", path));
     }
     if (field.type === "url" && !isValidUrl(String(normalized))) {
@@ -730,6 +730,14 @@ function normalizeCheckbox(value: DynamicFieldValue): boolean {
     if (["false", "0", "no"].includes(normalized)) return false;
   }
   throw new Error("Недопустимое значение checkbox");
+}
+
+function isValidEmail(value: string): boolean {
+  // Keep the historical shape, including dots-only domains, without trying
+  // every possible domain-dot split through regex backtracking.
+  const separator = value.indexOf("@");
+  const domain = value.slice(separator + 1);
+  return separator > 0 && !domain.includes("@") && domain.slice(1, -1).includes(".") && !/\s/.test(value);
 }
 
 function isValidUrl(value: string): boolean {

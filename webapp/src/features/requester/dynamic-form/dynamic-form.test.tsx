@@ -26,6 +26,43 @@ const baseOptions = [
   { value: "crm", label: "CRM" },
 ];
 
+describe("email validation", () => {
+  const form = { fields: [{ key: "email", label: "Email", type: "email" } satisfies RequestFormField] };
+
+  it.each([
+    "person@example.test", "имя@пример.рф", "x@...", "x@a..", "x@..a",
+    '"x"@example.test', "x@a\u001c.b", "x@a\u0085.b", "  person@example.test\n",
+  ])("preserves the existing permissive email policy for %j", (email) => {
+    expect(validateDynamicFormValues(form, { email }).canPublish).toBe(true);
+  });
+
+  it.each([
+    "@example.test", "person@", "person.example.test", "person@@example.test",
+    "x@.a", "x@a.", "x@..", "x@a b.test", "x y@a.test", "x@a\n.b",
+    "x@a\u00a0.b", "x@a\ufeff.b",
+  ])("rejects malformed email and JavaScript whitespace in %j", (email) => {
+    expect(validateDynamicFormValues(form, { email }).issues).toEqual([
+      expect.objectContaining({ code: "invalid_email", path: "fields.email" }),
+    ]);
+  });
+
+  it("keeps long valid domains without an implicit length limit", () => {
+    expect(validateDynamicFormValues(form, { email: `x@${".".repeat(100_000)}` }).canPublish).toBe(true);
+  });
+
+  it("rejects a long dotted domain without blocking validation", () => {
+    const email = `x@${".".repeat(64_000)}@`;
+    const started = performance.now();
+    const result = validateDynamicFormValues(form, { email });
+    const elapsed = performance.now() - started;
+
+    expect(result.issues).toEqual([expect.objectContaining({ code: "invalid_email" })]);
+    // The old regex takes several seconds here; the linear scan needs only
+    // milliseconds. Leave a wide margin for slower CI machines.
+    expect(elapsed).toBeLessThan(1_000);
+  });
+});
+
 describe("checkbox compatibility", () => {
   it.each(["(a)?(?(1)b|c)", "(?#comment)a"])("rejects Python-only groups in publication and saved form %s", (pattern) => {
     for (const alias of ["pattern", "regex"]) {
