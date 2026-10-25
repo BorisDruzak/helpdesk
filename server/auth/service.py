@@ -134,6 +134,8 @@ class AuthService:
             UI_USER_ROLES,
         )
         allow_config_fallback = bool(AUTH_UI_CONFIG_FALLBACK_ENABLED and ALLOW_INSECURE_DEV_DEFAULTS)
+        if AUTH_UI_DB_USERS_ENABLED and self._ui_db_cooldown_active() and not allow_config_fallback:
+            raise RuntimeError("UI database authentication unavailable during cooldown")
         if AUTH_UI_DB_USERS_ENABLED and not self._ui_db_cooldown_active():
             try:
                 async with get_session() as session:
@@ -334,7 +336,7 @@ class AuthService:
                 if token_record:
                     user_repo = UiUsersRepo(session)
                     user = await user_repo.get_by_login(token_record.user_login)
-                    if user is None or not user.is_active:
+                    if user is None or not user.is_active or user.actor_role not in VALID_ROLES:
                         await repo.revoke_active_ui_tokens_for_user(token_record.user_login)
                         return None
                     if user.actor_role == DEFAULT_USER_ROLE:
@@ -351,7 +353,7 @@ class AuthService:
                     self._clear_ui_db_cooldown()
                     return {
                         "user_login": token_record.user_login,
-                        "actor_role": token_record.actor_role,
+                        "actor_role": user.actor_role,
                         "created_at": token_record.created_at.isoformat(),
                         "type": "ui"
                     }
@@ -361,9 +363,11 @@ class AuthService:
                 raise
             logger.warning(
                 f"[AuthService] DB unavailable during UI token verify, checking in-memory fallback: "
-                f"token={token[:8]}..., error={exc}"
+                f"error_type={type(exc).__name__}"
             )
 
+        if not allow_memory_fallback:
+            return None
         legacy_data = self._LEGACY_TOKEN_STORE.get(token)
         if legacy_data and legacy_data.get("type") == "ui":
             expires_at_raw = legacy_data.get("expires_at")
@@ -417,7 +421,7 @@ class AuthService:
             self._mark_ui_db_unavailable()
             logger.warning(
                 f"[AuthService] DB unavailable during UI token revoke, using in-memory fallback: "
-                f"token={token[:8]}..., error={exc}"
+                f"error_type={type(exc).__name__}"
             )
             return self._LEGACY_TOKEN_STORE.pop(token, None) is not None
     
@@ -432,7 +436,7 @@ class AuthService:
         """
         if token in self._LEGACY_TOKEN_STORE:
             del self._LEGACY_TOKEN_STORE[token]
-            logger.info(f"[AuthService] Revoked legacy token: {token[:8]}...")
+            logger.info("[AuthService] Revoked legacy UI token")
         else:
             logger.warning(
                 "[AuthService] revoke_token() called with token not in legacy store. "

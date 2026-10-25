@@ -3,7 +3,6 @@ import { RouterProvider, createMemoryRouter, type RouteObject } from "react-rout
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SessionProvider } from "../features/auth/session-provider";
-import { QueryProvider } from "./providers/query-provider";
 import { appRoutes } from "./router";
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -23,11 +22,9 @@ function renderApp(initialEntries: string[], fetchMock: typeof fetch) {
   });
 
   render(
-    <QueryProvider>
-      <SessionProvider>
-        <RouterProvider router={router} />
-      </SessionProvider>
-    </QueryProvider>
+    <SessionProvider>
+      <RouterProvider router={router} />
+    </SessionProvider>
   );
 
   return { router };
