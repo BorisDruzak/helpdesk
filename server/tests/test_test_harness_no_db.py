@@ -686,6 +686,12 @@ def test_full_cleanup_profile_preserves_current_table_scope():
     assert "requester_ticket_create_requests" in test_harness.CLEANUP_TABLES_BY_PROFILE["web_support"]
 
 
+def test_registry_cleanup_profile_covers_sso_token_and_identity_authority():
+    assert {"oidc_sessions", "oidc_flows", "identity_migration_candidates",
+            "confirmed_identity_bindings", "ui_tokens", "ui_users"} <= set(
+        test_harness.CLEANUP_TABLES_BY_PROFILE["registry_access"])
+
+
 @pytest.mark.asyncio
 async def test_cleanup_audit_fails_when_profile_table_keeps_rows(monkeypatch):
     class FakeResult:

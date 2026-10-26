@@ -1794,6 +1794,7 @@ CLEANUP_TABLES_BY_PROFILE = {
         "oidc_flows",
         "identity_migration_candidates",
         "confirmed_identity_bindings",
+        "ui_tokens",
         "registry_quality_issue_overrides",
         "registry_admin_events",
         "registry_admin_policies",

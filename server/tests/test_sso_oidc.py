@@ -25,6 +25,8 @@ from auth.middleware import auth_middleware, WEB_SESSION_COOKIE_NAME
 from auth.password_service import hash_password
 from auth.service import AuthService
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 
 @pytest.fixture
 def oidc_config(monkeypatch):
