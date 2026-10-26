@@ -10,6 +10,8 @@ from web_api.admin_endpoint_handlers import (
 
 # Import handlers from modules
 from auth.handlers import handle_ui_login, handle_ui_session
+from auth.identity_handlers import handle_identity_resolve, handle_identity_admin
+from auth.oidc import handle_oidc_login, handle_oidc_callback, handle_oidc_logout
 from auth.admin_users_handlers import (
     handle_admin_users_list,
     handle_admin_users_post,
@@ -568,6 +570,11 @@ def setup_routes(app: web.Application) -> None:
         # Authentication API
         # ============================================================================
         web.post('/api/ui_login', handle_ui_login),  # UI user login
+        web.post('/api/integration/v1/identities/resolve', handle_identity_resolve),
+        web.post('/api/web/admin/identities/{action:propose|confirm|revoke|migrate-password}', handle_identity_admin),
+        web.get('/api/web/session/oidc/login', handle_oidc_login),
+        web.get('/api/web/session/oidc/callback', handle_oidc_callback),
+        web.post('/api/web/session/oidc/logout', handle_oidc_logout),
         web.get('/api/ui_session', handle_ui_session),
         web.post('/api/web/session/login', handle_web_session_login),
         web.post('/api/web/session/register', handle_web_session_register),

@@ -7,7 +7,7 @@ import { Input } from "../../components/ui/input";
 import { requestPasswordReset, WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
 import { resolveNextWorkspacePath } from "./workspace-access";
-import { useRegistrationPolicy } from "./use-registration-policy";
+import { useSessionCapabilities } from "./use-session-capabilities";
 
 function resolveNextPath(nextParam: string | null, session: ReturnType<typeof useSession>["session"]) {
   return resolveNextWorkspacePath(nextParam, session) ?? "/app";
@@ -29,7 +29,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { login, session, status } = useSession();
-  const registrationEnabled = useRegistrationPolicy();
+  const capabilities = useSessionCapabilities();
+  const registrationEnabled = capabilities?.self_registration_enabled ?? null;
   const [loginValue, setLoginValue] = useState("");
   const [passwordValue, setPasswordValue] = useState("");
   const [passwordResetLogin, setPasswordResetLogin] = useState("");
@@ -93,19 +94,19 @@ export function LoginPage() {
   return (
     <section className="min-h-screen bg-app px-4 py-6 md:px-6 md:py-8">
       <div className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-7xl overflow-hidden rounded-[2rem] border border-border bg-white shadow-soft lg:grid-cols-[minmax(340px,0.9fr)_minmax(0,1fr)]">
-        <div className="flex flex-col justify-between bg-brand-700 px-6 py-8 text-white md:px-8 md:py-10">
+        <div className="hidden flex-col justify-between bg-brand-700 px-6 py-8 text-white md:px-8 md:py-10 lg:flex">
           <div>
             <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-white text-lg font-black tracking-[0.2em] text-brand-700 shadow-soft">
               PC
             </div>
             <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-100/70">
-              Единый workspace
+              Служба поддержки
             </p>
             <h1 className="mt-3 font-display text-3xl font-semibold leading-tight md:text-4xl">
-              Вход в рабочие места
+              Поддержка сотрудников
             </h1>
             <p className="mt-4 max-w-md text-sm leading-7 text-brand-50/80">
-              Новый SaaS-shell объединяет поддержку и администрирование в одном продукте. Сессия открывается через серверный cookie-boundary и новые маршруты `/app/*`.
+              Создавайте обращения, следите за ответами и находите помощь в своём рабочем кабинете.
             </p>
           </div>
 
@@ -113,18 +114,18 @@ export function LoginPage() {
             {[
               {
                 icon: Ticket,
-                title: "Support workspace",
-                description: "Список тикетов, карточка и быстрые проверки сроков ответа."
+                title: "Помощь и обращения",
+                description: "Ваши обращения, переписка и ответы специалистов."
               },
               {
                 icon: ShieldCheck,
-                title: "Admin workspace",
-                description: "Инвентарь, observer, модули и forms builder."
+                title: "Рабочие сервисы",
+                description: "Устройства, профиль и доступные вам инструменты."
               },
               {
                 icon: LockKeyhole,
                 title: "Безопасный доступ",
-                description: "Одна cookie-сессия без ручного переключения интерфейса."
+                description: "Вход с учётной записью вашей организации."
               }
             ].map((item) => {
               const Icon = item.icon;
@@ -156,9 +157,16 @@ export function LoginPage() {
                 Добро пожаловать
               </h2>
               <p className="mt-3 text-sm leading-7 text-slate-500">
-                Используйте служебный логин, чтобы открыть нужную рабочую зону.
+                Войдите, чтобы обратиться в поддержку или продолжить работу.
               </p>
             </div>
+
+            {capabilities?.sso_enabled ? <div className="space-y-3">
+              <a className="flex min-h-12 items-center justify-center rounded-pill bg-brand-700 px-5 py-3 text-center text-sm font-semibold text-white hover:bg-brand-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700" href="/api/web/session/oidc/login">
+                Войти с доменной учётной записью
+              </a>
+              <p className="text-center text-sm text-slate-500">Или используйте существующий логин и пароль</p>
+            </div> : null}
 
             <form className="space-y-5" onSubmit={handleSubmit}>
               {registrationComplete ? (
@@ -168,8 +176,9 @@ export function LoginPage() {
               ) : null}
 
               <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-800">Логин</span>
+                <span className="block text-sm font-medium text-slate-800">Логин</span>
                 <Input
+                  className="w-full"
                   autoComplete="username"
                   name="login"
                   onChange={(event) => setLoginValue(event.target.value)}
@@ -178,8 +187,9 @@ export function LoginPage() {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-800">Пароль</span>
+                <span className="block text-sm font-medium text-slate-800">Пароль</span>
                 <Input
+                  className="w-full"
                   autoComplete="current-password"
                   name="password"
                   onChange={(event) => setPasswordValue(event.target.value)}

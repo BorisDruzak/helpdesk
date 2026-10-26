@@ -94,6 +94,20 @@ afterEach(() => {
 
 
 describe("SessionProvider", () => {
+  it("posts OIDC logout as document navigation and clears private cache", async () => {
+    mockSessions(() => ({ ...requesterA, login_method: "oidc" }));
+    let submitted: HTMLFormElement | undefined;
+    const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(function (this: HTMLFormElement) { submitted = this; });
+    renderSession(<CacheProbe read={async () => "Private profile A"} />);
+    expect(await screen.findByText("Private profile A")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "logout" }));
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    expect(submitted?.getAttribute("action")).toBe("/api/web/session/oidc/logout");
+    expect(submitted?.method).toBe("post");
+    await waitFor(() => expect(screen.getByTestId("actor")).toHaveTextContent("anonymous"));
+    expect(screen.queryByText("Private profile A")).not.toBeInTheDocument();
+    submit.mockRestore();
+  });
   it("hydrates authenticated session data from /api/web/session/me", async () => {
     vi.stubGlobal(
       "fetch",
@@ -273,6 +287,7 @@ describe("SessionProvider", () => {
     ["expired session", null],
     ["role change", { ...requesterA, actor_role: "support" }],
     ["authentication change", { ...requesterA, auth_type: "ui_token" }],
+    ["login method change", { ...requesterA, login_method: "oidc" }],
     ["permissions change", { ...requesterA, permissions: [] }],
     ["permissions version change", { ...requesterA, permissions_version: "2" }]
   ] satisfies Array<[string, WebSession | null]>)("discards private cached data after %s", async (transition, nextSession) => {

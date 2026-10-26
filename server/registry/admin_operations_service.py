@@ -27,6 +27,7 @@ from app.db.models import (
     RegistryDepartment,
     RegistryLocation,
     RegistryPerson,
+    ConfirmedIdentityBinding,
     RegistryPersonIdentity,
     RegistryQualityIssueOverride,
     Ticket,
@@ -928,6 +929,14 @@ class RegistryAdminOperationsService:
         duplicate = await self.session.get(RegistryPerson, duplicate_id)
         if master is None or duplicate is None:
             raise LookupError("person not found")
+
+        # Lock both people before checking: identity confirmation takes the same locks.
+        await self.session.execute(select(RegistryPerson).where(RegistryPerson.person_id.in_([master_id, duplicate_id])).order_by(RegistryPerson.person_id).with_for_update())
+        bound = (await self.session.execute(select(ConfirmedIdentityBinding.binding_id).where(
+            ConfirmedIdentityBinding.person_id.in_([master_id, duplicate_id])
+        ).limit(1))).first()
+        if bound:
+            raise ValueError("SSO-bound people require an explicit identity migration; merging is blocked")
 
         field_strategy = data.get("field_strategy") if isinstance(data.get("field_strategy"), dict) else {}
         for field in ("full_name", "display_name", "email", "phone", "department_id", "location_id"):

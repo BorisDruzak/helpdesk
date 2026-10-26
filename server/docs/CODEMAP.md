@@ -82,6 +82,20 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 
 ## Entry points
 
+- `auth/identity.py` owns explicit confirmed RegistryPerson / existing UiUser /
+  AD GUID / exact OIDC issuer-sub binding, operator migration and revocation.
+  `auth/identity_handlers.py` exposes the narrow service-only v1 resolve contract
+  and administrator confirmation operations. `auth/oidc.py` uses Authlib PKCE
+  with one-use PostgreSQL flow state and encrypted upstream tokens, issuing the
+  existing opaque cookie authority. Migration 151 preserves legacy ownership;
+  auth verifies current account, identity and upstream session on every SSO
+  operation. Configuration/contracts/pilot limits: `docs/SSO_IDENTITY.md`.
+  `web_api/session_handlers.py` projects safe SSO capabilities and verified
+  login-method metadata; its fixed validated `WORKTIME_PORTAL_URL` is only
+  employee navigation, never identity authority. `webapp/src/features/auth/`
+  owns the conditional SSO entry, actor-cache logout boundary and shared
+  WorkTime link used by requester desktop/mobile navigation.
+
 - `server/observability/browser_runtime.py` validates the independent public
   browser DSN/rate and reuses backend environment/release identity. Its fixed
   schema is safely serialized into dynamic HTML by

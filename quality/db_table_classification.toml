@@ -50,6 +50,12 @@ tables = [
 reason = "Ticket records, lifecycle logs, public sessions, and quality artifacts are generated per test run."
 
 [[rules]]
+name = "confirmed identity and OIDC runtime rows"
+classification = "ephemeral_test_data"
+tables = ["confirmed_identity_bindings", "identity_migration_candidates", "oidc_flows", "oidc_sessions"]
+reason = "Pilot identity confirmations and bounded authentication flows/sessions are independent test data."
+
+[[rules]]
 name = "knowledge runtime rows"
 classification = "ephemeral_test_data"
 patterns = ["knowledge_*"]

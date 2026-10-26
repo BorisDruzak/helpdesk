@@ -18,8 +18,9 @@ import web_api.session_handlers as session_handlers_module
 @pytest.mark.asyncio
 @pytest.mark.no_db
 @pytest.mark.parametrize("enabled", [False, True])
-async def test_public_session_capabilities_exposes_only_registration_policy(monkeypatch, enabled):
+async def test_public_session_capabilities_exposes_safe_login_policies(monkeypatch, enabled):
     monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", enabled)
+    monkeypatch.setattr(session_handlers_module.config_module, "OIDC_ENABLED", False)
     app = web.Application(middlewares=[auth_middleware])
     app["state"] = SimpleNamespace(users={})
     setup_routes(app)
@@ -28,7 +29,7 @@ async def test_public_session_capabilities_exposes_only_registration_policy(monk
         assert response.status == 200
         assert response.headers["Cache-Control"] == "no-store"
         assert await response.json() == {
-            "status": "success", "data": {"self_registration_enabled": enabled},
+            "status": "success", "data": {"self_registration_enabled": enabled, "sso_enabled": False},
         }
 
 

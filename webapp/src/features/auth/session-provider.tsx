@@ -6,6 +6,7 @@ import {
   fetchCurrentSession,
   loginWebSession,
   logoutWebSession,
+  navigateOidcLogout,
   type WebSession
 } from "./api";
 
@@ -32,6 +33,7 @@ function sessionCacheIdentity(session: WebSession | null) {
     session.user_login,
     session.actor_role,
     session.auth_type,
+    session.login_method ?? "password",
     session.permissions_version ?? null,
     [...(session.permissions ?? [])].sort(),
     [...session.available_workspaces].sort(),
@@ -88,6 +90,11 @@ export function SessionProvider({ children }: SessionProviderProps) {
     clearPendingDeviceCode();
     const requestVersion = sessionRequestVersion.current + 1;
     sessionRequestVersion.current = requestVersion;
+    if (session?.login_method === "oidc") {
+      applySession(null);
+      navigateOidcLogout();
+      return;
+    }
     await logoutWebSession();
     if (requestVersion !== sessionRequestVersion.current) {
       return;

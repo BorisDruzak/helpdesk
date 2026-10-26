@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlsplit
 
 from aiohttp import web
 from loguru import logger
@@ -10,7 +11,7 @@ from access_control.service import resolve_session_access
 from app.db import get_session
 from app.repos.access_control_repo import AccessControlRepo
 from app.repos.ui_users_repo import VALID_ROLES, UiUsersRepo, normalize_user_login
-from auth.middleware import WEB_SESSION_COOKIE_NAME, ensure_server_request_id, extract_auth_context, require_auth
+from auth.middleware import WEB_SESSION_COOKIE_NAME, ensure_server_request_id, extract_auth_context, require_auth, extract_token_from_web_cookie, extract_token_from_header
 from auth.password_service import PasswordPolicyError, hash_password, validate_password_policy
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
@@ -35,6 +36,7 @@ async def handle_web_session_capabilities(request):
     response = json_model_response(SuccessResponse[WebSessionCapabilities](
         data=WebSessionCapabilities(
             self_registration_enabled=bool(getattr(config_module, "WEB_SELF_REGISTRATION_ENABLED", False)),
+            sso_enabled=bool(getattr(config_module, "OIDC_ENABLED", False)),
         ),
     ))
     response.headers["Cache-Control"] = "no-store"
@@ -67,12 +69,28 @@ def _resolve_workspace_access(actor_role: str) -> tuple[str | None, list[str]]:
     return default_workspace, available_workspaces
 
 
-def _build_session_payload(*, user_login: str, actor_role: str, auth_type: str) -> WebSessionPayload:
+def _worktime_portal_url() -> str | None:
+    value = str(getattr(config_module, "WORKTIME_PORTAL_URL", "") or "").strip()
+    try:
+        target = urlsplit(value)
+        if (target.scheme == "https" and target.netloc == "endpoint.sosnadmin.local"
+                and target.path == "/employee" and not target.query and not target.fragment
+                and not target.username and not target.password
+                and value == "https://endpoint.sosnadmin.local/employee"):
+            return value
+    except ValueError:
+        pass
+    return None
+
+
+def _build_session_payload(*, user_login: str, actor_role: str, auth_type: str, login_method: str = "password") -> WebSessionPayload:
     default_workspace, available_workspaces, permissions, permissions_version = resolve_session_access(actor_role)
     return WebSessionPayload(
         user_login=user_login,
         actor_role=actor_role,
         auth_type=auth_type,
+        login_method="oidc" if login_method == "oidc" else "password",
+        worktime_portal_url=_worktime_portal_url(),
         default_workspace=default_workspace,
         available_workspaces=available_workspaces,
         permissions=permissions,
@@ -136,7 +154,7 @@ async def _write_web_session_observer_event(
         logger.warning(f"[web_session_observer] failed to write {event_type}: {exc}")
 
 
-async def _build_effective_session_payload(*, user_login: str, actor_role: str, auth_type: str) -> WebSessionPayload:
+async def _build_effective_session_payload(*, user_login: str, actor_role: str, auth_type: str, login_method: str = "password") -> WebSessionPayload:
     try:
         async with get_session() as session:
             repo = AccessControlRepo(session)
@@ -152,13 +170,15 @@ async def _build_effective_session_payload(*, user_login: str, actor_role: str, 
             user_login=user_login,
             actor_role=actor_role,
             auth_type=auth_type,
+            login_method="oidc" if login_method == "oidc" else "password",
+            worktime_portal_url=_worktime_portal_url(),
             default_workspace=effective.workspaces[0] if effective.workspaces else None,
             available_workspaces=effective.workspaces,
             permissions=effective.permissions,
             permissions_version=resolve_session_access(actor_role)[3],
         )
     except Exception:
-        return _build_session_payload(user_login=user_login, actor_role=actor_role, auth_type=auth_type)
+        return _build_session_payload(user_login=user_login, actor_role=actor_role, auth_type=auth_type, login_method=login_method)
 
 
 async def handle_web_session_login(request):
@@ -373,24 +393,33 @@ async def handle_web_session_register(request):
     )
 
 
-@require_auth("admin", "support", "auditor", "user")
 async def handle_web_session_logout(request):
-    auth_context = request["auth_context"]
+    auth_context = request.get("auth_context")
     auth_service = AuthService(request.app["state"])
     token_revoked = False
-    if auth_context.token:
-        token_revoked = await auth_service.revoke_ui_token(auth_context.token)
-    auth_type = getattr(auth_context.auth_type, "value", str(auth_context.auth_type))
+    token = (auth_context.token if auth_context else None) or extract_token_from_web_cookie(request) or extract_token_from_header(request)
+    # Logout has no upstream authentication requirement. Recover local attribution
+    # only for its audit event; never attach this metadata as request authority.
+    audit_actor = (auth_context.actor_id, auth_context.actor_role) if auth_context else None
+    if token and audit_actor is None:
+        try:
+            async with get_session() as session:
+                audit_actor = await auth_service.logout_audit_actor(session, token)
+        except Exception:
+            pass  # Audit enrichment cannot prevent local credential disposal.
+    if token:
+        token_revoked = await auth_service.revoke_ui_token(token)
+    auth_type = getattr(auth_context.auth_type, "value", str(auth_context.auth_type)) if auth_context else ("ui_token" if audit_actor else "local_logout")
     await _write_web_session_observer_event(
         request,
         event_type="logout_succeeded",
         severity="info",
         result="succeeded",
-        actor_id=auth_context.actor_id,
-        actor_role=auth_context.actor_role,
+        actor_id=audit_actor[0] if audit_actor else None,
+        actor_role=audit_actor[1] if audit_actor else None,
         payload={
             "auth_type": auth_type,
-            "credential_seen": bool(auth_context.token),
+            "credential_seen": bool(token),
             "revoked": bool(token_revoked),
         },
     )
@@ -411,5 +440,6 @@ async def handle_web_session_me(request):
         user_login=auth_context.actor_id,
         actor_role=auth_context.actor_role,
         auth_type=auth_context.auth_type.value,
+        login_method=request.get("ui_login_method", "password"),
     )
     return json_model_response(SuccessResponse[WebSessionPayload](data=payload))
