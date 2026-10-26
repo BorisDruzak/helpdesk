@@ -299,11 +299,15 @@ def test_server_main_calls_bootstrap_before_serving_and_closes(bootstrap, monkey
 
 def test_create_app_preserves_existing_hooks_and_auth_without_sdk_init(bootstrap, monkeypatch):
     import server as server_module
+    from auth.middleware import auth_middleware, request_id_middleware
+    from observability.access_log import safe_oidc_callback_errors
     configure = Mock(side_effect=AssertionError("factory is not process startup"))
     monkeypatch.setattr(server_module, "configure_sentry", configure)
     application = server_module.create_app()
     assert server_module.on_startup in application.on_startup
     assert server_module.on_cleanup in application.on_cleanup
-    assert len(application.middlewares) == 2
+    assert list(application.middlewares) == [
+        request_id_middleware, safe_oidc_callback_errors, auth_middleware,
+    ]
     assert any(route.resource.canonical == "/api/health" for route in application.router.routes())
     configure.assert_not_called()
