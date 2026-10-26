@@ -1,5 +1,14 @@
 # Helpdesk server code map
 
+## Credential-safe HTTP diagnostics
+
+- `observability/access_log.py` provides the path-only JSON logger wired by
+  `server.py`. Its exact OIDC callback error boundary sits inside request-ID
+  middleware and retains status/type without query/header/exception values.
+- `deploy/helpdesk/helpdesk.nginx.conf` assigns a service-specific safe format
+  on HTTP and HTTPS and suppresses raw nginx errors only for the OIDC callback.
+  Authentication and observer audit semantics are unchanged. See `SSO_IDENTITY.md`.
+
 ## Review hardening (2026-10-26)
 
 - `auth/service.py` resolves token privileges from the current active UI user.

@@ -167,3 +167,37 @@ Use `test_sso_identity.py`, `test_sso_oidc.py` and `test_sso_tls.py` for local c
 real-library flows and generated-private-CA TLS regressions. These tests are not evidence of real AD/LDAPS/MFA
 acceptance. Run a pilot with the actual issuer, its TLS/LDAPS CA and confirmed
 operator-approved identities before enabling SSO in a live environment.
+
+## Callback logging and deployment
+
+`observability/access_log.py` supplies `QuerySafeAccessLogger` to `web.run_app`.
+Its JSON records retain method, path, status, response bytes and elapsed time;
+query strings, Referer, Authorization and response headers are never fields.
+The exact OIDC callback has an unexpected-error boundary that logs only the
+exception type and a constant outcome. Existing HTTP redirects, request IDs,
+authentication/observer audit events and ordinary error diagnostics remain.
+
+`deploy/helpdesk/helpdesk.nginx.conf` defines its own `helpdesk_path_only`
+format in the nginx HTTP context. Both HTTP redirect and HTTPS servers write
+`/var/log/nginx/helpdesk.access.log` using `$uri`, without query or header fields.
+Only `/api/web/session/oidc/callback` discards nginx's unformatted upstream error
+messages, which otherwise contain raw request URLs. The safe access outcome
+still records callback failure; other nginx error logging stays unchanged.
+
+Deploy the application through the normal reviewed release procedure; merely
+updating nginx does not replace an already running aiohttp logger. A bounded
+config-only repair is available in Endpoint's operator tooling:
+`tools/release/apply_query_safe_nginx.py --site helpdesk --source <reviewed-asset>
+--source-sha256 <reviewed-sha256>` validates a plan on `.19`; add `--apply` only
+after independent review. It checks the existing enabled-site target, validates
+the complete candidate configuration, preserves exact old bytes by hash and
+restores/reloads the original on failure. It changes no application, DB or env
+files. The canonical asset uses port 8666 and must not be substituted for a
+staging profile with different paths or ports.
+
+`tools/release/verify_query_safe_nginx.py --site helpdesk --asset <reviewed-asset>`
+starts an isolated loopback nginx with a deliberately unavailable upstream and
+synthetic callback code/state/Referer values. Its result reports only sentinel
+counts and preserved path/status/metrics, never raw logs. Existing private logs
+are not inputs to this check. `server/tests/test_access_log_no_db.py` covers the
+real aiohttp logger, redirects, callback failures and request-ID preservation.
