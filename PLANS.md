@@ -2604,3 +2604,31 @@ No runtime behavior, production/staging deployment or Endpoint operation changes
 Checks: full unit suite792 passed in hosted CI; local no-DB server1452 passed,
 1 skipped; scripts272 passed; required fast audit layers passed. Full fixture,
 migration/DB and exact-SHA workflow results are recorded in the publication receipt.
+
+# 2026-10-27 SSO, WorkTime and agent pilot — current handoff
+
+Goal/scope: deliver the supplied two-repository SSO/Helpdesk/Endpoint/DLP/WorkTime
+specification in reviewed stages. The user authorizes separate server and signed
+agent deployments, Windows domain-PC and ALT tests. No fleet, GPO, bulk account
+migration or organization-wide monitoring rollout.
+
+Current state: Helpdesk c369f651 has all18 exact-revision CI layers green and
+staging schema151/business/WSS/backup-restore acceptance. Production Helpdesk
+release gates remain open. Endpoint production62fb4c83/schema0042 is healthy with
+SSO/WorkTime disabled. Native signed Windows3.2.158 is installed and READY; ALT
+Foundation/UserSensor3.2.158 is installed, selectedCore156 awaits singleton OTA.
+Dedicated Keycloak26.8.1/LDAPS/TOTP/ID-token verification and isolated backup
+restore pass; own-client access-token audience correction is being reviewed and
+verified before application activation.
+
+Next steps: prevent callback query secrets in app/Nginx request logs, freeze and
+verify the resulting revisions; finish actual provider introspection/refresh and
+application identity-link/revocation acceptance; complete production readiness
+and singleton Core158 update, then installed measured-return notifications.
+Keep real failed/partial receipts; never substitute fixture evidence for live gates.
+
+Verification/handoff: see docs/superpowers/plans/2026-10-27-sso-worktime.md for
+commit/deployment and private redacted evidence locations. Preserve unrelated
+local files and original dirty Endpoint checkout; work only in the approved
+Endpoint sso-worktime-20261027 worktree. Mandatory independent subagent reviews
+continue at each gate. The task is not complete.

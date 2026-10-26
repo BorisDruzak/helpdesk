@@ -140,6 +140,37 @@ versioned typed contract, agent tests and CODEMAP/release metadata.
 
 ## Current evidence
 
-Initial inventories and architecture reviews are complete. Product code has not
-yet been accepted or deployed. Do not mark a stage complete merely because its
-worker returns or its fixture tests pass. See root PLANS.md for live handoff.
+The identity, WorkTime, portal, DLP separation and typed companion implementation
+has received independent reviews. The unchecked stage gates above still require
+installed end-to-end acceptance; fixture results alone do not close them.
+
+- Helpdesk candidate `c369f651669d406fdcea31f16ce3aa4551bec7de`: all 18 canonical
+  CI layers green, including 892 frontend unit tests, 168 browser cases and the
+  disposable PostgreSQL layers. Staging `.118` runs this revision/schema151;
+  actual business API, ticket WSS subscription and isolated backup restore passed.
+  Production Helpdesk remains on the preceding release pending its release gates.
+- Endpoint server `.19` runs `62fb4c83efbea9e4acc19c779db034a80087d2f9`, schema0042.
+  Its SSO and WorkTime flags remain disabled. The pre-upgrade backup was verified;
+  the independent Helpdesk service/database were preserved.
+- Windows ADMIN-2: signed Foundation/Core3.2.158, source
+  `9423d9c27ea6b2d6c544c1bcdc1edb7cc9d15421`, installed through native Setup;
+  installed verification reports READY. ALT `.210`: signed Foundation/UserSensor
+  RPM3.2.158 installed with protected enrollment/configuration unchanged; selected
+  Core remains3.2.156 pending a separately assigned singleton update.
+- Dedicated Keycloak26.8.1, LDAPS exact synthetic pilot, real password/TOTP and
+  signed ID-token verification work. Access-token introspection exposed missing
+  audience; a narrowly scoped own-client mapper correction is under independent
+  review and live verification. Application flags are not enabled on this evidence.
+- Dedicated Keycloak backup and isolated restore on port5544 passed, including
+  101 public tables, the pilot realm and three clients; the temporary DB was
+  removed. No application database was used for that drill.
+- Before enabling SSO, fix callback query leakage in reverse-proxy/application
+  access logs, rerun exact-revision gates, complete real application identity
+  linking and revocation checks, then installed notification acceptance. Three
+  short-lived callback codes reached the existing Nginx access log during initial
+  private-harness attempts; corrected interception prevents further harness leaks.
+
+Private redacted receipts are under `C:/Temp/helpdesk-sso-staging-20261027`,
+`C:/Temp/endpoint-sso-browser-20261027`, `C:/Temp/endpoint-sso158-linux-20261027`
+and `C:/endpoint-platform-wix-build/staged-3.2.158-9423d9c`. These are local evidence
+locations, not portable release artifacts. See root PLANS.md for handoff.
