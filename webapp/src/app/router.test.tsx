@@ -728,7 +728,9 @@ describe("appRoutes", () => {
 
     renderApp(["/app/requester"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Мои обращения" })).toBeInTheDocument();
+    // This lazy route also resolves its dashboard queries. Cold Windows CI
+    // imports can exceed Testing Library's 1s default before it becomes ready.
+    expect(await screen.findByRole("heading", { name: "Мои обращения" }, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.queryByLabelText("Рабочая зона")).not.toBeInTheDocument();
     expect(screen.getByText("Пользователь")).toBeInTheDocument();
     expect(screen.queryByText("Requester")).not.toBeInTheDocument();
