@@ -144,10 +144,14 @@ The identity, WorkTime, portal, DLP separation and typed companion implementatio
 has received independent reviews. The unchecked stage gates above still require
 installed end-to-end acceptance; fixture results alone do not close them.
 
-- Helpdesk candidate `c369f651669d406fdcea31f16ce3aa4551bec7de`: all 18 canonical
+- Helpdesk candidate `736f3ae81616fd9a6304457c2a512001f7d6337c`: all 18 canonical
   CI layers green, including 892 frontend unit tests, 168 browser cases and the
-  disposable PostgreSQL layers. Staging `.118` runs this revision/schema151;
-  actual business API, ticket WSS subscription and isolated backup restore passed.
+  disposable PostgreSQL layers. Staging `.118` runs this revision/schema151.
+  Exact-revision cross-repository acceptance also passed (4 tests, pinned provider
+  `8472d94f897c48041b718dafb84924b6cb73b86a`). Actual business API, ticket WSS
+  subscription and isolated backup restore passed on earlier staged revisions;
+  the current revision still needs its complete six-scenario deployment receipts
+  and an owned mutating requester/support lifecycle. Do not relabel old receipts.
   Production Helpdesk remains on the preceding release pending its release gates.
 - Endpoint server `.19` runs `62fb4c83efbea9e4acc19c779db034a80087d2f9`, schema0042.
   Its SSO and WorkTime flags remain disabled. The pre-upgrade backup was verified;
@@ -157,18 +161,42 @@ installed end-to-end acceptance; fixture results alone do not close them.
   installed verification reports READY. ALT `.210`: signed Foundation/UserSensor
   RPM3.2.158 installed with protected enrollment/configuration unchanged; selected
   Core remains3.2.156 pending a separately assigned singleton update.
-- Dedicated Keycloak26.8.1, LDAPS exact synthetic pilot, real password/TOTP and
-  signed ID-token verification work. Access-token introspection exposed missing
-  audience; a narrowly scoped own-client mapper correction is under independent
-  review and live verification. Application flags are not enabled on this evidence.
+- Dedicated Keycloak26.8.1: all three own-client audience/basic-scope corrections
+  passed actual provider login, MFA, refresh and cross-client introspection checks.
+  This proves provider behavior, not the Helpdesk BFF. Subsequent AD-disable
+  acceptance exposed a blocking LDAP configuration defect: the enabled-only
+  filter deleted the imported pilot identity and its OTP. The AD pilot was
+  re-enabled; application SSO/WorkTime flags remain off. Reviewed source correction
+  `1b4c6b4695b0b595ab74f8bf6ba9f24006ed1c71` is not yet applied to public Keycloak.
+  A fresh private candidate restored from the original backup preserves the old
+  subject and OTP; metadata checks passed. Private runtime qualification, session
+  purge, complete drift review and separately reviewed database switch are pending.
+  Never re-enrol OTP, accept the replacement subject or run another AD window
+  before completing that recovery.
 - Dedicated Keycloak backup and isolated restore on port5544 passed, including
   101 public tables, the pilot realm and three clients; the temporary DB was
   removed. No application database was used for that drill.
-- Before enabling SSO, fix callback query leakage in reverse-proxy/application
-  access logs, rerun exact-revision gates, complete real application identity
-  linking and revocation checks, then installed notification acceptance. Three
+- Query-safe Nginx access logging is installed and checked for both applications
+  on `.19` and `.118`; service identities were preserved. Helpdesk's query-safe
+  application logger is present in staged736; production still runs the old
+  release. Complete real BFF identity-link/revocation and installed notification
+  acceptance before enabling application SSO/WorkTime. Three
   short-lived callback codes reached the existing Nginx access log during initial
   private-harness attempts; corrected interception prevents further harness leaks.
+- ALT Core158 canary and the signed Linux kit are published; downloaded bytes and
+  signatures were independently reconciled. No rollout or target was created.
+  Windows Setup158 remains excluded from administrative default delivery pending
+  campaign compatibility and exact-source automatic-compensation qualification.
+- Endpoint staging remains on schema0039; its root free space is below the
+  deployment threshold. Bounded backup preparation and full off-host restore
+  tooling are under review. No new staging-capacity backup, LV resize or
+  filesystem resize has run.
+  A concrete storage expansion requires separate approval after verified backups.
+- Windows `.120` still runs its original3.2.81 agent with production origin.
+  Handoff Prepare/Apply, watchdog, claims and campaigns have not started; its live
+  Windows deployment gate is `not_run`. Valid existing Endpoint staging and
+  production update-admin credentials remain required through a private channel;
+  do not reset accounts or bypass their current authorization.
 
 Private redacted receipts are under `C:/Temp/helpdesk-sso-staging-20261027`,
 `C:/Temp/endpoint-sso-browser-20261027`, `C:/Temp/endpoint-sso158-linux-20261027`

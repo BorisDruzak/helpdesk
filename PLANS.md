@@ -2612,19 +2612,30 @@ specification in reviewed stages. The user authorizes separate server and signed
 agent deployments, Windows domain-PC and ALT tests. No fleet, GPO, bulk account
 migration or organization-wide monitoring rollout.
 
-Current state: Helpdesk c369f651 has all18 exact-revision CI layers green and
-staging schema151/business/WSS/backup-restore acceptance. Production Helpdesk
-release gates remain open. Endpoint production62fb4c83/schema0042 is healthy with
-SSO/WorkTime disabled. Native signed Windows3.2.158 is installed and READY; ALT
+Current state: Helpdesk736f3ae8 has all18 exact-revision CI layers green, staged
+schema151 and4 pinned-provider cross-repository acceptance tests passing. Earlier
+business/WSS/backup receipts are retained under their actual revisions; all six
+current deployment receipts and an owned mutating lifecycle remain open.
+Production Helpdesk release gates remain open. Endpoint production62fb4c83/
+schema0042 is healthy with SSO/WorkTime disabled. Native signed Windows3.2.158 is installed and READY; ALT
 Foundation/UserSensor3.2.158 is installed, selectedCore156 awaits singleton OTA.
-Dedicated Keycloak26.8.1/LDAPS/TOTP/ID-token verification and isolated backup
-restore pass; own-client access-token audience correction is being reviewed and
-verified before application activation.
+Core158 canary and signed ALT kit are published without rollout targets. Windows
+Setup158 is not the administrative delivery default. Three-client provider/MFA/
+refresh checks passed, but AD-disable testing exposed deletion of the imported
+pilot subject/OTP by the enabled-only LDAP filter. The pilot is re-enabled;
+reviewed retention/MSAD source fixes await private recovery qualification. The
+original subject/OTP metadata is verified in a separate restored candidate;
+public Keycloak is unchanged and application flags remain off.
 
-Next steps: prevent callback query secrets in app/Nginx request logs, freeze and
-verify the resulting revisions; finish actual provider introspection/refresh and
-application identity-link/revocation acceptance; complete production readiness
-and singleton Core158 update, then installed measured-return notifications.
+Next steps: qualify and independently review private Keycloak recovery before
+any public database switch or further AD-disable test. Query-safe Nginx logging
+is verified on both hosts; the Helpdesk application logger is staged736 only.
+Review bounded staging backups and fully restore both off-host before requesting
+the proposed root-LV expansion; no storage operation is approved or executed.
+Windows120 remains on original81/production origin with handoff not started and
+Windows gate not_run. Await valid existing Endpoint admin credentials through a
+private channel, then finish current deployment gates, application identity-link/
+revocation checks, singleton Core158 update and measured-return notifications.
 Keep real failed/partial receipts; never substitute fixture evidence for live gates.
 
 Verification/handoff: see docs/superpowers/plans/2026-10-27-sso-worktime.md for
