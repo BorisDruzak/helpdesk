@@ -1,14 +1,18 @@
 # 2026-10-27 SSO + Helpdesk + Endpoint + WorkTime
 
-Latest checkpoint, 2026-10-27 04:04 UTC (09:04 Asia/Yekaterinburg): Helpdesk
+Latest checkpoint, 2026-10-27 05:30 UTC (10:30 Asia/Yekaterinburg): Helpdesk
 `736f3ae8` has all 18 exact-revision CI layers green and four pinned-provider
 cross-repository tests passed; staging `.118` runs schema151. Production remains
 `6cca48e5`. Full six-scenario receipts for 736, an owned requester/support lifecycle
 and the live Windows gate remain open. Endpoint production `62fb4c83`/schema0042
 has SSO/WorkTime flags off; staging `3e3528fb`/schema0039 now has verified capacity
-and still awaits valid existing application-admin credentials. Endpoint source
-HEAD `3b632bd9` adds private transaction MBean process identity; actual application
-qualification and the fresh-candidate/browser-fence work remain pending.
+and still awaits genuine application-admin/active-work acceptance and a reviewed
+live switch. Endpoint source HEAD `f4120e9e` commits the archive-permission producer
+fix with 14 real tests; previous `44302b59` provides v8 namespace source `2e720674`,
+used in run7 below. Staging candidate62 has 33 exact
+dependencies, pip-check and actual service-user Settings validation passed with
+SSO/WorkTime false, plus offline SQL through0042. Live3e/schema0039/PIDs remain
+unchanged; candidate preparation does not close application deployment gates.
 
 Windows158 source `9423d9c` has actual fresh read-only native READY evidence:
 local processes stable for 98.508769s; the same authenticated Gateway session across
@@ -19,8 +23,13 @@ real-user SSO acceptance. ALT `.210` has native 158 packages; its authorized
 singleton 158 rollout now reports COMPLETED/APPLIED at 03:58:58 UTC with post-restart
 handshake confirmation and a new Gateway session. Normal UI at04:04 UTC now shows
 COMPLETED/APPLIED1, errors0, working0; its later APPLIED screenshot is distinct
-from the earlier assignment-only receipt. Post-OTA native preservation proof and
-a second fresh provider sample remain pending. Production update-admin authentication is
+from the earlier assignment-only receipt. Actual bounded native acceptance now
+verifies selected Core158/source9423 and all 98 manifest files; host processes
+stable for 70.133513s, same Gateway280.288251s/last-seen270.008612s. Current protected
+four files match across the on-host window ONLY; raw pre-OTA baseline is unavailable,
+so historical exact continuity is unverified. Receipt `d6c3c706` and Endpoint
+report commit `c9421b42` retain 20-minute/notifications/real-user SSO/crash-rollback
+limits. Production update-admin authentication is
 now available through the user's existing login; staging application admin remains pending.
 
 Keycloak failed candidate OID 20856 retains the original UUID/OTP. Actual run3/v4 ended
@@ -35,9 +44,23 @@ Canonical PIDs/OIDs stayed unchanged, private processes absent and private ports
 free. Narayana V3's isolated library probe PASSED: default `SocketProcessId`
 opened one loopback listener, `MBeanProcessId` opened none and returned the native
 PID. This does not attribute prior candidate sockets or qualify Keycloak runtime.
-A fresh-candidate source/metadata wrapper is pending; no new candidate DDL/JVM
-has run. A browser 302 route bypass was found; the proxy-fence plan is reviewed,
-while concrete factory source review and runtime acceptance remain pending.
+One actual fresh preparation and independent metadata review passed: candidate
+`keycloak_recovery_20261027_2190f3d5`, OID 22159, all 101 original tables, schema/
+ACL/sequences and UUID/OTP exact. Old failed20856 and all six old catalogue entries
+were preserved (catalogue now 7). Preparation metadata was independently accepted;
+semantic review/private qualification remain HOLD. Subsequent run7 recorded
+positive original-browser initial and SSO callbacks, then RecoveryRefused /
+`UnclassifiedRefusal` in `purge_restored_sessions_master_last` before any
+`session-provenance-before.json`; exact cause UNKNOWN. OID22159 now has eight
+changed tables and is forensic evidence, NEVER a pristine retry candidate.
+Independent `OwnedCandidateStopConfirmed` cleanup/reconciliation found owned
+PIDs347374/347618 gone, all private ports free, public services unchanged and
+both candidate identities/original UUID/OTP exact. No purge completion, revocation,
+negative-browser, final17 or public-switch acceptance follows. Browser proxy run3 passed all 3 fake-owned
+loopback cases in44.818s with Node controller source `518fec7e`; first two HOLD
+runs retain1pass/2fail each. The original150s deadline and owned cleanup held.
+This is isolated browser transport evidence, not private Keycloak qualification.
+Future recovery gates remain held; failed22159 and failed20856 must be preserved.
 Audit DB 19553 matches all 101 ORIGINAL row multisets;
 only relation-owner/database-ACL structural differences are accounted for.
 The original/current 12-table semantic drift remains UNREVIEWED.
@@ -51,16 +74,32 @@ read-only reconciliation at 04:00:15 UTC verified LV and ext4 both 63346573312 b
 application source/config/PIDs and strict HTTPS. The consumed exact-command
 marker is retained: no second Apply/retry. Old expired v5 evidence/lease were
 preserved and not reused; production `.19` storage was not touched.
+After staging candidate installation, last observed free space was 16536801280 bytes.
+
+Production Endpoint62 had a P1 permission defect: source0666/directories0777
+from its Windows-produced archive/runbook. Root's metadata-only repair completed
+04:41:02 UTC; independent 04:42:29 verification confirms 373 nodes (299 qualified,
+74 cache) root-owned0755/0644, 12 necessary cache ownership changes, 373 intent/
+completion journal pairs and zero currently open writable descriptors. All 265
+archive files' bytes/mtime/inodes, 5208 venv nodes, selector and service PIDs314437/
+314438 stayed unchanged; strict TLS health200. No exploitation or historical
+absence-of-writes claim. Immutable old archive `d6df0a87` is retained. The five-file
+producer fix is committed as `f4120e9e999dd236dce7a47c53df98b84136edea` with
+14 real regression passes. The immutable old archive was not repacked or redeployed.
+Production Helpdesk6cca's audited0555/0444 release remains unchanged.
 Windows `.120` remains untouched/HOLD except approved passive maintenance
 collection; staging Endpoint application-admin credentials remain pending.
 No account reset or authorization bypass. No handoff, claims, campaigns, real tickets or
 diagnostic mutations were performed on `.120`. Keep all A–F live acceptance gates unchecked.
 
-Next steps: finish fresh-candidate preparation, browser fence and independently
-reviewed private recovery qualification/semantic drift review before any public
+Next steps: diagnose the preserved run7 purge refusal read-only without cause
+assumptions or retrying either forensic candidate; complete independent private
+recovery qualification/semantic drift review under a new reviewed gate before any public
 switch or new AD-disable window. Staging upgrade preparation proceeds under its
 existing OS authorization and release gates; application-admin integration
-acceptance awaits the pending staging credentials. Complete the six Helpdesk receipts,
+acceptance remains unavailable after invalid credentials in staging tab3.
+Keep active-work/live-switch gates held; do not reset or bypass authentication.
+Complete the six Helpdesk receipts,
 owned lifecycle, Windows gate and real installed SSO/notification acceptance.
 Current evidence: `docs/superpowers/plans/2026-10-27-sso-worktime.md`. Preserve
 unrelated files and retained failed/partial receipts. The task remains incomplete.

@@ -140,7 +140,7 @@ versioned typed contract, agent tests and CODEMAP/release metadata.
 
 ## Current evidence
 
-Checkpoint: **2026-10-27 04:04 UTC / 09:04 Asia/Yekaterinburg**. This supersedes
+Checkpoint: **2026-10-27 05:30 UTC / 10:30 Asia/Yekaterinburg**. This supersedes
 earlier progress notes. Product implementation has received independent reviews;
 all unchecked A–F acceptance gates above remain open. No private recovery or
 installed SSO/WorkTime/notification qualification is claimed complete.
@@ -158,12 +158,41 @@ installed SSO/WorkTime/notification qualification is claimed complete.
 - Endpoint server `.19` runs `62fb4c83efbea9e4acc19c779db034a80087d2f9`, schema0042.
   Its SSO and WorkTime flags remain disabled. The pre-upgrade backup was verified;
   the independent Helpdesk service/database were preserved.
+- Production Endpoint62's P1 source0666/directory0777 permission defect from the
+  Windows-produced archive/runbook was repaired by Root through metadata-only
+  changes at 04:41:02 UTC. Independent 04:42:29 reconciliation verified all 373 nodes
+  (299 qualified+74 opaque cache) root-owned with directories0755/files0644,
+  including 12 required cache ownership changes; all 373 intent/completion pairs
+  complete and zero currently open writable descriptors. The 265 qualified archive
+  files' bytes/mtime/inodes, 5208 venv nodes, selector and service PIDs314437/314438
+  stayed unchanged; strict TLS health200. This proves current bytes/permissions,
+  not absence of historical writes or exploitation, and does not qualify opaque
+  cache provenance. Immutable archive `d6df0a87` remains retained. The five-file
+  producer fix is committed as `f4120e9e999dd236dce7a47c53df98b84136edea` with
+  14 real regression passes; the old archive remains immutable, with no repack or
+  deployment claim. No repair repeat is needed. Production Helpdesk6cca's audited
+  directories0555/files0444 remain unchanged. Safe receipt:
+  `C:/Temp/endpoint-production-permissions-20261027/post-repair-independent-safe-receipt.json`,
+  SHA256 `fc222b31abaea81ef1fba6052684af297cc107923ea50c21bfef8662ff9cd791`.
 - Endpoint staging remains `3e3528fb`/schema0039. Its capacity gate now passes;
   upgrade preparation proceeds under existing OS authorization and release gates.
   Application-admin integration acceptance awaits a valid existing staging-admin
-  session. Endpoint source HEAD is `3b632bd905d8f2175729bcc04a907d7a243ef353`,
-  adding private transaction MBean process identity. Fresh-candidate preparation
-  and browser-fence source/runtime qualification remain pending.
+  session; the supplied credentials in staging tab3 were invalid, so app-admin
+  acceptance remains unavailable. No account reset or bypass is authorized.
+  Endpoint source HEAD is `f4120e9e999dd236dce7a47c53df98b84136edea`, following
+  v8 namespace commit `44302b599330d6f695bd43360bf60f01a0f9fdd0` and executor SHA256
+  `2e7206740550f6442355d07a41f6858a1b5f2c10252f0d2ca01305e3cc0896b4`, used in
+  actual run7 below. Full private runtime qualification remains incomplete.
+  Candidate62 completed one
+  offline installation with 33 dependencies, exact pip freeze `7efc907b`, pip-check
+  and actual service-user Settings validation (staging DB/origin/artifacts,
+  OIDC=false/WorkTime=false). Alembic head0042 and offline migration SQL passed;
+  no database migration, application restart or live selector switch occurred.
+  Existing3e source/env/units/PIDs/schema/flags/packages stayed unchanged, with
+  16536801280 bytes available afterward. Genuine app-admin, active-work and live
+  switch gates remain HOLD. Safe receipt under the staging evidence root:
+  `stage-release-plan/task1-install-final-result.json`; validation freeze SHA256
+  `a9a2969e98c6e6ec81e7ef095e6ff856055f6cbcad8d0fd19e59dde7e54b3e0c`.
 - Windows ADMIN-2: signed Foundation/Core3.2.158, source
   `9423d9c27ea6b2d6c544c1bcdc1edb7cc9d15421`, installed through native Setup;
   fresh read-only native verification reports READY. The retained exact source,
@@ -187,16 +216,26 @@ installed SSO/WorkTime/notification qualification is claimed complete.
   `68ae441c-3578-42b4-99e0-bdcfca0ae95d` COMPLETED, its sole target
   `94186fc6-2569-4a06-81ef-78518332dbcc` for device596d APPLIED at
   `2026-10-27T03:58:58.436390+00:00`, version 158 and
-  `post_restart_handshake_confirmed`, with a new Gateway session. Post-OTA native
-  protected-state proof and a second fresh provider sample remain pending.
+  `post_restart_handshake_confirmed`, with a new Gateway session. Subsequent bounded
+  native acceptance verifies selected Core158/source9423, all 98 runtime files
+  against the published manifest and the mapped executable. Service/Core/UserSensor
+  processes stayed stable for 70.133513s. The same authenticated Gateway remained
+  open/unexpired across 280.288251s with last-seen advancing 270.008612s.
+  Current protected configuration/credential/identity/CA bytes and metadata match
+  across the two on-host samples ONLY; raw pre-OTA four-file baseline is unavailable,
+  so exact historical cross-OTA continuity is not claimed. Final safe receipt:
+  `ui-pilot158/acceptance-readonly-v1/alt158-singleton-final-safe-receipt.json`, SHA256
+  `d6c3c7063fc644f1f1529e569d4b8a01ac80f4b9bd7c294d79c2d447d1b1f3b3`;
+  Endpoint report commit `c9421b42a7fba64c3692bac72a946ba37ad20876` records the limits.
   Safe receipt under the 158 root: `ui-pilot158/acceptance-readonly-v1/provider-initial.json`.
   Earlier singleton-assigned UI screenshots retain their assignment-only scope.
   A later normal-UI observation at04:04 UTC explicitly shows COMPLETED/APPLIED1,
   errors0, working0, exact device596d and post-restart confirmation158. Its actual
   screenshot and accessibility text are `ui-pilot158/singleton-applied.png` and
-  `singleton-applied-ax.txt`; they do not replace pending native/second-sample proof.
+  `singleton-applied-ax.txt`; they are separate from the later native/provider proof.
   Real Windows
-  and ALT notifications, 20-minute observation and OS-user/SSO mapping remain pending.
+  and ALT notifications, 20-minute observation, OS-user/SSO mapping and new automatic
+  crash-rollback acceptance remain pending. Server rows alone do not attest source.
 - Dedicated Keycloak26.8.1: all three own-client audience/basic-scope corrections
   passed actual provider login, MFA, refresh and cross-client introspection checks.
   This proves provider behavior, not the Helpdesk BFF. Subsequent AD-disable
@@ -225,9 +264,41 @@ installed SSO/WorkTime/notification qualification is claimed complete.
   returned the native PID. It neither attributes prior sockets nor qualifies
   actual Keycloak runtime. Safe receipt: `recovery-plan/narayana-native-pid-probe/native-v3-final-safe-receipt.json`,
   SHA256 `b92554f29e20ac5bdb346315cc3a85051a1d0865dfa260896782345b08995154`.
-  The fresh-candidate source/metadata wrapper is pending; no new candidate DDL or
-  JVM has run. A browser 302 route bypass was found; a proxy-fence plan is reviewed,
-  but concrete factory source review and runtime acceptance remain pending.
+  One fresh preparation passed actual execution and independent metadata review:
+  `keycloak_recovery_20261027_2190f3d5`, OID 22159, all 101 original table multisets,
+  schema/ACL/sequences and original UUID/OTP exact. Old failed20856 is preserved,
+  as are all six earlier catalogue entries (seven entries after the new candidate).
+  At that preparation checkpoint no candidate JVM, API write or public switch
+  occurred. Preparation metadata was independently accepted; semantic review and
+  private qualification remain HOLD, switch_ready=false. Safe preparation result
+  under the browser evidence root:
+  `recovery-plan/fresh-candidate-after-run6/root-one-fresh-prepare-result.json`.
+  Subsequent actual run7 recorded positive original-browser initial and SSO
+  callbacks, then failed with `RecoveryRefused` / `UnclassifiedRefusal` in
+  `purge_restored_sessions_master_last` before `session-provenance-before.json`
+  existed. The exact cause remains UNKNOWN and purge completion is not proved.
+  Independent cleanup/reconciliation confirmed `OwnedCandidateStopConfirmed`,
+  owned PIDs347374/347618 gone, all private ports free and public services
+  unchanged. Old20856 forensic state and both original UUID/OTP identities remain
+  exact. Candidate22159 now has eight changed tables: it is forensic evidence,
+  NEVER a pristine retry candidate. Negative-browser, revocation, final17 and
+  public-switch acceptance remain incomplete; no semantic drift approval follows.
+  Safe receipts under `recovery-plan/run7-readonly-reconciliation`:
+  `journal-result.json`, SHA256
+  `cb05ca1ee0f5b0b01073a5eaa060dea67dbf3c025ef22706bff22a30b5de30de`, and
+  `full-result.json`, SHA256
+  `8f7dd35f2a38393b1930a93a50e0982f579853f46c5fd23854c1badc6bdbaf44`.
+  Actual browser proxy run3 passed all 3 fake-owned literal127 loopback cases in
+  44.818s under the original150s deadline; Node controller source SHA256
+  `518fec7e27fe1eaf85cfdaaa7b54a079d1595e6462a6c574c33063fd3118aa65`.
+  The owned job was empty before cleanup and cleanup was confirmed. First and
+  second runs remain HOLD with1pass/2fail each. Safe result under the browser
+  evidence root: `recovery-plan/browser-v2/owned-fixture-diagnostic-run3-result.json`,
+  SHA256 `8a6b1fadaf2275f67c25ff0926da1a0eb3db94290feafbe76c136ab7251778b9`.
+  This isolates browser transport behavior and proves no production TLS, AD/OTP
+  or private Keycloak acceptance. Run7's partial original-browser success above
+  does not qualify the complete private recovery flow; neither failed candidate
+  may be retried or reused as pristine.
   No guard relaxation or public switch follows from these observations.
   Private runtime qualification, session purge, complete semantic drift review
   and a separately reviewed database switch remain pending.
@@ -284,10 +355,11 @@ installed SSO/WorkTime/notification qualification is claimed complete.
 - Windows `.120` still runs its original3.2.81 agent with production origin.
   Handoff Prepare/Apply, watchdog, claims and campaigns have not started; its live
   Windows deployment gate is `not_run`/HOLD; no claims, campaigns, real tickets or
-  diagnostic mutations were performed. Questions for valid existing Endpoint staging
-  application-admin credentials remain unanswered; existing production
+  diagnostic mutations were performed. Valid existing Endpoint staging
+  application-admin access remains unavailable after invalid credentials;
+  existing production
   update-admin authentication is now available through the user's normal login.
-  Obtain the staging credentials through a private channel before dependent actions;
+  A valid staging app-admin session is needed for authenticated integration acceptance;
   do not reset accounts or bypass their current authorization.
 
 Private redacted receipts are under `C:/Temp/helpdesk-sso-staging-20261027`,
