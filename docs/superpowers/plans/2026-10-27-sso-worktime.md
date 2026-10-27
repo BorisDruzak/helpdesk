@@ -140,9 +140,10 @@ versioned typed contract, agent tests and CODEMAP/release metadata.
 
 ## Current evidence
 
-The identity, WorkTime, portal, DLP separation and typed companion implementation
-has received independent reviews. The unchecked stage gates above still require
-installed end-to-end acceptance; fixture results alone do not close them.
+Checkpoint: **2026-10-27 02:31 UTC / 07:31 Asia/Yekaterinburg**. This supersedes
+earlier progress notes. Product implementation has received independent reviews;
+all unchecked A–F acceptance gates above remain open. No private recovery or
+installed SSO/WorkTime/notification qualification is claimed complete.
 
 - Helpdesk candidate `736f3ae81616fd9a6304457c2a512001f7d6337c`: all 18 canonical
   CI layers green, including 892 frontend unit tests, 168 browser cases and the
@@ -152,15 +153,34 @@ installed end-to-end acceptance; fixture results alone do not close them.
   subscription and isolated backup restore passed on earlier staged revisions;
   the current revision still needs its complete six-scenario deployment receipts
   and an owned mutating requester/support lifecycle. Do not relabel old receipts.
-  Production Helpdesk remains on the preceding release pending its release gates.
+  Production Helpdesk remains `6cca48e5780d625cace590e46a30212ca9ecfb4d` pending
+  all six current receipts, the owned lifecycle and the live Windows gate.
 - Endpoint server `.19` runs `62fb4c83efbea9e4acc19c779db034a80087d2f9`, schema0042.
   Its SSO and WorkTime flags remain disabled. The pre-upgrade backup was verified;
   the independent Helpdesk service/database were preserved.
+- Endpoint staging remains `3e3528fb`/schema0039, awaiting capacity and a valid
+  existing application-admin session. Endpoint source HEAD is
+  `7944ebc97abca96a947abbb19b59a725c91dedc0` (native strict mapped-loopback parser
+  fix). Subsequent recovery v7 work is a **DRAFT**, not validated or qualified.
 - Windows ADMIN-2: signed Foundation/Core3.2.158, source
   `9423d9c27ea6b2d6c544c1bcdc1edb7cc9d15421`, installed through native Setup;
-  installed verification reports READY. ALT `.210`: signed Foundation/UserSensor
+  fresh read-only native verification reports READY. The retained exact source,
+  signed Setup/MSI and protected credential/identity checks passed; local
+  processes stayed unchanged for 98.508769s. Actual provider 62 read-only samples at
+  `2026-10-27T02:04:36.595916+00:00` and
+  `2026-10-27T02:05:46.894260+00:00` were 70.298344s apart: the same authenticated
+  Gateway session's last-seen advanced by 90.027236s. This is bounded evidence,
+  not 20-minute or notification acceptance. Earlier preflight WSS remains
+  classified historical; source is verified locally, not attested by server
+  rows, and NAT/zero compatibility instance does not attest local IP or a unique
+  runtime. Receipt `release-plan/local158-fresh-readonly/readonly-reconciliation-final.json`
+  under the 158 evidence root has SHA256
+  `ac83bb20ea205259207c7bb27b8e3d873cdc292c3c206a8deeaefe33c49a42d5`;
+  Endpoint doc commit `118ff` records its limits. ALT `.210`: signed Foundation/UserSensor
   RPM3.2.158 installed with protected enrollment/configuration unchanged; selected
-  Core remains3.2.156 pending a separately assigned singleton update.
+  Core remains3.2.156 pending a separately assigned singleton update and valid
+  existing production application `updates:write` authorization. Real Windows
+  and ALT notifications, 20-minute observation and OS-user/SSO mapping remain pending.
 - Dedicated Keycloak26.8.1: all three own-client audience/basic-scope corrections
   passed actual provider login, MFA, refresh and cross-client introspection checks.
   This proves provider behavior, not the Helpdesk BFF. Subsequent AD-disable
@@ -168,11 +188,31 @@ installed end-to-end acceptance; fixture results alone do not close them.
   filter deleted the imported pilot identity and its OTP. The AD pilot was
   re-enabled; application SSO/WorkTime flags remain off. Reviewed source correction
   `1b4c6b4695b0b595ab74f8bf6ba9f24006ed1c71` is not yet applied to public Keycloak.
-  A fresh private candidate restored from the original backup preserves the old
-  subject and OTP; metadata checks passed. Private runtime qualification, session
-  purge, complete drift review and separately reviewed database switch are pending.
+  Private candidate OID 20856 restored from the original backup preserves the old
+  subject and OTP. Actual run3/v4 ended in an unknown refusal; run4/v5 failed
+  `PrivateRuntimeListenerNotLoopback`; run5/v6 failed
+  `PrivateRuntimeUnexpectedClusterSocket`. Each subsequent read-only reconciliation
+  verified all 101 candidate tables unchanged, original UUID/OTP intact, canonical
+  service PIDs/database OIDs unchanged, no matching private processes and private
+  ports free. Failed attempt journals and private directories remain retained.
+  The strict parser passed actual canonical mapped-loopback `ss` output, but no
+  private runtime qualification passed. The extra canonical ephemeral loopback TCP
+  socket's origin remains UNKNOWN; Narayana `SocketProcessId` is only a possible
+  mechanism. The library-only namespace probe is PREPARED/pending, not PASS.
+  No guard relaxation or public switch is approved by these observations.
+  Private runtime qualification, session purge, complete semantic drift review
+  and a separately reviewed database switch remain pending.
   Never re-enrol OTP, accept the replacement subject or run another AD window
   before completing that recovery.
+- Audit database OID 19553, owner `postgres`, exactly matches the saved ORIGINAL
+  restore's full-row hash multisets across all 101 tables. Its 353 relation owners
+  and database ACL account for the structural differences; other structural and
+  sequence metadata match. It does not match saved current-at-prepare content:
+  12 tables differ and their semantic drift remains UNREVIEWED. The exact
+  comparator still refuses `DatabaseOwnerMismatch`; no owner relabelling or
+  candidate reuse/promotion is allowed. Clone creation provenance is not inferred
+  from content equality. Safe evidence: `recovery-plan/audit-clone-provenance-readonly/summary.json`
+  under the browser evidence root.
 - Dedicated Keycloak backup and isolated restore on port5544 passed, including
   101 public tables, the pilot realm and three clients; the temporary DB was
   removed. No application database was used for that drill.
@@ -184,25 +224,33 @@ installed end-to-end acceptance; fixture results alone do not close them.
   short-lived callback codes reached the existing Nginx access log during initial
   private-harness attempts; corrected interception prevents further harness leaks.
 - ALT Core158 canary and the signed Linux kit are published; downloaded bytes and
-  signatures were independently reconciled. No rollout or target was created.
+  signatures were independently reconciled. At the immutable
+  `2026-10-26T22:25:25.072566+00:00` snapshot, no 158 rollout or target existed;
+  this is not a claim about later live state.
   Windows Setup158 remains excluded from administrative default delivery pending
   campaign compatibility and exact-source automatic-compensation qualification.
-- Endpoint staging remains on schema0039; its root free space is below the
-  deployment threshold. Bounded backups and full off-host restores now pass:
+- Endpoint staging's last capacity observation was below the deployment threshold.
+  Historical bounded backups and full off-host restores passed at 00:18–00:21 UTC:
   Helpdesk schema151/194 public tables and Endpoint schema0039/52 public tables,
   isolated PostgreSQL16.15 with SCRAM and a real wrong-password negative control.
   The owned cluster was stopped and removed. Independent reconciliation accepted
   all nine artifact hashes, sizes, private ACLs and source/dump provenance.
-  The actual final v5 verifier passed strict TLS/health and unchanged application
+  The then-current final v5 capacity verifier passed strict TLS/health and unchanged application
   source/config/unit/PID checks. Earlier guard refusals remain preserved under
   their actual versions; no backup or receipt was relabelled.
-  Root LV and ext4 remain 52609155072 bytes, with approximately 6.1GiB available.
+  Those receipts are retained historical success, **not fresh Apply evidence**:
+  the two-hour backup TTL expired after 02:18 UTC (07:18 local), and the old
+  parent lease expired. A future Apply needs a NEW exclusive fresh backup,
+  VM collector and parent lease after the required storage approval.
+  The last recorded root LV/ext4 size is 52609155072 bytes, about 6.1GiB free.
   The proposed +10GiB from existing VG free space awaits separate user approval;
   no resize or attempt marker exists. Production `.19` is outside this proposal.
 - Windows `.120` still runs its original3.2.81 agent with production origin.
   Handoff Prepare/Apply, watchdog, claims and campaigns have not started; its live
-  Windows deployment gate is `not_run`. Valid existing Endpoint staging and
-  production update-admin credentials remain required through a private channel;
+  Windows deployment gate is `not_run`/HOLD; no claims, campaigns, real tickets or
+  diagnostic mutations were performed. Questions for valid existing Endpoint staging
+  application-admin and production update-admin credentials remain unanswered;
+  obtain them through a private channel before dependent actions;
   do not reset accounts or bypass their current authorization.
 
 Private redacted receipts are under `C:/Temp/helpdesk-sso-staging-20261027`,

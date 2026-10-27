@@ -1,7 +1,59 @@
 # 2026-10-27 SSO + Helpdesk + Endpoint + WorkTime
 
-Latest checkpoint (supersedes earlier progress below): reviewed product changes
-are implemented; independent final security review found no P0/P1 and two P2
+Latest checkpoint, 2026-10-27 02:31 UTC (07:31 Asia/Yekaterinburg): Helpdesk
+`736f3ae8` has all 18 exact-revision CI layers green and four pinned-provider
+cross-repository tests passed; staging `.118` runs schema151. Production remains
+`6cca48e5`. Full six-scenario receipts for 736, an owned requester/support lifecycle
+and the live Windows gate remain open. Endpoint production `62fb4c83`/schema0042
+has SSO/WorkTime flags off; staging `3e3528fb`/schema0039 awaits capacity and valid
+existing application-admin credentials. Endpoint source HEAD `7944ebc9` includes
+the native mapped-loopback parser fix; recovery v7 is a draft, not validated.
+
+Windows158 source `9423d9c` has actual fresh read-only native READY evidence:
+local processes stable for 98.508769s; the same authenticated Gateway session across
+70.298344s of server samples advanced last-seen by 90.027236s. Receipt `ac83bb20`
+and Endpoint documentation commit `118ff` retain the historical-WSS caveat and
+source/IP-attestation limits. This does not close notification, 20-minute or
+real-user SSO acceptance. ALT `.210` has native 158 packages/selected Core 156;
+singleton OTA awaits valid existing production `updates:write` authorization.
+
+Keycloak candidate OID 20856 retains the original UUID/OTP. Actual run3/v4 ended
+in an unknown refusal; run4/v5 refused `PrivateRuntimeListenerNotLoopback`;
+run5/v6 refused `PrivateRuntimeUnexpectedClusterSocket`. Each reconciliation
+verified all 101 candidate tables unchanged, canonical PIDs/OIDs unchanged,
+no private processes and free private ports; journals remain retained. Native
+strict mapped parsing passed against actual canonical `ss` output, but private
+qualification has not passed. The extra canonical ephemeral loopback TCP socket
+has UNKNOWN origin; Narayana `SocketProcessId` is a possible mechanism only.
+The library-only namespace probe is PREPARED/pending. No guard relaxation or
+public switch is accepted. Audit DB 19553 matches all 101 ORIGINAL row multisets;
+only relation-owner/database-ACL structural differences are accounted for.
+The original/current 12-table semantic drift remains UNREVIEWED.
+
+Historical staging backups and real SCRAM restores passed at 00:18–00:21 UTC,
+but the two-hour backup freshness TTL expired after 02:18 UTC. The old parent
+lease also expired. No LV resize or attempt marker exists; user approval for
+capacity expansion remains pending. Any future Apply needs a NEW exclusive
+fresh backup, VM collector and parent lease after the required approval.
+Windows `.120` remains untouched/HOLD. Existing staging Endpoint application-admin
+and production update-admin credential questions remain unanswered; no account
+reset or authorization bypass. No handoff, claims, campaigns, real tickets or
+diagnostic mutations were performed on `.120`. Keep all A–F live acceptance gates unchecked.
+
+Next steps: finish independently reviewed private recovery qualification and
+semantic drift review before any public switch or new AD-disable window; obtain
+the pending existing credentials and storage decision; refresh expired safety
+evidence before staged Apply, then complete the six current Helpdesk receipts,
+owned lifecycle, Windows gate and real installed SSO/notification acceptance.
+Current evidence: `docs/superpowers/plans/2026-10-27-sso-worktime.md`. Preserve
+unrelated files and retained failed/partial receipts. The task remains incomplete.
+
+## Historical early implementation checkpoint (superseded)
+
+The following initial observations and next steps are historical; the checkpoint
+above governs current versions, publication, recovery and evidence freshness.
+At that earlier checkpoint, reviewed product changes
+were implemented; independent final security review found no P0/P1 and two P2
 issues. The shared identity-service budget and paginated explanation queue are
 now corrected with focused regressions. Helpdesk current focused PostgreSQL
 38 passed, previous broader PostgreSQL95 passed; updated no_db identity/harness
@@ -2605,7 +2657,13 @@ Checks: full unit suite792 passed in hosted CI; local no-DB server1452 passed,
 1 skipped; scripts272 passed; required fast audit layers passed. Full fixture,
 migration/DB and exact-SHA workflow results are recorded in the publication receipt.
 
-# 2026-10-27 SSO, WorkTime and agent pilot — current handoff
+# 2026-10-27 SSO, WorkTime and agent pilot — historical handoff
+
+This handoff records the earlier `bd4f41df` documentation checkpoint. It is
+superseded by the current checkpoint at the top of this file and Current evidence
+in the linked execution plan. In particular, the backup/restore success below
+is historical: the two-hour freshness TTL and old parent lease have expired;
+they cannot authorize a future Apply.
 
 Goal/scope: deliver the supplied two-repository SSO/Helpdesk/Endpoint/DLP/WorkTime
 specification in reviewed stages. The user authorizes separate server and signed
