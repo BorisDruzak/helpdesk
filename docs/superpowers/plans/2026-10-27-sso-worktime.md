@@ -140,7 +140,7 @@ versioned typed contract, agent tests and CODEMAP/release metadata.
 
 ## Current evidence
 
-Checkpoint: **2026-10-27 02:31 UTC / 07:31 Asia/Yekaterinburg**. This supersedes
+Checkpoint: **2026-10-27 04:04 UTC / 09:04 Asia/Yekaterinburg**. This supersedes
 earlier progress notes. Product implementation has received independent reviews;
 all unchecked A–F acceptance gates above remain open. No private recovery or
 installed SSO/WorkTime/notification qualification is claimed complete.
@@ -158,10 +158,12 @@ installed SSO/WorkTime/notification qualification is claimed complete.
 - Endpoint server `.19` runs `62fb4c83efbea9e4acc19c779db034a80087d2f9`, schema0042.
   Its SSO and WorkTime flags remain disabled. The pre-upgrade backup was verified;
   the independent Helpdesk service/database were preserved.
-- Endpoint staging remains `3e3528fb`/schema0039, awaiting capacity and a valid
-  existing application-admin session. Endpoint source HEAD is
-  `7944ebc97abca96a947abbb19b59a725c91dedc0` (native strict mapped-loopback parser
-  fix). Subsequent recovery v7 work is a **DRAFT**, not validated or qualified.
+- Endpoint staging remains `3e3528fb`/schema0039. Its capacity gate now passes;
+  upgrade preparation proceeds under existing OS authorization and release gates.
+  Application-admin integration acceptance awaits a valid existing staging-admin
+  session. Endpoint source HEAD is `3b632bd905d8f2175729bcc04a907d7a243ef353`,
+  adding private transaction MBean process identity. Fresh-candidate preparation
+  and browser-fence source/runtime qualification remain pending.
 - Windows ADMIN-2: signed Foundation/Core3.2.158, source
   `9423d9c27ea6b2d6c544c1bcdc1edb7cc9d15421`, installed through native Setup;
   fresh read-only native verification reports READY. The retained exact source,
@@ -178,8 +180,22 @@ installed SSO/WorkTime/notification qualification is claimed complete.
   `ac83bb20ea205259207c7bb27b8e3d873cdc292c3c206a8deeaefe33c49a42d5`;
   Endpoint doc commit `118ff` records its limits. ALT `.210`: signed Foundation/UserSensor
   RPM3.2.158 installed with protected enrollment/configuration unchanged; selected
-  Core remains3.2.156 pending a separately assigned singleton update and valid
-  existing production application `updates:write` authorization. Real Windows
+  Core was 3.2.156 at the earlier native receipt. Subsequently the user supplied
+  existing production application authentication and an authorized normal-UI
+  singleton rollout was created (listing 80 versus 79). Provider read-only evidence
+  at `2026-10-27T04:00:15.174346+00:00` records rollout
+  `68ae441c-3578-42b4-99e0-bdcfca0ae95d` COMPLETED, its sole target
+  `94186fc6-2569-4a06-81ef-78518332dbcc` for device596d APPLIED at
+  `2026-10-27T03:58:58.436390+00:00`, version 158 and
+  `post_restart_handshake_confirmed`, with a new Gateway session. Post-OTA native
+  protected-state proof and a second fresh provider sample remain pending.
+  Safe receipt under the 158 root: `ui-pilot158/acceptance-readonly-v1/provider-initial.json`.
+  Earlier singleton-assigned UI screenshots retain their assignment-only scope.
+  A later normal-UI observation at04:04 UTC explicitly shows COMPLETED/APPLIED1,
+  errors0, working0, exact device596d and post-restart confirmation158. Its actual
+  screenshot and accessibility text are `ui-pilot158/singleton-applied.png` and
+  `singleton-applied-ax.txt`; they do not replace pending native/second-sample proof.
+  Real Windows
   and ALT notifications, 20-minute observation and OS-user/SSO mapping remain pending.
 - Dedicated Keycloak26.8.1: all three own-client audience/basic-scope corrections
   passed actual provider login, MFA, refresh and cross-client introspection checks.
@@ -192,14 +208,27 @@ installed SSO/WorkTime/notification qualification is claimed complete.
   subject and OTP. Actual run3/v4 ended in an unknown refusal; run4/v5 failed
   `PrivateRuntimeListenerNotLoopback`; run5/v6 failed
   `PrivateRuntimeUnexpectedClusterSocket`. Each subsequent read-only reconciliation
-  verified all 101 candidate tables unchanged, original UUID/OTP intact, canonical
+  historically verified all 101 candidate tables unchanged, original UUID/OTP intact, canonical
   service PIDs/database OIDs unchanged, no matching private processes and private
   ports free. Failed attempt journals and private directories remain retained.
-  The strict parser passed actual canonical mapped-loopback `ss` output, but no
-  private runtime qualification passed. The extra canonical ephemeral loopback TCP
-  socket's origin remains UNKNOWN; Narayana `SocketProcessId` is only a possible
-  mechanism. The library-only namespace probe is PREPARED/pending, not PASS.
-  No guard relaxation or public switch is approved by these observations.
+  Later actual run6 refused `PrivateRpcReplyMissing` at
+  `prove_browser_cookie_before_purge` after changing seven tables in old 20856;
+  the original UUID/OTP remains exact, but the database is not a pristine restore
+  and cannot be retried/reused. Its full 101-table inventory and failed journals
+  are retained under `recovery-plan/run6-readonly-reconciliation`; canonical
+  PIDs/OIDs remain unchanged, private processes absent and private ports free.
+  Schema/sequences remain unchanged; browser positive/negative/revocation and
+  final17 proofs are absent. No failure-cause attribution or semantic drift
+  approval follows from the seven changed tables.
+  Narayana V3's actual isolated library mechanism probe PASSED: default
+  `SocketProcessId` added one loopback listener; `MBeanProcessId` added none and
+  returned the native PID. It neither attributes prior sockets nor qualifies
+  actual Keycloak runtime. Safe receipt: `recovery-plan/narayana-native-pid-probe/native-v3-final-safe-receipt.json`,
+  SHA256 `b92554f29e20ac5bdb346315cc3a85051a1d0865dfa260896782345b08995154`.
+  The fresh-candidate source/metadata wrapper is pending; no new candidate DDL or
+  JVM has run. A browser 302 route bypass was found; a proxy-fence plan is reviewed,
+  but concrete factory source review and runtime acceptance remain pending.
+  No guard relaxation or public switch follows from these observations.
   Private runtime qualification, session purge, complete semantic drift review
   and a separately reviewed database switch remain pending.
   Never re-enrol OTP, accept the replacement subject or run another AD window
@@ -229,28 +258,36 @@ installed SSO/WorkTime/notification qualification is claimed complete.
   this is not a claim about later live state.
   Windows Setup158 remains excluded from administrative default delivery pending
   campaign compatibility and exact-source automatic-compensation qualification.
-- Endpoint staging's last capacity observation was below the deployment threshold.
-  Historical bounded backups and full off-host restores passed at 00:18–00:21 UTC:
+- The user explicitly approved the staging-only `.118` +10GiB capacity change.
+  Earlier 00:18–00:21 UTC backup/restore evidence and its expired parent lease
+  remain historical and were not reused. Fresh exclusive v6 capped backups ran
+  `03:54:44.298009–03:54:51.387577 UTC`; two actual isolated PostgreSQL16.15 SCRAM
+  restores completed `03:55:57.073841 UTC`, including wrong-password rejection:
   Helpdesk schema151/194 public tables and Endpoint schema0039/52 public tables,
   isolated PostgreSQL16.15 with SCRAM and a real wrong-password negative control.
   The owned cluster was stopped and removed. Independent reconciliation accepted
   all nine artifact hashes, sizes, private ACLs and source/dump provenance.
-  The then-current final v5 capacity verifier passed strict TLS/health and unchanged application
-  source/config/unit/PID checks. Earlier guard refusals remain preserved under
-  their actual versions; no backup or receipt was relabelled.
-  Those receipts are retained historical success, **not fresh Apply evidence**:
-  the two-hour backup TTL expired after 02:18 UTC (07:18 local), and the old
-  parent lease expired. A future Apply needs a NEW exclusive fresh backup,
-  VM collector and parent lease after the required storage approval.
-  The last recorded root LV/ext4 size is 52609155072 bytes, about 6.1GiB free.
-  The proposed +10GiB from existing VG free space awaits separate user approval;
-  no resize or attempt marker exists. Production `.19` is outside this proposal.
+  Fresh approved passive Windows120 observation and a parent-held lease were
+  independently verified. Root invoked the exact protected v6 guardian once:
+  Apply and postconditions passed `2026-10-27T03:58:49.430235+00:00`.
+  Independent read-only reconciliation at `04:00:15.996752 UTC` verified exact
+  PV/VG/LV/ext4 UUIDs and absolute 15103 extents: LV/block/ext4 all 63346573312 bytes,
+  previously 52609155072 bytes, available 16672423936 bytes. Application source,
+  configuration, service PIDs and strict HTTPS health remained unchanged.
+  The private consumed marker records exactly
+  `lvextend --resizefs --extents 15103 /dev/ubuntu-vg/ubuntu-lv`; it is retained,
+  with no second Apply/retry/cleanup. All old/new backups and journals remain
+  preserved. Production `.19` storage was not queried or changed by reconciliation.
+  Safe evidence: `C:/Temp/endpoint-sso-staging-20261027/capacity-refresh-v6/root-apply-result.json`
+  and `independent-postapply-result.json`; the latter SHA256 is
+  `9886e7d6bbda5b022c143d818b79e3274094b0ef58a5a161f99d525566f0eac0`.
 - Windows `.120` still runs its original3.2.81 agent with production origin.
   Handoff Prepare/Apply, watchdog, claims and campaigns have not started; its live
   Windows deployment gate is `not_run`/HOLD; no claims, campaigns, real tickets or
   diagnostic mutations were performed. Questions for valid existing Endpoint staging
-  application-admin and production update-admin credentials remain unanswered;
-  obtain them through a private channel before dependent actions;
+  application-admin credentials remain unanswered; existing production
+  update-admin authentication is now available through the user's normal login.
+  Obtain the staging credentials through a private channel before dependent actions;
   do not reset accounts or bypass their current authorization.
 
 Private redacted receipts are under `C:/Temp/helpdesk-sso-staging-20261027`,
