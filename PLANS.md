@@ -2630,8 +2630,12 @@ public Keycloak is unchanged and application flags remain off.
 Next steps: qualify and independently review private Keycloak recovery before
 any public database switch or further AD-disable test. Query-safe Nginx logging
 is verified on both hosts; the Helpdesk application logger is staged736 only.
-Review bounded staging backups and fully restore both off-host before requesting
-the proposed root-LV expansion; no storage operation is approved or executed.
+Bounded staging backups and both real off-host restores now pass. Independent
+reconciliation accepted nine artifacts, source/dump bindings and private ACLs;
+the actual v5 final verifier confirms unchanged apps and strict TLS health.
+The proposed test-only `.118` root-LV expansion awaits user approval: LV/ext4
+remain 52609155072 bytes and no resize/attempt marker exists. Production `.19`
+is outside the storage proposal. Earlier guard refusals are preserved.
 Windows120 remains on original81/production origin with handoff not started and
 Windows gate not_run. Await valid existing Endpoint admin credentials through a
 private channel, then finish current deployment gates, application identity-link/

@@ -188,10 +188,17 @@ installed end-to-end acceptance; fixture results alone do not close them.
   Windows Setup158 remains excluded from administrative default delivery pending
   campaign compatibility and exact-source automatic-compensation qualification.
 - Endpoint staging remains on schema0039; its root free space is below the
-  deployment threshold. Bounded backup preparation and full off-host restore
-  tooling are under review. No new staging-capacity backup, LV resize or
-  filesystem resize has run.
-  A concrete storage expansion requires separate approval after verified backups.
+  deployment threshold. Bounded backups and full off-host restores now pass:
+  Helpdesk schema151/194 public tables and Endpoint schema0039/52 public tables,
+  isolated PostgreSQL16.15 with SCRAM and a real wrong-password negative control.
+  The owned cluster was stopped and removed. Independent reconciliation accepted
+  all nine artifact hashes, sizes, private ACLs and source/dump provenance.
+  The actual final v5 verifier passed strict TLS/health and unchanged application
+  source/config/unit/PID checks. Earlier guard refusals remain preserved under
+  their actual versions; no backup or receipt was relabelled.
+  Root LV and ext4 remain 52609155072 bytes, with approximately 6.1GiB available.
+  The proposed +10GiB from existing VG free space awaits separate user approval;
+  no resize or attempt marker exists. Production `.19` is outside this proposal.
 - Windows `.120` still runs its original3.2.81 agent with production origin.
   Handoff Prepare/Apply, watchdog, claims and campaigns have not started; its live
   Windows deployment gate is `not_run`. Valid existing Endpoint staging and
