@@ -36,14 +36,15 @@ test("SSO policy failure retains ordinary login and offers no broken SSO entry",
   await expect(page.getByRole("button", { name: "Войти", exact: true })).toBeVisible();
 });
 
-test("employee navigation links to the trusted portal and SSO logout posts as a document", async ({ page }) => {
+for (const target of [portal, "https://endpoint-staging.sosnadmin.local/employee"]) {
+test(`employee navigation links to ${new URL(target).hostname} and SSO logout posts as a document`, async ({ page }, testInfo) => {
   let authenticated = true;
   let logoutMethod = "";
   let logoutDocument = false;
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await capabilities(page, true);
-  await page.route("**/api/web/session/me", route => route.fulfill({ json: { status: "success", data: authenticated ? employee : null } }));
+  await page.route("**/api/web/session/me", route => route.fulfill({ json: { status: "success", data: authenticated ? { ...employee, worktime_portal_url: target } : null } }));
   await page.route("**/api/web/requester/tickets", route => route.fulfill({ json: { status: "success", data: { tickets: [] } } }));
   await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
   await page.route("**/api/web/session/oidc/logout", route => {
@@ -57,12 +58,28 @@ test("employee navigation links to the trusted portal and SSO logout posts as a 
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     const entry = page.getByRole("link", { name: "Рабочее время", exact: true }).filter({ visible: true });
-    await expect(entry).toHaveAttribute("href", portal);
+    await expect(entry).toHaveAttribute("href", target);
+    await entry.scrollIntoViewIfNeeded();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    if (target.includes("endpoint-staging") && viewport.width !== 1920) {
+      await page.screenshot({ path: testInfo.outputPath(`worktime-staging-${viewport.width}.png`), fullPage: true });
+    }
   }
+  let portalReferer: string | undefined;
+  await page.route(target, route => {
+    portalReferer = route.request().headers()["referer"];
+    return route.fulfill({ contentType: "text/html; charset=utf-8", body: "<!doctype html><meta charset='utf-8'><h1>Рабочее время</h1>" });
+  });
+  await page.getByRole("link", { name: "Рабочее время", exact: true }).filter({ visible: true }).click();
+  await expect(page.getByRole("heading", { name: "Рабочее время", exact: true })).toBeVisible();
+  expect(page.url()).toBe(target);
+  expect(portalReferer).toBeUndefined();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Мои обращения" })).toBeVisible();
   await page.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Добро пожаловать" })).toBeVisible();
   expect(logoutMethod).toBe("POST");
   expect(logoutDocument).toBe(true);
   expect(errors).toEqual([]);
 });
+}

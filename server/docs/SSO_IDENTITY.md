@@ -150,13 +150,22 @@ OIDC logout route so the server's optional RP redirect can proceed. The browser
 never stores or receives OAuth token material. Password sessions keep the
 existing local logout API. A login-method change also resets the actor cache.
 
-`WORKTIME_PORTAL_URL` defaults blank. The only accepted pilot value is exactly
-`https://endpoint.sosnadmin.local/employee`: HTTPS, the trusted internal host and
-fixed path, with no userinfo, port, query or fragment. Invalid values remain
-hidden. This nonsecret URL appears as nullable `worktime_portal_url` in the
+`WORKTIME_PORTAL_URL` defaults blank. The server accepts only these exact pairs
+of `SERVER_PUBLIC_BASE_URL` and employee portal:
+
+| Helpdesk public origin | WorkTime portal |
+| --- | --- |
+| `https://helpdesk.sosnadmin.local` | `https://endpoint.sosnadmin.local/employee` |
+| `https://helpdesk-staging.sosnadmin.local` | `https://endpoint-staging.sosnadmin.local/employee` |
+
+Unknown origins, mixed environments, and decorated URLs (userinfo, port, query,
+fragment or other paths) keep the link hidden. Selection uses configured origins,
+never a request Host/forwarded header. This nonsecret URL appears as nullable
+`worktime_portal_url` in the
 authenticated session payload. The requester desktop/mobile navigation shows
 “Рабочее время”; it never appends a person ID, device authority or user credential.
 The portal authorizes the employee independently through its own session.
+The shared frontend link repeats the exact two-URL allowlist and sends no Referer.
 
 Frontend regressions: `webapp/tests/sso-worktime.spec.ts` (fixture browser
 entry/policy failure, trusted navigation at desktop/mobile widths and native

@@ -100,8 +100,9 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   auth verifies current account, identity and upstream session on every SSO
   operation. Configuration/contracts/pilot limits: `docs/SSO_IDENTITY.md`.
   `web_api/session_handlers.py` projects safe SSO capabilities and verified
-  login-method metadata; its fixed validated `WORKTIME_PORTAL_URL` is only
-  employee navigation, never identity authority. `webapp/src/features/auth/`
+  login-method metadata; `WORKTIME_PORTAL_URL` must match the fixed production
+  or staging pair for configured `SERVER_PUBLIC_BASE_URL`. This is employee
+  navigation, never identity authority. `webapp/src/features/auth/`
   owns the conditional SSO entry, actor-cache logout boundary and shared
   WorkTime link used by requester desktop/mobile navigation.
 

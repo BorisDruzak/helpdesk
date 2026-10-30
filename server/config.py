@@ -130,7 +130,8 @@ WEB_SESSION_COOKIE_HTTPONLY = os.getenv("WEB_SESSION_COOKIE_HTTPONLY", "true").l
 WEB_SESSION_COOKIE_SAMESITE = (os.getenv("WEB_SESSION_COOKIE_SAMESITE", "Lax") or "Lax").strip()
 # Separate confidential BFF client; no browser-delivered OAuth tokens.
 OIDC_ENABLED = os.getenv("OIDC_ENABLED", "false").lower() == "true"
-# Optional fixed employee portal navigation. Blank keeps the entry hidden.
+# Optional employee navigation, paired with the canonical SERVER_PUBLIC_BASE_URL.
+# Blank or a cross-environment URL keeps the entry hidden.
 WORKTIME_PORTAL_URL = os.getenv("WORKTIME_PORTAL_URL", "").strip()
 OIDC_ISSUER = os.getenv("OIDC_ISSUER", "").strip()
 OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "").strip()

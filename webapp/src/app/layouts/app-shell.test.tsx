@@ -15,9 +15,9 @@ vi.mock("../../components/shell/app-topbar", () => ({ AppTopbar: () => <header>�
 afterEach(()=>{ localStorage.clear(); fixture.portal = undefined; fixture.requester = false; });
 
 describe("ticket workspace shell", () => {
-  it("offers WorkTime alongside requester navigation in desktop and mobile layouts", () => {
+  it.each(["https://endpoint.sosnadmin.local/employee", "https://endpoint-staging.sosnadmin.local/employee"])("offers WorkTime %s alongside requester navigation in desktop and mobile layouts", (url) => {
     fixture.requester = true;
-    fixture.portal = "https://endpoint.sosnadmin.local/employee";
+    fixture.portal = url;
     render(<MemoryRouter initialEntries={["/app/requester"]}><AppShell><p>Кабинет</p></AppShell></MemoryRouter>);
     const links = screen.getAllByRole("link", { name: "Рабочее время" });
     expect(links).toHaveLength(2);
@@ -28,7 +28,7 @@ describe("ticket workspace shell", () => {
     render(<MemoryRouter initialEntries={["/app/support"]}><AppShell><p>Поддержка</p></AppShell></MemoryRouter>);
     expect(screen.queryByRole("link", { name: "Рабочее время" })).not.toBeInTheDocument();
   });
-  it.each([undefined, "https://untrusted.test/employee", "https://endpoint.sosnadmin.local/employee?person_id=other"])("hides unconfigured or unsafe employee portal %s", (url) => {
+  it.each([undefined, "https://untrusted.test/employee", "https://endpoint.sosnadmin.local/employee?person_id=other", "https://endpoint-staging.sosnadmin.local/employee?person_id=other", "https://endpoint-staging.sosnadmin.local.evil.test/employee", "https://endpoint-staging.sosnadmin.local:444/employee"])("hides unconfigured or unsafe employee portal %s", (url) => {
     fixture.requester = true;
     fixture.portal = url;
     render(<MemoryRouter initialEntries={["/app/requester"]}><AppShell><p>Кабинет</p></AppShell></MemoryRouter>);

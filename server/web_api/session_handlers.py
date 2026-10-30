@@ -1,5 +1,4 @@
 import re
-from urllib.parse import urlsplit
 
 from aiohttp import web
 from loguru import logger
@@ -71,16 +70,12 @@ def _resolve_workspace_access(actor_role: str) -> tuple[str | None, list[str]]:
 
 def _worktime_portal_url() -> str | None:
     value = str(getattr(config_module, "WORKTIME_PORTAL_URL", "") or "").strip()
-    try:
-        target = urlsplit(value)
-        if (target.scheme == "https" and target.netloc == "endpoint.sosnadmin.local"
-                and target.path == "/employee" and not target.query and not target.fragment
-                and not target.username and not target.password
-                and value == "https://endpoint.sosnadmin.local/employee"):
-            return value
-    except ValueError:
-        pass
-    return None
+    origin = str(getattr(config_module, "SERVER_PUBLIC_BASE_URL", "") or "").strip()
+    expected = {
+        "https://helpdesk.sosnadmin.local": "https://endpoint.sosnadmin.local/employee",
+        "https://helpdesk-staging.sosnadmin.local": "https://endpoint-staging.sosnadmin.local/employee",
+    }.get(origin)
+    return value if expected is not None and value == expected else None
 
 
 def _build_session_payload(*, user_login: str, actor_role: str, auth_type: str, login_method: str = "password") -> WebSessionPayload:

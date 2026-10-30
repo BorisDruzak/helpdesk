@@ -34,7 +34,32 @@ async def test_sso_capability_exposes_only_safe_login_policy(monkeypatch, enable
     ("https://endpoint.sosnadmin.local:444/employee", None),
 ])
 async def test_worktime_navigation_accepts_only_fixed_trusted_portal(monkeypatch, url, expected):
+    monkeypatch.setattr(handlers.config_module, "SERVER_PUBLIC_BASE_URL", "https://helpdesk.sosnadmin.local")
     monkeypatch.setattr(handlers.config_module, "WORKTIME_PORTAL_URL", url, raising=False)
+    payload = handlers._build_session_payload(user_login="employee", actor_role="user", auth_type="ui_token")
+    assert payload.worktime_portal_url == expected
+
+
+@pytest.mark.parametrize("origin, portal, expected", [
+    ("https://helpdesk.sosnadmin.local", "https://endpoint.sosnadmin.local/employee", "https://endpoint.sosnadmin.local/employee"),
+    ("https://helpdesk-staging.sosnadmin.local", "https://endpoint-staging.sosnadmin.local/employee", "https://endpoint-staging.sosnadmin.local/employee"),
+    ("https://helpdesk.sosnadmin.local", "https://endpoint-staging.sosnadmin.local/employee", None),
+    ("https://helpdesk-staging.sosnadmin.local", "https://endpoint.sosnadmin.local/employee", None),
+    ("", "https://endpoint.sosnadmin.local/employee", None),
+    ("https://untrusted.example", "https://endpoint.sosnadmin.local/employee", None),
+    ("https://helpdesk-staging.sosnadmin.local.evil.test", "https://endpoint-staging.sosnadmin.local/employee", None),
+    ("http://helpdesk-staging.sosnadmin.local", "https://endpoint-staging.sosnadmin.local/employee", None),
+    ("https://helpdesk-staging.sosnadmin.local:444", "https://endpoint-staging.sosnadmin.local/employee", None),
+    ("https://helpdesk-staging.sosnadmin.local/path", "https://endpoint-staging.sosnadmin.local/employee", None),
+    ("https://user:secret@helpdesk-staging.sosnadmin.local", "https://endpoint-staging.sosnadmin.local/employee", None),
+    ("https://helpdesk-staging.sosnadmin.local", "https://endpoint-staging.sosnadmin.local/employee?person_id=another", None),
+    ("https://helpdesk-staging.sosnadmin.local", "https://endpoint-staging.sosnadmin.local/employee#secret", None),
+    ("https://helpdesk-staging.sosnadmin.local", "https://endpoint-staging.sosnadmin.local:443/employee", None),
+    ("https://helpdesk-staging.sosnadmin.local", "https://user:secret@endpoint-staging.sosnadmin.local/employee", None),
+])
+async def test_worktime_navigation_is_bound_to_configured_helpdesk_origin(monkeypatch, origin, portal, expected):
+    monkeypatch.setattr(handlers.config_module, "SERVER_PUBLIC_BASE_URL", origin)
+    monkeypatch.setattr(handlers.config_module, "WORKTIME_PORTAL_URL", portal)
     payload = handlers._build_session_payload(user_login="employee", actor_role="user", auth_type="ui_token")
     assert payload.worktime_portal_url == expected
 
