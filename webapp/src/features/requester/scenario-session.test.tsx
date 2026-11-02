@@ -158,6 +158,71 @@ it("reveals a conditional required field before displaying answer errors", async
   expect(screen.getAllByRole("textbox")).toHaveLength(2);
 });
 
+it("reactively reveals Other fields while typing another answer without blur or Continue and clears them on Known", async () => {
+  const fields = [
+    { key: "subject", type: "radio", label: "Область", value: "known", options: [{ value: "known", label: "Известная область" }, { value: "other", label: "Другая область" }] },
+    { key: "description", type: "textarea", label: "Описание", value: "" },
+  ];
+  const extra = { key: "subject_other", type: "text", label: "Уточните другую область", required: true };
+  const step = { id: "session", revision: 1, state: "active", back_targets: [], block: { id: "questions", kind: "form_page", title: "Вопросы", has_dynamic_fields: true, fields } };
+  let resolveOld!: (response: Response) => void;
+  const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+    if (!url.endsWith("/step-preview")) return response(step);
+    const { answers } = JSON.parse(String(options?.body));
+    if (answers.subject === "other" && !answers.description) return await new Promise<Response>(resolve => { resolveOld = resolve; });
+    return response({ ...step, block: { ...step.block, fields: [...fields, ...(answers.subject === "other" ? [extra] : [])] } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="other" owner="user" />);
+  const other = await screen.findByRole("radio", { name: "Другая область" });
+  fireEvent.click(other);
+  fireEvent.blur(other);
+  fireEvent.change(screen.getByRole("textbox", { name: "Описание" }), { target: { value: "Проблема с рабочим профилем" } });
+  const conditional = await screen.findByRole("textbox", { name: /Уточните другую область/ });
+  fireEvent.change(conditional, { target: { value: "Служебная область" } });
+  fireEvent.click(screen.getByRole("radio", { name: "Известная область" }));
+  await waitFor(() => expect(screen.queryByRole("textbox", { name: /Уточните другую область/ })).not.toBeInTheDocument());
+  fireEvent.change(screen.getByRole("textbox", { name: "Описание" }), { target: { value: "Известная проблема" } });
+  await waitFor(() => {
+    const requests = fetchMock.mock.calls.filter(([url]) => url.endsWith("/step-preview"));
+    const last = JSON.parse(String(requests.at(-1)?.[1]?.body));
+    expect(last.answers).toEqual({ subject: "known", description: "Известная проблема" });
+  });
+  await act(async () => { resolveOld(response({ ...step, block: { ...step.block, fields: [...fields, extra] } })); });
+  expect(screen.queryByRole("textbox", { name: /Уточните другую область/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/answer"))).toBe(false);
+});
+
+it.each(["scheduled", "inflight"])("ignores an old owner's reactive conditional projection (%s)", async phase => {
+  const initial = { id: "old-session", revision: 1, state: "active", back_targets: [], block: { id: "old-question", kind: "form_page", title: "Старые вопросы", has_dynamic_fields: true, fields: [{ key: "description", type: "textarea", label: "Описание" }] } };
+  let resolveOld!: (response: Response) => void;
+  let oldSignal: AbortSignal | undefined;
+  const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/step-preview")) {
+      oldSignal = options?.signal as AbortSignal;
+      return await new Promise<Response>(resolve => { resolveOld = resolve; });
+    }
+    const body = JSON.parse(String(options?.body));
+    return response(body.offering_full_code === "new" ? { ...initial, id: "new-session", block: { id: "new-question", kind: "form_page", title: "Новые вопросы", fields: [] } } : initial);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const view = render(<ScenarioSession offering="old" owner="old-user" />);
+  fireEvent.change(await screen.findByRole("textbox", { name: "Описание" }), { target: { value: "Старый ответ" } });
+  if (phase === "inflight") await waitFor(() => expect(resolveOld).toBeDefined());
+  view.rerender(<ScenarioSession offering="new" owner="new-user" />);
+  await screen.findByRole("heading", { name: "Новые вопросы" });
+  if (phase === "inflight") {
+    expect(oldSignal?.aborted).toBe(true);
+    await act(async () => { resolveOld(response({ ...initial, block: { ...initial.block, fields: [{ key: "old", type: "text", label: "Старое условное поле" }] } })); });
+  } else {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/step-preview"))).toBe(false);
+  }
+  expect(screen.queryByRole("textbox", { name: "Старое условное поле" })).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Новые вопросы" })).toBeInTheDocument();
+});
+
 it.each([true, false])("supports required or optional acknowledgment (%s) and sends the explicit result", async required => {
   const fetchMock = vi.fn(async () => response({ id: "session", revision: 3, state: "active", back_targets: [],
     block: { id: "instruction", kind: "instruction", title: "Проверьте питание", content: { body: "Подключите кабель", format: "plain" }, acknowledgment_required: required } }));
@@ -239,6 +304,52 @@ it("shows human summary labels instead of stored entity identifiers", async () =
 
 const submitStep = { id: "session", revision: 3, state: "active", back_targets: [], block: { id: "submit", kind: "submit_ticket", title: "Отправка" } };
 
+it("keeps the final preview and submission actions in normal flow after all answers", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => response(url.endsWith("/ticket-preview")
+    ? { ok: true, blockers: [], warnings: [], expected_first_response: "до 2 ч", expected_resolution: "до 5 ч" }
+    : { ...submitStep, back_targets: [{ id: "question", title: "Описание" }], block: { ...submitStep.block, answers: [{ key: "summary", label: "Проблема", type: "textarea", value: "Описание", display_value: "Полное описание проблемы" }] } })));
+  render(<ScenarioSession offering="other" owner="user" />);
+  await screen.findByRole("button", { name: "Создать обращение" });
+  expect(screen.getByRole("group", { name: "Действия шага" })).not.toHaveClass("sticky");
+  expect(screen.getByText("Полное описание проблемы")).toBeInTheDocument();
+  expect(screen.getByText("Первый ответ: до 2 ч")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Вернуться: Описание" })).toBeInTheDocument();
+});
+
+it("starts a new request for the same entrance after acknowledged ticket creation", async () => {
+  const key = "pc_client.scenario.session:user:other:entry:other";
+  let created = false;
+  const terminal = { ...submitStep, state: "ticket_created", linked_ticket_id: "first-ticket" };
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith("/ticket-preview")) return response({ ok: true, blockers: [], warnings: [] });
+    if (url.endsWith("/submit")) { created = true; return response(terminal); }
+    if (url.endsWith("/session")) return response(terminal);
+    return response(created ? { ...submitStep, id: "next-session", block: { id: "question", kind: "form_page", title: "Новое обращение", fields: [] } } : submitStep);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const view = render(<ScenarioSession offering="other" owner="user" entryPointKey="other" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+  await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/first-ticket" });
+  expect(sessionStorage.getItem(key)).toBeNull();
+  view.unmount();
+  render(<ScenarioSession offering="other" owner="user" entryPointKey="other" />);
+  await screen.findByRole("heading", { name: "Новое обращение" });
+  expect(sessionStorage.getItem(key)).toBe("next-session");
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(1);
+  expect(fetchMock.mock.calls.filter(([url]) => url === "/api/web/requester/request-scenarios/sessions")).toHaveLength(2);
+});
+
+it("forgets an acknowledged self-service completion while preserving a different entrance", async () => {
+  const key = "pc_client.scenario.session:user:other";
+  sessionStorage.setItem(key, "self-service");
+  sessionStorage.setItem(`${key}:entry:another`, "another-session");
+  vi.stubGlobal("fetch", vi.fn(async () => response({ ...submitStep, id: "self-service", state: "completed_self_service", block: { id: "done", kind: "finish", title: "Проблема решена самостоятельно" } })));
+  render(<ScenarioSession offering="other" owner="user" />);
+  await screen.findByRole("heading", { name: "Проблема решена самостоятельно" });
+  expect(sessionStorage.getItem(key)).toBeNull();
+  expect(sessionStorage.getItem(`${key}:entry:another`)).toBe("another-session");
+});
+
 it("retries a blocked preview explicitly without submitting until it clears", async () => {
   let previews = 0;
   const fetchMock = vi.fn(async (url: string) => response(url.endsWith("/ticket-preview")
@@ -263,6 +374,7 @@ it("resumes a created session directly into its ticket without preview or submit
   await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/existing-ticket" });
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock.mock.calls[0][0]).toBe("/api/web/requester/request-scenarios/sessions/session");
+  expect(sessionStorage.getItem("pc_client.scenario.session:user:workplace.printer")).toBeNull();
 });
 
 it("shows processing and ignores duplicate clicks while submission is pending", async () => {
@@ -318,9 +430,11 @@ it("reloads server state after an uncertain submit instead of automatically subm
   vi.stubGlobal("fetch", fetchMock);
   render(<ScenarioSession offering="workplace.printer" owner="user" />);
   fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+  expect(sessionStorage.getItem("pc_client.scenario.session:user:workplace.printer")).toBe("session");
   fireEvent.click(await screen.findByRole("button", { name: "Загрузить сохранённый шаг" }));
   await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/created-on-server" });
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(1);
+  expect(sessionStorage.getItem("pc_client.scenario.session:user:workplace.printer")).toBeNull();
 });
 
 
@@ -373,5 +487,5 @@ it("opens the existing ticket when automatic processing returns a session comple
   await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/completed-in-another-window" });
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/ticket-preview"))).toHaveLength(1);
   expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/submit"))).toBe(false);
-  expect(sessionStorage.getItem("pc_client.scenario.session:user:workplace.printer")).toBe("session");
+  expect(sessionStorage.getItem("pc_client.scenario.session:user:workplace.printer")).toBeNull();
 });

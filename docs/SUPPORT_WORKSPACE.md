@@ -38,11 +38,14 @@ continue through the canonical routing service, including policy-only updates
 on an existing ticket whose historical queue does not change.
 
 The compact list has **Открыть всю очередь**; it uses the existing full-list route
-and retains search/filter state. Ticket mode reuses the existing inspector with
-context, device, SLA, knowledge, tools and passport tabs. Both sidebars support
+and retains search/filter state. Ordinary ticket mode shows plain requester,
+contact, status, assignee and resolution-SLA facts. The full inspector with
+context, device, SLA, knowledge, tools and passport tabs remains in advanced mode.
+Both sidebars support
 pointer resizing and arrow keys, with double-click/Home/Enter to reset. Widths
-persist through the existing layout preference. On small screens the inspector
-opens from **Сведения**; the full queue remains reachable from the ticket header.
+persist through the existing layout preference. On small screens **Сведения**
+opens the plain facts drawer; the full queue remains reachable from the ticket
+header. Explicit additional functions open the retained advanced inspector.
 
 ## Queue and actions
 
@@ -98,6 +101,9 @@ dialog; an identical initial chat message is collapsible. Attachments retain
 their canonical download links. Ctrl/Command+Enter sends an allowed nonempty
 draft, while Enter inserts a line break. New messages preserve the reading
 position when the operator has scrolled back and offer a return-to-latest button.
+Resolved/closed public conversations show a concise read-only notice instead of
+an unusable editor. Authorized internal notes keep their separate composer and
+draft/attachment state.
 
 ## Resolution and additional functions
 
@@ -121,6 +127,8 @@ The problem and public result are visible in the compact ticket. Long public
 results expand into a keyboard-accessible scroll region. Requester views use
 only `requester_resolution_summary`; internal `resolution_summary` stays private.
 Confirmation, rating and reopening each follow their own server capability.
+Optional rating and reopening forms open only on an explicit request; mandatory
+confirmation remains visible when required by policy.
 An administrator using the requester workspace acts only on their own linked
 requester identity, with ownership reread after the ticket lock.
 
@@ -144,3 +152,8 @@ Phase-one completion/identity regression coverage also includes
 `test_phase1_resolution_metadata_no_db.py`. Additive Studio publication and
 preserved question/SLA branches are described in
 [the catalog procedure](HELPDESK_PHASE1_CATALOG.md).
+
+The final requester step places saved answers and submission actions in normal
+document flow so the processing summary cannot cover answers. Acknowledged
+successful terminal sessions retire only their matching saved resume handle;
+uncertain submissions retain recovery, while a later new request can start fresh.

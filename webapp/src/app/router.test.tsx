@@ -420,7 +420,8 @@ describe("appRoutes", () => {
 
     expect(await screen.findByTestId("compact-queue-route")).toBeInTheDocument();
     expect((await screen.findAllByRole("link", { name: /Расширенный центр/ })).length).toBeGreaterThan(0);
-    expect((await screen.findAllByRole("link", { name: /Тикеты/ })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("link", { name: /Очередь обращений/ })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "Тикеты" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();
   });
 

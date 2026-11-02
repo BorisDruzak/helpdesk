@@ -5,7 +5,7 @@ import type { SupportWorkspaceTimelineItem } from "../../../features/queues/supp
 
 export type SimpleSupportConversationProps = {
   items: SupportWorkspaceTimelineItem[]; mode: "public" | "internal"; text: string;
-  canReply: boolean; canNote: boolean; pending: boolean; loading?: boolean; error?: boolean; uploadError?: string | null;
+  canReply: boolean; canNote: boolean; publicReadOnly?: boolean; pending: boolean; loading?: boolean; error?: boolean; uploadError?: string | null;
   replyBlockedReason?: string | null; initialDescription?: string | null;
   onModeChange: (mode: "public" | "internal") => void; onTextChange: (text: string) => void; onSend: () => void;
   attachments: SupportTicketAttachmentUpload[]; onRemoveAttachment: (id: string) => void;
@@ -85,7 +85,7 @@ export function SimpleSupportConversation(props: SimpleSupportConversationProps)
       </div>
       {hasNew ? <button className="simple-latest simple-button" type="button" onClick={latest}><ArrowDown size={16} aria-hidden />К новым сообщениям</button> : null}
     </div>
-    {tab !== "history" ? <form className="simple-composer" data-internal={isInternal} data-blocked={!allowed} onSubmit={(event) => { event.preventDefault(); if (canSend) { pinnedRef.current = true; props.onSend(); } }}>
+    {tab !== "history" && (isInternal || !props.publicReadOnly) ? <form className="simple-composer" data-internal={isInternal} data-blocked={!allowed} onSubmit={(event) => { event.preventDefault(); if (canSend) { pinnedRef.current = true; props.onSend(); } }}>
       <div className="simple-composer__heading"><label><span className="sr-only">Режим ответа</span><select aria-label="Режим ответа" disabled={props.pending} value={isInternal ? "internal" : "public"} onChange={(event) => selectTab(event.target.value === "internal" ? "internal" : "dialog")}><option value="public">Ответ сотруднику</option><option value="internal">Внутренняя заметка</option></select></label><span className="simple-muted">{isInternal ? <><LockKeyhole size={13} aria-hidden /> Видит только поддержка</> : "Сообщение увидит сотрудник"}</span></div>
       {!allowed ? <p className="simple-reply-blocked">{isInternal ? "Внутренние заметки недоступны для вашей роли." : props.replyBlockedReason || "Ответ доступен исполнителю после начала работы."}</p> : null}
       <textarea aria-label={isInternal ? "Внутренняя заметка" : "Сообщение сотруднику"} placeholder={isInternal ? "Написать заметку для поддержки…" : "Написать сообщение сотруднику…"} disabled={!allowed || props.pending} value={props.text} onChange={(event) => props.onTextChange(event.target.value)} rows={2}

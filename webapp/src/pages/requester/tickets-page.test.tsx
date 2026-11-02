@@ -134,6 +134,7 @@ describe("RequesterTicketsPage", () => {
       );
     });
 
+    fireEvent.click(await screen.findByRole("button", { name: "Оценить решение" }));
     fireEvent.change(screen.getByLabelText("Оценка обращения"), { target: { value: "2" } });
     fireEvent.click(screen.getByLabelText("Проблема решена"));
     fireEvent.click(screen.getByRole("button", { name: "Отправить оценку" }));
@@ -144,6 +145,7 @@ describe("RequesterTicketsPage", () => {
       );
     });
 
+    fireEvent.click(await screen.findByRole("button", { name: "Проблема не решена" }));
     const reasonSelects = screen.getAllByRole("combobox");
     expect(reasonSelects).toHaveLength(2);
     fireEvent.change(reasonSelects[1], { target: { value: "problem_returned" } });
@@ -194,6 +196,8 @@ describe("RequesterTicketsPage", () => {
     renderTicketsPage("/app/requester/tickets/REQ-1001");
 
     expect(await screen.findByRole("heading", { name: "Ноутбук не включается" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Вернуть в работу" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Проблема не решена" }));
     expect(screen.getByRole("button", { name: "Вернуть в работу" })).toBeInTheDocument();
   });
 });

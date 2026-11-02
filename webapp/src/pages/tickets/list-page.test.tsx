@@ -432,6 +432,57 @@ describe("TicketListPage", () => {
     expect(screen.getByRole("heading", { name: "Очередь обращений" })).toBeInTheDocument();
   });
 
+  it("shows plain requester facts and SLA by default while keeping the full inspector in advanced mode", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    const workspace = workspacePayload();
+    workspace.detail.ticket.device_id = null;
+    workspace.detail.snapshot.device.device_id = null;
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    renderTicketListPage("/app/tickets/ticket-1", false);
+    await screen.findByRole("heading", { name: "SLA · Срок решения" });
+    expect(screen.getByText("Александр Смирнов")).toBeInTheDocument();
+    expect(screen.getByText("+7 (495) 123-45-67")).toBeInTheDocument();
+    expect(screen.getByText("Без агента — обычную заявку можно обработать.")).toBeInTheDocument();
+    expect(screen.queryByTestId("support-inspector-panel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Observer · подробности")).not.toBeInTheDocument();
+    expect(screen.queryByText("browser_no_device")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Действия ▾"));
+    fireEvent.click(screen.getByRole("button", { name: "Дополнительные возможности" }));
+    expect(screen.queryByTestId("simple-support-workspace")).not.toBeInTheDocument();
+    expect(screen.getByTestId("support-inspector-panel")).toBeInTheDocument();
+    expect(screen.getByText("Observer · подробности")).toBeInTheDocument();
+  });
+
+  it.each(["resolved", "closed"])("keeps %s public chat read-only without losing the private note draft or attachment", async (status) => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    const workspace = workspacePayload();
+    workspace.detail.ticket.status = status;
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [
+      { ...timelinePayload().items[0], event_id: 501, event_type: "chat_message", event_category: "message", from_role: "support", visibility: "public", text: "Публичный итог работы" },
+      { ...timelinePayload().items[0], event_id: 502, event_type: "chat_message", event_category: "message", from_role: "support", visibility: "internal", text: "Внутренняя диагностика" },
+    ] }));
+    uploadSupportTicketAttachmentMock.mockResolvedValue({ artifact_id: "private-log", filename: "private-log.txt", name: "private-log.txt", url: "/api/artifacts/private/download", size: 3, sha256: "hash", mime_type: "text/plain", kind: "file" });
+    postSupportTicketMessageMock.mockResolvedValue({ ticket_id: "ticket-1", message: {} } as any);
+    const view = renderTicketListPage("/app/tickets/ticket-1", false);
+    await screen.findByText("Публичный итог работы");
+    expect(screen.queryByRole("textbox", { name: "Сообщение сотруднику" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Отправить" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Внутренние заметки" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Внутренняя заметка" }), { target: { value: "Служебный черновик" } });
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["log"], "private-log.txt")] } });
+    await screen.findByText("private-log.txt");
+    fireEvent.click(screen.getByRole("tab", { name: "Диалог" }));
+    expect(screen.queryByText("Внутренняя диагностика")).not.toBeInTheDocument();
+    expect(screen.queryByText("private-log.txt")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Внутренние заметки" }));
+    expect(screen.getByRole("textbox", { name: "Внутренняя заметка" })).toHaveValue("Служебный черновик");
+    expect(screen.getByText("private-log.txt")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Отправить" }));
+    await waitFor(() => expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-1", "Служебный черновик", "internal", ["private-log"]));
+  });
+
   it("does not show obsolete legacy code blockers in the advanced closure plan", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     const workspace = workspacePayload();

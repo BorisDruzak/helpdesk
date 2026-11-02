@@ -56,7 +56,10 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - `webapp/src/pages/tickets/list-page.tsx` keeps the existing support queries,
   realtime and mutations; `components/simple-support-*` compose the default
   queue, compact ticket and three conversation tabs. `/app/support` redirects to
-  this queue; the command center remains at `/app/support/advanced`.
+  this queue, with one canonical navigation item; the command center remains at
+  `/app/support/advanced`. Ordinary facts/SLA stay plain; the full inspector is
+  available through explicit advanced functions. Terminal public conversations
+  omit the unusable editor while authorized internal notes retain drafts.
 - `tickets/smart_views.py` adds server-side operational views before queue limits.
 - `web_api/support_handlers.py` locks status/ownership before take-in-work and
   public reply. Rejected replies write no event and do not finish first-response
@@ -81,7 +84,11 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   result views use `requester_resolution_summary`; internal results stay private.
 - `requester/scenario-session.tsx` automatically obtains the processing preview
   on the submission step and opens the created ticket directly. Terminal preview
-  responses use the existing session generation/abort guard.
+  responses use the session generation/abort guard. Acknowledged successful
+  terminal sessions retire only their matching resume handle; uncertain commands
+  keep recovery. Final actions flow below saved answers. Conditional projections
+  follow the latest control values, cancel superseded timers/requests and reject
+  stale sequence/lifecycle responses before updating visible fields.
 - `scripts/helpdesk_phase1_catalog.py` adds four versioned Studio maps through
   canonical publication, retaining Other's question/SLA branches. Its reviewed
   staging wrapper owns host/release verification, backup and readback; see

@@ -44,6 +44,9 @@ describe("navigation helpers", () => {
   it("makes the compact queue primary and keeps the old center as an advanced entry", () => {
     const items = getVisibleNavigationItems("support", ["ticket.queue.view"]);
     expect(items.find(item => item.isWorkspaceHome)?.label).toBe("Очередь обращений");
+    expect(items.find(item => item.isWorkspaceHome)?.to).toBe("/app/tickets");
+    expect(items.filter(item => ["/app/tickets", "/app/support"].includes(item.to))).toHaveLength(1);
+    expect(getActiveNavItem("/app/support")?.label).toBe("Очередь обращений");
     expect(items.find(item => item.to === "/app/support/advanced")?.label).toBe("Расширенный центр");
     expect(getActiveWorkspace("/app/support/advanced")).toBe("support");
   });
@@ -59,7 +62,7 @@ describe("navigation helpers", () => {
     expect(getActiveWorkspace("/app/kb")).toBeNull();
     expect(getActiveWorkspace("/app/help")).toBeNull();
 
-    expect(getActiveNavItem("/app/tickets/T-1/passport/print")?.label).toBe("Тикеты");
+    expect(getActiveNavItem("/app/tickets/T-1/passport/print")?.label).toBe("Очередь обращений");
     expect(getActiveNavItem("/app/admin/inventory?panel=requests")?.label).toBe("Устройства");
     expect(getActiveNavItem("/app/admin/policy-health?service=mail")?.label).toBe("Проверка политик");
   });

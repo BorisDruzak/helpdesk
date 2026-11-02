@@ -42,7 +42,8 @@ describe("ticket workspace shell", () => {
   it("retains the common navigation and header on ticket routes", () => {
     render(<MemoryRouter initialEntries={["/app/tickets/ticket-1"]}><AppShell><p>Переписка</p></AppShell></MemoryRouter>);
     expect(screen.getByText("Общая панель")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Очередь обращений" })).toHaveAttribute("href", "/app/support");
+    expect(screen.getByRole("link", { name: "Очередь обращений" })).toHaveAttribute("href", "/app/tickets");
+    expect(screen.queryByRole("link", { name: "Тикеты" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Расширенный центр" })).toHaveAttribute("href", "/app/support/advanced");
     expect(screen.getByText("Переписка")).toBeInTheDocument();
   });

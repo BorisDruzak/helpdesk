@@ -57,9 +57,9 @@ describe("AppSidebar", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("link", { name: /Очередь обращений/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Очередь обращений/ })).toHaveAttribute("href", "/app/tickets");
     expect(screen.getByRole("link", { name: /Расширенный центр/ })).toHaveAttribute("href", "/app/support/advanced");
-    expect(screen.getByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Тикеты/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Устройства")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();
   });

@@ -1,5 +1,5 @@
 import { Paperclip, Send } from "lucide-react";
-import type { ChangeEvent, MutableRefObject } from "react";
+import { useId, useState, type ChangeEvent, type MutableRefObject } from "react";
 import { Link } from "react-router-dom";
 
 import { formatRussianDateTime, formatStatusLabel } from "../../components/ui-page";
@@ -175,6 +175,10 @@ export function TicketResolutionPanel({
   setReopenReason: (value: string) => void;
   submitFeedback: () => void;
 }) {
+  const [ratingOpen, setRatingOpen] = useState(false);
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const ratingId = useId();
+  const reopenId = useId();
   if (!canRate && !canClose && !canReopen) {
     return null;
   }
@@ -187,7 +191,9 @@ export function TicketResolutionPanel({
         </Button>
       ) : null}
       {canRate ? (
-        <div className="mt-4 grid gap-3">
+        <div className="mt-3">
+          <Button aria-expanded={ratingOpen} aria-controls={ratingId} onClick={() => setRatingOpen(open => !open)} type="button" variant="outline">Оценить решение</Button>
+          {ratingOpen ? <div id={ratingId} className="mt-3 grid gap-3">
           <FieldShell label="Оценка обращения">
             <Input
               aria-label="Оценка обращения"
@@ -220,10 +226,13 @@ export function TicketResolutionPanel({
               Отправить оценку
             </Button>
           </FormActions>
+          </div> : null}
         </div>
       ) : null}
       {canReopen ? (
-        <div className="mt-4 grid gap-3">
+        <div className="mt-3">
+          <Button aria-expanded={reopenOpen} aria-controls={reopenId} onClick={() => setReopenOpen(open => !open)} type="button" variant="outline">Проблема не решена</Button>
+          {reopenOpen ? <div id={reopenId} className="mt-3 grid gap-3">
           <FieldShell label="Причина возврата">
             <Select className="mt-1 w-full font-normal" onChange={(event) => setReopenReason(event.currentTarget.value)} value={reopenReason}>
               {reopenReasonOptions.map((option) => (
@@ -243,6 +252,7 @@ export function TicketResolutionPanel({
           <Button className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100" disabled={actionSubmitting} onClick={reopenTicket} type="button" variant="outline">
             Вернуть в работу
           </Button>
+          </div> : null}
         </div>
       ) : null}
     </section>

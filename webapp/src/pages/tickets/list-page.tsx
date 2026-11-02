@@ -3761,11 +3761,12 @@ export function TicketListPage() {
             onStatus={(value) => operatorActionMutation.mutate({ kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" })}
             onResolve={() => setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket))}
             onAdvanced={(mode = "ticket") => { setSimpleMode(false); setWorkspaceMode(mode); if (mode !== "ticket") setSidebarTab(mode); }}
-            inspector={ticketInspector} unifiedQueue={unifiedQueue}
+            unifiedQueue={unifiedQueue}
             onManage={openOperatorAction} onQueue={() => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); }}
             conversation={<SimpleSupportConversation key={selectedTicket.id}
               items={mapSupportTimelineEntries([...(timelineQuery.data?.items ?? workspaceQuery.data.detail.timeline)].sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0)))}
               initialDescription={rawTicket?.description}
+              publicReadOnly={Boolean(rawTicket && ["resolved", "closed"].includes(rawTicket.status))}
               replyBlockedReason={rawTicket && ["new", "queued", "assigned"].includes(rawTicket.status) ? workspaceQuery.data.detail.actions.take_in_work?.reason : rawTicket && ["resolved", "closed", "canceled"].includes(rawTicket.status) ? "Обращение завершено. Переписка доступна для просмотра." : undefined}
               mode={composerMode} text={composerText} canReply={publicReplyAllowed} canNote={hasPermission("ticket.comment.internal") && internalNoteAllowed}
               pending={messageMutation.isPending || uploadingAttachments} loading={timelineQuery.isLoading} error={timelineQuery.isError}

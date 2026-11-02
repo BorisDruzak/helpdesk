@@ -47,11 +47,26 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
   const requestSequence = useRef(0);
   const lifecycle = useRef(0);
   const commandControllers = useRef(new Set<AbortController>());
+  const previewTimer = useRef<number | null>(null);
+  const previewController = useRef<AbortController | null>(null);
   const storageKey = owner ? `pc_client.scenario.session:${owner}:${offering}${entryPointKey ? `:entry:${encodeURIComponent(entryPointKey)}` : ""}` : null;
+
+  function cancelScheduledPreview() {
+    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+    previewTimer.current = null;
+    previewController.current?.abort();
+    previewController.current = null;
+  }
 
   function remember(data: Step) {
     if (storageKey) {
-      try { sessionStorage.setItem(storageKey, data.id); } catch { /* Server start can still resume. */ }
+      try {
+        const completed = (data.state === "ticket_created" && data.linked_ticket_id) || data.state === "completed_self_service";
+        if (completed) {
+          // Forget only an acknowledged terminal session; uncertain commands keep their resume handle.
+          if (sessionStorage.getItem(storageKey) === data.id) sessionStorage.removeItem(storageKey);
+        } else sessionStorage.setItem(storageKey, data.id);
+      } catch { /* Server start can still resume active sessions. */ }
     }
   }
   function accept(data: Step) {
@@ -80,6 +95,7 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
       .finally(() => { if (!controller.signal.aborted) { commandBusy.current = false; setBusy(false); } });
     return () => {
       lifecycle.current++; controller.abort(); requestSequence.current++;
+      cancelScheduledPreview();
       for (const pending of commandControllers.current) pending.abort();
       commandControllers.current.clear();
     };
@@ -90,6 +106,7 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
   async function command(kind: string, body: unknown) {
     if (!step || commandBusy.current) return;
     if (kind === "submit" && (step.state !== "active" || !ticketPreview?.ok || ticketPreview.blockers.length || error)) return;
+    cancelScheduledPreview();
     commandBusy.current = true;
     const generation = lifecycle.current;
     const controller = new AbortController();
@@ -125,19 +142,45 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
     }
   }, [step, busy, ticketPreview, error]);
 
-  async function preview() {
-    if (!step?.block.has_dynamic_fields || busy) return;
+  async function preview(answers = values) {
+    if (!step?.block.has_dynamic_fields || busy || commandBusy.current) return;
+    cancelScheduledPreview();
     const sequence = ++requestSequence.current;
+    const generation = lifecycle.current;
+    const controller = new AbortController();
+    previewController.current = controller;
+    commandControllers.current.add(controller);
+    const current = () => sequence === requestSequence.current && generation === lifecycle.current && !controller.signal.aborted;
     try {
       const data = await request(`${base}/${step.id}/step-preview`, {
-        expected_block_id: step.block.id, revision: step.revision, answers: values,
-      });
-      if (sequence === requestSequence.current) {
+        expected_block_id: step.block.id, revision: step.revision, answers,
+      }, controller.signal);
+      if (current()) {
         setStep(current => current ? { ...current, block: data.block } : current);
-        setValues(current => Object.fromEntries((data.block.fields || []).map(field => [field.key, current[field.key]])));
+        setValues(current => {
+          const projected = Object.fromEntries((data.block.fields || []).map(field => [field.key, current[field.key]]));
+          return Object.keys(current).length === Object.keys(projected).length && Object.keys(projected).every(key => Object.hasOwn(current, key) && Object.is(current[key], projected[key])) ? current : projected;
+        });
         setError(null);
       }
-    } catch (cause) { if (sequence === requestSequence.current) setError(cause as SessionError); }
+    } catch (cause) { if (current()) setError(cause as SessionError); }
+    finally {
+      commandControllers.current.delete(controller);
+      if (previewController.current === controller) previewController.current = null;
+    }
+  }
+
+  function changeValue(key: string, value: DynamicFormValues[string]) {
+    const next = { ...values, [key]: value };
+    requestSequence.current++;
+    cancelScheduledPreview();
+    setValues(next);
+    setError(null);
+    if (step?.block.has_dynamic_fields && !busy) {
+      const type = step.block.fields?.find(field => field.key === key)?.type;
+      const delay = type && ["text", "textarea", "number"].includes(type) ? 150 : 0;
+      previewTimer.current = window.setTimeout(() => { previewTimer.current = null; void preview(next); }, delay);
+    }
   }
 
   const answer = (result?: string) => command(step?.block.kind === "form_page" ? "answer" : "advance", {
@@ -160,11 +203,9 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
     {step ? <>
       <h2 ref={heading} tabIndex={-1} className="text-xl font-semibold text-slate-950">{step.block.title}</h2>
       <fieldset disabled={busy} className="grid min-w-0 gap-4" onBlur={() => void preview()}>
-        <ScenarioStepContent block={step.block} values={values} errors={error?.fields} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onValue={(key,value)=>{
-          requestSequence.current++; setValues(current=>({...current,[key]:value})); setError(null);
-        }} onRequestTicket={()=>void answer("request_ticket")} />
+        <ScenarioStepContent block={step.block} values={values} errors={error?.fields} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onValue={changeValue} onRequestTicket={()=>void answer("request_ticket")} />
       </fieldset>
-      <fieldset disabled={busy} className="sticky bottom-0 z-10 grid min-w-0 gap-3 border-t border-slate-200 bg-white py-3" aria-label="Действия шага">
+      <fieldset disabled={busy} className={`${step.block.kind === "submit_ticket" ? "" : "sticky bottom-0 z-10 "}grid min-w-0 gap-3 border-t border-slate-200 bg-white py-3`} aria-label="Действия шага">
         {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}
         {["form_page", "instruction", "review"].includes(step.block.kind) ? <Button type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить</Button> : null}
         {step.block.kind === "finish" ? <Button type="button" onClick={() => void command("finish", { revision: step.revision })}>Завершить</Button> : null}
