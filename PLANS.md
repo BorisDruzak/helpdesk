@@ -2773,18 +2773,28 @@ and ordinary resolution/closure; add four common Studio maps.
 Baseline: `9a79f6cfba8cfe37649a62e0077a82ff8637ac9f`, branch
 `codex/ui-support-001`. Source changes and per-task review are implemented;
 integrated review, isolated PostgreSQL, browser fixtures and exact-release
-staging acceptance are in progress. No production release is authorized here.
+staging acceptance are complete. Runtime candidate:
+`fb7d326c7e568f616d2829ec0c7a1bd318cc6f0e`. No production deployment or push.
 Registration remains controlled by its existing flag. Unknown AD identities
-must be explicitly linked to the intended existing profile; never infer roles
-or ownership from a matching login.
+must be explicitly linked; never infer roles or ownership from a matching login.
+The user explicitly selected a new `admin-2` administrator; canonical exact-AD
+binding and real password-only browser login passed without changing old accounts.
 
-Next: finish current PostgreSQL run, correct demonstrated failures, complete
-catalog publication tests, freeze reviewed commits, take a private staging
-backup and deploy through the canonical procedure. Publish the additive catalog
-through canonical services, then verify Other/Studio branches and SLA, ordinary
-requester creation and support reply/close in the live browser. The user
-explicitly requests staging remain running after verification.
+Verified: final full frontend947 tests; last layout35 focused tests; actual
+browser35 cases; isolated PostgreSQL49 integrated and3 catalog tests; build,
+TypeScript, workspace verification and reviews. Four maps and closure1.0.2
+published canonically, preserving old24 versions/40 drafts/65 ticket snapshots.
+Seven owned live Other/Studio tickets66–72 passed creation, support start/reply,
+public result and atomic code-free closure; requester result and voluntary rating
+passed. Final network173 responses without failures and warning/error logs empty.
+Exact runtime/source digests, strict TLS health200 and serviceactive verified.
+Staging remains running as explicitly requested; temporary viewport was reset.
+
+Next pilot preparation: decide registration/provisioning policy, complete real
+profiles/identity links, review historical test catalog and synthetic operator
+roster before real employee traffic. No bulk deletion or production change.
 
 Tracking: `docs/superpowers/plans/2026-11-02-helpdesk-phase1.md` and
 `.superpowers/sdd/2026-11-02-helpdesk-phase1/progress.md`. Preserve unrelated
 preexisting entries and distinguish fixture evidence from actual staging gates.
+Final acceptance: `docs/UX_PHASE1_ACCEPTANCE_2026-11-02.md`.
