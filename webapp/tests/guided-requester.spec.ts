@@ -1,7 +1,7 @@
 import { expect, test } from "playwright/test";
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
-  for (const mode of ["self-service", "ticket", "escape-ticket"]) {
+  for (const mode of ["self-service", "ticket", "escape-ticket", ...(viewport.width === 1366 || viewport.width === 820 ? ["blocked-ticket", "double-ticket"] : [])]) {
   test(`guided requester ${mode} server steps and resume ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);
     const errors: string[] = [];
@@ -14,6 +14,12 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     let current = "questions";
     let answer = "";
     let created = false;
+    let previews = 0;
+    let submissions = 0;
+    let detailReads = 0;
+    let releaseSubmit!: () => void;
+    const submitGate = new Promise<void>(resolve => { releaseSubmit = resolve; });
+    const unexpectedRoutes: string[] = [];
     function step() {
       return { id: "guided-session", revision, state: created ? "ticket_created" : current === "finish" ? "completed_self_service" : "active", linked_ticket_id: created ? "test-ticket" : null, back_targets: [],
         block: current === "questions" ? { id: current, kind: "form_page", title: "Что происходит с принтером?", fields: [
@@ -28,17 +34,28 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     }
     await page.route("**/api/web/**", async route => {
       const path = new URL(route.request().url()).pathname;
-      let data: unknown = {};
+      const method = route.request().method();
+      let data: unknown;
       if (path === "/api/web/session/me") data = { user_login: "guided@example.test", actor_role: "user", auth_type: "web_session", default_workspace: "requester", available_workspaces: ["requester"], permissions: ["workspace.requester.view"] };
       else if (path.endsWith("/requester/bootstrap")) data = { profile: { person_id: "p1", display_name: "Сотрудник" }, account_summary: { linked_profile: true }, profile_completion: { complete: true, required_fields: [], missing_fields: [], blocks: {} }, devices: [], feature_flags: { requester_ticket_create: true, requester_no_device_create: true }, policies: {} };
-      else if (path.includes("/request-scenarios/sessions")) {
+      else if (path === "/api/web/requester/consents" && method === "GET") data = { consents: [] };
+      else if (path === "/api/web/requester/tickets/test-ticket" && method === "GET" && created) {
+        detailReads++;
+        data = { ticket: { ticket_id: "test-ticket", ticket_code: "T-300001", title: "Помощь с принтером", description: answer,
+          status: "new", status_label: "Новая", requester_status_label: "Принято поддержкой", resolution_confirmation_pending: false,
+          actions: { can_send_message: true, can_attach_files: false, can_confirm_solution: false, can_rate_solution: false, can_reopen: false } },
+          messages: [{ message_id: "created-message", text: "Обращение принято. Поддержка скоро ответит.", from_role: "support", ts: "2026-11-02T09:00:00+05:00", attachments: [] }],
+          events: [{ event_id: 1, event_type: "ticket_created", requester_timeline_text: "Обращение создано", ts: "2026-11-02T09:00:00+05:00" }] };
+      }
+      else if ((path === "/api/web/requester/request-scenarios/sessions" && method === "POST") || (path === "/api/web/requester/request-scenarios/sessions/guided-session" && method === "GET") || (/^\/api\/web\/requester\/request-scenarios\/sessions\/guided-session\/(answer|advance|submit|ticket-preview)$/.test(path) && method === "POST")) {
         if (path.endsWith("/sessions") && route.request().method() === "POST" && mode === "ticket") expect(route.request().postDataJSON()).toEqual({ offering_full_code: "workplace.printer", entry_point_key: "paper" });
         if (path.endsWith("/answer")) { const body = route.request().postDataJSON(); expect(body).toMatchObject({ revision: 1, expected_block_id: "questions" }); answer = body.answers.summary; current = "instruction"; revision++; }
-        if (path.endsWith("/advance")) { const body = route.request().postDataJSON(); expect(body.revision).toBe(revision); if (mode === "escape-ticket" && current === "instruction") { expect(body.current_result).toBe("request_ticket"); current = "review"; } else current = current === "instruction" ? "resolved" : current === "review" ? "submit" : mode === "ticket" ? "review" : "finish"; revision++; }
-        if (path.endsWith("/submit")) { expect(route.request().postDataJSON()).toEqual({ revision, confirm: true, device_scope: "none" }); created = true; revision++; }
+        if (path.endsWith("/advance")) { const body = route.request().postDataJSON(); expect(body.revision).toBe(revision); if (mode === "escape-ticket" && current === "instruction") { expect(body.current_result).toBe("request_ticket"); current = "review"; } else current = current === "instruction" ? "resolved" : current === "review" ? "submit" : mode !== "self-service" ? "review" : "finish"; revision++; }
+        if (path.endsWith("/submit")) { expect(route.request().postDataJSON()).toEqual({ revision, confirm: true, device_scope: "none" }); submissions++; if (mode === "double-ticket") await submitGate; created = true; revision++; }
         data = step();
-        if (path.endsWith("/ticket-preview")) data = { ok: true, expected_resolution: "до 4 ч", approval: { text: "Согласование не требуется" }, blockers: [], warnings: [], would_create_ticket: false };
-      } else if (path.endsWith("unread_count")) { await route.fulfill({ json: { status: "ok", unread_count: 0 } }); return; }
+        if (path.endsWith("/ticket-preview")) { expect(route.request().postDataJSON()).toEqual({ revision, device_scope: "none" }); previews++; data = { ok: mode !== "blocked-ticket" || previews > 1, expected_resolution: "до 4 ч", approval: { text: "Согласование не требуется" }, blockers: mode === "blocked-ticket" && previews === 1 ? ["Уточните место установки принтера перед отправкой."] : [], warnings: ["Проверьте доступность принтера."], would_create_ticket: false }; }
+      } else if (path === "/api/web/notifications/unread_count" && method === "GET") { await route.fulfill({ json: { status: "ok", unread_count: 0 } }); return; }
+      else { unexpectedRoutes.push(`${method} ${path}`); await route.fulfill({ status: 501, json: { status: "error", error: "Unexpected fixture route" } }); return; }
       await route.fulfill({ json: { status: "success", data } });
     });
     await page.route("**/api/registry/options", route => route.fulfill({ json: { status: "success", data: { departments: [], locations: [] } } }));
@@ -52,7 +69,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       return route.fulfill({ json: { status: "ok", catalog_version: "test", services: [{ service_code: "workplace", title: "Рабочее место", offerings: [{ offering_code: "printer", full_code: "workplace.printer", title: "Не печатает", request_template_key: "printer", guided_scenario_enabled: true, ...(mode === "ticket" ? { catalog_items: [{ key: "paper", title: "Бумага застряла", description: "Помощь с бумагой", synonyms: ["замятие"], entry_point_key: "paper", scenario_key: "printer", version_id: "v1", target_block_id: "questions" }] } : {}) }] }] } });
     });
     await page.goto(mode === "escape-ticket" ? "/app/requester/new/?offering=workplace.printer" : "/app/requester/new");
-    if (mode === "self-service") await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
+    if (["self-service", "blocked-ticket", "double-ticket"].includes(mode)) await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
     if (mode === "ticket") {
       await page.getByRole("searchbox", { name: "Найти проблему во всём каталоге" }).fill("замятие");
       const result = page.getByRole("button", { name: /Бумага застряла/ });
@@ -80,22 +97,47 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       await page.getByRole("checkbox", { name: "Инструкция выполнена" }).check();
       await next.click();
       await expect(page.getByRole("heading", { name: "Удалось восстановить печать?" })).toBeVisible();
-      await page.getByRole("button", { name: mode === "ticket" ? "Нет, нужна помощь" : "Да, решено" }).click();
+      await page.getByRole("button", { name: mode !== "self-service" ? "Нет, нужна помощь" : "Да, решено" }).click();
     }
     if (mode !== "self-service") {
       await expect(page.getByText(answer)).toBeVisible();
       await next.click();
-      await page.getByRole("button", { name: "Проверить обработку" }).click();
+      await expect(page.getByRole("button", { name: "Проверить обработку" })).toHaveCount(0);
+      await expect(page.getByText("до 4 ч", { exact: true })).toBeVisible();
+      await expect(page.getByText("Согласование не требуется", { exact: true })).toBeVisible();
+      await expect(page.getByText("Проверьте доступность принтера.", { exact: true })).toBeVisible();
+      expect(submissions).toBe(0);
+      if (mode === "blocked-ticket") {
+        await expect(page.getByRole("alert").filter({ hasText: "Уточните место установки принтера перед отправкой." })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Создать обращение", exact: true })).toHaveCount(0);
+        expect(submissions).toBe(0);
+        await page.getByRole("button", { name: "Повторить обработку", exact: true }).click();
+      }
       const submit = page.getByRole("button", { name: "Создать обращение" });
       await expect(submit).toBeInViewport({ ratio: 1 });
-      await submit.click();
-      await expect(page.getByRole("link", { name: "Открыть обращение" })).toHaveAttribute("href", "/app/requester/tickets/test-ticket");
+      if (mode === "double-ticket") {
+        // Both click handlers run in one browser task before React can disable the button.
+        await submit.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
+        await expect.poll(() => submissions).toBe(1);
+        await expect(page.getByRole("status").filter({ hasText: "Создаём обращение..." })).toBeVisible();
+        releaseSubmit();
+      } else await submit.click();
+      await expect(page).toHaveURL(/\/app\/requester\/tickets\/test-ticket$/);
+      await expect(page.getByRole("region", { name: "Чат обращения", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Помощь с принтером", exact: true })).toBeVisible();
+      await expect(page.getByText("Обращение принято. Поддержка скоро ответит.", { exact: true })).toBeVisible();
+      expect(submissions).toBe(1);
+      expect(previews).toBe(mode === "blocked-ticket" ? 2 : 1);
+      const readsBeforeReload = detailReads;
       await page.reload();
-      await expect(page.getByText("Обращение создано.")).toBeVisible();
-    } else await expect(page.getByText("Проблема решена без обращения")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Помощь с принтером", exact: true })).toBeVisible();
+      await expect(page.getByText("Обращение принято. Поддержка скоро ответит.", { exact: true })).toBeVisible();
+      expect(detailReads).toBeGreaterThan(readsBeforeReload);
+      expect(submissions).toBe(1);
+    } else { await expect(page.getByText("Проблема решена без обращения")).toBeVisible(); expect(previews).toBe(0); expect(submissions).toBe(0); }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${viewport.width}-requester-${mode}.png`) });
-    expect(errors).toEqual([]); expect(failures).toEqual([]);
+    expect(unexpectedRoutes).toEqual([]); expect(errors).toEqual([]); expect(failures).toEqual([]);
   });
   }
 }

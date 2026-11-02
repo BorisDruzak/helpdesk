@@ -1,6 +1,19 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode, type ReactNode } from "react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { act, cleanup, fireEvent, render as renderComponent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioSession } from "./scenario-session";
+
+function TicketDestination() {
+  const location = useLocation();
+  return <h1>Открыто обращение: {location.pathname}</h1>;
+}
+function render(ui: ReactNode) {
+  return renderComponent(ui, { wrapper: ({ children }) => <MemoryRouter><Routes>
+    <Route path="/" element={children} />
+    <Route path="/app/requester/tickets/:ticketId" element={<TicketDestination />} />
+  </Routes></MemoryRouter> });
+}
 
 it("starts the selected entrance instead of resuming another entrance", async () => {
   sessionStorage.setItem("pc_client.scenario.session:user:workplace.printer", "legacy-session");
@@ -13,7 +26,7 @@ it("starts the selected entrance instead of resuming another entrance", async ()
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); });
 
-it("previews processing before submitting only the session revision and confirmation", async () => {
+it("automatically previews processing and opens the ticket after one explicit submission", async () => {
   const step = { id: "session", revision: 3, state: "active", back_targets: [], block: { id: "submit", kind: "submit_ticket", title: "Отправка" } };
   const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
     if (url.endsWith("/ticket-preview")) {
@@ -28,10 +41,12 @@ it("previews processing before submitting only the session revision and confirma
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<ScenarioSession offering="workplace.printer" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Проверить обработку" }));
   await screen.findByText("до 4 ч");
+  expect(screen.queryByRole("button", { name: "Проверить обработку" })).not.toBeInTheDocument();
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/submit"))).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
-  expect(await screen.findByRole("link", { name: "Открыть обращение" })).toHaveAttribute("href", "/app/requester/tickets/ticket-id");
+  await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/ticket-id" });
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
 });
 
@@ -40,7 +55,6 @@ it("keeps ticket creation blocked when canonical preview has blockers", async ()
     ? { ok: false, blockers: ["Маршрут недоступен"], warnings: [] }
     : { id: "session", revision: 3, state: "active", back_targets: [], block: { id: "submit", kind: "submit_ticket", title: "Отправка" } })));
   render(<ScenarioSession offering="workplace.printer" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Проверить обработку" }));
   await screen.findByText("Маршрут недоступен");
   expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
 });
@@ -60,9 +74,8 @@ it.each(["", "owned-computer"])("uses the selected computer context in preview a
     return response(step);
   }));
   render(<ScenarioSession offering="workplace.printer" deviceId={deviceId} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Проверить обработку" }));
   fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
-  await screen.findByRole("link", { name: "Открыть обращение" });
+  await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/ticket" });
 });
 
 function response(data: unknown, status = 200) {
@@ -221,4 +234,144 @@ it("shows human summary labels instead of stored entity identifiers", async () =
   render(<ScenarioSession offering="workplace.printer" />);
   await screen.findByText("Рабочий компьютер");
   expect(screen.queryByText("opaque-device-id")).not.toBeInTheDocument();
+});
+
+
+const submitStep = { id: "session", revision: 3, state: "active", back_targets: [], block: { id: "submit", kind: "submit_ticket", title: "Отправка" } };
+
+it("retries a blocked preview explicitly without submitting until it clears", async () => {
+  let previews = 0;
+  const fetchMock = vi.fn(async (url: string) => response(url.endsWith("/ticket-preview")
+    ? { ok: ++previews > 1, blockers: previews === 1 ? ["Маршрут недоступен"] : [], warnings: [], expected_resolution: "до 4 ч" }
+    : submitStep));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" />);
+  await screen.findByText("Маршрут недоступен");
+  expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Повторить обработку" }));
+  await screen.findByRole("button", { name: "Создать обращение" });
+  expect(screen.queryByText("Маршрут недоступен")).not.toBeInTheDocument();
+  expect(previews).toBe(2);
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/submit"))).toBe(false);
+});
+
+it("resumes a created session directly into its ticket without preview or submit", async () => {
+  sessionStorage.setItem("pc_client.scenario.session:user:workplace.printer", "session");
+  const fetchMock = vi.fn(async (_url: string) => response({ ...submitStep, state: "ticket_created", linked_ticket_id: "existing-ticket" }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" owner="user" />);
+  await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/existing-ticket" });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/web/requester/request-scenarios/sessions/session");
+});
+
+it("shows processing and ignores duplicate clicks while submission is pending", async () => {
+  let resolveSubmit!: (response: Response) => void;
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith("/ticket-preview")) return response({ ok: true, blockers: [], warnings: [] });
+    if (url.endsWith("/submit")) return await new Promise<Response>(resolve => { resolveSubmit = resolve; });
+    return response(submitStep);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<StrictMode><ScenarioSession offering="workplace.printer" /></StrictMode>);
+  const submit = await screen.findByRole("button", { name: "Создать обращение" });
+  act(() => { submit.click(); submit.click(); });
+  expect(await screen.findByRole("status")).toHaveTextContent("Создаём обращение");
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(1);
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/ticket-preview"))).toHaveLength(1);
+  await act(async () => { resolveSubmit(response({ ...submitStep, state: "ticket_created", linked_ticket_id: "ticket" })); });
+  await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/ticket" });
+});
+
+it.each(["preview", "terminal-preview", "submit"])("aborts and ignores an old owner's pending %s result", async phase => {
+  let resolvePending!: (response: Response) => void;
+  let pendingSignal: AbortSignal | undefined;
+  const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith(phase === "submit" ? "/submit" : "/ticket-preview")) {
+      pendingSignal = options?.signal as AbortSignal;
+      return await new Promise<Response>(resolve => { resolvePending = resolve; });
+    }
+    if (url.endsWith("/ticket-preview")) return response({ ok: true, blockers: [], warnings: [] });
+    const body = options?.body ? JSON.parse(String(options.body)) : {};
+    return response(body.offering_full_code === "other" ? { ...submitStep, id: "new", block: { id: "new", kind: "form_page", title: "Новый пользователь", fields: [] } } : submitStep);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const view = render(<ScenarioSession offering="workplace.printer" owner="old-user" />);
+  if (phase === "submit") fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+  await waitFor(() => expect(resolvePending).toBeDefined());
+  view.rerender(<ScenarioSession offering="other" owner="new-user" />);
+  await screen.findByRole("heading", { name: "Новый пользователь" });
+  expect(pendingSignal?.aborted).toBe(true);
+  await act(async () => { resolvePending(response(phase === "preview" ? { ok: true, blockers: [], warnings: [] } : { ...submitStep, state: "ticket_created", linked_ticket_id: "old-ticket" })); });
+  expect(screen.getByRole("heading", { name: "Новый пользователь" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(phase === "submit" ? 1 : 0);
+});
+
+it("reloads server state after an uncertain submit instead of automatically submitting again", async () => {
+  let reads = 0;
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith("/ticket-preview")) return response({ ok: true, blockers: [], warnings: [] });
+    if (url.endsWith("/submit")) throw new Error("connection lost");
+    return response(++reads === 1 ? submitStep : { ...submitStep, state: "ticket_created", linked_ticket_id: "created-on-server" });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" owner="user" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Загрузить сохранённый шаг" }));
+  await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/created-on-server" });
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(1);
+});
+
+
+it("starts processing the new revision after review and waits for its canonical preview", async () => {
+  let resolvePreview!: (response: Response) => void;
+  const fetchMock = vi.fn(async (url: string, _options?: RequestInit) => {
+    if (url.endsWith("/ticket-preview")) return await new Promise<Response>(resolve => { resolvePreview = resolve; });
+    if (url.endsWith("/advance")) return response({ ...submitStep, revision: 8 });
+    return response({ ...submitStep, revision: 7, block: { id: "review", kind: "review", title: "Проверьте ответы", answers: [] } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Продолжить" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Проверяем обработку обращения");
+  expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
+  const previews = fetchMock.mock.calls.filter(([url]) => url.endsWith("/ticket-preview"));
+  expect(previews).toHaveLength(1);
+  expect(JSON.parse(String(previews[0][1]?.body))).toEqual({ revision: 8 });
+  await act(async () => { resolvePreview(response({ ok: true, blockers: [], warnings: ["Требуется доступ к устройству"], expected_first_response: "15 минут", expected_resolution: "до 4 ч" })); });
+  await screen.findByRole("button", { name: "Создать обращение" });
+  expect(screen.getByText("Первый ответ: 15 минут")).toBeInTheDocument();
+  expect(screen.getByText("до 4 ч")).toBeInTheDocument();
+  expect(screen.getByText("Требуется доступ к устройству")).toBeInTheDocument();
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/submit"))).toBe(false);
+});
+
+it("keeps server-side submit validation authoritative and requires a reload after a revision conflict", async () => {
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith("/ticket-preview")) return response({ ok: true, blockers: [], warnings: [] });
+    if (url.endsWith("/submit")) return new Response(JSON.stringify({ status: "error", error_code: "REVISION_CONFLICT" }), { status: 409 });
+    return response(submitStep);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+  await screen.findByText("Сценарий изменился в другом окне. Загрузите сохранённый шаг.");
+  expect(screen.getByRole("button", { name: "Загрузить сохранённый шаг" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(1);
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/ticket-preview"))).toHaveLength(1);
+});
+
+
+it("opens the existing ticket when automatic processing returns a session completed in another window", async () => {
+  const fetchMock = vi.fn(async (url: string) => response(url.endsWith("/ticket-preview")
+    ? { ...submitStep, revision: 4, state: "ticket_created", linked_ticket_id: "completed-in-another-window" }
+    : submitStep));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" owner="user" />);
+  await screen.findByRole("heading", { name: "Открыто обращение: /app/requester/tickets/completed-in-another-window" });
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/ticket-preview"))).toHaveLength(1);
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/submit"))).toBe(false);
+  expect(sessionStorage.getItem("pc_client.scenario.session:user:workplace.printer")).toBe("session");
 });

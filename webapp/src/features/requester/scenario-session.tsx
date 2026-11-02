@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { type DynamicFormValues } from "./dynamic-form";
 import { ScenarioStepContent, type ScenarioStepDisplay } from "./scenario-step-content";
 import { Button } from "./ui/form-controls";
@@ -33,6 +34,8 @@ async function request<T = Step>(path: string, body?: unknown, signal?: AbortSig
 }
 
 export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey }: { offering: string; owner?: string; deviceId?: string; entryPointKey?: string }) {
+  const navigate = useNavigate();
+  const commandBusy = useRef(false);
   const [step, setStep] = useState<Step | null>(null);
   const [values, setValues] = useState<DynamicFormValues>({});
   const [error, setError] = useState<SessionError | null>(null);
@@ -58,10 +61,14 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
     setTicketPreview(null);
     setError(null);
     remember(data);
+    if (data.state === "ticket_created" && data.linked_ticket_id) {
+      void navigate(`/app/requester/tickets/${encodeURIComponent(data.linked_ticket_id)}`, { replace: true });
+    }
   }
 
   useEffect(() => {
     lifecycle.current++;
+    commandBusy.current = true;
     const controller = new AbortController();
     setStep(null); setError(null); setBusy(true); setTicketPreview(null);
     let saved: string | null = null;
@@ -70,7 +77,7 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
     request(path, saved ? undefined : { offering_full_code: offering, ...(entryPointKey ? { entry_point_key: entryPointKey } : {}) }, controller.signal)
       .then(data => { if (!controller.signal.aborted) accept(data); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause); })
-      .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+      .finally(() => { if (!controller.signal.aborted) { commandBusy.current = false; setBusy(false); } });
     return () => {
       lifecycle.current++; controller.abort(); requestSequence.current++;
       for (const pending of commandControllers.current) pending.abort();
@@ -81,16 +88,23 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
   useEffect(() => { heading.current?.focus(); }, [step?.block.id]);
 
   async function command(kind: string, body: unknown) {
-    if (!step || busy) return;
+    if (!step || commandBusy.current) return;
+    if (kind === "submit" && (step.state !== "active" || !ticketPreview?.ok || ticketPreview.blockers.length || error)) return;
+    commandBusy.current = true;
     const generation = lifecycle.current;
     const controller = new AbortController();
     commandControllers.current.add(controller);
     const current = () => generation === lifecycle.current && !controller.signal.aborted;
     requestSequence.current++; setBusy(true); setError(null);
+    if (kind === "ticket-preview") setTicketPreview(null);
     try {
       if (kind === "ticket-preview") {
-        const data = await request<TicketPreview>(`${base}/${step.id}/${kind}`, { ...(body as object), ...deviceContext }, controller.signal);
-        if (current()) setTicketPreview(data);
+        const data = await request<TicketPreview | Step>(`${base}/${step.id}/${kind}`, { ...(body as object), ...deviceContext }, controller.signal);
+        if (current()) {
+          // Another window may have completed this session before preview arrived.
+          if ("state" in data) accept(data);
+          else setTicketPreview(data);
+        }
         return;
       }
       if (kind === "answer" && step.block.has_dynamic_fields) {
@@ -102,8 +116,14 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
       if (current()) accept(data);
     }
     catch (cause) { if (current()) setError(cause as SessionError); }
-    finally { commandControllers.current.delete(controller); if (current()) setBusy(false); }
+    finally { commandControllers.current.delete(controller); if (current()) { commandBusy.current = false; setBusy(false); } }
   }
+
+  useEffect(() => {
+    if (step?.state === "active" && step.block.kind === "submit_ticket" && !busy && !ticketPreview && !error) {
+      void command("ticket-preview", { revision: step.revision });
+    }
+  }, [step, busy, ticketPreview, error]);
 
   async function preview() {
     if (!step?.block.has_dynamic_fields || busy) return;
@@ -148,16 +168,17 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
         {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}
         {["form_page", "instruction", "review"].includes(step.block.kind) ? <Button type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить</Button> : null}
         {step.block.kind === "finish" ? <Button type="button" onClick={() => void command("finish", { revision: step.revision })}>Завершить</Button> : null}
-        {step.state === "ticket_created" && step.linked_ticket_id ? <div className="grid gap-2"><p>Обращение создано.</p><a className="font-medium text-brand-700 underline" href={`/app/requester/tickets/${encodeURIComponent(step.linked_ticket_id)}`}>Открыть обращение</a></div> : step.block.kind === "submit_ticket" ? <div className="grid gap-3">
+        {step.state === "ticket_created" && step.linked_ticket_id ? <p role="status">Открываем обращение...</p> : step.block.kind === "submit_ticket" ? <div className="grid gap-3">
+          {busy ? <p role="status">{ticketPreview ? "Создаём обращение..." : "Проверяем обработку обращения..."}</p> : null}
           {ticketPreview ? <>
             {ticketPreview.expected_first_response ? <p>Первый ответ: {ticketPreview.expected_first_response}</p> : null}
             {ticketPreview.expected_resolution ? <p>{ticketPreview.expected_resolution}</p> : null}
             {ticketPreview.approval ? <p>{ticketPreview.approval.text}</p> : null}
             {ticketPreview.warnings.map((text, index) => <p key={`warning-${index}`}>{text}</p>)}
             {ticketPreview.blockers.map((text, index) => <p role="alert" key={`blocker-${index}`}>{text}</p>)}
-            {ticketPreview.ok && !ticketPreview.blockers.length ? <Button type="button" onClick={() => void command("submit", { revision: step.revision, confirm: true })}>Создать обращение</Button> : null}
+            {ticketPreview.ok && !ticketPreview.blockers.length && !error ? <Button type="button" onClick={() => void command("submit", { revision: step.revision, confirm: true })}>Создать обращение</Button> : null}
           </> : null}
-          <Button type="button" variant={ticketPreview ? "outline" : undefined} onClick={() => void command("ticket-preview", { revision: step.revision })}>Проверить обработку</Button>
+          {ticketPreview && (!ticketPreview.ok || ticketPreview.blockers.length > 0) && !error ? <Button type="button" variant="outline" onClick={() => void command("ticket-preview", { revision: step.revision })}>Повторить обработку</Button> : null}
         </div> : null}
         {step.back_targets.length ? <div className="flex flex-wrap gap-2">{step.back_targets.map(target => <Button key={target.id} type="button" variant="outline" onClick={() => void command("back", { revision: step.revision, target_block_id: target.id })}>Вернуться: {target.title}</Button>)}</div> : null}
       </fieldset>
