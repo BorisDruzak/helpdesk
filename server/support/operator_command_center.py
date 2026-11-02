@@ -350,9 +350,7 @@ def _closure_state(ticket_data: dict[str, Any], passport: Any | None) -> Command
     status = str(ticket_data.get("status") or "").strip()
     if status not in {"in_progress", "resolved", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"}:
         return None
-    if not str(ticket_data.get("resolution_code") or "").strip():
-        missing.append("код решения")
-    if not str(ticket_data.get("resolution_summary") or "").strip():
+    if not str(ticket_data.get("requester_resolution_summary") or ticket_data.get("resolution_summary") or "").strip():
         missing.append("описание решения")
     if bool(ticket_data.get("evidence_required")) and not str(ticket_data.get("evidence_ref") or "").strip():
         missing.append("доказательство")

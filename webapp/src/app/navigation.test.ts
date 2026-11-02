@@ -41,6 +41,12 @@ const fullSession = {
 };
 
 describe("navigation helpers", () => {
+  it("makes the compact queue primary and keeps the old center as an advanced entry", () => {
+    const items = getVisibleNavigationItems("support", ["ticket.queue.view"]);
+    expect(items.find(item => item.isWorkspaceHome)?.label).toBe("Очередь обращений");
+    expect(items.find(item => item.to === "/app/support/advanced")?.label).toBe("Расширенный центр");
+    expect(getActiveWorkspace("/app/support/advanced")).toBe("support");
+  });
   it("hides expert form and policy entry points while retaining permission-checked deep links", () => {
     const visible = getVisibleNavigationItems("admin", fullAdminPermissions);
     expect(visible.some(item => ["/app/admin/forms", "/app/admin/policy-health"].includes(item.to))).toBe(false);

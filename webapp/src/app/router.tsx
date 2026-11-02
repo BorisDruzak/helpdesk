@@ -358,6 +358,14 @@ export const appRoutes: RouteObject[] = [
             path: "support",
             element: (
               <WorkspaceAccessGate workspace="support">
+                <Navigate to="/app/tickets" replace />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "support/advanced",
+            element: (
+              <WorkspaceAccessGate workspace="support">
                 <SupportCommandCenterPage />
               </WorkspaceAccessGate>
             )

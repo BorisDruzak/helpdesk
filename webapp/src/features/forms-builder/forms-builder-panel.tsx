@@ -2097,12 +2097,6 @@ export function ClosurePolicyControls({
   return (
     <div className={friendly ? "grid gap-4 sm:grid-cols-2" : "grid gap-3 lg:grid-cols-3"}>
       <JsonLinkedCheckbox
-        checked={Boolean(value(before, "require_resolution_code", !runtimeDefaults))}
-        label={friendly ? "Результат решения обязателен" : "Код решения обязателен"}
-        helpText={friendly ? "Перед завершением поддержка должна выбрать, чем закончилось решение: например, исправлено удалённо или предложен обходной путь." : undefined}
-        onChange={(checked) => onChange({ ...config, before_resolved: { ...before, require_resolution_code: checked } })}
-      />
-      <JsonLinkedCheckbox
         checked={Boolean(value(before, "require_public_summary", !runtimeDefaults))}
         label={friendly ? "Описание решения для сотрудника обязательно" : "Публичный итог обязателен"}
         helpText={friendly ? "Не позволит завершить обращение, пока поддержка не напишет итог, доступный сотруднику." : undefined}
@@ -2177,8 +2171,8 @@ export function ClosurePolicyControls({
         helpText={friendly ? "Отрицательный ответ сотрудника на предложенное решение возобновит работу по обращению." : undefined}
         onChange={(checked) => onChange({ ...config, requester_confirmation: { ...confirmation, reopen_on_negative_feedback: checked } })}
       />
-      {friendly ? <PolicyFieldOptions title="Допустимые результаты решения" help="Выберите, какие результаты сможет указать поддержка. Если ничего не выбрано, это правило не ограничивает список результатов." choices={resolutionChoices} value={value(before, "allowed_resolution_codes", [])} onChange={values => onChange(Object.hasOwn(before, "allowed_resolution_codes") ? { ...config, before_resolved: { ...before, allowed_resolution_codes: values } } : { ...config, allowed_resolution_codes: values })} /> : <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
-        <span>Коды решения</span>
+      {friendly ? <PolicyFieldOptions title="Допустимые коды решения (необязательно)" help="Необязательные метаданные. Ограничивают только явно переданный код; публичный итог решения заполняется отдельно." choices={resolutionChoices} value={value(before, "allowed_resolution_codes", [])} onChange={values => onChange(Object.hasOwn(before, "allowed_resolution_codes") ? { ...config, before_resolved: { ...before, allowed_resolution_codes: values } } : { ...config, allowed_resolution_codes: values })} /> : <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Допустимые коды решения (необязательно)</span>
         <input
           className="field-base h-11 w-full px-4 text-sm"
           onChange={(event) => onChange({ ...config, allowed_resolution_codes: listFromCsv(event.currentTarget.value) })}
@@ -4186,7 +4180,7 @@ function TemplateConstructorPanel({
               <div>
                 <p className="text-sm font-semibold text-slate-950">Правила закрытия</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Код решения, итоги, evidence, подтверждение пользователя и автозакрытие настраиваются без ручного JSON.
+                  Публичный итог, дополнительные требования, подтверждение пользователя и автозакрытие настраиваются без ручного JSON.
                 </p>
               </div>
               <Badge tone="neutral">closure policy</Badge>
@@ -6581,7 +6575,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                   <div className="rounded-[0.9rem] bg-white px-3 py-3 text-sm text-slate-600">
                     <p className="font-medium text-slate-900">Закрытие / видимость / уведомления</p>
                     <p className="mt-2">
-                      Resolution code: {processPreview.closure.requires_resolution_code ? "обязателен" : "не обязателен"};
+                      Код решения — необязательные метаданные;
                       evidence: {processPreview.closure.requires_evidence ? "нужно" : "не нужно"}
                     </p>
                     <p className="mt-1">

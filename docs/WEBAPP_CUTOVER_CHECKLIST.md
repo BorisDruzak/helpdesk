@@ -19,6 +19,23 @@ Every route responds with HTTP 308. Query parameters are preserved except the
 retired `legacy` and `_shell` keys. Thus `/admin?legacy=1&tab=queue` redirects
 to `/app/admin?tab=queue`.
 
+For support staff, React `/app/support` opens the compact `/app/tickets`
+queue. `/app/tickets/{ticket_id}` retains the compact ticket workflow and
+`?advanced=1` retains advanced tools. The former command-center screen is
+available separately at `/app/support/advanced` (sidebar: «Расширенный центр»).
+
+Ticket completion uses the server-projected `actions.can_resolve_and_close`:
+ordinary «Решить и закрыть» sends `close_after_resolve: true` together with
+the public result through the existing status command. Special-policy
+requirements and separate resolution remain enforced by the server. The UI
+does not ask staff to type a resolution code. Requester confirmation, rating,
+and reopening appear independently according to their returned capabilities;
+the public result is visible directly in the chat.
+The compact support card previews the public result and provides
+«Показать результат полностью» for bounded, keyboard-scrollable full text.
+Legacy code prerequisites are ignored; optional stored codes remain metadata
+and completion UI requests do not resend them.
+
 Former shell assets such as `/admin.js`, `/support.js`, `/ticket.js` and the
 embedded legacy module/form workbenches are deliberately unregistered and must
 return HTTP 404.

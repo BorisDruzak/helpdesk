@@ -873,11 +873,14 @@ async def _attach_advanced_gate_evidence_and_approval(test_engine, ticket_id: st
 
 
 @pytest.mark.asyncio
-async def test_workflow_transition_gate_requires_configured_fields(test_engine) -> None:
+async def test_workflow_transition_gate_retires_legacy_code_requirement(test_engine) -> None:
     ticket_id = await _seed_gated_workflow_ticket(test_engine)
 
-    with pytest.raises(ValueError, match="required_fields.*resolution_code"):
-        await _resolve_gated_ticket(test_engine, ticket_id, actor_id="admin-test", actor_role="admin")
+    result = await _resolve_gated_ticket(test_engine, ticket_id, actor_id="admin-test", actor_role="admin")
+    assert result["updates"]["status"] == "resolved"
+    assert "resolution_code" not in result["updates"]
+    assert result["event_payload"]["workflow_transition_gate"]["allowed_roles"] == ["admin"]
+    assert result["event_payload"]["workflow_transition_gate"]["required_fields"] == []
 
 
 @pytest.mark.asyncio

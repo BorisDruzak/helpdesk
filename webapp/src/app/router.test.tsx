@@ -5,6 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionProvider } from "../features/auth/session-provider";
 import { appRoutes } from "./router";
 
+// Route selection is tested here; the real compact workspace has component coverage.
+vi.mock("../pages/tickets/list-page", () => ({
+  TicketListPage: () => <section data-testid="compact-queue-route"><h2>Очередь обращений</h2></section>,
+}));
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -383,7 +388,7 @@ describe("appRoutes", () => {
     expect(screen.queryByText(/op1 \/ 1\.Abcdef/)).not.toBeInTheDocument();
   });
 
-  it("opens the operator command center for support role and keeps tickets in support menu", async () => {
+  it("opens the compact queue for support role and keeps advanced operations in the menu", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -413,13 +418,13 @@ describe("appRoutes", () => {
 
     renderApp(["/app"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
-    expect((await screen.findAllByRole("link", { name: /Центр действий/ })).length).toBeGreaterThan(0);
+    expect(await screen.findByTestId("compact-queue-route")).toBeInTheDocument();
+    expect((await screen.findAllByRole("link", { name: /Расширенный центр/ })).length).toBeGreaterThan(0);
     expect((await screen.findAllByRole("link", { name: /Тикеты/ })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();
   });
 
-  it("renders /app/support as the operator command center", async () => {
+  it("keeps the operator command center reachable as advanced operations", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -447,10 +452,10 @@ describe("appRoutes", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    const { router } = renderApp(["/app/support"], fetchMock as typeof fetch);
+    const { router } = renderApp(["/app/support/advanced"], fetchMock as typeof fetch);
 
     expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/app/support");
+    expect(router.state.location.pathname).toBe("/app/support/advanced");
   });
 
   it("returns support user from /app/admin to tickets after login", async () => {
@@ -498,7 +503,7 @@ describe("appRoutes", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Войти" }));
 
-    expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
+    expect(await screen.findByTestId("compact-queue-route")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();
   });
 

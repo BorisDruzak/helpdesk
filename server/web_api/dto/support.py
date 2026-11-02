@@ -768,6 +768,7 @@ class SupportTicketActions(BaseModel):
     status_options: list[SupportStatusAction] = Field(default_factory=list)
     can_send_internal_note: bool = False
     can_send_public_message: bool = False
+    can_resolve_and_close: bool = False
     take_in_work: SupportTakeInWorkAvailability | None = None
     can_hide_from_workspace: bool = False
     can_unhide_from_workspace: bool = False

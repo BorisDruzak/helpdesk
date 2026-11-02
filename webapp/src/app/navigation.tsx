@@ -208,8 +208,8 @@ export const appNavigation: AppNavItem[] = [
     order: 50,
   },
   {
-    label: "Центр действий",
-    description: "Что сделать дальше",
+    label: "Очередь обращений",
+    description: "Компактная очередь и работа с обращениями",
     icon: ClipboardCheck,
     section: "support",
     workspace: "support",
@@ -231,6 +231,17 @@ export const appNavigation: AppNavItem[] = [
     permission: "ticket.queue.view",
     activePatterns: ["/app/tickets/*"],
     order: 20,
+  },
+  {
+    label: "Расширенный центр",
+    description: "Сводка действий и расширенные операции",
+    icon: ClipboardCheck,
+    section: "support",
+    workspace: "support",
+    domainId: "support-primary",
+    to: "/app/support/advanced",
+    permission: "ticket.queue.view",
+    order: 25,
   },
   {
     label: "Согласования",
@@ -505,7 +516,7 @@ export function getActiveWorkspace(path: string): AppWorkspaceId | null {
     return "requester";
   }
 
-  if (pathname === SUPPORT_HOME_PATH || pathname.startsWith("/app/tickets") || pathname === "/app/reports" || pathname === "/app/settings") {
+  if (pathname === SUPPORT_HOME_PATH || pathname.startsWith("/app/support/") || pathname.startsWith("/app/tickets") || pathname === "/app/reports" || pathname === "/app/settings") {
     return "support";
   }
 

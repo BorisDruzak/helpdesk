@@ -200,6 +200,7 @@ export type PublicTicket = {
   public_status?: string | null;
   public_status_label?: string | null;
   resolution_confirmation_pending?: boolean | null;
+  requester_resolution_summary?: string | null;
 };
 
 export type RequesterTicketActions = {

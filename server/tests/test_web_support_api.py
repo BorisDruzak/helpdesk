@@ -2665,9 +2665,10 @@ async def test_web_support_ticket_workspace_exposes_actionable_closure_plan(test
 
     assert plan["ticket_id"] == ticket_id
     assert plan["ready_for_resolution"] is False
-    assert plan["missing_count"] >= 3
+    assert plan["missing_count"] >= 2
     assert plan["evidence_candidate_count"] == 0
-    assert blockers["resolution_code"]["action_kind"] == "edit_resolution"
+    assert "resolution_code" not in blockers
+    assert blockers["public_summary"]["action_kind"] == "edit_resolution"
     assert blockers["priority_evidence"]["action_kind"] == "attach_evidence"
     assert blockers["priority_evidence"]["action_label"] == "Добавить evidence"
 
@@ -3624,13 +3625,12 @@ async def test_web_support_detail_exposes_closure_policy_requirements(test_clien
     requirements = payload["data"]["actions"]["closure_requirements"]
     by_key = {item["key"]: item for item in requirements}
 
-    assert by_key["resolution_code"]["met"] is False
+    assert "resolution_code" not in by_key
     assert by_key["public_summary"]["met"] is False
     assert by_key["internal_summary"]["met"] is False
     assert by_key["priority_evidence"]["met"] is False
     assert by_key["operation_log"]["met"] is False
     assert by_key["approval_evidence"]["met"] is False
-    assert "Код решения" in by_key["resolution_code"]["label"]
 
 
 @pytest.mark.asyncio

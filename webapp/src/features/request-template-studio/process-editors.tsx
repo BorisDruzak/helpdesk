@@ -167,7 +167,7 @@ export function ProcessEditors({
               {policyOptions(registry, "closure").map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <p className="mt-2 text-sm text-slate-600">Перед закрытием исполнитель должен указать результат, сообщение пользователю и код решения, если это требует policy.</p>
+          <p className="mt-2 text-sm text-slate-600">Перед закрытием исполнитель указывает публичный итог решения. Дополнительные требования задаются правилом закрытия.</p>
         </section> : null}
 
         {isVisible("notifications") ? <section className="rounded-md border border-slate-200 bg-white p-4">

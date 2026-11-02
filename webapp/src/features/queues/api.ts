@@ -556,6 +556,7 @@ export type SupportTicketDetailPayload = {
     }>;
   };
   actions: {
+    can_resolve_and_close?: boolean;
     take_in_work?: SupportTakeInWorkAvailability | null;
     status_options: Array<{
       value: string;
@@ -1617,6 +1618,7 @@ export async function postSupportTicketStatus(
     resolutionCode?: string;
     resolutionSummary?: string;
     requesterResolutionSummary?: string;
+    closeAfterResolve?: boolean;
   } = {}
 ): Promise<SupportStatusActionResult> {
   const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/status`, {
@@ -1632,7 +1634,8 @@ export async function postSupportTicketStatus(
       internal_comment: options.internalComment,
       resolution_code: options.resolutionCode,
       resolution_summary: options.resolutionSummary,
-      requester_resolution_summary: options.requesterResolutionSummary
+      requester_resolution_summary: options.requesterResolutionSummary,
+      close_after_resolve: options.closeAfterResolve
     })
   });
   const payload = await readJson<SuccessResponse<SupportStatusActionResult> | ErrorResponse>(response);

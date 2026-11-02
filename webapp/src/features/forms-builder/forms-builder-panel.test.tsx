@@ -3,7 +3,20 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AdminFormsPayload, AdminHelpdeskModelPayload } from "./api";
-import { FormsBuilderPanel } from "./forms-builder-panel";
+import { ClosurePolicyControls, FormsBuilderPanel } from "./forms-builder-panel";
+
+it.each([false, true])("retires the mandatory code control while preserving public result and stored policy (%s)", (friendly) => {
+  const config = { preserved: { keep: true }, before_resolved: { require_resolution_code: true, require_public_summary: true, require_worklog: true }, allowed_resolution_codes: ["legacy_custom"] };
+  const change = vi.fn();
+  render(<ClosurePolicyControls config={config} onChange={change} friendly={friendly} />);
+  expect(screen.queryByRole("checkbox", { name: /Код решения обязателен|Результат решения обязателен/ })).not.toBeInTheDocument();
+  expect(screen.queryByText(/поддержка должна выбрать, чем закончилось/)).not.toBeInTheDocument();
+  const publicSummary = screen.getByRole("checkbox", { name: friendly ? "Описание решения для сотрудника обязательно" : "Публичный итог обязателен" });
+  expect(publicSummary).toBeChecked();
+  fireEvent.click(publicSummary);
+  expect(change).toHaveBeenCalledWith({ ...config, before_resolved: { ...config.before_resolved, require_public_summary: false } });
+  expect(screen.getByText("Допустимые коды решения (необязательно)", { exact: false })).toBeInTheDocument();
+});
 
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -1647,7 +1660,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.click(templateControl("Подтверждение пользователя"));
     fireEvent.change(templateControl("Автозакрытие через дней"), { target: { value: "5" } });
     fireEvent.click(templateControl("Открывать при отрицательном отзыве"));
-    fireEvent.change(templateControl("Коды решения"), { target: { value: "fixed_remote, duplicate, cannot_reproduce" } });
+    fireEvent.change(templateControl("Допустимые коды решения (необязательно)"), { target: { value: "fixed_remote, duplicate, cannot_reproduce" } });
 
     fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 

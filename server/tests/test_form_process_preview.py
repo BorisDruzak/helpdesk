@@ -127,7 +127,7 @@ async def test_form_process_preview_returns_priority_route_sla_and_policies():
     assert result["diagnostics"]["suggested_playbooks"] == ["diagnose.website"]
     assert result["diagnostics"]["auto_run_enabled"] is True
     assert result["diagnostics"]["consent_required"] is True
-    assert result["closure"]["requires_resolution_code"] is True
+    assert result["closure"]["requires_resolution_code"] is False
     assert result["visibility"]["public_status_mapping"]["new"] == "received"
     assert result["notifications"]["events"] == ["on_ticket_created"]
     assert result["validation_report"]["summary"]["can_publish"] is False

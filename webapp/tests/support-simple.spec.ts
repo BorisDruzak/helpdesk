@@ -41,9 +41,9 @@ test("unified queue keeps the full list reachable and restores the resizable ins
   expect(errors).toEqual([]);
 });
 
-for (const width of [1366, 1920, 390]) {
+for (const width of [1366, 1440, 1920, 390]) {
   test(`simple support lifecycle without agent at ${width}`, async ({ page }, info) => {
-    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 });
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : width === 1440 ? 900 : 768 });
     const pageErrors: string[] = []; const failures: string[] = []; const consoleErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
@@ -52,6 +52,9 @@ for (const width of [1366, 1920, 390]) {
     await page.route("**/api/web/notifications/unread_count", (route) => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
     let currentStatus = "new";
     let currentAssignee: string | null = null;
+    let publicResult = "";
+    const completionCommands: unknown[] = [];
+    const problem = "Задания остаются в очереди принтера в кабинете 205.";
     let history = [
       { message_id: "public-one", event_id: 9001, event_type: "chat_message", visibility: "public", text: "Принтер не печатает", from_role: "user", sender_display_name: "Тестовый сотрудник", ts: "2026-10-19T09:00:00+05:00", attachments: [{ artifact_id: "fixture-attachment", name: "Ошибка.png", url: "/api/artifacts/fixture-attachment/download" }] },
       { message_id: "internal-one", event_id: 9002, event_type: "chat_message", visibility: "internal", text: "Проверить картридж — только для поддержки", from_role: "support", ts: "2026-10-19T09:01:00+05:00", attachments: [] },
@@ -62,16 +65,29 @@ for (const width of [1366, 1920, 390]) {
     await page.route("**/api/web/support/tickets/ticket-1/workspace", async (route) => {
       const response = await route.fetch(); const payload = await response.json(); const detail = payload.data.detail;
       detail.ticket.status = currentStatus;
-      detail.ticket.status_label = ({ new: "Новая", in_progress: "В работе", resolved: "Решена" } as Record<string, string>)[currentStatus];
+      detail.ticket.status_label = ({ new: "Новая", in_progress: "В работе", closed: "Закрыта" } as Record<string, string>)[currentStatus];
       detail.ticket.assignee_id = currentAssignee;
+      detail.ticket.description = problem;
+      detail.ticket.requester_resolution_summary = publicResult || null;
       detail.ticket.device_id = null; detail.snapshot.device.device_id = null; detail.snapshot.device.hostname = null;
+      detail.actions.can_resolve_and_close = currentStatus === "in_progress";
+      detail.actions.status_options = currentStatus === "closed" ? [] : [{ value: "in_progress", label: "В работе" }, { value: "resolved", label: "Решена" }];
+      detail.actions.closure_requirements = [{ key: "public_summary", label: "Итог для сотрудника", met: Boolean(publicResult) }];
       detail.request_form = { rows: [{ key: "room", label: "Кабинет", value: "205" }] };
       await route.fulfill({ response, json: payload });
     });
     await page.route("**/api/web/support/tickets/ticket-1/status", async (route) => {
-      currentStatus = route.request().postDataJSON().to_status;
+      const command = route.request().postDataJSON();
+      expect(route.request().method()).toBe("POST");
+      currentStatus = command.to_status;
       if (currentStatus === "in_progress") currentAssignee = "support";
-      if (currentStatus === "resolved") history.push({ message_id: "confirmation", event_id: 9010, event_type: "chat_message", visibility: "public", text: "Подтвердите решение", from_role: "support", ts: "2026-10-19T09:10:00+05:00", attachments: [] });
+      if (currentStatus === "resolved") {
+        completionCommands.push(command);
+        expect(command).toMatchObject({ to_status: "resolved", close_after_resolve: true, requester_resolution_summary: "Печать восстановлена, бумага добавлена." });
+        expect(command).not.toHaveProperty("resolution_code");
+        publicResult = command.requester_resolution_summary;
+        currentStatus = "closed";
+      }
       await route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", status: currentStatus, status_label: currentStatus } } });
     });
     await page.route("**/api/web/support/tickets/ticket-1/messages", async (route) => {
@@ -90,6 +106,10 @@ for (const width of [1366, 1920, 390]) {
     await expect(reply).toBeDisabled();
     const take = page.getByRole("button", { name: "Взять в работу", exact: true });
     await expect(take).toBeInViewport();
+    const summary = page.getByRole("region", { name: "Проблема и результат", exact: true });
+    await expect(summary.getByText(problem, { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // Full question/answer details remain available as a secondary action.
     await page.getByRole("button", { name: /Описание и ответы сотрудника/ }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByText("205", { exact: true })).toBeVisible();
@@ -115,15 +135,162 @@ for (const width of [1366, 1920, 390]) {
     await page.getByRole("tab", { name: "История", exact: true }).click();
     await expect(page.getByText("Расчёт SLA для теста")).toBeVisible();
     await page.getByRole("tab", { name: "Диалог", exact: true }).click();
-    await page.getByRole("button", { name: "Решить обращение", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Решить обращение", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Решить и закрыть", exact: true }).click();
+    const resolution = page.getByRole("dialog", { name: "Решить и закрыть", exact: true });
+    await expect(resolution).toBeVisible();
+    await expect(resolution.getByRole("textbox", { name: /Код решения/ })).toHaveCount(0);
+    await expect(resolution.getByRole("button", { name: "Решить и закрыть", exact: true })).toBeDisabled();
     await page.getByLabel("Итог для сотрудника").fill("Печать восстановлена, бумага добавлена.");
-    await page.getByRole("dialog").getByRole("button", { name: "Решить обращение", exact: true }).click();
+    await resolution.getByRole("button", { name: "Решить и закрыть", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByText("Обращение закрыто. Переписка и история доступны для просмотра.", { exact: true })).toBeVisible();
+    await expect(summary.getByRole("heading", { name: "Результат решения", exact: true })).toBeVisible();
+    await expect(summary.getByText("Печать восстановлена, бумага добавлена.", { exact: true })).toBeVisible();
+    expect(completionCommands).toHaveLength(1);
+    await expect(page.getByText("Подтвердите решение", { exact: true })).toHaveCount(0);
     await expect(reply).toBeDisabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: info.outputPath(`ticket-resolved-${width}.png`), fullPage: true });
+    await page.screenshot({ path: info.outputPath(`ticket-closed-${width}.png`), fullPage: true });
     expect(pageErrors).toEqual([]); expect(failures).toEqual([]); expect(consoleErrors).toEqual([]);
+  });
+}
+
+test("explicit confirmation policy keeps separate resolution without a completion flag", async ({ page }) => {
+  let currentStatus = "in_progress";
+  const commands: unknown[] = [];
+  await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+  await page.route("**/api/web/support/tickets/ticket-1/workspace", async route => {
+    const response = await route.fetch(); const payload = await response.json(); const detail = payload.data.detail;
+    detail.ticket.status = currentStatus; detail.ticket.status_label = currentStatus === "resolved" ? "Решена" : "В работе";
+    detail.ticket.assignee_id = "support";
+    detail.actions.can_resolve_and_close = false;
+    detail.actions.status_options = currentStatus === "resolved" ? [] : [{ value: "resolved", label: "Решена" }];
+    detail.actions.closure_requirements = [{ key: "public_summary", label: "Итог для сотрудника", met: false }];
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route("**/api/web/support/tickets/ticket-1/status", async route => {
+    const command = route.request().postDataJSON(); commands.push(command);
+    expect(command).toMatchObject({ to_status: "resolved", close_after_resolve: false, requester_resolution_summary: "Решение ожидает подтверждения сотрудника." });
+    expect(command).not.toHaveProperty("resolution_code");
+    currentStatus = "resolved";
+    await route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", status: "resolved", status_label: "Решена" } } });
+  });
+  await login(page);
+  await page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "T-200001", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Решить и закрыть", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Решить обращение", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Решить обращение", exact: true });
+  await dialog.getByLabel("Итог для сотрудника").fill("Решение ожидает подтверждения сотрудника.");
+  await dialog.getByRole("button", { name: "Решить обращение", exact: true }).click();
+  await expect(page.getByText("Решение отправлено сотруднику. Закрытие выполняется по действующей политике.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Обращение закрыто. Переписка и история доступны для просмотра.", { exact: true })).toHaveCount(0);
+  expect(commands).toHaveLength(1);
+});
+
+test("legacy code-only requirements allow completion without manual code entry", async ({ page }) => {
+  let closed = false;
+  const commands: unknown[] = [];
+  await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+  await page.route("**/api/web/support/tickets/ticket-1/workspace", async route => {
+    const response = await route.fetch(); const payload = await response.json(); const detail = payload.data.detail;
+    detail.ticket.status = closed ? "closed" : "in_progress"; detail.ticket.status_label = closed ? "Закрыта" : "В работе"; detail.ticket.assignee_id = "support";
+    detail.ticket.requester_resolution_summary = closed ? "Печать восстановлена без кода решения." : null;
+    detail.actions.can_resolve_and_close = !closed;
+    detail.actions.status_options = closed ? [] : [{ value: "resolved", label: "Решена" }];
+    // A cached legacy projection must not revive retired manual code requirements.
+    detail.actions.closure_requirements = [{ key: "resolution_code", label: "Устаревший код решения", met: false }, { key: "allowed_resolution_code", label: "Устаревший список кодов", met: false }];
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route("**/api/web/support/tickets/ticket-1/status", async route => {
+    const command = route.request().postDataJSON(); commands.push(command);
+    expect(command).toMatchObject({ to_status: "resolved", close_after_resolve: true, requester_resolution_summary: "Печать восстановлена без кода решения." });
+    expect(command).not.toHaveProperty("resolution_code");
+    closed = true;
+    await route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", status: "closed", status_label: "Закрыта" } } });
+  });
+  await login(page);
+  await page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "T-200001", exact: true }).click();
+  await page.getByRole("button", { name: "Решить и закрыть", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Решить и закрыть", exact: true });
+  await expect(dialog.getByRole("textbox", { name: /Код решения/ })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: /Устаревший/ })).toHaveCount(0);
+  await dialog.getByLabel("Итог для сотрудника").fill("Печать восстановлена без кода решения.");
+  const complete = dialog.getByRole("button", { name: "Решить и закрыть", exact: true });
+  await expect(complete).toBeEnabled();
+  await complete.click();
+  await expect(page.getByText("Обращение закрыто. Переписка и история доступны для просмотра.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Проблема и результат", exact: true }).getByText("Печать восстановлена без кода решения.", { exact: true })).toBeVisible();
+  expect(commands).toHaveLength(1);
+});
+
+test("explicit evidence requirement keeps the advanced passport fallback", async ({ page }) => {
+  let commands = 0;
+  await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+  await page.route("**/api/web/support/tickets/ticket-1/workspace", async route => {
+    const response = await route.fetch(); const payload = await response.json(); const detail = payload.data.detail;
+    detail.ticket.status = "in_progress"; detail.ticket.status_label = "В работе"; detail.ticket.assignee_id = "support";
+    detail.actions.can_resolve_and_close = false;
+    detail.actions.closure_requirements = [{ key: "priority_evidence", label: "Доказательство решения", met: false, detail: "Прикрепите доказательство проверки печати" }];
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route("**/api/web/support/tickets/ticket-1/status", route => { commands++; return route.abort(); });
+  await login(page);
+  await page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "T-200001", exact: true }).click();
+  await page.getByRole("button", { name: "Решить обращение", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Решить обращение", exact: true });
+  await expect(dialog.getByRole("textbox", { name: /Код решения/ })).toHaveCount(0);
+  await dialog.getByLabel("Итог для сотрудника").fill("Печать восстановлена.");
+  await expect(dialog.getByText("Для решения также требуются:", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Доказательство решения", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("simple-support-workspace")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Паспорт решения", exact: true })).toBeVisible();
+  expect(commands).toBe(0);
+});
+
+for (const width of [1366, 1920, 390]) {
+  test(`long public result expands without horizontal overflow at ${width}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 });
+    const errors: string[] = []; const failures: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+    page.on("response", response => { if (response.status() >= 400) failures.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+    page.on("requestfailed", request => failures.push(new URL(request.url()).pathname));
+    const result = `${"Печать проверена: тестовый документ отправлен и получен без ошибок.\n".repeat(30)}Последняя проверка: сотрудник получил все страницы.`;
+    await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+    await page.route("**/api/web/support/tickets/ticket-1/timeline?*", route => route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", filter: "all", items: [], total: 0, limit: 200 } } }));
+    await page.route("**/api/web/support/tickets/ticket-1/workspace", async route => {
+      const response = await route.fetch(); const payload = await response.json(); const detail = payload.data.detail;
+      detail.ticket.status = "closed"; detail.ticket.status_label = "Закрыта"; detail.ticket.assignee_id = "support";
+      detail.ticket.requester_resolution_summary = result;
+      detail.ticket.resolution_summary = "Внутренний итог не должен подменять публичный.";
+      detail.actions.can_resolve_and_close = false; detail.actions.status_options = []; detail.actions.take_in_work = { allowed: false };
+      await route.fulfill({ response, json: payload });
+    });
+    await login(page);
+    await page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "T-200001", exact: true }).click();
+    const summary = page.getByRole("region", { name: "Проблема и результат", exact: true });
+    const expand = summary.getByRole("button", { name: "Показать результат полностью", exact: true });
+    await expect(expand).toHaveAttribute("aria-expanded", "false");
+    const resultId = await expand.getAttribute("aria-controls");
+    expect(resultId).toBeTruthy();
+    const text = page.locator(`[id="${resultId}"]`);
+    await expect(text).toHaveText(result);
+    const collapsedHeight = (await text.boundingBox())!.height;
+    await expand.click();
+    await expect(summary.getByRole("button", { name: "Свернуть результат", exact: true })).toHaveAttribute("aria-expanded", "true");
+    await expect(text).toHaveAttribute("data-expanded", "true");
+    const expandedHeight = (await text.boundingBox())!.height;
+    expect(expandedHeight).toBeGreaterThan(collapsedHeight);
+    expect(expandedHeight).toBeLessThanOrEqual((width === 1920 ? 1080 : 768) * 0.28 + 1);
+    await text.focus(); await text.press("Control+End");
+    await expect.poll(() => text.evaluate(element => element.scrollTop + element.clientHeight >= element.scrollHeight - 1)).toBe(true);
+    await expect(summary.getByText("Внутренний итог не должен подменять публичный.", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: info.outputPath(`public-result-expanded-${width}.png`), fullPage: true });
+    await summary.getByRole("button", { name: "Свернуть результат", exact: true }).click();
+    await expect(text).toHaveAttribute("data-expanded", "false");
+    expect(errors).toEqual([]); expect(failures).toEqual([]);
   });
 }
 

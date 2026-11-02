@@ -41,12 +41,10 @@ class TicketResolutionPolicyService:
         if to_status not in ("resolved", "closed"):
             return (True, [])
 
-        # Resolution code must be one of active codes
-        if resolution_code:
+        # Optional compatibility metadata must be valid only when supplied.
+        if resolution_code and resolution_code.strip():
             if resolution_code not in active_codes:
                 messages.append(f"resolution_code '{resolution_code}' is not in active resolution codes")
-        else:
-            messages.append("resolution_code is required when resolving or closing")
 
         # P1/P2 require root_cause when enforce
         if priority and priority in self._require_rc_priorities:

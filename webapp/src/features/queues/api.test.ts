@@ -6,6 +6,7 @@ import {
   fetchSupportWorkspaceSummary,
   postSupportTicketRead,
   postSupportTicketToolRun,
+  postSupportTicketStatus,
 } from "./api";
 
 afterEach(() => {
@@ -13,6 +14,12 @@ afterEach(() => {
 });
 
 describe("support queue API", () => {
+  it("serializes an explicitly requested atomic resolve and close without inventing a resolution code", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ status: "success", data: { ticket_id: "ticket-1", status: "closed" } }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await postSupportTicketStatus("ticket-1", "resolved", { requesterResolutionSummary: "Принтер проверен", closeAfterResolve: true });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ to_status: "resolved", requester_resolution_summary: "Принтер проверен", close_after_resolve: true });
+  });
   it("reuses an actor-scoped Endpoint intent after failure and clears it only after acceptance", async () => {
     sessionStorage.clear();
     const fetchMock = vi.fn()

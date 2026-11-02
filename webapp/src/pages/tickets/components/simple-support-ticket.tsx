@@ -15,6 +15,9 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const descriptionRef = useRef<HTMLDialogElement>(null);
   const descriptionTitle = useId();
+  const resultId = useId();
+  const [expandedResultTicket, setExpandedResultTicket] = useState<string | null>(null);
+  const resultExpanded = expandedResultTicket === raw.ticket_id;
   const mine = Boolean(actorId && raw.assignee_id === actorId);
   const other = Boolean(raw.assignee_id && !mine);
   const allowed = (status: string) => canWork && detail.actions.status_options.some((option) => option.value === status);
@@ -27,7 +30,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
     primary = { label: raw.assignee_id ? "Начать работу" : "Взять в работу", hint: "После успешного перехода в работу станет доступна переписка.", run: () => onStatus("in_progress") };
   } else if (["in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"].includes(raw.status) && (mine || isAdmin)) {
     if (raw.status !== "in_progress" && takeAllowed && allowed("in_progress")) primary = { label: "Возобновить работу", hint: "Обращение вернётся в работу. Ожидание ответа завершится.", run: () => onStatus("in_progress") };
-    else if (allowed("resolved")) primary = { label: "Решить обращение", hint: "Укажите результат. После решения сотрудник сможет подтвердить его, если это требует политика.", run: props.onResolve };
+    else if (allowed("resolved")) primary = { label: detail.actions.can_resolve_and_close ? "Решить и закрыть" : "Решить обращение", hint: detail.actions.can_resolve_and_close ? "Укажите результат для сотрудника. Обращение будет решено и закрыто." : "Укажите результат. После решения сотрудник сможет подтвердить его, если это требует политика.", run: props.onResolve };
   } else if (raw.status === "waiting_on_approval") {
     primary = { label: "Проверить согласование", hint: "Проверьте ожидаемые решения в центре согласований.", run: () => { window.location.href = "/app/support/approvals"; } };
   } else if (raw.status === "resolved" && allowed("closed")) {
@@ -54,9 +57,17 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
         </div>
       </header>
       {props.error ? <p role="alert" className="simple-notice simple-risk">{props.error}</p> : null}
-      {takeReason ? <p className="simple-notice simple-take-reason">{takeReason}</p> : other && !isAdmin ? <p className="simple-notice">Назначено другому оператору. Доступен просмотр; изменение исполнителя выполняется отдельно с проверкой прав.</p> : raw.status === "resolved" ? <p className="simple-notice">Решение отправлено сотруднику. Ожидается подтверждение по действующей политике.</p> : raw.status === "closed" ? <p className="simple-muted">Обращение закрыто. Переписка и история доступны для просмотра.</p> : null}
+      {takeReason ? <p className="simple-notice simple-take-reason">{takeReason}</p> : other && !isAdmin ? <p className="simple-notice">Назначено другому оператору. Доступен просмотр; изменение исполнителя выполняется отдельно с проверкой прав.</p> : raw.status === "resolved" ? <p className="simple-notice">Решение отправлено сотруднику. Закрытие выполняется по действующей политике.</p> : raw.status === "closed" ? <p className="simple-muted">Обращение закрыто. Переписка и история доступны для просмотра.</p> : null}
       <div className="simple-ticket__content">
-        <button className="simple-description-toggle" type="button" onClick={() => descriptionRef.current?.showModal()} aria-haspopup="dialog">Описание и ответы сотрудника{rows.length ? ` · ${rows.length}` : ""}<ChevronDown size={17} aria-hidden /></button>
+        <section className="simple-ticket__summary" aria-label="Проблема и результат">
+          <div><div className="simple-ticket__summary-heading"><h3>Проблема</h3>
+            <button className="simple-description-toggle" type="button" onClick={() => descriptionRef.current?.showModal()} aria-haspopup="dialog">Описание и ответы сотрудника{rows.length ? ` · ${rows.length}` : ""}<ChevronDown size={14} aria-hidden /></button>
+          </div>
+          <p>{!descriptionIsAnswers ? raw.description || "Описание не указано" : rows.map((row) => `${row.label}: ${row.value}`).join("\n")}</p></div>
+          {raw.requester_resolution_summary ? <div><h3>Результат решения</h3><p id={resultId} data-expanded={resultExpanded} tabIndex={resultExpanded ? 0 : undefined}>{raw.requester_resolution_summary}</p>
+            <button className="simple-link simple-result-toggle" type="button" aria-controls={resultId} aria-expanded={resultExpanded} onClick={() => setExpandedResultTicket(resultExpanded ? null : raw.ticket_id)}>{resultExpanded ? "Свернуть результат" : "Показать результат полностью"}</button>
+          </div> : null}
+        </section>
         <dialog className="simple-description-dialog" ref={descriptionRef} aria-labelledby={descriptionTitle} onClick={(event) => { if (event.target === event.currentTarget) descriptionRef.current?.close(); }}>
           <header><h3 id={descriptionTitle}>Описание и ответы сотрудника</h3><form method="dialog"><button type="submit" className="simple-button" aria-label="Закрыть описание"><X size={18} aria-hidden /></button></form></header>
           {!descriptionIsAnswers ? <p>{raw.description || "Описание не указано"}</p> : null}

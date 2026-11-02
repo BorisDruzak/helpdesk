@@ -116,6 +116,12 @@ def _requester_confirmation(policy: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def requires_requester_confirmation(session: Any, ticket: Any) -> bool:
+    """Atomic completion requires an explicit boolean opt-out in effective policy."""
+    policy = await resolve_effective_ticket_policy(session, ticket, "closure")
+    return _section(policy, "requester_confirmation").get("required") is not False
+
+
 async def _passport_blocking_missing_facts_for_closure(
     session: Any,
     ticket: Any,
@@ -230,6 +236,16 @@ async def _ticket_has_evidence(session: Any, ticket: Any) -> bool:
             TicketEvidenceItem.verification_status.notin_(sorted(REJECTED_EVIDENCE_STATUSES)),
         )
         .limit(1)
+    )
+    return evidence_id is not None
+
+
+async def legacy_resolution_evidence_satisfied(session: Any, ticket: Any) -> bool:
+    """Read the legacy resolution guard, independently of template policies."""
+    if not getattr(ticket, "evidence_required", False) or getattr(ticket, "evidence_ref", None):
+        return True
+    evidence_id = await session.scalar(
+        select(TicketEvidenceItem.id).where(TicketEvidenceItem.ticket_id == ticket.ticket_id).limit(1)
     )
     return evidence_id is not None
 
@@ -428,51 +444,19 @@ async def build_closure_requirements(session: Any, ticket: Any) -> list[dict[str
         return []
     policy = await resolve_effective_ticket_policy(session, ticket, "closure")
     requirements: list[dict[str, Any]] = []
-    if not policy:
-        if getattr(ticket, "evidence_required", False):
-            requirements.append(
-                _requirement(
-                    "legacy_evidence",
-                    "Доказательство решения",
-                    await _ticket_has_evidence(session, ticket),
-                    "Добавьте evidence_ref или запись evidence перед решением.",
-                )
+    if getattr(ticket, "evidence_required", False):
+        requirements.append(
+            _requirement(
+                "legacy_evidence", "Доказательство решения",
+                await legacy_resolution_evidence_satisfied(session, ticket),
+                "Добавьте evidence_ref или запись evidence перед решением.",
             )
+        )
+    if not policy:
         return requirements
 
-    resolution_code = getattr(ticket, "resolution_code", None)
     public_summary = getattr(ticket, "requester_resolution_summary", None) or getattr(ticket, "resolution_summary", None)
     internal_summary = getattr(ticket, "resolution_summary", None)
-
-    if _policy_bool(policy, "require_resolution_code", section="before_resolved"):
-        allowed_resolution_codes = _normalize_code_list(
-            _policy_value(policy, "allowed_resolution_codes", section="before_resolved")
-        )
-        code_allowed = not allowed_resolution_codes or str(resolution_code or "").strip() in allowed_resolution_codes
-        requirements.append(
-            _requirement(
-                "resolution_code",
-                "Код решения",
-                _has_text(resolution_code) and code_allowed,
-                (
-                    "Укажите код решения из списка: " + ", ".join(allowed_resolution_codes)
-                    if allowed_resolution_codes
-                    else "Укажите код решения."
-                ),
-            )
-        )
-    elif _normalize_code_list(_policy_value(policy, "allowed_resolution_codes", section="before_resolved")):
-        allowed_resolution_codes = _normalize_code_list(
-            _policy_value(policy, "allowed_resolution_codes", section="before_resolved")
-        )
-        requirements.append(
-            _requirement(
-                "allowed_resolution_code",
-                "Код решения из разрешённого списка",
-                str(resolution_code or "").strip() in allowed_resolution_codes,
-                "Разрешённые коды: " + ", ".join(allowed_resolution_codes),
-            )
-        )
 
     if _policy_bool(policy, "require_public_summary", section="before_resolved"):
         requirements.append(
@@ -564,7 +548,6 @@ async def validate_closure_policy(
     if not policy:
         return {"applied": False}
 
-    effective_resolution_code = resolution_code or getattr(ticket, "resolution_code", None)
     public_summary = (
         requester_resolution_summary
         or resolution_summary
@@ -573,15 +556,12 @@ async def validate_closure_policy(
     )
     internal_summary = resolution_summary or getattr(ticket, "resolution_summary", None)
 
-    if _policy_bool(policy, "require_resolution_code", section="before_resolved") and not _has_text(
-        effective_resolution_code
-    ):
-        raise ValueError("closure_policy requires resolution_code")
-
     allowed_resolution_codes = _normalize_code_list(
         _policy_value(policy, "allowed_resolution_codes", section="before_resolved")
     )
-    if allowed_resolution_codes and str(effective_resolution_code or "").strip() not in allowed_resolution_codes:
+    # Classification is optional, including legacy policies and stored values.
+    # Validate only new nonblank metadata explicitly supplied by a caller.
+    if allowed_resolution_codes and _has_text(resolution_code) and str(resolution_code).strip() not in allowed_resolution_codes:
         raise ValueError("closure_policy allowed_resolution_codes does not include resolution_code")
 
     if _policy_bool(policy, "require_public_summary", section="before_resolved") and not _has_text(public_summary):
@@ -624,7 +604,7 @@ async def validate_closure_policy(
         "applied": True,
         "policy": {
             "before_resolved": {
-                "require_resolution_code": _policy_bool(policy, "require_resolution_code", section="before_resolved"),
+                "require_resolution_code": False,
                 "require_public_summary": _policy_bool(policy, "require_public_summary", section="before_resolved"),
                 "require_internal_summary": _policy_bool(policy, "require_internal_summary", section="before_resolved"),
                 "require_worklog": _policy_bool(policy, "require_worklog", section="before_resolved"),

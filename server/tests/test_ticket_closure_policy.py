@@ -151,24 +151,28 @@ async def _resolve_ticket(
 
 
 @pytest.mark.asyncio
-async def test_closure_policy_requires_resolution_code(test_engine) -> None:
+async def test_legacy_closure_policy_allows_resolution_without_classification(test_engine) -> None:
     ticket_id = await _seed_ticket(
         test_engine,
-        closure_policy={"require_resolution_code": True},
+        closure_policy={"require_resolution_code": True, "require_public_summary": True},
     )
 
-    with pytest.raises(ValueError, match="resolution_code"):
-        await _resolve_ticket(test_engine, ticket_id)
+    result = await _resolve_ticket(test_engine, ticket_id, requester_resolution_summary="Service restored.")
+    assert result["updates"]["status"] == "resolved"
+    assert "resolution_code" not in result["updates"]
+    assert result["event_payload"]["closure_policy"]["policy"]["before_resolved"]["require_resolution_code"] is False
 
 
 @pytest.mark.asyncio
 async def test_closure_policy_resolves_from_registry_during_transition(test_engine) -> None:
     await _clear_closure_registry(test_engine)
-    await _publish_closure_policy(test_engine, {"require_resolution_code": True})
+    await _publish_closure_policy(test_engine, {"require_resolution_code": True, "require_public_summary": True})
     ticket_id = await _seed_ticket(test_engine, closure_policy={})
 
-    with pytest.raises(ValueError, match="resolution_code"):
+    with pytest.raises(ValueError, match="resolution_summary"):
         await _resolve_ticket(test_engine, ticket_id)
+    result = await _resolve_ticket(test_engine, ticket_id, requester_resolution_summary="Service restored.")
+    assert result["updates"]["status"] == "resolved" and "resolution_code" not in result["updates"]
 
 
 @pytest.mark.asyncio

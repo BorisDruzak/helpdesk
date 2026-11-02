@@ -108,15 +108,18 @@ from tickets.chat_idempotency import (
     normalize_chat_message_id,
 )
 from tickets.sla_service import TicketSlaService
-from tickets.approval_policy import build_approval_summary
-from tickets.closure_policy import build_closure_requirements
+from tickets.approval_policy import build_approval_summary, validate_approval_policy
+from tickets.closure_policy import build_closure_requirements, requires_requester_confirmation
 from tickets.evidence_service import TicketEvidenceService
 from tickets.diagnostic_target import resolve_ticket_diagnostic_target
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.purge_service import TicketPurgeBlockedError, TicketPurgeService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
-from tickets.workflow_service import TicketWorkflowService, WorkflowTransitionConflict, validate_transition_for_ticket
+from tickets.workflow_service import (
+    TicketWorkflowService, WorkflowTransitionConflict, validate_transition_for_ticket,
+    load_ticket_workflow_profile, validate_transition_for_profile, _validate_transition_gate,
+)
 from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
@@ -1339,10 +1342,37 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_a
             "current_action_owner": approval_summary.get("current_action_owner"),
             "pending_count": approval_summary.get("pending_count", 0),
         }
+    closure_requirements = await build_closure_requirements(session, ticket)
+    can_resolve_and_close = (
+        any(option.value == "resolved" for option in options)
+        and _support_public_reply_error(ticket, actor_id=actor_id, is_admin=is_admin) is None
+        and not await requires_requester_confirmation(session, ticket)
+        and all(item.get("met") or item.get("key") == "public_summary" for item in closure_requirements)
+        and (await can(session, auth_context, "ticket.status.change") if auth_context is not None else True)
+    )
+    if can_resolve_and_close:
+        profile = await load_ticket_workflow_profile(session, ticket)
+        can_resolve_and_close = validate_transition_for_profile(profile, "resolved", "closed", True)
+        if can_resolve_and_close:
+            try:
+                # The form supplies the public result; every other explicit
+                # prerequisite must already be satisfied before offering it.
+                for source_status, target_status in ((current_status, "resolved"), ("resolved", "closed")):
+                    await validate_approval_policy(
+                        session, ticket, from_status=source_status, to_status=target_status,
+                    )
+                    await _validate_transition_gate(
+                        gate=((profile.transition_gates or {}).get(source_status) or {}).get(target_status),
+                        session=session, ticket=ticket, updates={"requester_resolution_summary": "pending public result"},
+                        actor_id=actor_id or "", actor_role="admin" if is_admin else "support",
+                    )
+            except ValueError:
+                can_resolve_and_close = False
     return SupportTicketActions(
         status_options=options,
         can_send_internal_note=True,
         can_send_public_message=_support_public_reply_error(ticket, actor_id=actor_id, is_admin=is_admin) is None,
+        can_resolve_and_close=can_resolve_and_close,
         take_in_work=await _SupportTakeProjector(session, repo or TicketEventsRepo(session), auth_context).project(
             ticket, transition_allowed=any(option.value == "in_progress" for option in options)
         ) if auth_context is not None else None,
@@ -1350,7 +1380,7 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_a
         can_unhide_from_workspace=_is_support_workspace_hidden(ticket),
         can_archive_ticket=is_admin and getattr(ticket, "archived_at", None) is None,
         can_unarchive_ticket=is_admin and getattr(ticket, "archived_at", None) is not None,
-        closure_requirements=await build_closure_requirements(session, ticket),
+        closure_requirements=closure_requirements,
         approval=approval_action,
     )
 
@@ -5625,6 +5655,9 @@ async def handle_web_support_change_status(request: web.Request):
             status=400,
         )
 
+    close_after_resolve = data.get("close_after_resolve", False)
+    if type(close_after_resolve) is not bool or (close_after_resolve and data.get("to_status") != "resolved"):
+        return _support_json_error("Некорректный параметр закрытия обращения", status=400, error_code="VALIDATION_ERROR")
     raw_to_status = str(data.get("to_status") or "").strip()
     to_status, _ = resolve_status(raw_to_status)
     if not to_status:
@@ -5649,6 +5682,13 @@ async def handle_web_support_change_status(request: web.Request):
             ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            if close_after_resolve:
+                resolution_error = _support_public_reply_error(
+                    ticket, actor_id=auth_context.actor_id, is_admin=auth_context.actor_role == "admin"
+                )
+                if resolution_error:
+                    code, message = resolution_error
+                    return _support_json_error(message, status=403 if code == "ASSIGNEE_CONFLICT" else 409, error_code=code)
             if to_status == "in_progress":
                 assignee = getattr(ticket, "assignee_id", None)
                 if assignee and str(assignee) != str(auth_context.actor_id or "") and auth_context.actor_role != "admin":
@@ -5691,11 +5731,13 @@ async def handle_web_support_change_status(request: web.Request):
                     public_comment=data.get("public_comment"),
                     internal_comment=data.get("internal_comment"),
                     source="web_support_api",
+                    close_after_resolve=close_after_resolve,
                 )
             except WorkflowTransitionConflict as exc:
                 await session.rollback()
                 return _support_json_error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
             except ValueError as exc:
+                await session.rollback()
                 message = str(exc)
                 if message.startswith("approval_policy"):
                     error_code = "APPROVAL_POLICY_BLOCKED"
@@ -5720,10 +5762,14 @@ async def handle_web_support_change_status(request: web.Request):
             confirmation_pending_cleared = False
             ticket = await repo.get_ticket(ticket.ticket_id)
             if ticket is None:
+                await session.rollback()
                 return web.json_response(
                     {"status": "error", "error": "Тикет не найден после обновления"},
                     status=404,
                 )
+
+            if close_after_resolve:
+                to_status = "closed"
 
             if (
                 to_status == "in_progress"
@@ -5841,6 +5887,8 @@ async def handle_web_support_change_status(request: web.Request):
 
             await session.commit()
 
+        for preceding in result.get("preceding_transitions", []):
+            await _push_ticket_event(request, ticket.ticket_id, preceding.get("event_result"), "status_changed", preceding.get("event_payload") or {})
         await _push_ticket_event(
             request,
             ticket.ticket_id,

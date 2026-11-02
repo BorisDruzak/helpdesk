@@ -5,7 +5,7 @@ import { humanRequesterTicketCode } from "../../features/requester/queries";
 import { requesterErrorMessage } from "../../features/requester/labels";
 import { RequesterConsentList } from "../../features/requester/consent-card";
 import { InlineAlert } from "../../features/requester/ui/form-controls";
-import { TicketDetailHeader, TicketReplyComposer, TicketResolutionPanel } from "./tickets-panels";
+import { TicketDetailHeader, TicketReplyComposer, TicketResolutionPanel, TicketResultSummary } from "./tickets-panels";
 import { MessagesPanel, TimelinePanel } from "./tickets-workflow";
 import { useRequesterTicketChat } from "./use-ticket-chat";
 
@@ -23,8 +23,8 @@ function RequesterTicketChat({ ticketId }: { ticketId: string | undefined }) {
   const messages = detailQuery.data?.messages ?? [];
   useEffect(() => {
     const scroller = scrollRef.current;
-    if (scroller && followMessages.current && !showDetails && !chat.canClose && !chat.pendingConsents.length) scroller.scrollTop = scroller.scrollHeight;
-  }, [messages, showDetails, chat.canClose, chat.pendingConsents.length]);
+    if (scroller && followMessages.current && !showDetails && !ticket?.requester_resolution_summary && !chat.canClose && !chat.canRate && !chat.canReopen && !chat.pendingConsents.length) scroller.scrollTop = scroller.scrollHeight;
+  }, [messages, showDetails, ticket?.requester_resolution_summary, chat.canClose, chat.canRate, chat.canReopen, chat.pendingConsents.length]);
   return (
     <section aria-label="Чат обращения" className="flex min-h-0 flex-1 flex-col bg-slate-50">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
@@ -42,6 +42,7 @@ function RequesterTicketChat({ ticketId }: { ticketId: string | undefined }) {
           : !ticket ? <p className="p-4 text-sm text-slate-600">Обращение не найдено.</p>
           : showDetails ? <div className="mx-auto max-w-4xl space-y-4"><TicketDetailHeader ticket={ticket} /><TimelinePanel events={detailQuery.data?.events ?? []} /></div>
           : <div className="mx-auto max-w-4xl space-y-3">
+            <TicketResultSummary ticket={ticket} />
             <RequesterConsentList consents={chat.pendingConsents} disabled={chat.actionSubmitting} onDecision={chat.decideConsent} />
             {chat.canClose || chat.canRate || chat.canReopen ? <TicketResolutionPanel {...chat} /> : null}
             <MessagesPanel messages={messages} />

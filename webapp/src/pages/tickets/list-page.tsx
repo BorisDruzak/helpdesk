@@ -699,6 +699,7 @@ function closureBlockerActionRank(blocker: ClosurePlanBlocker) {
 
 function orderClosureBlockers(blockers: ClosurePlanBlocker[]) {
   return blockers
+    .filter((blocker) => !["resolution_code", "allowed_resolution_code"].includes(blocker.key))
     .map((blocker, index) => ({ blocker, index }))
     .sort((left, right) => {
       const severityDelta = closureBlockerSeverityRank(left.blocker) - closureBlockerSeverityRank(right.blocker);
@@ -734,7 +735,7 @@ function closureFocusGuide(blocker: ClosurePlanBlocker) {
       return {
         section: "Решение",
         targetAction: "Заполнить решение",
-        hint: "Заполните код решения и итог для заявителя перед переводом тикета в решение.",
+        hint: "Заполните итог для заявителя перед переводом тикета в решение.",
         passportItemKey: "solution_applied",
       };
     case "check_approval":
@@ -2062,9 +2063,9 @@ export function TicketListPage() {
       }
       return postSupportTicketStatus(selectedTicketId, "resolved", {
         reason: draft.reason.trim(),
-        resolutionCode: draft.resolutionCode.trim(),
         requesterResolutionSummary: draft.requesterResolutionSummary.trim(),
         resolutionSummary: draft.resolutionSummary.trim(),
+        closeAfterResolve: workspaceQuery.data?.detail.actions.can_resolve_and_close === true,
       });
     },
     onSuccess: async () => {
@@ -2206,7 +2207,17 @@ export function TicketListPage() {
     });
   }
 
-  const selectedTicket = viewModel.selectedTicket;
+  const selectedTicket = useMemo(() => {
+    const ticket = viewModel.selectedTicket;
+    if (!ticket) return ticket;
+    // Older projections can still contain the retired code prerequisite.
+    const blockers = ticket.closurePlan.blockers.filter((item) => !["resolution_code", "allowed_resolution_code"].includes(item.key));
+    const retiredCount = ticket.closurePlan.blockers.length - blockers.length;
+    if (!retiredCount) return ticket;
+    const missingCount = Math.max(0, ticket.closurePlan.missingCount - retiredCount);
+    return { ...ticket, closurePlan: { ...ticket.closurePlan, blockers, missingCount,
+      total: Math.max(0, ticket.closurePlan.total - retiredCount), readyForResolution: missingCount === 0 } };
+  }, [viewModel.selectedTicket]);
   const effectiveListCollapsed=Boolean(selectedTicket && ticketListCollapsed && workspaceMode!=="queue");
   function toggleTicketList() {
     const collapsed=!ticketListCollapsed;
@@ -2278,9 +2289,8 @@ export function TicketListPage() {
     (operatorActionDraft.kind === "priority" && Boolean(operatorActionDraft.priority));
   const operatorSubmitDisabled = !operatorActionDraft || !operatorReasonReady || !operatorTargetReady || operatorActionMutation.isPending;
   const resolutionCloseReady =
-    Boolean(resolutionCloseDraft?.resolutionCode.trim()) &&
     (resolutionCloseDraft?.requesterResolutionSummary.trim().length ?? 0) >= 3 &&
-    (resolutionCloseDraft?.resolutionSummary.trim().length ?? 0) >= 3 &&
+    (!(workspaceQuery.data?.detail.actions.closure_requirements ?? []).some((item) => item.key === "internal_summary") || (resolutionCloseDraft?.resolutionSummary.trim().length ?? 0) >= 3) &&
     (resolutionCloseDraft?.reason.trim().length ?? 0) >= 3;
   const resolutionCloseSubmitDisabled = !resolutionCloseReady || resolutionCloseMutation.isPending;
 
@@ -4696,11 +4706,12 @@ export function TicketListPage() {
                 ) : null}
                 {resolutionCloseDraft && simpleMode ? (
                   <div className="support-simple"><SimpleResolutionForm
+                    closeAfterResolve={workspaceQuery.data?.detail.actions.can_resolve_and_close === true}
                     requirements={workspaceQuery.data?.detail.actions.closure_requirements ?? []}
                     initial={resolutionCloseDraft} pending={resolutionCloseMutation.isPending}
                     error={resolutionCloseMutation.error instanceof Error ? resolutionCloseMutation.error.message : null}
                     onSubmit={(draft) => resolutionCloseMutation.mutate(draft)} onCancel={() => setResolutionCloseDraft(null)}
-                    onAdvanced={() => { setResolutionCloseDraft(null); selectRightTab("passport"); }}
+                    onAdvanced={() => { setResolutionCloseDraft(null); setSimpleMode(false); setSidebarTab("passport"); setWorkspaceMode("passport"); }}
                   /></div>
                 ) : resolutionCloseDraft ? (
                   <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
@@ -4712,7 +4723,7 @@ export function TicketListPage() {
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
-                          <h2 className="text-lg font-semibold" id="resolution-close-title">Перевести тикет в решение</h2>
+                          <h2 className="text-lg font-semibold" id="resolution-close-title">{workspaceQuery.data?.detail.actions.can_resolve_and_close ? "Решить и закрыть" : "Перевести тикет в решение"}</h2>
                           <p className="mt-1 text-sm leading-6 text-slate-400">
                             Публичный итог увидит заявитель. Внутренний итог останется в истории поддержки.
                           </p>
@@ -4733,19 +4744,6 @@ export function TicketListPage() {
                       </div>
 
                       <div className="mt-5 space-y-4">
-                        <label className="block text-sm font-medium text-slate-300">
-                          Код решения
-                          <input
-                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
-                            onChange={(event) => {
-                              const resolutionCode = event.currentTarget.value;
-                              setResolutionCloseDraft((draft) => draft ? { ...draft, resolutionCode } : draft);
-                            }}
-                            placeholder="Например: fixed_remote"
-                            value={resolutionCloseDraft.resolutionCode}
-                          />
-                        </label>
-
                         <label className="block text-sm font-medium text-slate-300">
                           Итог для заявителя
                           <textarea
@@ -4787,7 +4785,7 @@ export function TicketListPage() {
 
                         {!resolutionCloseReady ? (
                           <p className="text-xs text-amber-200">
-                            Заполните код решения, оба итога и причину перевода. Это защитит от случайного закрытия без паспорта.
+                            Заполните итог для заявителя и причину перевода. Внутренний итог обязателен, только если этого требует политика.
                           </p>
                         ) : null}
                       </div>
@@ -4806,7 +4804,7 @@ export function TicketListPage() {
                           onClick={() => resolutionCloseMutation.mutate(resolutionCloseDraft)}
                           type="button"
                         >
-                          {resolutionCloseMutation.isPending ? "Переводим..." : "Перевести в решение"}
+                          {resolutionCloseMutation.isPending ? "Сохраняем..." : workspaceQuery.data?.detail.actions.can_resolve_and_close ? "Решить и закрыть" : "Перевести в решение"}
                         </button>
                       </div>
                     </section>

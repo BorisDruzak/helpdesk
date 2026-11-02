@@ -1230,7 +1230,16 @@ async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.
     )
 
 
-@require_auth("user")
+async def _get_locked_requester_ticket(session, resolver, *, actor_id: str, ticket_id: str):
+    ticket = await resolver.get_ticket(actor_id=actor_id, ticket_id=ticket_id)
+    if ticket is None:
+        return None
+    ticket = await TicketEventsRepo(session).get_ticket(ticket.ticket_id, for_update=True)
+    # Recheck requester scope after waiting for the lock, including for admins.
+    return await resolver.get_ticket(actor_id=actor_id, ticket_id=ticket_id) if ticket is not None else None
+
+
+@require_auth("user", "admin")
 async def handle_web_requester_ticket_message(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
@@ -1257,7 +1266,7 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
-        ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        ticket = await _get_locked_requester_ticket(session, resolver, actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
         actions = requester_ticket_actions(ticket)
@@ -1377,7 +1386,7 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
     return _success({"message_id": message_id, "event_id": event_id, "attachments_count": attachments_count})
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_ticket_close(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
@@ -1385,7 +1394,7 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
-        ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        ticket = await _get_locked_requester_ticket(session, resolver, actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
 
@@ -1422,6 +1431,7 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
             await session.rollback()
             return _error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
         except ValueError as exc:
+            await session.rollback()
             return _error(str(exc), status=400, error_code="WORKFLOW_POLICY_ERROR")
 
         ticket = await repo.get_ticket(ticket.ticket_id)
@@ -1461,7 +1471,7 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
     return _success({"ticket": ticket_to_dict(ticket, visibility="requester")})
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_ticket_feedback(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
@@ -1469,7 +1479,7 @@ async def handle_web_requester_ticket_feedback(request: web.Request) -> web.Resp
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
-        ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        ticket = await _get_locked_requester_ticket(session, resolver, actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
         actions = requester_ticket_actions(ticket)
@@ -1524,7 +1534,7 @@ async def handle_web_requester_ticket_feedback(request: web.Request) -> web.Resp
     )
 
 
-@require_auth("user")
+@require_auth("user", "admin")
 async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
@@ -1532,7 +1542,7 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
-        ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        ticket = await _get_locked_requester_ticket(session, resolver, actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
         actions = requester_ticket_actions(ticket)

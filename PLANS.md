@@ -2762,3 +2762,29 @@ commit/deployment and private redacted evidence locations. Preserve unrelated
 local files and original dirty Endpoint checkout; work only in the approved
 Endpoint sso-worktime-20261027 worktree. Mandatory independent subagent reviews
 continue at each gate. The task is not complete.
+
+## Helpdesk phase-one UX — 2026-11-02
+
+Scope: preserve registration, existing profiles and question/SLA semantics;
+remove MFA for every Helpdesk role and manual resolution-code prerequisites;
+automate processing preview and created-ticket opening; simplify support entry
+and ordinary resolution/closure; add four common Studio maps.
+
+Baseline: `9a79f6cfba8cfe37649a62e0077a82ff8637ac9f`, branch
+`codex/ui-support-001`. Source changes and per-task review are implemented;
+integrated review, isolated PostgreSQL, browser fixtures and exact-release
+staging acceptance are in progress. No production release is authorized here.
+Registration remains controlled by its existing flag. Unknown AD identities
+must be explicitly linked to the intended existing profile; never infer roles
+or ownership from a matching login.
+
+Next: finish current PostgreSQL run, correct demonstrated failures, complete
+catalog publication tests, freeze reviewed commits, take a private staging
+backup and deploy through the canonical procedure. Publish the additive catalog
+through canonical services, then verify Other/Studio branches and SLA, ordinary
+requester creation and support reply/close in the live browser. The user
+explicitly requests staging remain running after verification.
+
+Tracking: `docs/superpowers/plans/2026-11-02-helpdesk-phase1.md` and
+`.superpowers/sdd/2026-11-02-helpdesk-phase1/progress.md`. Preserve unrelated
+preexisting entries and distinguish fixture evidence from actual staging gates.

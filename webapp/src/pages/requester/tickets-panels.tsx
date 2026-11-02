@@ -117,12 +117,21 @@ export function TicketDetailHeader({ ticket }: { ticket: AuthenticatedRequesterT
       <p className="text-sm font-semibold text-brand-700">{humanRequesterTicketCode(ticket)}</p>
       <h2 className="mt-1 text-2xl font-semibold text-slate-950">{ticket.title || "Без темы"}</h2>
       <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{ticket.description || "Описание не указано"}</p>
+      <TicketResultSummary ticket={ticket} />
       <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
         <span>{ticket.requester_status_label || ticket.status_label || formatStatusLabel(ticket.status)}</span>
         <span>{formatRussianDateTime(ticket.updated_at || ticket.created_at, { emptyText: "Дата не указана" })}</span>
       </div>
     </article>
   );
+}
+
+export function TicketResultSummary({ ticket }: { ticket: AuthenticatedRequesterTicket }) {
+  if (!ticket.requester_resolution_summary) return null;
+  return <section aria-label="Результат решения" className="rounded-panel border border-brand-200 bg-brand-50 p-4">
+    <h3 className="text-sm font-semibold text-slate-950">Результат решения</h3>
+    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{ticket.requester_resolution_summary}</p>
+  </section>;
 }
 
 export function TicketResolutionPanel({
@@ -166,7 +175,7 @@ export function TicketResolutionPanel({
   setReopenReason: (value: string) => void;
   submitFeedback: () => void;
 }) {
-  if (!canRate && !canClose) {
+  if (!canRate && !canClose && !canReopen) {
     return null;
   }
   return (
@@ -210,32 +219,30 @@ export function TicketResolutionPanel({
             <Button disabled={actionSubmitting} onClick={submitFeedback} type="button" variant="outline">
               Отправить оценку
             </Button>
-            {canReopen ? (
-              <Button className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100" disabled={actionSubmitting} onClick={reopenTicket} type="button" variant="outline">
-                Вернуть в работу
-              </Button>
-            ) : null}
           </FormActions>
-          {canReopen ? (
-            <div className="grid gap-3">
-              <FieldShell label="Причина возврата">
-                <Select className="mt-1 w-full font-normal" onChange={(event) => setReopenReason(event.currentTarget.value)} value={reopenReason}>
-                  {reopenReasonOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              </FieldShell>
-              <Textarea
-                aria-label="Комментарий для возврата в работу"
-                className="min-h-20 text-sm"
-                onChange={(event) => setReopenComment(event.currentTarget.value)}
-                placeholder="Что осталось не решено"
-                value={reopenComment}
-              />
-            </div>
-          ) : null}
+        </div>
+      ) : null}
+      {canReopen ? (
+        <div className="mt-4 grid gap-3">
+          <FieldShell label="Причина возврата">
+            <Select className="mt-1 w-full font-normal" onChange={(event) => setReopenReason(event.currentTarget.value)} value={reopenReason}>
+              {reopenReasonOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </FieldShell>
+          <Textarea
+            aria-label="Комментарий для возврата в работу"
+            className="min-h-20 text-sm"
+            onChange={(event) => setReopenComment(event.currentTarget.value)}
+            placeholder="Что осталось не решено"
+            value={reopenComment}
+          />
+          <Button className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100" disabled={actionSubmitting} onClick={reopenTicket} type="button" variant="outline">
+            Вернуть в работу
+          </Button>
         </div>
       ) : null}
     </section>

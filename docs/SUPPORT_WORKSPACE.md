@@ -1,11 +1,13 @@
 # Everyday support workspace
 
-The existing `/app/tickets` and `/app/tickets/:ticketId` routes open the simple
+The `/app/support` entry redirects to `/app/tickets`. The existing
+`/app/tickets` and `/app/tickets/:ticketId` routes open the simple
 operational layout by default. `TicketListPage` retains its query cache,
 realtime subscriptions, attachment upload and typed mutations. Components in
 `webapp/src/pages/tickets/components/simple-support-*` provide the queue,
-three-area ticket and conversation. `simple-resolution-form.tsx` presents policy
-fields and optional internal information.
+three-area ticket and conversation. The former command center remains at
+`/app/support/advanced`. `simple-resolution-form.tsx` presents the public result,
+remaining policy fields and optional internal information.
 
 ## Queue partitioning and layout
 
@@ -99,11 +101,28 @@ position when the operator has scrolled back and offer a return-to-latest button
 
 ## Resolution and additional functions
 
-Resolve opens one form using `actions.closure_requirements`, without imposing
-extra mandatory fields absent from policy. Missing evidence or passport
-requirements lead to the existing passport workspace. The server continues to
-enforce workflow, approval, closure and requester-confirmation policy. Resolved
-and closed remain separate states. An agent is not required for ordinary support.
+Resolve opens one form using `actions.closure_requirements`. Resolution code is
+optional stored metadata: neither compact nor advanced completion asks for it,
+and missing-code requirements in historical snapshots or transition gates no
+longer block resolution/closure. Other policy fields remain authoritative.
+Missing evidence or passport requirements open the existing passport workspace.
+
+`actions.can_resolve_and_close` advertises completion only for started work,
+the assigned operator or administrator, both allowed workflow transitions and
+an effective policy with requester confirmation explicitly disabled. The UI
+then sends `to_status=resolved` with `close_after_resolve=true` and the public
+result. The canonical workflow records resolved and closed in one transaction;
+failure of either transition rolls back both. Events are broadcast after commit.
+Explicit confirmation, approval, evidence, passport and other workflow guards
+still apply. Policies requiring confirmation keep separate resolution/closure.
+An agent is not required for ordinary support.
+
+The problem and public result are visible in the compact ticket. Long public
+results expand into a keyboard-accessible scroll region. Requester views use
+only `requester_resolution_summary`; internal `resolution_summary` stays private.
+Confirmation, rating and reopening each follow their own server capability.
+An administrator using the requester workspace acts only on their own linked
+requester identity, with ownership reread after the ticket lock.
 
 Additional mode retains tools, SLA, passport, Quality, saved queue views and bulk
 actions; returning to ordinary work is explicit. `?advanced=1` directly opens
@@ -119,3 +138,9 @@ persisted assignee/status and SLA separately from synthetic browser fixtures.
 Browser scenarios cover 1366x768, 1920x1080 and 390x768, attachment links,
 dialog/note/history separation, draft privacy and resolution. Fixture results
 are not installed staging or production acceptance.
+
+Phase-one completion/identity regression coverage also includes
+`test_phase1_completion_no_db.py`, `test_phase1_completion_api.py` and
+`test_phase1_resolution_metadata_no_db.py`. Additive Studio publication and
+preserved question/SLA branches are described in
+[the catalog procedure](HELPDESK_PHASE1_CATALOG.md).

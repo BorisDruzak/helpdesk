@@ -54,7 +54,7 @@ it("preserves source policy extras and reports server errors without losing edit
   const change = vi.fn();
   render(<ScenarioProcessing definition={{...definition, process_binding: {...definition.process_binding, policy_refs: {closure: "shared"}}}} disabled={false} onChange={change} />);
   fireEvent.click(await screen.findByRole("button", { name: "Настроить выбранное правило: Закрытие обращения" }));
-  expect(screen.getByLabelText("Результат решения обязателен")).not.toBeChecked();
+  expect(screen.queryByLabelText("Результат решения обязателен")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Сотрудник должен подтвердить решение")).not.toBeChecked();
   expect(screen.getByLabelText("Закрыть автоматически через (дней)")).toHaveValue(0);
   fireEvent.click(screen.getByLabelText("Описание решения для сотрудника обязательно"));
@@ -88,7 +88,7 @@ it("shows legacy closure requirements using the same defaults as the runtime", a
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: { closure: [source] } } }), { headers: { "content-type": "application/json" } })));
   render(<ScenarioProcessing definition={{...definition, process_binding: {...definition.process_binding, policy_refs: {closure: "legacy"}}}} disabled={false} onChange={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "Настроить выбранное правило: Закрытие обращения" }));
-  expect(screen.getByLabelText("Результат решения обязателен")).toBeChecked();
+  expect(screen.queryByLabelText("Результат решения обязателен")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Описание решения для сотрудника обязательно")).not.toBeChecked();
   expect(screen.getByLabelText("Сотрудник должен подтвердить решение")).toBeChecked();
   expect(screen.getByLabelText("Закрыть автоматически через (дней)")).toHaveValue(7);

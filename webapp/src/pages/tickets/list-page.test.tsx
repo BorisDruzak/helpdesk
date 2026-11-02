@@ -425,6 +425,53 @@ afterEach(() => {
 });
 
 describe("TicketListPage", () => {
+  it("uses the compact queue by default", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    renderTicketListPage("/app/tickets", false);
+    expect(await screen.findByTestId("simple-support-workspace")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Очередь обращений" })).toBeInTheDocument();
+  });
+
+  it("does not show obsolete legacy code blockers in the advanced closure plan", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    const workspace = workspacePayload();
+    workspace.closure_plan = { ...workspace.closure_plan, ready_for_resolution: false, missing_count: 1, total: 1, blockers: [{ key: "resolution_code", label: "Устаревший код решения", met: false, detail: "Устаревшее требование", source: "closure_requirement", action_kind: "edit_resolution", action_label: "Ввести старый код", severity: "blocking", candidate_count: 0, fact_key: null, blocking_for_closure: true }] };
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    renderTicketListPage("/app/tickets/ticket-1");
+    await screen.findByTestId("support-reply-composer");
+    expect(screen.queryByTestId("closure-plan-panel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Устаревший код решения")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ввести старый код" })).not.toBeInTheDocument();
+  });
+
+  it("opens advanced requirements from the compact resolution form", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    const workspace = workspacePayload();
+    workspace.detail.actions.status_options = [{ value: "resolved", label: "Решено" }];
+    workspace.detail.actions.closure_requirements = [{ key: "priority_evidence", label: "Доказательство решения", met: false, detail: "Нужно доказательство" }];
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    renderTicketListPage("/app/tickets/ticket-1", false);
+    fireEvent.click(await screen.findByRole("button", { name: "Решить обращение" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Доказательство решения" }));
+    expect(screen.queryByTestId("simple-support-workspace")).not.toBeInTheDocument();
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-mode", "passport");
+  });
+
+  it.each([true, false])("submits the server-authorized combined close flag (%s)", async (combined) => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    const workspace = workspacePayload();
+    workspace.detail.actions.can_resolve_and_close = combined;
+    workspace.detail.actions.status_options = [{ value: "resolved", label: "Решено" }];
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    postSupportTicketStatusMock.mockResolvedValue({ ticket_id: "ticket-1", status: combined ? "closed" : "resolved", status_label: combined ? "Закрыто" : "Решено" });
+    renderTicketListPage("/app/tickets/ticket-1", false);
+    fireEvent.click(await screen.findByRole("button", { name: combined ? "Решить и закрыть" : "Решить обращение" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByLabelText("Код решения")).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText("Итог для сотрудника"), { target: { value: "Подключение восстановлено" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: combined ? "Решить и закрыть" : "Решить обращение" }));
+    await waitFor(() => expect(postSupportTicketStatusMock).toHaveBeenCalledWith("ticket-1", "resolved", expect.objectContaining({ requesterResolutionSummary: "Подключение восстановлено", closeAfterResolve: combined })));
+  });
   function deferred<T>() {
     let resolve!: (value: T) => void;
     let reject!: (reason: unknown) => void;
@@ -1975,10 +2022,10 @@ describe("TicketListPage", () => {
           recommended_next_action: "Заполнить решение",
           blockers: [
             {
-              key: "resolution_code",
-              label: "Код решения",
+              key: "public_summary",
+              label: "Итог для заявителя",
               met: false,
-              detail: "Укажите код решения из списка.",
+              detail: "Укажите публичный итог решения.",
               source: "closure_requirement",
               action_kind: "edit_resolution",
               action_label: "Заполнить решение",
@@ -2000,11 +2047,11 @@ describe("TicketListPage", () => {
     const focusCard = await screen.findByTestId("closure-focus-card");
     expect(within(focusCard).getByText("Секция: Решение")).toBeInTheDocument();
     expect(within(focusCard).getByText("Следующий шаг")).toBeInTheDocument();
-    expect(within(focusCard).getByText("Заполните код решения и итог для заявителя перед переводом тикета в решение.")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Заполните итог для заявителя перед переводом тикета в решение.")).toBeInTheDocument();
     expect(within(screen.getByTestId("closure-focused-passport-item")).getByText("Решение применено")).toBeInTheDocument();
   });
 
-  it("opens a guarded resolution close form from resolution blockers and submits typed resolution facts", async () => {
+  it("submits resolution facts without replaying historical optional code metadata", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(
       workspacePayload({
@@ -2060,7 +2107,7 @@ describe("TicketListPage", () => {
     expect(within(dialog).getByText("Публичный итог увидит заявитель. Внутренний итог останется в истории поддержки.")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Перевести в решение" })).toBeDisabled();
 
-    fireEvent.change(within(dialog).getByLabelText("Код решения"), { target: { value: "fixed_remote" } });
+    expect(within(dialog).queryByLabelText("Код решения")).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText("Итог для заявителя"), {
       target: { value: "Доступ восстановлен, сайт открывается штатно." },
     });
@@ -2075,9 +2122,9 @@ describe("TicketListPage", () => {
     await waitFor(() => {
       expect(postSupportTicketStatusMock).toHaveBeenCalledWith("ticket-1", "resolved", {
         reason: "resolution completed",
-        resolutionCode: "fixed_remote",
         requesterResolutionSummary: "Доступ восстановлен, сайт открывается штатно.",
         resolutionSummary: "Перезапущен upstream и очищен кэш reverse proxy.",
+        closeAfterResolve: false,
       });
     });
   });
@@ -2267,9 +2314,9 @@ describe("TicketListPage", () => {
     const closurePanel = await screen.findByTestId("closure-plan-panel");
     expect(within(closurePanel).getByRole("button", { name: "Добавить evidence" })).toBeInTheDocument();
     expect(within(closurePanel).getByRole("button", { name: "Добавить worklog" })).toBeInTheDocument();
-    expect(within(closurePanel).getByRole("button", { name: "Показать ещё 2" })).toBeInTheDocument();
+    expect(within(closurePanel).getByRole("button", { name: "Показать ещё 1" })).toBeInTheDocument();
 
-    fireEvent.click(within(closurePanel).getByRole("button", { name: "Показать ещё 2" }));
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Показать ещё 1" }));
 
     expect(within(closurePanel).getByText("Официальный паспорт решения")).toBeInTheDocument();
     expect(within(closurePanel).getByRole("button", { name: "Скрыть" })).toBeInTheDocument();

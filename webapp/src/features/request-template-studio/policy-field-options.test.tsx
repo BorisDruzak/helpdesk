@@ -6,10 +6,10 @@ it("uses effective nested resolution codes and preserves unknown codes and polic
   const config = { custom: { preserved: true }, allowed_resolution_codes: ["duplicate"], before_resolved: { allowed_resolution_codes: ["fixed_remote", "custom_existing"], preserved: 42 } };
   const change = vi.fn();
   render(<ClosurePolicyControls config={config} onChange={change} runtimeDefaults friendly />);
-  expect(screen.getByLabelText("Допустимые результаты решения: Исправлено удалённо")).toBeChecked();
-  expect(screen.getByLabelText("Допустимые результаты решения: Повторное обращение")).not.toBeChecked();
+  expect(screen.getByLabelText("Допустимые коды решения (необязательно): Исправлено удалённо")).toBeChecked();
+  expect(screen.getByLabelText("Допустимые коды решения (необязательно): Повторное обращение")).not.toBeChecked();
   expect(screen.queryByText(/custom_existing/)).not.toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText("Допустимые результаты решения: Повторное обращение"));
+  fireEvent.click(screen.getByLabelText("Допустимые коды решения (необязательно): Повторное обращение"));
   expect(change).toHaveBeenCalledWith({ ...config, before_resolved: { ...config.before_resolved, allowed_resolution_codes: ["fixed_remote", "custom_existing", "duplicate"] } });
 });
 it("preserves visibility paths, structured status mappings and unknown settings", () => {

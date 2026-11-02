@@ -55,7 +55,8 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 
 - `webapp/src/pages/tickets/list-page.tsx` keeps the existing support queries,
   realtime and mutations; `components/simple-support-*` compose the default
-  queue, compact ticket and three conversation tabs. Advanced modes stay reachable.
+  queue, compact ticket and three conversation tabs. `/app/support` redirects to
+  this queue; the command center remains at `/app/support/advanced`.
 - `tickets/smart_views.py` adds server-side operational views before queue limits.
 - `web_api/support_handlers.py` locks status/ownership before take-in-work and
   public reply. Rejected replies write no event and do not finish first-response
@@ -69,6 +70,22 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   ownership, SLA and administrator access; the no-DB companion covers error
   ordering. Existing FSM, assignment, closure, audit and internal visibility stay
   authoritative. See [support workflow](../../docs/SUPPORT_WORKSPACE.md).
+- `actions.can_resolve_and_close` projects the atomic status command
+  `close_after_resolve`: both canonical transitions share one transaction and
+  events are emitted after commit. Explicit confirmation, approval, evidence and
+  other workflow guards remain enforced. Missing resolution-code prerequisites
+  are retired, including historical snapshots and effective transition gates;
+  optional stored classification metadata is preserved.
+- Requester message/confirm/feedback/reopen reuse requester identity scope for
+  users and administrators, rereading ownership under the ticket lock. Public
+  result views use `requester_resolution_summary`; internal results stay private.
+- `requester/scenario-session.tsx` automatically obtains the processing preview
+  on the submission step and opens the created ticket directly. Terminal preview
+  responses use the existing session generation/abort guard.
+- `scripts/helpdesk_phase1_catalog.py` adds four versioned Studio maps through
+  canonical publication, retaining Other's question/SLA branches. Its reviewed
+  staging wrapper owns host/release verification, backup and readback; see
+  [catalog procedure](../../docs/HELPDESK_PHASE1_CATALOG.md).
 
 ## Endpoint module discovery and inputs
 
@@ -100,6 +117,9 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   auth verifies current account, identity and upstream session on every SSO
   operation. All Helpdesk roles use password-level AD SSO without requesting or
   enforcing MFA ACR; provider client policy is configured separately.
+  Browser login/callback failures return to the fixed login page with a whitelisted
+  local category and Russian recovery guidance; JSON API errors keep their status.
+  Recovery never binds identities or grants roles.
   Configuration/contracts/pilot limits: `docs/SSO_IDENTITY.md`.
   `scripts/configure_helpdesk_sso_password.py` plans/applies the fixed staging
   provider client's password assurance with private backup and exact readback.

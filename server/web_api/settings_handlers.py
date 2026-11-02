@@ -292,11 +292,6 @@ def _build_request_template_items(pack: dict[str, Any] | None) -> list[WebSettin
             if isinstance(form.get("on_behalf_policy"), dict)
             else {"allowed": False}
         )
-        before_resolved = (
-            closure_policy.get("before_resolved")
-            if isinstance(closure_policy.get("before_resolved"), dict)
-            else {}
-        )
         diagnostic_auto_run = diagnostic_policy.get("auto_run") if diagnostic_policy else None
 
         policy_presence = {
@@ -378,8 +373,7 @@ def _build_request_template_items(pack: dict[str, Any] | None) -> list[WebSettin
                 },
                 closure={
                     "policy_id": _inline_policy_id(template_id, "closure_policy", closure_policy),
-                    "requires_resolution_code": bool(closure_policy.get("require_resolution_code"))
-                    or bool(before_resolved.get("require_resolution_code")),
+                    "requires_resolution_code": False,
                 },
                 visibility={
                     "policy_id": _inline_policy_id(template_id, "visibility_policy", visibility_policy),

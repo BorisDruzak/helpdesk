@@ -13,7 +13,7 @@ from app.db.models import TicketApproval, TicketEvidenceItem, TicketWait
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from tickets.approval_policy import ensure_approval_requests, validate_approval_policy
 from tickets.assignment_service import TicketAssignmentService
-from tickets.closure_policy import validate_closure_policy
+from tickets.closure_policy import legacy_resolution_evidence_satisfied, requires_requester_confirmation, validate_closure_policy
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.sla_service import TicketSlaService
 from tickets.side_effects import run_workflow_side_effect
@@ -209,7 +209,7 @@ async def _validate_transition_gate(
         return None
     missing_fields = [
         field
-        for field in gate.required_fields
+        for field in gate.effective_required_fields
         if _is_missing_required_value(_field_value(ticket, updates, field))
     ]
     if missing_fields:
@@ -262,7 +262,7 @@ async def _validate_transition_gate(
     return {
         "to": gate.to_status,
         "allowed_roles": list(gate.allowed_roles),
-        "required_fields": list(gate.required_fields),
+        "required_fields": list(gate.effective_required_fields),
         "required_comment": gate.required_comment,
         "require_approval": gate.require_approval,
         "require_evidence": gate.require_evidence,
@@ -578,6 +578,7 @@ class TicketWorkflowService:
         internal_comment: Optional[str] = None,
         source: str = "api",
         workflow_trigger: dict | None = None,
+        close_after_resolve: bool = False,
     ) -> dict:
         ticket = await self.ticket_repo.get_ticket(ticket_id, for_update=True)
         if ticket is None or ticket.status != from_status:
@@ -588,6 +589,21 @@ class TicketWorkflowService:
             )
         now = datetime.now(timezone.utc)
         workflow_profile = await load_ticket_workflow_profile(self.session, ticket)
+        if close_after_resolve:
+            if to_status != "resolved" or actor_role not in {"admin", "support"}:
+                raise ValueError("workflow_profile close_after_resolve requires a staff resolution")
+            if not getattr(ticket, "assignee_id", None) or (
+                actor_role != "admin" and str(ticket.assignee_id) != str(actor_id)
+            ):
+                raise ValueError("workflow_profile close_after_resolve requires the assigned operator")
+            if not str(requester_resolution_summary or getattr(ticket, "requester_resolution_summary", None) or "").strip():
+                raise ValueError("closure_policy requires requester_resolution_summary")
+            if await requires_requester_confirmation(self.session, ticket):
+                raise ValueError("closure_policy requires requester confirmation before closing")
+            if not validate_transition_for_profile(workflow_profile, from_status, "resolved", True) or not validate_transition_for_profile(
+                workflow_profile, "resolved", "closed", True
+            ):
+                raise ValueError("workflow_profile resolve and close transition is unavailable")
         updates = _build_status_updates(to_status, reason)
         event_payload = {
             "from_status": from_status,
@@ -693,17 +709,11 @@ class TicketWorkflowService:
                     custom_fields = dict(getattr(ticket, "custom_fields", None) or {})
                     custom_fields["resolution_confirmation_policy"] = confirmation_policy
                     updates["custom_fields"] = custom_fields
-            if ticket and getattr(ticket, "evidence_required", False) and not getattr(ticket, "evidence_ref", None):
-                evidence_exists = await self.session.scalar(
-                    select(TicketEvidenceItem.id)
-                    .where(TicketEvidenceItem.ticket_id == ticket_id)
-                    .limit(1)
+            if not await legacy_resolution_evidence_satisfied(self.session, ticket):
+                raise ValueError(
+                    "Для решения тикета требуется подтверждение: "
+                    "добавьте доказательство или ссылку evidence_ref"
                 )
-                if evidence_exists is None:
-                    raise ValueError(
-                        "Для решения тикета требуется подтверждение: "
-                        "добавьте доказательство или ссылку evidence_ref"
-                    )
         updates.update(_build_transition_timestamps(ticket, from_status, to_status, now))
 
         transition_trigger = transition_gate.trigger if transition_gate and transition_gate.trigger else None
@@ -767,13 +777,24 @@ class TicketWorkflowService:
             f"[Workflow] status_changed ticket_id={ticket_id} "
             f"{from_status} -> {to_status} actor_role={actor_role} source={source}"
         )
-        return {
+        result = {
             "applied": True,
             "no_op": False,
             "updates": {"status": to_status, **updates},
             "event_payload": event_payload,
             "event_result": event_result,
         }
+        if close_after_resolve:
+            # The caller owns the transaction: neither step commits. A failure in
+            # closure must roll back resolution, audit and SLA writes together.
+            closed = await self.apply_status_transition(
+                ticket_id=ticket_id, from_status="resolved", to_status="closed",
+                actor_id=actor_id, actor_role=actor_role, reason=reason,
+                public_comment=public_comment, internal_comment=internal_comment, source=source,
+            )
+            closed["preceding_transitions"] = [result]
+            return closed
+        return result
 
     async def apply_triggered_transition(
         self,

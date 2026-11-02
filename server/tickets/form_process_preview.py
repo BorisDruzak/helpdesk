@@ -397,7 +397,7 @@ def _closure_preview(form: dict[str, Any], priority_class: str) -> dict[str, Any
     evidence_priorities = {str(item or "").strip().upper() for item in _as_list(evidence.get("require_evidence_for_priorities"))}
     return {
         "policy_ref": _policy_ref(form, "closure"),
-        "requires_resolution_code": _truthy(before.get("require_resolution_code") or policy.get("require_resolution_code")),
+        "requires_resolution_code": False,
         "requires_public_summary": _truthy(before.get("require_public_summary") or policy.get("require_public_summary")),
         "requires_internal_summary": _truthy(before.get("require_internal_summary") or policy.get("require_internal_summary")),
         "requires_worklog": _truthy(before.get("require_worklog") or policy.get("require_worklog")),

@@ -403,9 +403,7 @@ class PolicyHealthService:
             "requires_public_summary": bool(
                 before_resolved.get("require_public_summary") or closure_policy.get("require_public_summary")
             ),
-            "requires_resolution_code": bool(
-                before_resolved.get("require_resolution_code") or closure_policy.get("require_resolution_code")
-            ),
+            "requires_resolution_code": False,
         }
 
         visibility_payload = await apply_ticket_visibility_payload_async(

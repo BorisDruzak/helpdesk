@@ -82,6 +82,11 @@ class WorkflowTransitionGate:
     trigger: str | None = None
     auto: bool = False
 
+    @property
+    def effective_required_fields(self) -> tuple[str, ...]:
+        return tuple(field for field in self.required_fields
+                     if not (self.to_status in {"resolved", "closed"} and field == "resolution_code"))
+
     def to_dict(self) -> dict:
         payload: dict[str, Any] = {"to": self.to_status}
         if self.trigger:
@@ -90,8 +95,8 @@ class WorkflowTransitionGate:
             payload["auto"] = True
         if self.allowed_roles:
             payload["allowed_roles"] = list(self.allowed_roles)
-        if self.required_fields:
-            payload["required_fields"] = list(self.required_fields)
+        if self.effective_required_fields:
+            payload["required_fields"] = list(self.effective_required_fields)
         if self.required_comment:
             payload["required_comment"] = self.required_comment
         if self.require_approval:
@@ -177,7 +182,7 @@ _PROFILES: tuple[WorkflowProfile, ...] = (
         suggested_path=("new", "queued", "in_progress", "resolved", "closed"),
         allowed_statuses=COMMON_ACTIVE_STATUSES,
         required_create_fields=("affected_object", "impact", "urgency"),
-        required_resolve_fields=("resolution_code", "public_summary"),
+        required_resolve_fields=("public_summary",),
         evidence_required_for_priorities=("P0", "P1"),
         transitions=DEFAULT_SUPPORT_TRANSITIONS,
     ),
@@ -188,7 +193,7 @@ _PROFILES: tuple[WorkflowProfile, ...] = (
         suggested_path=("new", "queued", "assigned", "in_progress", "resolved", "closed"),
         allowed_statuses=COMMON_ACTIVE_STATUSES,
         required_create_fields=("requested_service",),
-        required_resolve_fields=("resolution_code", "public_summary"),
+        required_resolve_fields=("public_summary",),
         transitions=DEFAULT_SUPPORT_TRANSITIONS,
     ),
     WorkflowProfile(
@@ -198,7 +203,7 @@ _PROFILES: tuple[WorkflowProfile, ...] = (
         suggested_path=("new", "waiting_on_approval", "assigned", "in_progress", "resolved", "closed"),
         allowed_statuses=COMMON_ACTIVE_STATUSES,
         required_create_fields=("system", "role", "justification", "approver"),
-        required_resolve_fields=("approval_evidence", "action_log", "resolution_code", "public_summary"),
+        required_resolve_fields=("approval_evidence", "action_log", "public_summary"),
         requires_approval=True,
         requires_action_log=True,
         transitions={
@@ -520,10 +525,10 @@ def normalize_workflow_profile(raw_profile: Any) -> WorkflowProfile:
             raw_profile.get("required_create_fields"),
             field_name=f"{ticket_type}.required_create_fields",
         ),
-        required_resolve_fields=_normalize_string_list(
+        required_resolve_fields=tuple(field for field in _normalize_string_list(
             raw_profile.get("required_resolve_fields"),
             field_name=f"{ticket_type}.required_resolve_fields",
-        ),
+        ) if field != "resolution_code"),
         requires_approval=bool(raw_profile.get("requires_approval")),
         requires_change_plan=bool(raw_profile.get("requires_change_plan")),
         requires_action_log=bool(raw_profile.get("requires_action_log")),
