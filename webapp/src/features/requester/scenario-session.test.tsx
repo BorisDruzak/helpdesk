@@ -316,6 +316,28 @@ it("keeps the final preview and submission actions in normal flow after all answ
   expect(screen.getByRole("button", { name: "Вернуться: Описание" })).toBeInTheDocument();
 });
 
+it("keeps long question forms and five back controls in normal flow while sending the contact answer", async () => {
+  const step = { id: "session", revision: 6, state: "active", back_targets: Array.from({ length: 5 }, (_, index) => ({ id: `back-${index}`, title: `Шаг ${index + 1}` })), block: { id: "contact", kind: "form_page", title: "Описание для поддержки", fields: [
+    { key: "description", type: "textarea", label: "Описание", value: "", required: true },
+    { key: "phone", type: "text", label: "Телефон", value: "", required: true },
+  ] } };
+  const fetchMock = vi.fn(async (url: string) => response(url.endsWith("/answer")
+    ? { ...step, revision: 7, back_targets: [], block: { id: "review", kind: "review", title: "Проверьте контакт", answers: [] } }
+    : step));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSession offering="workplace.printer" owner="user" />);
+  const phone = await screen.findByRole("textbox", { name: /Телефон/ });
+  expect(screen.getByRole("group", { name: "Действия шага" })).not.toHaveClass("sticky");
+  expect(screen.getAllByRole("button", { name: /Вернуться: Шаг/ })).toHaveLength(5);
+  fireEvent.change(screen.getByRole("textbox", { name: /Описание/ }), { target: { value: "Не работает синхронизация профиля" } });
+  fireEvent.change(phone, { target: { value: "222-33" } });
+  fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+  await screen.findByRole("heading", { name: "Проверьте контакт" });
+  const answerCalls = fetchMock.mock.calls.filter(([url]) => url.endsWith("/answer")) as unknown as [string, RequestInit][];
+  expect(answerCalls).toHaveLength(1);
+  expect(JSON.parse(String(answerCalls[0][1].body))).toEqual({ expected_block_id: "contact", revision: 6, answers: { description: "Не работает синхронизация профиля", phone: "222-33" } });
+});
+
 it("starts a new request for the same entrance after acknowledged ticket creation", async () => {
   const key = "pc_client.scenario.session:user:other:entry:other";
   let created = false;

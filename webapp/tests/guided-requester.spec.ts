@@ -1,7 +1,7 @@
 import { expect, test } from "playwright/test";
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }, { width: 390, height: 768 }]) {
-  for (const mode of viewport.width === 390 ? ["long-submit"] : ["self-service", "ticket", "escape-ticket", ...(viewport.width === 1366 || viewport.width === 820 ? ["blocked-ticket", "double-ticket"] : []), ...(viewport.width === 1366 ? ["long-submit", "closed-result"] : [])]) {
+  for (const mode of viewport.width === 390 ? ["long-submit", "long-form"] : ["self-service", "ticket", "escape-ticket", ...(viewport.width === 1366 || viewport.width === 820 ? ["blocked-ticket", "double-ticket"] : []), ...(viewport.width === 1366 ? ["long-submit", "closed-result", "long-form"] : [])]) {
   test(`guided requester ${mode} server steps and resume ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport);
     const errors: string[] = [];
@@ -25,10 +25,12 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     const unexpectedRoutes: string[] = [];
     function step() {
       return { id: "guided-session", revision, state: created ? "ticket_created" : current === "finish" ? "completed_self_service" : "active", linked_ticket_id: created ? "test-ticket" : null,
-        back_targets: mode === "long-submit" && current === "submit" ? [{ id: "questions", title: "Описание проблемы" }, { id: "instruction", title: "Выполненные проверки" }, { id: "review", title: "Ответы сотрудника" }] : [],
+        back_targets: mode === "long-form" && current === "questions" ? Array.from({ length: 5 }, (_, index) => ({ id: `previous_${index}`, title: `Предыдущий раздел ${index + 1}` }))
+          : mode === "long-submit" && current === "submit" ? [{ id: "questions", title: "Описание проблемы" }, { id: "instruction", title: "Выполненные проверки" }, { id: "review", title: "Ответы сотрудника" }] : [],
         block: current === "questions" ? { id: current, kind: "form_page", title: "Что происходит с принтером?", fields: [
-          { key: "summary", type: "text", label: "Опишите проблему", required: true, value: answer },
+          { key: "summary", type: mode === "long-form" ? "textarea" : "text", label: "Опишите проблему", required: true, value: answer },
           ...Array.from({ length: 8 }, (_, index) => ({ key: `detail_${index}`, type: "text", label: `Уточнение ${index + 1}`, required: false })),
+          ...(mode === "long-form" ? [{ key: "phone", type: "phone", label: "Контактный телефон", required: true }, { key: "contact_time", type: "text", label: "Удобное время связи", required: true }] : []),
         ] } : current === "instruction" ? { id: current, kind: "instruction", title: "Проверьте питание", acknowledgment_required: true, can_request_ticket: mode === "escape-ticket",
           content: { format: "plain", body: "Убедитесь, что кабель питания подключён." } }
           : current === "resolved" ? { id: current, kind: "resolution_check", title: "Удалось восстановить печать?" }
@@ -55,7 +57,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       else if ((path === "/api/web/requester/request-scenarios/sessions" && method === "POST") || (path === "/api/web/requester/request-scenarios/sessions/guided-session" && method === "GET") || (/^\/api\/web\/requester\/request-scenarios\/sessions\/guided-session\/(answer|advance|submit|ticket-preview)$/.test(path) && method === "POST")) {
         if (path.endsWith("/sessions") && method === "POST") { starts++; if (created || current === "finish") { created = false; current = "questions"; revision = 1; answer = ""; } }
         if (path.endsWith("/sessions") && route.request().method() === "POST" && mode === "ticket") expect(route.request().postDataJSON()).toEqual({ offering_full_code: "workplace.printer", entry_point_key: "paper" });
-        if (path.endsWith("/answer")) { const body = route.request().postDataJSON(); expect(body).toMatchObject({ revision: 1, expected_block_id: "questions" }); answer = body.answers.summary; current = "instruction"; revision++; }
+        if (path.endsWith("/answer")) { const body = route.request().postDataJSON(); expect(body).toMatchObject({ revision: 1, expected_block_id: "questions" }); if (mode === "long-form") expect(body.answers).toMatchObject({ summary: "Задание остаётся в очереди", phone: "+7 900 123-45-67", contact_time: "После 14:00" }); answer = body.answers.summary; current = "instruction"; revision++; }
         if (path.endsWith("/advance")) { const body = route.request().postDataJSON(); expect(body.revision).toBe(revision); if (mode === "escape-ticket" && current === "instruction") { expect(body.current_result).toBe("request_ticket"); current = "review"; } else current = current === "instruction" ? "resolved" : current === "review" ? "submit" : mode !== "self-service" ? "review" : "finish"; revision++; }
         if (path.endsWith("/submit")) { expect(route.request().postDataJSON()).toEqual({ revision, confirm: true, device_scope: "none" }); submissions++; if (mode === "double-ticket") await submitGate; created = true; revision++; }
         data = step();
@@ -75,7 +77,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       return route.fulfill({ json: { status: "ok", catalog_version: "test", services: [{ service_code: "workplace", title: "Рабочее место", offerings: [{ offering_code: "printer", full_code: "workplace.printer", title: "Не печатает", request_template_key: "printer", guided_scenario_enabled: true, ...(mode === "ticket" ? { catalog_items: [{ key: "paper", title: "Бумага застряла", description: "Помощь с бумагой", synonyms: ["замятие"], entry_point_key: "paper", scenario_key: "printer", version_id: "v1", target_block_id: "questions" }] } : {}) }] }] } });
     });
     await page.goto(mode === "escape-ticket" ? "/app/requester/new/?offering=workplace.printer" : "/app/requester/new");
-    if (["self-service", "blocked-ticket", "double-ticket", "long-submit", "closed-result"].includes(mode)) await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
+    if (["self-service", "blocked-ticket", "double-ticket", "long-submit", "closed-result", "long-form"].includes(mode)) await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
     if (mode === "ticket") {
       await page.getByRole("searchbox", { name: "Найти проблему во всём каталоге" }).fill("замятие");
       const result = page.getByRole("button", { name: /Бумага застряла/ });
@@ -88,7 +90,30 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await expect(page.getByRole("heading", { name: "Что происходит с принтером?" })).toBeVisible();
     await expect(page.getByText("Старое поле")).toHaveCount(0);
     await page.getByRole("textbox", { name: /Опишите проблему/ }).fill("Задание остаётся в очереди");
+    if (mode === "long-form") {
+      const actions = page.getByRole("group", { name: "Действия шага", exact: true });
+      await expect(actions.getByRole("button", { name: /^Вернуться:/ })).toHaveCount(5);
+      for (const [label, value] of [["Контактный телефон", "+7 900 123-45-67"], ["Удобное время связи", "После 14:00"]]) {
+        const input = page.getByRole("textbox", { name: new RegExp(label) });
+        await input.scrollIntoViewIfNeeded();
+        await expect.poll(() => input.evaluate(element => {
+          const rect = element.getBoundingClientRect();
+          return [rect.top + 3, rect.top + rect.height / 2, rect.bottom - 3].every(y => {
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, y);
+            return y > 0 && y < innerHeight && hit !== null && element.contains(hit);
+          });
+        })).toBe(true);
+        await input.fill(value);
+        await expect(input).toHaveValue(value);
+      }
+      expect(await actions.evaluate(element => {
+        const fields = element.previousElementSibling;
+        return fields !== null && fields.getBoundingClientRect().bottom <= element.getBoundingClientRect().top;
+      })).toBe(true);
+      await page.screenshot({ path: info.outputPath(`${viewport.width}-question-contact-tail.png`) });
+    }
     const next = page.getByRole("button", { name: "Продолжить", exact: true });
+    await next.scrollIntoViewIfNeeded();
     await expect(next).toBeInViewport({ ratio: 1 });
     await next.click();
     await expect(page.getByRole("heading", { name: "Проверьте питание" })).toBeFocused();

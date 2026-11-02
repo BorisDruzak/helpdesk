@@ -153,7 +153,7 @@ Phase-one completion/identity regression coverage also includes
 preserved question/SLA branches are described in
 [the catalog procedure](HELPDESK_PHASE1_CATALOG.md).
 
-The final requester step places saved answers and submission actions in normal
-document flow so the processing summary cannot cover answers. Acknowledged
+Requester steps place fields, saved answers and actions in normal document flow
+so action/back controls cannot cover inputs or answers. Acknowledged
 successful terminal sessions retire only their matching saved resume handle;
 uncertain submissions retain recovery, while a later new request can start fresh.

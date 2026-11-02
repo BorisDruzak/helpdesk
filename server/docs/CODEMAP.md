@@ -86,7 +86,7 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   on the submission step and opens the created ticket directly. Terminal preview
   responses use the session generation/abort guard. Acknowledged successful
   terminal sessions retire only their matching resume handle; uncertain commands
-  keep recovery. Final actions flow below saved answers. Conditional projections
+  keep recovery. Step actions flow below fields/saved answers. Conditional projections
   follow the latest control values, cancel superseded timers/requests and reject
   stale sequence/lifecycle responses before updating visible fields.
 - `scripts/helpdesk_phase1_catalog.py` adds four versioned Studio maps through
