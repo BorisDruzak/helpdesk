@@ -2798,3 +2798,25 @@ Tracking: `docs/superpowers/plans/2026-11-02-helpdesk-phase1.md` and
 `.superpowers/sdd/2026-11-02-helpdesk-phase1/progress.md`. Preserve unrelated
 preexisting entries and distinguish fixture evidence from actual staging gates.
 Final acceptance: `docs/UX_PHASE1_ACCEPTANCE_2026-11-02.md`.
+
+
+## Support follow-up — 2026-11-02
+
+User comments exposed legacy active tickets without owners and invisible public
+messages in long SLA-heavy histories. Fixed in committed/deployed runtime
+`376b46c012160473fe2ebc40a0185784f692e487`:
+`fix(support): require self-claim and show recent conversations`.
+
+Status-preserving self-claim is explicit and validates expected ownership/scope
+under lock. Resolution requires the current assignee for administrators too.
+Public/private conversation reads filter before LIMIT and select the latest
+window; History keeps diagnostics. Old replay ordering and stored events remain.
+
+Verified:90 focused backend noDB,6 real isolated PostgreSQL,76 frontend and15
+support browser cases; TypeScript/build, workspace verification and review pass.
+Real admin support browser: T7 claim assigns admin before exposing resolution;
+T60 restores old messages and shows a new reply immediately and after reload.
+Final164 network events without failures, warn/error console empty; exact SHA,
+13 source digests, TLS health200 and serviceactive verified. Staging left running.
+No production deployment, push, role/schema/dependency change or Endpoint action.
+Report: `docs/UX_SUPPORT_FOLLOWUP_2026-11-02.md`; evidence in task tmp directory.
