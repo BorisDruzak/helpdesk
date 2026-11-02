@@ -1,0 +1,625 @@
+{
+  "title": "Другая проблема или вопрос",
+  "blocks": [
+    {
+      "id": "general",
+      "kind": "form_page",
+      "title": "Опишите проблему своими словами",
+      "fields": [
+        {
+          "key": "free_description",
+          "type": "textarea",
+          "group": null,
+          "label": "Что произошло или какая помощь нужна?",
+          "aliases": [],
+          "options": [],
+          "required": true,
+          "help_text": "Укажите текст ошибки, время начала и что уже пробовали. Не пишите пароли и секретные коды.",
+          "validation": {
+            "max_value": null,
+            "min_value": null,
+            "max_length": null,
+            "min_length": null,
+            "optional_when_legacy_missing": false
+          },
+          "group_title": null,
+          "placeholder": "Например: не могу открыть документ на рабочем компьютере",
+          "visible_when": null,
+          "allow_unknown": false,
+          "required_when": null,
+          "process_mapping": {
+            "roles": [],
+            "effects": [],
+            "fact_key": null
+          }
+        },
+        {
+          "key": "location",
+          "type": "text",
+          "group": null,
+          "label": "Кабинет / местоположение",
+          "aliases": [],
+          "options": [],
+          "required": false,
+          "help_text": "",
+          "validation": {
+            "max_value": null,
+            "min_value": null,
+            "max_length": null,
+            "min_length": null,
+            "optional_when_legacy_missing": false
+          },
+          "group_title": null,
+          "placeholder": "",
+          "visible_when": null,
+          "allow_unknown": false,
+          "required_when": null,
+          "process_mapping": {
+            "roles": [],
+            "effects": [],
+            "fact_key": null
+          }
+        },
+        {
+          "key": "contact_phone",
+          "type": "phone",
+          "group": null,
+          "label": "Номер для связи",
+          "aliases": [],
+          "options": [],
+          "required": false,
+          "help_text": "",
+          "validation": {
+            "max_value": null,
+            "min_value": null,
+            "max_length": null,
+            "min_length": null,
+            "optional_when_legacy_missing": false
+          },
+          "group_title": null,
+          "placeholder": "",
+          "visible_when": null,
+          "allow_unknown": false,
+          "required_when": null,
+          "process_mapping": {
+            "roles": [],
+            "effects": [],
+            "fact_key": null
+          }
+        },
+        {
+          "key": "device_name",
+          "type": "text",
+          "group": null,
+          "label": "Имя устройства (если известно)",
+          "aliases": [],
+          "options": [],
+          "required": false,
+          "help_text": "",
+          "validation": {
+            "max_value": null,
+            "min_value": null,
+            "max_length": null,
+            "min_length": null,
+            "optional_when_legacy_missing": false
+          },
+          "group_title": null,
+          "placeholder": "",
+          "visible_when": null,
+          "allow_unknown": false,
+          "required_when": null,
+          "process_mapping": {
+            "roles": [],
+            "effects": [],
+            "fact_key": null
+          }
+        }
+      ],
+      "layout": "group",
+      "transitions": [
+        {
+          "to": "q_category",
+          "when": null,
+          "priority": null,
+          "processing": null,
+          "processing_facts": null
+        }
+      ]
+    },
+    {
+      "id": "q_category",
+      "kind": "form_page",
+      "title": "Уточнить область помощи",
+      "fields": [
+        {
+          "key": "problem_area",
+          "type": "radio",
+          "group": null,
+          "label": "К чему примерно относится проблема?",
+          "aliases": [],
+          "options": [
+            {
+              "label": "Не знаю",
+              "value": "unknown"
+            },
+            {
+              "label": "Компьютер или принтер",
+              "value": "equipment"
+            },
+            {
+              "label": "Сеть или доступ",
+              "value": "network"
+            },
+            {
+              "label": "Программа, документ или почта",
+              "value": "application"
+            }
+          ],
+          "required": true,
+          "help_text": "",
+          "validation": {
+            "max_value": null,
+            "min_value": null,
+            "max_length": null,
+            "min_length": null,
+            "optional_when_legacy_missing": false
+          },
+          "group_title": null,
+          "placeholder": "",
+          "visible_when": null,
+          "allow_unknown": false,
+          "required_when": null,
+          "process_mapping": {
+            "roles": [],
+            "effects": [],
+            "fact_key": null
+          }
+        }
+      ],
+      "layout": "single",
+      "transitions": [
+        {
+          "to": "q_scope",
+          "when": null,
+          "priority": null,
+          "processing": null,
+          "processing_facts": null
+        }
+      ]
+    },
+    {
+      "id": "q_scope",
+      "kind": "form_page",
+      "title": "Масштаб проблемы",
+      "fields": [
+        {
+          "key": "impact_scope",
+          "type": "radio",
+          "group": null,
+          "label": "Сколько сотрудников затронуто проблемой?",
+          "aliases": [],
+          "options": [
+            {
+              "label": "Только я",
+              "value": "one"
+            },
+            {
+              "label": "Всё подразделение",
+              "value": "department"
+            }
+          ],
+          "required": true,
+          "help_text": "",
+          "validation": {
+            "max_value": null,
+            "min_value": null,
+            "max_length": null,
+            "min_length": null,
+            "optional_when_legacy_missing": false
+          },
+          "group_title": null,
+          "placeholder": "",
+          "visible_when": null,
+          "allow_unknown": false,
+          "required_when": null,
+          "process_mapping": {
+            "roles": [
+              "priority_impact"
+            ],
+            "effects": [
+              {
+                "facts": {
+                  "impact": "single_user",
+                  "urgency": null,
+                  "importance": null
+                },
+                "value": "one"
+              },
+              {
+                "facts": {
+                  "impact": "department",
+                  "urgency": null,
+                  "importance": null
+                },
+                "value": "department"
+              }
+            ],
+            "fact_key": null
+          }
+        }
+      ],
+      "layout": "single",
+      "transitions": [
+        {
+          "to": "q_urgency",
+          "when": null,
+          "priority": null,
+          "processing": null,
+          "processing_facts": null
+        }
+      ]
+    },
+    {
+      "id": "q_urgency",
+      "kind": "form_page",
+      "title": "Срочность",
+      "fields": [
+        {
+          "key": "work_continuity",
+          "type": "radio",
+          "group": null,
+          "label": "Насколько проблема мешает работе?",
+          "aliases": [],
+          "options": [
+            {
+              "label": "Можно продолжать работу",
+              "value": "can_work"
+            },
+            {
+              "label": "Работа существенно затруднена",
+              "value": "degraded"
+            },
+            {
+              "label": "Работа остановлена",
+              "value": "blocked"
+            }
+          ],
+          "required": true,
+          "help_text": "",
+          "validation": {
+            "max_value": null,
+            "min_value": null,
+            "max_length": null,
+            "min_length": null,
+            "optional_when_legacy_missing": false
+          },
+          "group_title": null,
+          "placeholder": "",
+          "visible_when": null,
+          "allow_unknown": false,
+          "required_when": null,
+          "process_mapping": {
+            "roles": [
+              "priority_urgency"
+            ],
+            "effects": [
+              {
+                "facts": {
+                  "impact": null,
+                  "urgency": "can_work",
+                  "importance": null
+                },
+                "value": "can_work"
+              },
+              {
+                "facts": {
+                  "impact": null,
+                  "urgency": "degraded",
+                  "importance": null
+                },
+                "value": "degraded"
+              },
+              {
+                "facts": {
+                  "impact": null,
+                  "urgency": "blocked",
+                  "importance": null
+                },
+                "value": "blocked"
+              }
+            ],
+            "fact_key": null
+          }
+        }
+      ],
+      "layout": "single",
+      "transitions": [
+        {
+          "to": "d_route",
+          "when": null,
+          "priority": null,
+          "processing": null,
+          "processing_facts": null
+        }
+      ]
+    },
+    {
+      "id": "d_route",
+      "kind": "decision",
+      "title": "Кто может помочь?",
+      "transitions": [
+        {
+          "to": "d_sla",
+          "when": {
+            "op": "eq",
+            "field": "problem_area",
+            "value": "equipment",
+            "source": "answer"
+          },
+          "priority": 10,
+          "processing": {
+            "route": "workplace",
+            "sla_profile": null,
+            "approval_required": null
+          },
+          "processing_facts": null
+        },
+        {
+          "to": "d_sla",
+          "when": {
+            "op": "eq",
+            "field": "problem_area",
+            "value": "network",
+            "source": "answer"
+          },
+          "priority": 20,
+          "processing": {
+            "route": "network",
+            "sla_profile": null,
+            "approval_required": null
+          },
+          "processing_facts": null
+        },
+        {
+          "to": "d_sla",
+          "when": {
+            "op": "eq",
+            "field": "problem_area",
+            "value": "application",
+            "source": "answer"
+          },
+          "priority": 30,
+          "processing": {
+            "route": "applications",
+            "sla_profile": null,
+            "approval_required": null
+          },
+          "processing_facts": null
+        },
+        {
+          "to": "d_sla",
+          "when": null,
+          "priority": null,
+          "processing": {
+            "route": "first_line",
+            "sla_profile": null,
+            "approval_required": null
+          },
+          "processing_facts": null
+        }
+      ]
+    },
+    {
+      "id": "d_sla",
+      "kind": "decision",
+      "title": "Назначить срок",
+      "transitions": [
+        {
+          "to": "submit",
+          "when": {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "eq",
+                "field": "impact_scope",
+                "value": "department",
+                "source": "answer"
+              },
+              {
+                "op": "eq",
+                "field": "work_continuity",
+                "value": "blocked",
+                "source": "answer"
+              }
+            ]
+          },
+          "priority": 10,
+          "processing": {
+            "route": null,
+            "sla_profile": "urgent",
+            "approval_required": null
+          },
+          "processing_facts": null
+        },
+        {
+          "to": "submit",
+          "when": {
+            "op": "or",
+            "conditions": [
+              {
+                "op": "eq",
+                "field": "work_continuity",
+                "value": "blocked",
+                "source": "answer"
+              },
+              {
+                "op": "eq",
+                "field": "work_continuity",
+                "value": "degraded",
+                "source": "answer"
+              }
+            ]
+          },
+          "priority": 20,
+          "processing": {
+            "route": null,
+            "sla_profile": "elevated",
+            "approval_required": null
+          },
+          "processing_facts": null
+        },
+        {
+          "to": "submit",
+          "when": null,
+          "priority": null,
+          "processing": {
+            "route": null,
+            "sla_profile": "standard",
+            "approval_required": null
+          },
+          "processing_facts": null
+        }
+      ]
+    },
+    {
+      "id": "submit",
+      "kind": "submit_ticket",
+      "title": "Создать обращение в службу поддержки",
+      "transitions": []
+    }
+  ],
+  "processing": {
+    "routes": {
+      "network": {
+        "title": "Сеть и VPN",
+        "queue_code": "network"
+      },
+      "workplace": {
+        "title": "Рабочие места и оборудование",
+        "queue_code": "sysadmins"
+      },
+      "first_line": {
+        "title": "Первая линия поддержки",
+        "queue_code": "servicedesk_l1"
+      },
+      "applications": {
+        "title": "Прикладные программы",
+        "queue_code": "servicedesk_l1"
+      }
+    },
+    "defaults": {
+      "route": "first_line",
+      "sla_profile": "standard"
+    },
+    "sla_profiles": {
+      "urgent": {
+        "title": "Срочный (2 часа)",
+        "time_basis": "calendar",
+        "calendar_id": null,
+        "resolution_minutes": 120,
+        "first_response_minutes": 30
+      },
+      "elevated": {
+        "title": "Повышенный (3 часа)",
+        "time_basis": "calendar",
+        "calendar_id": null,
+        "resolution_minutes": 180,
+        "first_response_minutes": 60
+      },
+      "standard": {
+        "title": "Стандартный (5 часов)",
+        "time_basis": "calendar",
+        "calendar_id": null,
+        "resolution_minutes": 300,
+        "first_response_minutes": 120
+      }
+    },
+    "assignment_mode": "last_matching_branch"
+  },
+  "category_id": null,
+  "description": "Если не удалось найти нужную проблему, опишите её свободным текстом — поддержка поможет определить исполнителя.",
+  "entry_points": [
+    {
+      "key": "not_found",
+      "title": "Не нашёл свою проблему",
+      "enabled": true,
+      "synonyms": [
+        "другая проблема",
+        "не знаю что выбрать",
+        "нет такого пункта",
+        "помощь специалиста",
+        "не могу найти"
+      ],
+      "visibility": "public",
+      "category_id": null,
+      "description": "Опишите любую техническую проблему, даже если не знаете её категорию",
+      "target_block_id": "general",
+      "reported_symptom": ""
+    },
+    {
+      "key": "consultation",
+      "title": "Нужна консультация ИТ",
+      "enabled": true,
+      "synonyms": [
+        "задать вопрос",
+        "помощь айти",
+        "консультация специалиста"
+      ],
+      "visibility": "public",
+      "category_id": null,
+      "description": "Вопрос по работе программ, оборудования или доступа",
+      "target_block_id": "general",
+      "reported_symptom": ""
+    }
+  ],
+  "scenario_key": "scenario_import_608bb9a16cbd45ed9c921c4ba92df310",
+  "service_code": "other",
+  "editor_layout": {
+    "positions": {
+      "d_sla": {
+        "x": 1380,
+        "y": 0
+      },
+      "submit": {
+        "x": 1680,
+        "y": 0
+      },
+      "d_route": {
+        "x": 1080,
+        "y": 0
+      },
+      "general": {
+        "x": -120,
+        "y": 0
+      },
+      "q_scope": {
+        "x": 480,
+        "y": 0
+      },
+      "q_urgency": {
+        "x": 780,
+        "y": 0
+      },
+      "q_category": {
+        "x": 180,
+        "y": 0
+      },
+      "system_start": {
+        "x": -420,
+        "y": 0
+      }
+    }
+  },
+  "entry_block_id": "general",
+  "schema_version": 3,
+  "process_binding": {
+    "policy_refs": {
+      "closure": "guided_studio_20261011_closure",
+      "visibility": "guided_studio_20261011_visibility"
+    },
+    "priority_source": "existing_server_policy_runtime",
+    "request_template_key": "general_request"
+  },
+  "publish_offering": true,
+  "offering_full_code": "other.map_e5be59fac3e02af87cde815b2750e947"
+}
