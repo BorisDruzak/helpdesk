@@ -8,6 +8,7 @@ export type SimpleSupportConversationProps = {
   canReply: boolean; canNote: boolean; publicReadOnly?: boolean; pending: boolean; loading?: boolean; error?: boolean; uploadError?: string | null;
   replyBlockedReason?: string | null; initialDescription?: string | null;
   onModeChange: (mode: "public" | "internal") => void; onTextChange: (text: string) => void; onSend: () => void;
+  onTabChange?: (filter: "messages" | "internal" | "all") => void;
   attachments: SupportTicketAttachmentUpload[]; onRemoveAttachment: (id: string) => void;
   inputRef?: RefObject<HTMLInputElement | null>; onUpload?: (event: ChangeEvent<HTMLInputElement>) => void;
 };
@@ -39,6 +40,7 @@ export function SimpleSupportConversation(props: SimpleSupportConversationProps)
   }, [endKey]);
   function selectTab(value: ConversationTab) {
     setTab(value); pinnedRef.current = true; setHasNew(false);
+    props.onTabChange?.(value === "dialog" ? "messages" : value === "history" ? "all" : "internal");
     if (value !== "history") props.onModeChange(value === "internal" ? "internal" : "public");
   }
   function latest() { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; pinnedRef.current = true; setHasNew(false); }

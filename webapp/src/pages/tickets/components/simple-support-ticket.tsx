@@ -6,7 +6,7 @@ import type { SupportWorkspaceContext, SupportWorkspaceSelectedTicket } from "..
 export type SimpleSupportTicketProps = {
   detail: SupportTicketDetailPayload; ticket?: SupportWorkspaceSelectedTicket | null; context?: SupportWorkspaceContext | null;
   actorId?: string; isAdmin?: boolean; canWork: boolean; canAssign?: boolean; pending?: boolean; error?: string | null;
-  onStatus: (value: string) => void; onResolve: () => void; onAdvanced: (mode?: "passport" | "tools" | "sla" | "ticket") => void;
+  onStatus: (value: string) => void; onClaim?: () => void; onResolve: () => void; onAdvanced: (mode?: "passport" | "tools" | "sla" | "ticket") => void;
   inspector?: ReactNode; unifiedQueue?: boolean; onQueue: () => void; onManage?: (kind: "queue" | "priority") => void; conversation: ReactNode;
 };
 export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
@@ -22,13 +22,16 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
   const other = Boolean(raw.assignee_id && !mine);
   const allowed = (status: string) => canWork && detail.actions.status_options.some((option) => option.value === status);
   const takeAllowed = detail.actions.take_in_work?.allowed === true;
-  const needsStart = ["new", "queued", "assigned"].includes(raw.status);
+  const needsClaim = ["in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"].includes(raw.status) && !mine;
+  const needsStart = ["new", "queued", "assigned"].includes(raw.status) || needsClaim;
   const takeReason = needsStart && !takeAllowed ? detail.actions.take_in_work?.reason
     || (props.canAssign === false ? "Для взятия обращения нужно право назначения исполнителя." : "Обновите обращение, чтобы проверить доступность начала работы.") : null;
   let primary: { label: string; hint: string; run: () => void } | null = null;
-  if (needsStart && takeAllowed && (!other || isAdmin) && (raw.assignee_id || props.canAssign !== false) && allowed("in_progress")) {
-    primary = { label: raw.assignee_id ? "Начать работу" : "Взять в работу", hint: "После успешного перехода в работу станет доступна переписка.", run: () => onStatus("in_progress") };
-  } else if (["in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"].includes(raw.status) && (mine || isAdmin)) {
+  if (needsClaim && takeAllowed && (!other || isAdmin) && props.canAssign !== false && canWork && props.onClaim) {
+    primary = { label: "Взять себе", hint: "Вы станете исполнителем обращения. Статус и переписка сохранятся.", run: props.onClaim };
+  } else if (needsStart && !needsClaim && takeAllowed && (!other || isAdmin) && (mine || props.canAssign !== false) && allowed("in_progress")) {
+    primary = { label: mine ? "Начать работу" : "Взять в работу", hint: "Обращение будет назначено вам и перейдёт в работу.", run: () => onStatus("in_progress") };
+  } else if (["in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"].includes(raw.status) && mine) {
     if (raw.status !== "in_progress" && takeAllowed && allowed("in_progress")) primary = { label: "Возобновить работу", hint: "Обращение вернётся в работу. Ожидание ответа завершится.", run: () => onStatus("in_progress") };
     else if (allowed("resolved")) primary = { label: detail.actions.can_resolve_and_close ? "Решить и закрыть" : "Решить обращение", hint: detail.actions.can_resolve_and_close ? "Укажите результат для сотрудника. Обращение будет решено и закрыто." : "Укажите результат. После решения сотрудник сможет подтвердить его, если это требует политика.", run: props.onResolve };
   } else if (raw.status === "waiting_on_approval") {
@@ -46,7 +49,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
     <main className="simple-ticket__main">
       <header className="simple-ticket__header">
         <div className="simple-ticket__title"><button className="simple-link" type="button" onClick={props.onQueue}>← Вся очередь</button><p className="simple-eyebrow">{raw.ticket_code ?? raw.ticket_id} · Рабочая карточка</p>
-          <h2>{raw.title}</h2><div className="simple-inline"><span className="simple-badge" data-tone={ticket?.priorityTone ?? "warning"}>{raw.priority_class ?? raw.priority ?? "P3"}</span><span className="simple-badge" data-tone={ticket?.statusTone ?? "info"}>{raw.status_label}</span><span className="simple-muted">{ticket?.createdLabel}</span></div></div>
+          <h2>{raw.title}</h2><div className="simple-inline"><span className="simple-badge" data-tone={ticket?.priorityTone ?? "warning"}>{raw.priority_class ?? raw.priority ?? "P3"}</span><span className="simple-badge" data-tone={ticket?.statusTone ?? "info"}>{raw.status_label}</span><span className="simple-muted">Исполнитель: {mine ? "вы" : raw.assignee_id ? ticket?.assigneeLabel ?? raw.assignee_id : "не назначен"}</span></div></div>
         <div className="simple-ticket__actions">{primary ? <button className="simple-button simple-button--primary" title={primary.hint} disabled={props.pending} onClick={primary.run} type="button">{props.pending ? "Выполняем…" : primary.label}</button> : null}
           <details className="simple-menu"><summary className="simple-button">Действия ▾</summary><div>
             {raw.status === "in_progress" && allowed("waiting_on_user") && (mine || isAdmin) ? <button type="button" onClick={() => onStatus("waiting_on_user")}>Ожидать ответа сотрудника</button> : null}
@@ -84,7 +87,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
         <div><dt>Подразделение</dt><dd>{context?.requester.department ?? "Не указано"}</dd></div><div><dt>Место</dt><dd>{context?.requester.location ?? "Не указано"}</dd></div>
       </dl></section>
       <section className="simple-panel"><h3>Обработка</h3><dl className="simple-facts"><div><dt>Статус</dt><dd>{raw.status_label}</dd></div><div><dt>Исполнитель</dt><dd>{mine ? "Вы" : ticket?.assigneeLabel ?? raw.assignee_id ?? "Не назначен"}</dd></div><div><dt>Очередь</dt><dd>{raw.queue.name ?? raw.queue.code ?? "Не указана"}</dd></div><div><dt>Приоритет</dt><dd>{raw.priority_class ?? raw.priority ?? "P3"}</dd></div></dl></section>
-      <section className="simple-panel"><h3>SLA · Срок решения</h3><p className="simple-sla" data-risk={sla?.status === "breached" || sla?.status === "at_risk"}>{sla?.remainingLabel ?? "Не рассчитан"}</p><p className="simple-muted">{sla?.status === "paused" ? "Приостановлен по действующей политике" : "По действующей политике"}</p></section>
+      <section className="simple-panel"><h3>SLA · Срок решения</h3><p className="simple-sla" data-risk={sla?.status === "breached" || sla?.status === "at_risk"}>{sla?.remainingLabel ?? "Не рассчитан"}</p><p className="simple-muted">{sla?.status === "paused" ? "Приостановлен по действующей политике" : "По действующей политике"}</p>{ticket?.createdLabel ? <p className="simple-muted">Создано: {ticket.createdLabel}</p> : null}</section>
       <section className="simple-panel"><h3>Устройство</h3><p>{context?.device.id ? context.device.hostname : "Не указано"}</p><p className="simple-muted">{context?.device.id ? context.device.onlineLabel : "Без агента — обычную заявку можно обработать."}</p></section>
       </>}
     </aside>

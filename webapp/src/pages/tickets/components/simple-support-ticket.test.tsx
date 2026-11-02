@@ -8,6 +8,13 @@ const detail = { ticket: { ticket_id: "one", ticket_code: "T-001", title: "Пр�
 } as unknown as SupportTicketDetailPayload;
 
 describe("simple support ticket", () => {
+  it("offers an explicit claim instead of resolution for an unassigned in-progress admin ticket", () => {
+    const claim = vi.fn();
+    render(<SimpleSupportTicket detail={{ ...detail, ticket: { ...detail.ticket, status: "in_progress", assignee_id: null }, actions: { ...detail.actions, status_options: [{ value: "resolved", label: "Решить" }] } }} actorId="admin" isAdmin canWork canAssign onClaim={claim} onStatus={vi.fn()} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={null} />);
+    expect(screen.queryByRole("button", { name: /Решить/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Взять себе" }));
+    expect(claim).toHaveBeenCalledOnce();
+  });
   it("expands the entire long public result accessibly without exposing internal notes", () => {
     const result = "Восстановлено подключение.\n".repeat(30) + "Конечная проверка пройдена.";
     render(<SimpleSupportTicket detail={{ ...detail, ticket: { ...detail.ticket, requester_resolution_summary: result, resolution_summary: "Секретная внутренняя заметка", status: "closed" } }} actorId="operator" canWork onStatus={vi.fn()} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={null} />);

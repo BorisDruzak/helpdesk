@@ -1271,6 +1271,8 @@ export function TicketListPage() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
+  const [simpleTimelineFilter, setSimpleTimelineFilter] = useState<"messages" | "internal" | "all">("messages");
+  useEffect(() => { setSimpleTimelineFilter(composerMode === "internal" ? "internal" : "messages"); }, [selectedTicketId, composerMode]);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => simpleMode ? (params.ticketId ? "ticket" : "queue") : (initialUrlStateRef.current.shouldOpenQueue ? "queue" : getInitialWorkspaceMode()));
   const [moreOpen, setMoreOpen] = useState(false);
@@ -1536,7 +1538,7 @@ export function TicketListPage() {
   });
 
   const timelineApiFilter: SupportTicketTimelineFilter =
-    simpleMode ? "all" : timelineFilter === "message" ? "messages" : timelineFilter;
+    simpleMode ? simpleTimelineFilter : timelineFilter === "message" ? "messages" : timelineFilter;
 
   const timelineQuery = useQuery({
     queryKey: ["tickets-workspace-timeline", selectedTicketId, timelineApiFilter],
@@ -1965,7 +1967,13 @@ export function TicketListPage() {
   });
 
   const takeTicketMutation = useMutation({
-    mutationFn: (ticketId: string) => postSupportTicketStatus(ticketId, "in_progress", { reason: "Взять обращение в работу" }),
+    mutationFn: (ticketId: string) => {
+      const ticket = selectedTicketId === ticketId ? workspaceQuery.data?.detail.ticket : queueQuery.data?.tickets.find((item) => item.ticket_id === ticketId);
+      if (ticket && ["in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"].includes(ticket.status)) {
+        return postSupportTicketAssign(ticketId, { assigneeId: session?.user_login, claim: true, expectedAssigneeId: ticket.assignee_id ?? null, reason: "Взять обращение себе" });
+      }
+      return postSupportTicketStatus(ticketId, "in_progress", { reason: "Взять обращение в работу" });
+    },
     onError: async (_error, ticketId) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", ticketId] }),
@@ -2251,7 +2259,7 @@ export function TicketListPage() {
   const rawTicket = workspaceQuery.data?.detail.ticket;
   const staffActor = session?.actor_role === "support" || session?.actor_role === "admin";
   const hasPermission = (permission: string) => staffActor && (!session?.permissions || session.permissions.includes(permission));
-  const publicReplyAllowed = Boolean(rawTicket && hasPermission("ticket.comment.public") && !workspaceErrorState && (
+  const publicReplyAllowed = Boolean(rawTicket && (!simpleMode || rawTicket.assignee_id === session?.user_login) && hasPermission("ticket.comment.public") && !workspaceErrorState && (
     workspaceQuery.data?.detail.actions.can_send_public_message ?? (
       rawTicket.assignee_id && ["in_progress", "waiting_on_user", "waiting_on_vendor", "waiting_on_internal_team", "waiting_on_approval"].includes(rawTicket.status) &&
       (session?.actor_role === "admin" || rawTicket.assignee_id === session?.user_login)
@@ -3759,6 +3767,7 @@ export function TicketListPage() {
             pending={operatorActionMutation.isPending || takeTicketMutation.isPending}
             error={workspaceErrorState ? "Не удалось обновить обращение. Обновите данные перед действием." : actionError instanceof Error ? actionError.message : null}
             onStatus={(value) => operatorActionMutation.mutate({ kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" })}
+            onClaim={() => takeTicketMutation.mutate(selectedTicket.id)}
             onResolve={() => setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket))}
             onAdvanced={(mode = "ticket") => { setSimpleMode(false); setWorkspaceMode(mode); if (mode !== "ticket") setSidebarTab(mode); }}
             unifiedQueue={unifiedQueue}
@@ -3769,6 +3778,7 @@ export function TicketListPage() {
               publicReadOnly={Boolean(rawTicket && ["resolved", "closed"].includes(rawTicket.status))}
               replyBlockedReason={rawTicket && ["new", "queued", "assigned"].includes(rawTicket.status) ? workspaceQuery.data.detail.actions.take_in_work?.reason : rawTicket && ["resolved", "closed", "canceled"].includes(rawTicket.status) ? "Обращение завершено. Переписка доступна для просмотра." : undefined}
               mode={composerMode} text={composerText} canReply={publicReplyAllowed} canNote={hasPermission("ticket.comment.internal") && internalNoteAllowed}
+              onTabChange={setSimpleTimelineFilter}
               pending={messageMutation.isPending || uploadingAttachments} loading={timelineQuery.isLoading} error={timelineQuery.isError}
               onTextChange={(text) => { simpleTextDraftsRef.current[composerMode] = text; setComposerText(text); }}
               onModeChange={(mode) => { simpleTextDraftsRef.current[composerMode] = composerText; simpleAttachmentDraftsRef.current[composerMode] = pendingAttachments; setComposerMode(mode); setComposerText(simpleTextDraftsRef.current[mode]); setPendingAttachments(simpleAttachmentDraftsRef.current[mode]); }}

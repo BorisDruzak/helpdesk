@@ -64,6 +64,16 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - `web_api/support_handlers.py` locks status/ownership before take-in-work and
   public reply. Rejected replies write no event and do not finish first-response
   SLA. `web_api/dto/support.py` projects `actions.can_send_public_message`.
+  Support resolution requires the current assignee even for administrators.
+  Legacy active/waiting work exposes status-preserving self-claim through the
+  existing assign route with `claim`/`expected_assignee_id`, rechecked under lock.
+  Explicit admin start assigns to the caller. Queue membership/capacity remain
+  canonical; a waiting claim checks assignment separately from later activation.
+- `app/repos/ticket_events_repo.py:get_recent_timeline_events` selects a newest
+  bounded chronological UI window. Public/private chat filters precede LIMIT;
+  compact Dialog/notes use separate reads and History retains diagnostics.
+  The older `get_events` replay order is unchanged. Regression coverage includes
+  `test_support_live_regressions.py` for noisy history and concurrent self-claim.
 - Queue rows and ticket actions also project `take_in_work` through a
   request-local read cache of canonical assignment/workflow checks. The command
   revalidates membership and destination load and returns specific safe denial

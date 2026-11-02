@@ -55,19 +55,33 @@ closed and canceled tickets belong to Completed. Waiting includes user, vendor
 and internal-team waits. Approval has its own contextual action. Existing smart
 views, saved columns and bulk operations remain in the additional mode.
 
-The queue and ticket use one `POST /api/web/support/tickets/{id}/status` command
-with `to_status=in_progress` to take/start work. No separate assignment request
-is combined with it. Status and assignment become visible after success and
+New/queued/assigned tickets use one `POST /api/web/support/tickets/{id}/status`
+command with `to_status=in_progress` to take/start work. Status and assignment
+to the current actor become visible after success and
 refetch. The server locks and refreshes the ticket before checking ownership,
 permissions and the canonical transition. Unassigned work also requires
 `ticket.assign` and existing queue-membership assignment checks. Concurrent
-operators cannot silently take the same ticket. An administrator can help with
-assigned work without changing its assignee.
+operators cannot silently take the same ticket. An explicit administrator take
+also assigns the ticket to that administrator; privileged public replies from
+the additional workspace retain their existing separate authority.
+
+Legacy in-progress tickets without an owner expose **Взять себе**. The same
+action lets an authorized administrator explicitly take another operator's
+active/waiting work. It sends the existing `/assign` command with additive
+`claim=true`, `assignee_id` equal to the caller and `expected_assignee_id` from
+the displayed snapshot. The server locks and refreshes the ticket, rechecks
+scope, status and expected ownership, then applies canonical assignment checks.
+A concurrent claim returns409 instead of replacing the first owner. Claiming
+preserves status; taking waiting work does not reserve capacity for resuming.
+Resume/start checks active capacity separately. The header always names the
+assignee. The compact public editor and resolution require assignment to self,
+including administrators; support resolution commands enforce this on the server.
 
 Queue items and ticket `actions` expose the additive `take_in_work` object
 (`allowed`, `reason_code`, `reason`). It evaluates the same permissions,
 ownership, queue membership, active-load limit and workflow transition used by
-the command. Queue projection caches reads for this request only. The status
+the command (status-preserving claims use assignment rather than activation
+checks). Queue projection caches reads for this request only. The status
 command validates again under the ticket lock. An unassigned new/queued ticket
 also checks the destination active load before starting work. Membership and
 capacity denials return `ASSIGNEE_NOT_IN_QUEUE` and `ASSIGNEE_CAPACITY_REACHED`
@@ -94,6 +108,14 @@ and takes internal visibility when duplicate projections disagree. Real public
 service messages, including solution-confirmation requests, remain in Dialog.
 Public/internal composer drafts and pending attachments are separate.
 
+Compact Dialog requests `filter=messages`, Internal notes requests `internal`,
+and History requests `all` to retain both diagnostic and system events. Support
+timeline reads use `TicketEventsRepo.get_recent_timeline_events`: select the
+newest bounded window, then return chronological order with event-ID tie-breaks.
+Public/internal chat filtering happens before SQL LIMIT so a long SLA history
+or private-note stream cannot evict recent public replies. Historical `get_events`
+replay behavior is unchanged. Existing stored messages are not rewritten.
+
 The Messenger layout keeps only the message feed scrolling, with the editor
 anchored below it. Bubbles have bounded line lengths, sender/time labels and
 date separators. Description and structured answers open in a keyboard-accessible
@@ -114,7 +136,7 @@ longer block resolution/closure. Other policy fields remain authoritative.
 Missing evidence or passport requirements open the existing passport workspace.
 
 `actions.can_resolve_and_close` advertises completion only for started work,
-the assigned operator or administrator, both allowed workflow transitions and
+the assigned current operator (including administrators), both allowed workflow transitions and
 an effective policy with requester confirmation explicitly disabled. The UI
 then sends `to_status=resolved` with `close_after_resolve=true` and the public
 result. The canonical workflow records resolved and closed in one transaction;
@@ -146,6 +168,9 @@ persisted assignee/status and SLA separately from synthetic browser fixtures.
 Browser scenarios cover 1366x768, 1920x1080 and 390x768, attachment links,
 dialog/note/history separation, draft privacy and resolution. Fixture results
 are not installed staging or production acceptance.
+`test_support_live_regressions.py` additionally covers a long noisy history,
+public/private stream separation, mandatory admin self-claim and competing
+legacy claims. The no-DB companion checks stale status/owner/scope denials.
 
 Phase-one completion/identity regression coverage also includes
 `test_phase1_completion_no_db.py`, `test_phase1_completion_api.py` and

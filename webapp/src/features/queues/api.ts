@@ -1686,13 +1686,17 @@ export function postSupportTicketAssign(
     autoAssign?: boolean;
     reason?: string;
     comment?: string;
+    claim?: boolean;
+    expectedAssigneeId?: string | null;
   }
 ): Promise<SupportTicketMutationActionResult> {
   return postSupportTicketMutationAlias(ticketId, "assign", {
     assignee_id: payload.assigneeId,
     auto_assign: payload.autoAssign,
     reason: payload.reason,
-    comment: payload.comment
+    comment: payload.comment,
+    claim: payload.claim,
+    expected_assignee_id: payload.expectedAssigneeId
   });
 }
 

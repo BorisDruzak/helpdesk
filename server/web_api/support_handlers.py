@@ -1264,6 +1264,12 @@ def _assignment_failure(exc: TicketAssignmentError) -> tuple[str, str]:
     return "ASSIGNMENT_CONFLICT", "Назначение исполнителя недоступно. Обновите обращение и проверьте доступность исполнителя."
 
 
+def _support_resolution_error(ticket, *, actor_id: str | None) -> tuple[str, str] | None:
+    # In the support workspace an administrator must explicitly take ownership
+    # too; an old in_progress status alone does not establish an assignee.
+    return _support_public_reply_error(ticket, actor_id=actor_id, is_admin=False)
+
+
 class _SupportTakeProjector:
     """Request-local read cache; the command always validates again under the lock."""
 
@@ -1295,18 +1301,21 @@ class _SupportTakeProjector:
         actor = self.auth.actor_id
         if self.auth.actor_role not in {"admin", "support"} or not actor or not await self.permitted("ticket.status.change"):
             return denied("FORBIDDEN", "Недостаточно прав для начала работы с обращением.")
-        if ticket.status == "in_progress":
-            return denied("TICKET_ALREADY_IN_WORK", "Обращение уже в работе.")
         assignee = getattr(ticket, "assignee_id", None)
+        if ticket.status == "in_progress" and assignee == actor:
+            return denied("TICKET_ALREADY_IN_WORK", "Обращение уже у вас в работе.")
         if assignee and assignee != actor and self.auth.actor_role != "admin":
             return denied("ASSIGNEE_CONFLICT", "Обращение назначено другому оператору.")
-        if not assignee:
+        if assignee != actor:
             if not await self.permitted("ticket.assign"):
                 return denied("FORBIDDEN", "Для взятия обращения нужно право назначения исполнителя.")
+        claim_only = assignee != actor and ticket.status in {"in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"}
         try:
-            await TicketAssignmentService(self).validate_manual_assignment(ticket, assignee or actor, activating=True, lock_capacity=False)
+            await TicketAssignmentService(self).validate_manual_assignment(ticket, actor, activating=not claim_only, lock_capacity=False)
         except TicketAssignmentError as exc:
             return denied(*_assignment_failure(exc))
+        if claim_only:
+            return SupportTakeInWorkAvailability(allowed=True)
         if transition_allowed is None:
             from tickets.workflow_profiles import load_workflow_profiles
             from tickets.workflow_service import load_ticket_workflow_profile, validate_transition_for_profile
@@ -1328,6 +1337,8 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_a
     options: list[SupportStatusAction] = []
     for value, label in QUICK_STATUS_ACTIONS:
         if value == current_status:
+            continue
+        if value == "resolved" and _support_resolution_error(ticket, actor_id=actor_id) is not None:
             continue
         if await validate_transition_for_ticket(session, ticket, value, True):
             options.append(SupportStatusAction(value=value, label=label))
@@ -2083,7 +2094,10 @@ async def _build_support_timeline_payload(
 ) -> SupportTicketTimelinePayload:
     normalized_filter = _normalize_support_timeline_filter(timeline_filter)
     event_limit = min(max(limit * 3, limit), 1000)
-    events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=event_limit)
+    events = await repo.get_recent_timeline_events(
+        ticket.ticket_id, limit=event_limit,
+        chat_visibility=normalized_filter if normalized_filter in {"messages", "internal"} else None,
+    )
     presentation_by_tool = (
         await _timeline_presentation_by_tool(session=session, state=state, ticket=ticket, events=events)
         if session is not None
@@ -5682,10 +5696,8 @@ async def handle_web_support_change_status(request: web.Request):
             ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
-            if close_after_resolve:
-                resolution_error = _support_public_reply_error(
-                    ticket, actor_id=auth_context.actor_id, is_admin=auth_context.actor_role == "admin"
-                )
+            if to_status == "resolved":
+                resolution_error = _support_resolution_error(ticket, actor_id=auth_context.actor_id)
                 if resolution_error:
                     code, message = resolution_error
                     return _support_json_error(message, status=403 if code == "ASSIGNEE_CONFLICT" else 409, error_code=code)
@@ -5693,12 +5705,12 @@ async def handle_web_support_change_status(request: web.Request):
                 assignee = getattr(ticket, "assignee_id", None)
                 if assignee and str(assignee) != str(auth_context.actor_id or "") and auth_context.actor_role != "admin":
                     return _support_json_error("Обращение назначено другому оператору.", status=403, error_code="ASSIGNEE_CONFLICT")
-                if not assignee:
+                if assignee != auth_context.actor_id:
                     denied = await _require_permission(session, auth_context, "ticket.assign")
                     if denied:
                         return denied
                 try:
-                    await TicketAssignmentService(repo).validate_manual_assignment(ticket, assignee or auth_context.actor_id, activating=True)
+                    await TicketAssignmentService(repo).validate_manual_assignment(ticket, auth_context.actor_id, activating=True)
                 except TicketAssignmentError as exc:
                     code, message = _assignment_failure(exc)
                     return _support_json_error(message, status=409, error_code=code)
@@ -5775,7 +5787,7 @@ async def handle_web_support_change_status(request: web.Request):
                 to_status == "in_progress"
                 and is_staff
                 and auth_context.actor_id
-                and not getattr(ticket, "assignee_id", None)
+                and getattr(ticket, "assignee_id", None) != auth_context.actor_id
             ):
                 try:
                     assignment_service = TicketAssignmentService(repo)
@@ -5787,7 +5799,7 @@ async def handle_web_support_change_status(request: web.Request):
                         actor_role=auth_context.actor_role,
                         reason="take_in_work",
                         comment="",
-                        old_assignee=None,
+                        old_assignee=getattr(ticket, "assignee_id", None),
                         auto_assigned=False,
                         db_session=session,
                         close_ola=True,
@@ -5927,6 +5939,11 @@ async def handle_web_support_assign_ticket(request: web.Request):
     data = await _read_support_json(request)
     if isinstance(data, web.Response):
         return data
+    claim = data.get("claim", False)
+    if type(claim) is not bool or (claim and (
+        "expected_assignee_id" not in data or (data["expected_assignee_id"] is not None and not isinstance(data["expected_assignee_id"], str))
+    )):
+        return _support_json_error("Некорректный параметр назначения себе", status=400, error_code="VALIDATION_ERROR")
     try:
         async with get_session() as session:
             ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
@@ -5935,6 +5952,26 @@ async def handle_web_support_assign_ticket(request: web.Request):
             denied = await _require_permission(session, auth_context, "ticket.assign")
             if denied:
                 return denied
+            if claim:
+                ticket = await repo.get_ticket(ticket.ticket_id, for_update=True)
+                if ticket is None:
+                    return _support_json_error("Обращение не найдено", status=404)
+                ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+                if error:
+                    return error
+                if auth_context.actor_role not in {"admin", "support"}:
+                    return _support_json_error("Недостаточно прав для взятия обращения", status=403, error_code="FORBIDDEN")
+                denied = await _require_permission(session, auth_context, "ticket.status.change")
+                if denied:
+                    return denied
+                if data.get("assignee_id") != auth_context.actor_id or data.get("auto_assign"):
+                    return _support_json_error("Взять обращение можно только себе", status=400, error_code="VALIDATION_ERROR")
+                if ticket.status not in {"in_progress", "waiting_on_user", "waiting_on_internal_team", "waiting_on_vendor"}:
+                    return _support_json_error("Статус обращения изменился. Обновите карточку.", status=409, error_code="WORKFLOW_CONFLICT")
+                if getattr(ticket, "assignee_id", None) != data["expected_assignee_id"]:
+                    return _support_json_error("Исполнитель изменился. Обновите карточку.", status=409, error_code="ASSIGNEE_CONFLICT")
+                if ticket.assignee_id and ticket.assignee_id != auth_context.actor_id and auth_context.actor_role != "admin":
+                    return _support_json_error("Обращение назначено другому оператору.", status=403, error_code="ASSIGNEE_CONFLICT")
             assignment_service = TicketAssignmentService(repo)
             try:
                 selection = await assignment_service.resolve_assignee(
@@ -5943,6 +5980,9 @@ async def handle_web_support_assign_ticket(request: web.Request):
                     auto_assign=bool(data.get("auto_assign")),
                 )
             except TicketAssignmentError as exc:
+                if claim:
+                    code, message = _assignment_failure(exc)
+                    return _support_json_error(message, status=409, error_code=code)
                 return _support_json_error(str(exc), status=400, error_code="ASSIGNMENT_ERROR")
             assignee_id = selection["assignee_id"]
             old_assignee = getattr(ticket, "assignee_id", None)

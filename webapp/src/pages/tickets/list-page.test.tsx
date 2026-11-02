@@ -425,6 +425,38 @@ afterEach(() => {
 });
 
 describe("TicketListPage", () => {
+  it("requests separate compact dialogue and note streams and retains diagnostics in History", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportTicketTimelineMock.mockImplementation(async (_id, filter) => timelinePayload({ filter, items: filter === "all" ? [
+      { ...timelinePayload().items[0], event_type: "tool_call_result", event_category: "diagnostics", from_role: "system", visibility: "system", text: "Результат диагностики в истории" },
+    ] : [], total: filter === "all" ? 1 : 0 }));
+    renderTicketListPage("/app/tickets/ticket-1", false);
+    await screen.findByRole("tab", { name: "Диалог" });
+    await waitFor(() => expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "messages"));
+    fireEvent.click(screen.getByRole("tab", { name: "Внутренние заметки" }));
+    await waitFor(() => expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "internal"));
+    fireEvent.click(screen.getByRole("tab", { name: "История" }));
+    expect(await screen.findByText("Результат диагностики в истории")).toBeVisible();
+    expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "all");
+  });
+
+  it("claims legacy work with an expected-owner guard before offering resolution", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    const workspace = workspacePayload();
+    workspace.detail.ticket.status = "in_progress";
+    workspace.detail.ticket.assignee_id = null;
+    workspace.detail.actions.take_in_work = { allowed: true, reason_code: null, reason: null };
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    postSupportTicketAssignMock.mockImplementation(async () => {
+      workspace.detail.ticket.assignee_id = "support-test";
+      return { ticket_id: "ticket-1" } as any;
+    });
+    renderTicketListPage("/app/tickets/ticket-1", false);
+    fireEvent.click(await screen.findByRole("button", { name: "Взять себе" }));
+    await waitFor(() => expect(postSupportTicketAssignMock).toHaveBeenCalledWith("ticket-1", expect.objectContaining({ claim: true, expectedAssigneeId: null, assigneeId: "support-test" })));
+    expect(postSupportTicketStatusMock).not.toHaveBeenCalled();
+  });
   it("uses the compact queue by default", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     renderTicketListPage("/app/tickets", false);

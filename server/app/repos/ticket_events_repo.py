@@ -480,6 +480,23 @@ class TicketEventsRepo:
         
         return list(events)
     
+    async def get_recent_timeline_events(
+        self, ticket_id: str, *, limit: int = 240, chat_visibility: str | None = None
+    ) -> List[TicketEvent]:
+        """Bound the newest UI window; retain ascending replay semantics in get_events.
+
+        Filter conversations before LIMIT so SLA noise and private notes cannot
+        evict public replies. Return a deterministic chronological window.
+        """
+        stmt = select(TicketEvent).where(TicketEvent.ticket_id == ticket_id)
+        if chat_visibility is not None:
+            visibility = func.coalesce(TicketEvent.payload["visibility"].as_string(), "public")
+            stmt = stmt.where(TicketEvent.event_type == "chat_message")
+            stmt = stmt.where(visibility == "internal" if chat_visibility == "internal" else visibility != "internal")
+        stmt = stmt.order_by(TicketEvent.created_at.desc(), TicketEvent.id.desc()).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(reversed(result.scalars().all()))
+
     async def get_last_agent_seq(self, ticket_id: str) -> Optional[int]:
         """
         Get the last agent_seq for a ticket.

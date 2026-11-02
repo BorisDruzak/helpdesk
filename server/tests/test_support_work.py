@@ -111,7 +111,7 @@ async def test_competing_take_has_one_persisted_assignee_and_only_owner_can_repl
 
 
 @pytest.mark.asyncio
-async def test_assigned_work_preserves_assignee_and_admin_authority(work_client, test_engine):
+async def test_explicit_admin_take_assigns_work_to_admin_without_allowing_support_hijack(work_client, test_engine):
     ticket_id = await seed_work(test_engine, status="assigned", assignee="support2")
     url = f"/api/web/support/tickets/{ticket_id}"
     response = await work_client.post(url + "/status", json={"to_status": "in_progress"})
@@ -124,4 +124,6 @@ async def test_assigned_work_preserves_assignee_and_admin_authority(work_client,
     assert response.status == 200, await response.text()
     async with async_sessionmaker(test_engine)() as session:
         ticket = await session.get(Ticket, ticket_id)
-        assert ticket.assignee_id == "support2" and ticket.status == "in_progress"
+        assert ticket.assignee_id == "admin" and ticket.status == "in_progress"
+        events = (await session.execute(select(TicketEvent).where(TicketEvent.ticket_id == ticket_id, TicketEvent.event_type == "assignee_changed"))).scalars().all()
+        assert any(event.payload["old_value"] == "support2" and event.payload["new_value"] == "admin" for event in events)

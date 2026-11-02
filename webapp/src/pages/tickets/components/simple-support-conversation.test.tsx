@@ -7,6 +7,16 @@ import { SimpleSupportConversation } from "./simple-support-conversation";
 const raw = (extra: Record<string, unknown>) => ({ event_type: "chat_message", visibility: "public", text: "Здравствуйте", attachments: [], from_role: "support", message_id: null, event_id: null, ts: null, direction: "to_agent", reply_to: null, ...extra }) as SupportTicketDetailPayload["timeline"][number];
 
 describe("clean support conversation", () => {
+  it("requests the matching server stream when switching dialogue, notes and history", () => {
+    const changed = vi.fn();
+    render(<SimpleSupportConversation items={[]} text="" onTextChange={vi.fn()} onModeChange={vi.fn()} onTabChange={changed} mode="public" canReply canNote onSend={vi.fn()} pending={false} attachments={[]} onRemoveAttachment={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Внутренние заметки" }));
+    expect(changed).toHaveBeenLastCalledWith("internal");
+    fireEvent.click(screen.getByRole("tab", { name: "История" }));
+    expect(changed).toHaveBeenLastCalledWith("all");
+    fireEvent.click(screen.getByRole("tab", { name: "Диалог" }));
+    expect(changed).toHaveBeenLastCalledWith("messages");
+  });
   it("preserves reading position when a new message arrives and can return to the latest", () => {
     const props = { items: mapSupportTimelineEntries([raw({ event_id: 1 })]), text: "", onTextChange: vi.fn(), onModeChange: vi.fn(), mode: "public" as const, canReply: true, canNote: true, onSend: vi.fn(), pending: false, attachments: [], onRemoveAttachment: vi.fn() };
     const view = render(<SimpleSupportConversation {...props} />);

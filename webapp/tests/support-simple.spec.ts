@@ -1,5 +1,46 @@
 import { expect, test, type Page } from "playwright/test";
 
+for (const width of [1366, 1920]) {
+  test(`legacy work requires an explicit self-claim before resolution at ${width}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    let owner: string | null = null;
+    const claims: unknown[] = [];
+    await page.route("**/api/web/notifications/unread_count", (route) => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+    await page.route("**/api/web/support/tickets/ticket-1/workspace", async (route) => {
+      const response = await route.fetch(); const payload = await response.json();
+      payload.data.detail.ticket.status = "in_progress";
+      payload.data.detail.ticket.status_label = "В работе";
+      payload.data.detail.ticket.assignee_id = owner;
+      payload.data.detail.actions.take_in_work = { allowed: !owner, reason_code: null, reason: null };
+      payload.data.detail.actions.can_send_public_message = Boolean(owner);
+      payload.data.detail.actions.status_options = [{ value: "resolved", label: "Решить" }];
+      await route.fulfill({ response, json: payload });
+    });
+    await page.route("**/api/web/support/tickets/ticket-1/assign", async (route) => {
+      const body = route.request().postDataJSON(); claims.push(body);
+      expect(body).toMatchObject({ assignee_id: "support", claim: true, expected_assignee_id: null });
+      owner = "support";
+      await route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", action: "assign", status: "in_progress" } } });
+    });
+    await login(page); await page.goto("/app/tickets/ticket-1");
+    const take = page.getByRole("button", { name: "Взять себе", exact: true });
+    await expect(take).toBeInViewport();
+    await expect(page.getByRole("button", { name: /Решить/ })).toHaveCount(0);
+    await expect(page.getByRole("textbox", { name: "Сообщение сотруднику" })).toBeDisabled();
+    await page.screenshot({ path: info.outputPath(`legacy-before-claim-${width}.png`), fullPage: true });
+    await take.click();
+    await expect(page.getByRole("button", { name: /Решить/ })).toBeInViewport();
+    await expect(page.getByText("Исполнитель: вы", { exact: true })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Сообщение сотруднику" })).toBeEnabled();
+    expect(claims).toHaveLength(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: info.outputPath(`legacy-after-claim-${width}.png`), fullPage: true });
+    expect(errors).toEqual([]);
+  });
+}
+
 async function login(page: Page) {
   await page.goto("/app/login?next=/app/tickets");
   await page.getByLabel("Логин").fill("support");

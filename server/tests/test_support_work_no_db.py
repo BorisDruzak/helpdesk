@@ -8,8 +8,71 @@ from auth.context import AuthContext, AuthType
 from tests.test_workflow_atomicity_no_db import mutations
 from tests.test_web_support_api import web_support_client
 from web_api import support_handlers as support
+from tickets.assignment_service import TicketAssignmentError
 
 pytestmark = pytest.mark.no_db
+
+
+@pytest.mark.asyncio
+async def test_unassigned_legacy_work_can_be_claimed_but_cannot_be_resolved_by_admin(work, monkeypatch, web_support_client):
+    work.ticket.status = "in_progress"
+    auth = AuthContext(actor_id="support1", actor_role="admin", auth_type=AuthType.UI_TOKEN, token="synthetic")
+    monkeypatch.setattr(support, "_get_ticket_or_response", AsyncMock(return_value=(work.ticket, None, work.repo, auth)))
+    projector = support._SupportTakeProjector(work.session, work.repo, auth)
+    assert (await projector.project(work.ticket, transition_allowed=False)).allowed is True
+    response = await web_support_client.post(f"/api/web/support/tickets/{work.ticket.ticket_id}/status",
+        json={"to_status": "resolved", "requester_resolution_summary": "Premature"})
+    assert response.status == 409
+    assert (await response.json())["error_code"] == "TICKET_NOT_IN_WORK"
+    work.session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_waiting_claim_does_not_require_capacity_for_resuming(work):
+    work.ticket.status = "waiting_on_user"
+    work.repo.count_active_tickets_for_assignee.return_value = 3
+    auth = AuthContext(actor_id="support1", actor_role="support", auth_type=AuthType.UI_TOKEN, token="synthetic")
+    result = await support._SupportTakeProjector(work.session, work.repo, auth).project(work.ticket, transition_allowed=False)
+    assert result.allowed is True
+    work.repo.count_active_tickets_for_assignee.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["owner", "status", "scope"])
+async def test_claim_rechecks_expected_owner_status_and_scope_before_assignment(web_support_client, work, monkeypatch, changed):
+    auth = AuthContext(actor_id="support1", actor_role="support", auth_type=AuthType.UI_TOKEN, token="synthetic")
+    work.ticket.status = "closed" if changed == "status" else "in_progress"
+    work.ticket.assignee_id = "other" if changed == "owner" else None
+    get = AsyncMock(return_value=(work.ticket, None, work.repo, auth))
+    if changed == "scope":
+        get.side_effect = [(work.ticket, None, work.repo, auth), (None, support._support_json_error("Forbidden", status=403), work.repo, auth)]
+    monkeypatch.setattr(support, "_get_ticket_or_response", get)
+    response = await web_support_client.post(f"/api/web/support/tickets/{work.ticket.ticket_id}/assign",
+        json={"assignee_id": "support1", "claim": True, "expected_assignee_id": None})
+    assert response.status == (403 if changed == "scope" else 409)
+    work.repo.get_ticket.assert_awaited_with(work.ticket.ticket_id, for_update=True)
+    work.repo.update_ticket.assert_not_awaited()
+    work.session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["role", "permission", "membership", "capacity"])
+async def test_claim_authority_and_late_assignment_denials_match_projection(web_support_client, work, monkeypatch, failure):
+    work.ticket.status = "in_progress"
+    auth = AuthContext(actor_id="support1", actor_role="auditor" if failure == "role" else "support", auth_type=AuthType.UI_TOKEN, token="synthetic")
+    monkeypatch.setattr(support, "_get_ticket_or_response", AsyncMock(return_value=(work.ticket, None, work.repo, auth)))
+    code = {"membership": "ASSIGNEE_NOT_IN_QUEUE", "capacity": "ASSIGNEE_CAPACITY_REACHED"}.get(failure)
+    if code:
+        monkeypatch.setattr(support.TicketAssignmentService, "resolve_assignee", AsyncMock(side_effect=TicketAssignmentError("private details", code=code)))
+    if failure == "permission":
+        monkeypatch.setattr(support, "_require_permission", AsyncMock(side_effect=[None, support._support_json_error("Forbidden", status=403, error_code="FORBIDDEN")]))
+    response = await web_support_client.post(f"/api/web/support/tickets/{work.ticket.ticket_id}/assign",
+        json={"assignee_id": "support1", "claim": True, "expected_assignee_id": None})
+    assert response.status == (409 if code else 403)
+    assert (await response.json())["error_code"] == (code or "FORBIDDEN")
+    assert "private details" not in await response.text()
+    work.repo.update_ticket.assert_not_awaited()
+    work.session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
