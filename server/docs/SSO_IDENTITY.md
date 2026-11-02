@@ -74,10 +74,14 @@ Status: 401 wrong service authority; 400 invalid body/issuer; 404 unknown;
 - `OIDC_TOKEN_ENCRYPTION_KEY`: Fernet key, supplied from protected runtime secrets,
   independent of every client/service credential. Retain it only while the
   corresponding unexpired flows/sessions are needed. Rotation invalidates them.
-- `OIDC_PRIVILEGED_ACR`: exact provider-enforced MFA assurance value. Every role
-  except `user` requires this ACR on login and subsequent operations. An empty
-  value denies privileged SSO. Configure the provider to enforce the requested
-  assurance rather than simply echo a claim.
+- AD SSO uses the domain password for every Helpdesk role, including support,
+  administrators and auditors. Helpdesk does not request `acr_values` or require
+  an MFA `acr` on login, session validation or refresh. `OIDC_PRIVILEGED_ACR` is
+  deprecated and ignored, including when still present in an existing environment.
+  The identity provider's Helpdesk client must also use password-level defaults
+  and minimum assurance; an upstream OTP enrollment/flow requirement can still
+  prompt for OTP independently of Helpdesk. Apply provider changes through its
+  reviewed configuration workflow, scoped to the intended Helpdesk client.
 - `OIDC_AD_GUID_CLAIM` defaults `ad_object_guid`. Configure canonical AD objectGUID
   UUID in signed ID tokens. Introspection must return active, sub, iss, client_id,
   exp and matching sid when ID token supplied sid.
@@ -109,7 +113,8 @@ The initial access/ID token validity is capped at 15 minutes. When a refresh
 token is issued, the opaque local session/cookie has a fixed eight-hour maximum;
 without refresh it expires with the initial token. At 30 seconds before access
 expiry, Authlib refreshes under a PostgreSQL row lock, revalidates signed ID claims,
-the exact identity/session/MFA assurance, and stores rotated encrypted tokens.
+the exact identity and session, and stores rotated encrypted tokens. A returned
+`acr` is retained as session metadata and is not a role authorization source.
 Refresh never extends the eight-hour ceiling. A denied refresh, changed identity,
 bad signature or provider outage grants no operation. Refreshed ID tokens must
 include the original nonce, AD GUID and session identity.
@@ -130,6 +135,30 @@ Local logout remains available while the issuer is offline.
 For a native browser POST (`Accept: text/html`), missing or rejected optional RP
 configuration returns a 303 to the fixed `/app/login` after local revocation and
 cookie deletion. JSON API callers retain the ordinary local logout response.
+
+### Helpdesk staging provider assurance
+
+`scripts/configure_helpdesk_sso_password.py` is the fixed staging provider
+helper. Run it as root on the existing SSO host `192.168.100.19`; default mode
+only reads policy and prints a nonsecret `before_sha256`. After reviewing that
+plan, `--apply --expected-sha256 <before_sha256>` changes only
+`helpdesk-staging-web`'s `default.acr.values` and `minimum.acr.value` to level 1.
+It reads the existing protected provisioning credential in memory, refuses
+custom client flows, retains PKCE and writes a private metadata backup under
+`/var/backups/keycloak/helpdesk-password-*/client.json` before its single REST
+update. It rereads the full client and verifies the five other application
+clients unchanged. No credential, role, user required action or realm flow is
+changed. A failure after PUT requires inspecting the current client and private
+backup before retry; the helper never silently retries or rolls back an uncertain
+write. Production Helpdesk and Endpoint clients are outside this helper's scope.
+The update explicitly retains `webOrigins`, including an empty list, because
+Keycloak infers a redirect origin when that field is omitted. For the verified
+legacy partial-update case only, `--reconcile-backup <private-client.json>` plans
+restoring the original empty origins while retaining password assurance; apply
+still requires the current fingerprint. Any other full-client difference refuses
+this reconciliation.
+Deploy the matching Helpdesk code through the canonical release script; changing
+only the provider leaves the old privileged-session check in place.
 
 ## Browser entry and employee navigation
 

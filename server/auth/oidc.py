@@ -136,8 +136,6 @@ async def validate_oidc_session(session, token_record, user):
         if not binding or binding.user_login != user.user_login or binding.issuer != config.OIDC_ISSUER:
             return False
         await IdentityService(session)._active(binding)
-        if user.actor_role != "user" and (not config.OIDC_PRIVILEGED_ACR or record.acr != config.OIDC_PRIVILEGED_ACR):
-            return False
         meta = await metadata()
         if record.expires_at <= now + timedelta(seconds=30):
             if not record.refresh_token_encrypted:
@@ -148,7 +146,7 @@ async def validate_oidc_session(session, token_record, user):
             claims = validate_id_token(renewed["id_token"], await _json(meta["jwks_uri"]), record.nonce, renewed["access_token"])
             if (claims["iss"], claims["sub"], claims[config.OIDC_AD_GUID_CLAIM]) != (binding.issuer, binding.subject, binding.ad_object_guid):
                 return False
-            if claims.get("sid") != record.upstream_sid or (user.actor_role != "user" and claims.get("acr") != config.OIDC_PRIVILEGED_ACR):
+            if claims.get("sid") != record.upstream_sid:
                 return False
             next_expiry = min(float(claims["exp"]), float(renewed["expires_at"]), record.max_expires_at.timestamp())
             if not math.isfinite(next_expiry) or next_expiry <= time.time():
@@ -181,8 +179,6 @@ async def handle_oidc_login(request):
         nonce, verifier, browser = secrets.token_urlsafe(32), secrets.token_urlsafe(48), secrets.token_urlsafe(32)
         async with oauth_client() as client:
             options = {"nonce": nonce, "response_mode": "query"}
-            if config.OIDC_PRIVILEGED_ACR:
-                options["acr_values"] = config.OIDC_PRIVILEGED_ACR
             url, state = client.create_authorization_url(meta["authorization_endpoint"], code_verifier=verifier, **options)
         async with get_session() as session:
             now = datetime.now(timezone.utc)
@@ -232,8 +228,6 @@ async def handle_oidc_callback(request):
             # Capture existing authority for issuance; every subsequent operation rechecks it.
             _, user = await service._active(binding)
             acr = claims.get("acr")
-            if user.actor_role != "user" and (not config.OIDC_PRIVILEGED_ACR or acr != config.OIDC_PRIVILEGED_ACR):
-                return _error("privileged_mfa_required", 403)
             sid = claims.get("sid")
             if sid is not None and (not isinstance(sid, str) or len(sid) > 255):
                 return _error("invalid_oidc_sid", 401)

@@ -138,6 +138,7 @@ OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "").strip()
 OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")
 OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "").strip()
 OIDC_TOKEN_ENCRYPTION_KEY = os.getenv("OIDC_TOKEN_ENCRYPTION_KEY", "")
+# Deprecated compatibility setting; Helpdesk uses domain-password SSO for all roles.
 OIDC_PRIVILEGED_ACR = os.getenv("OIDC_PRIVILEGED_ACR", "").strip()
 OIDC_AD_GUID_CLAIM = os.getenv("OIDC_AD_GUID_CLAIM", "ad_object_guid").strip()
 OIDC_CA_FILE = os.getenv("OIDC_CA_FILE", "").strip()

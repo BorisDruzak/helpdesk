@@ -98,7 +98,11 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   with one-use PostgreSQL flow state and encrypted upstream tokens, issuing the
   existing opaque cookie authority. Migration 151 preserves legacy ownership;
   auth verifies current account, identity and upstream session on every SSO
-  operation. Configuration/contracts/pilot limits: `docs/SSO_IDENTITY.md`.
+  operation. All Helpdesk roles use password-level AD SSO without requesting or
+  enforcing MFA ACR; provider client policy is configured separately.
+  Configuration/contracts/pilot limits: `docs/SSO_IDENTITY.md`.
+  `scripts/configure_helpdesk_sso_password.py` plans/applies the fixed staging
+  provider client's password assurance with private backup and exact readback.
   `web_api/session_handlers.py` projects safe SSO capabilities and verified
   login-method metadata; `WORKTIME_PORTAL_URL` must match the fixed production
   or staging pair for configured `SERVER_PUBLIC_BASE_URL`. This is employee
