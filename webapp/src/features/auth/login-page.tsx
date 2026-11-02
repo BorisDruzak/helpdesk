@@ -25,6 +25,25 @@ function registerPath(nextParam: string | null) {
   return `/app/register?${params.toString()}`;
 }
 
+function ssoErrorMessage(code: string | null) {
+  switch (code) {
+    case "identity_unlinked":
+      return "Доменная учётная запись пока не связана с профилем Helpdesk. Обратитесь к администратору для проверки связи с вашим существующим профилем.";
+    case "identity_unavailable":
+      return "Вход с этой доменной учётной записью недоступен. Обратитесь к администратору.";
+    case "oidc_unavailable":
+      return "Сервис доменного входа временно недоступен. Повторите попытку позже или войдите по логину и паролю.";
+    case "rate_limited":
+      return "Слишком много попыток доменного входа. Подождите минуту и повторите попытку.";
+    case "oidc_disabled":
+      return "Доменный вход сейчас недоступен. Используйте логин и пароль.";
+    case "oidc_authentication_failed":
+      return "Не удалось завершить доменный вход. Повторите попытку или войдите по логину и паролю.";
+    default:
+      return null;
+  }
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -43,6 +62,7 @@ export function LoginPage() {
 
   const nextPath = resolveNextPath(searchParams.get("next"), session);
   const registrationComplete = searchParams.get("registered") === "1";
+  const ssoError = ssoErrorMessage(searchParams.get("sso_error"));
 
   if (status === "authenticated") {
     return <Navigate replace to={nextPath} />;
@@ -160,6 +180,8 @@ export function LoginPage() {
                 Войдите, чтобы обратиться в поддержку или продолжить работу.
               </p>
             </div>
+
+            {ssoError ? <p role="alert" className="rounded-[1rem] bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">{ssoError}</p> : null}
 
             {capabilities?.sso_enabled ? <div className="space-y-3">
               <a className="flex min-h-12 items-center justify-center rounded-pill bg-brand-700 px-5 py-3 text-center text-sm font-semibold text-white hover:bg-brand-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700" href="/api/web/session/oidc/login">

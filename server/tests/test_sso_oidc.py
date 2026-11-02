@@ -15,6 +15,7 @@ from joserfc import jwt
 from joserfc.jwk import RSAKey
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import func, select
 
 import auth.oidc as oidc
 import auth.service as auth_service_module
@@ -61,14 +62,16 @@ def test_authlib_rejects_invalid_id_token(oidc_config, defect):
 
 
 @pytest.mark.asyncio
-async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypass(test_engine, monkeypatch, oidc_config):
+@pytest.mark.parametrize("role", ["user", "support", "admin", "auditor"])
+async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypass(test_engine, monkeypatch, oidc_config, role):
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
     person_id, guid, login = str(uuid.uuid4()), str(uuid.uuid4()), "sso-" + uuid.uuid4().hex
     issuer, subject, sid = config.OIDC_ISSUER, "CaseSensitive-sub", "provider-session"
     password = "Pilot-only-long-password-726!"
     async with maker() as session:
-        session.add_all([RegistryPerson(person_id=person_id, display_name="Pilot", status="active"),
-            UiUser(user_login=login, password_hash=hash_password(password), actor_role="admin", is_active=True)])
+        password_hash = hash_password(password)
+        session.add_all([RegistryPerson(person_id=person_id, display_name="Pilot", status="active", metadata_json={"preserve": "existing-profile"}),
+            UiUser(user_login=login, password_hash=password_hash, actor_role=role, is_active=True)])
         await session.flush()
         session.add(RegistryPersonIdentity(person_id=person_id, provider="ui_login", identifier=login, normalized_identifier=login, verified=True))
         await session.commit()
@@ -76,6 +79,8 @@ async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypas
         candidate = await service.propose(person_id=person_id, user_login=login, issuer=issuer, subject=subject, ad_object_guid=guid, actor_id="operator")
         binding = await service.confirm(candidate.candidate_id, actor_id="operator", verification_reference="AD owner independently verified")
         binding_id = binding.binding_id
+        baseline_people = await session.scalar(select(func.count()).select_from(RegistryPerson))
+        baseline_users = await session.scalar(select(func.count()).select_from(UiUser))
 
     @asynccontextmanager
     async def sessions():
@@ -118,7 +123,7 @@ async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypas
                 assert create_s256_code_challenge(verifier) == provider["challenge"]
             encoded = jwt.encode({"alg": "RS256"}, dict(iss=issuer, sub=subject, aud=config.OIDC_CLIENT_ID,
                 iat=int(time.time()), exp=int(time.time()) + 600, nonce=provider["nonce"], sid=sid,
-                ad_object_guid=guid, acr=config.OIDC_PRIVILEGED_ACR), key)
+                ad_object_guid=guid), key)
             return httpx.Response(200, json={"access_token": provider["access"], "token_type": "Bearer",
                 "expires_in": 600, "id_token": encoded, "refresh_token": provider["refresh"]})
         assert request.url.path.endswith("/introspect")
@@ -155,6 +160,7 @@ async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypas
         assert start.status == 302
         query = parse_qs(urlsplit(start.headers["Location"]).query)
         assert query["code_challenge_method"] == ["S256"]
+        assert "acr_values" not in query
         provider["nonce"], provider["challenge"] = query["nonce"][0], query["code_challenge"][0]
         callback = "/api/web/session/oidc/callback?" + "state=" + query["state"][0] + "&code=issued-code"
         cookies = {"Cookie": oidc.FLOW_COOKIE + "=" + start.cookies[oidc.FLOW_COOKIE].value}
@@ -163,18 +169,30 @@ async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypas
         cookie = done.cookies[WEB_SESSION_COOKIE_NAME]
         assert cookie["httponly"] and cookie["secure"] and cookie["samesite"] == "Lax"
         assert "provider-access-secret" not in done.headers.get("Set-Cookie", "")
+        async with maker() as session:
+            stored = await session.get(OidcSession, oidc.digest(cookie.value))
+            assert stored.binding_id == binding_id and stored.acr is None
+            user = await session.get(UiUser, login)
+            assert user.actor_role == role and user.password_hash == password_hash and user.password_login_enabled
+            person = await session.get(RegistryPerson, person_id)
+            assert person.display_name == "Pilot" and person.metadata_json == {"preserve": "existing-profile"}
+            alias = (await session.execute(select(RegistryPersonIdentity).where(
+                RegistryPersonIdentity.provider == "ui_login", RegistryPersonIdentity.normalized_identifier == login))).scalar_one()
+            assert alias.person_id == person_id and alias.verified
+            assert await session.scalar(select(func.count()).select_from(RegistryPerson)) == baseline_people
+            assert await session.scalar(select(func.count()).select_from(UiUser)) == baseline_users
         replay = await browser.get(callback, headers=cookies, allow_redirects=False)
         assert replay.status == 400
         authority = {"Cookie": WEB_SESSION_COOKIE_NAME + "=" + cookie.value}
         assert (await browser.get("/api/protected", headers=authority)).status == 200
         auth = AuthService(SimpleNamespace(users={login: password}))
-        password_token = await auth.generate_ui_token(login, "admin", expires_hours=1)
+        password_token = await auth.generate_ui_token(login, role, expires_hours=1)
         assert await auth.verify_ui_token(password_token) is not None
         async with maker() as session:
             await IdentityService(session).migrate_password(binding_id, actor_id="operator", verification_reference="Live pilot verified")
         assert await auth.authenticate(login, password) == (False, "")
         assert await auth.verify_ui_token(password_token) is None
-        raced_password_token = await auth.generate_ui_token(login, "admin", expires_hours=1)
+        raced_password_token = await auth.generate_ui_token(login, role, expires_hours=1)
         assert await auth.verify_ui_token(raced_password_token) is None
         assert (await browser.get("/api/protected", headers=authority)).status == 200
         async with maker() as session:
@@ -222,7 +240,7 @@ async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypas
         assert local_logout.status == 303
         assert "Max-Age=0" in local_logout.headers["Set-Cookie"]
         assert logout_audits[-1]["actor_id"] == login
-        assert logout_audits[-1]["actor_role"] == "admin"
+        assert logout_audits[-1]["actor_role"] == role
         assert parse_qs(urlsplit(local_logout.headers["Location"]).query) == {"client_id": [config.OIDC_CLIENT_ID], "post_logout_redirect_uri": [config.OIDC_POST_LOGOUT_REDIRECT_URI]}
         async with maker() as session:
             assert (await session.get(UiToken, oidc.digest(cookie.value))).revoked_at is not None
@@ -230,7 +248,7 @@ async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypas
         repeated_logout = await browser.post("/api/web/session/logout", headers={**authority, "Origin": str(browser.make_url("/")).rstrip("/")})
         assert repeated_logout.status == 200 and "Max-Age=0" in repeated_logout.headers["Set-Cookie"]
         assert logout_audits[-1]["actor_id"] is None
-        expired_token = await auth.generate_ui_token(login, "admin", expires_hours=1)
+        expired_token = await auth.generate_ui_token(login, role, expires_hours=1)
         async with maker() as session:
             (await session.get(UiToken, oidc.digest(expired_token))).expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
             await session.commit()

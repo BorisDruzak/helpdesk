@@ -165,15 +165,33 @@ async def validate_oidc_session(session, token_record, user):
         return False
 
 
-def _error(code, status):
+def _error(code, status, *, request=None):
+    if request is not None and "text/html" in request.headers.get("Accept", "").lower():
+        # Browser navigation needs a document. Only local constants may enter
+        # this fixed URL; provider messages and return targets never do.
+        browser_code = {
+            "identity_unknown": "identity_unlinked",
+            "identity_unconfirmed": "identity_unlinked",
+            "identity_conflict": "identity_unlinked",
+            "verified_ui_login_required": "identity_unlinked",
+            "identity_inactive": "identity_unavailable",
+            "identity_revoked": "identity_unavailable",
+            "rate_limited": "rate_limited",
+            "oidc_disabled": "oidc_disabled",
+            "oidc_unavailable": "oidc_unavailable",
+        }.get(code, "oidc_authentication_failed")
+        response = web.HTTPFound("/app/login?" + urlencode({"sso_error": browser_code}),
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+        response.del_cookie(FLOW_COOKIE, path="/", secure=True, httponly=True, samesite="Lax")
+        return response
     return web.json_response({"error": code}, status=status, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
 async def handle_oidc_login(request):
     if not config.OIDC_ENABLED:
-        return _error("oidc_disabled", 404)
+        return _error("oidc_disabled", 404, request=request)
     if not check_rate_limit("oidc_login", client_ip(request), limit=10, window_seconds=60):
-        return _error("rate_limited", 429)
+        return _error("rate_limited", 429, request=request)
     try:
         meta = await metadata()
         nonce, verifier, browser = secrets.token_urlsafe(32), secrets.token_urlsafe(48), secrets.token_urlsafe(32)
@@ -190,20 +208,20 @@ async def handle_oidc_login(request):
         response.set_cookie(FLOW_COOKIE, browser, secure=True, httponly=True, samesite="Lax", path="/", max_age=FLOW_TTL)
         return response
     except Exception:
-        return _error("oidc_unavailable", 503)
+        return _error("oidc_unavailable", 503, request=request)
 
 
 async def handle_oidc_callback(request):
     if not config.OIDC_ENABLED:
-        return _error("oidc_disabled", 404)
+        return _error("oidc_disabled", 404, request=request)
     if not check_rate_limit("oidc_callback", client_ip(request), limit=20, window_seconds=60):
-        return _error("rate_limited", 429)
+        return _error("rate_limited", 429, request=request)
     # Reject duplicated/malformed parameters before any provider request.
     if any(len(request.query.getall(k, [])) != 1 for k in ("state", "code")) or request.query.get("error"):
-        return _error("invalid_oidc_callback", 400)
+        return _error("invalid_oidc_callback", 400, request=request)
     state, code, browser = request.query["state"], request.query["code"], request.cookies.get(FLOW_COOKIE, "")
     if not state or len(state) > 256 or not code or len(code) > 4096 or not browser or len(browser) > 256:
-        return _error("invalid_oidc_callback", 400)
+        return _error("invalid_oidc_callback", 400, request=request)
     try:
         _configured()
         async with get_session() as session:
@@ -212,7 +230,7 @@ async def handle_oidc_callback(request):
                 OidcFlow.browser_hash == digest(browser), OidcFlow.expires_at > datetime.now(timezone.utc)).returning(OidcFlow))).scalar_one_or_none()
             await session.commit()
         if flow is None:
-            return _error("invalid_or_replayed_oidc_state", 400)
+            return _error("invalid_or_replayed_oidc_state", 400, request=request)
         meta = await metadata()
         async with oauth_client(state=state) as client:
             token = await client.fetch_token(meta["token_endpoint"], authorization_response=config.OIDC_REDIRECT_URI + "?" + urlencode({"state": state, "code": code}),
@@ -221,7 +239,7 @@ async def handle_oidc_callback(request):
         claims = validate_id_token(token["id_token"], await _json(meta["jwks_uri"]), flow.nonce, access_token)
         expires_at = min(float(claims["exp"]), float(token["expires_at"]), time.time() + SESSION_TTL)
         if not math.isfinite(expires_at) or expires_at <= time.time():
-            return _error("oidc_token_expired", 401)
+            return _error("oidc_token_expired", 401, request=request)
         async with get_session() as session:
             service = IdentityService(session)
             binding = await service.resolve_binding(claims["iss"], claims["sub"], claims[config.OIDC_AD_GUID_CLAIM])
@@ -230,9 +248,9 @@ async def handle_oidc_callback(request):
             acr = claims.get("acr")
             sid = claims.get("sid")
             if sid is not None and (not isinstance(sid, str) or len(sid) > 255):
-                return _error("invalid_oidc_sid", 401)
+                return _error("invalid_oidc_sid", 401, request=request)
             if not await _introspect(meta, access_token, binding, sid):
-                return _error("oidc_session_inactive", 401)
+                return _error("oidc_session_inactive", 401, request=request)
             # Persist both records in one transaction: bypass every dev/memory fallback.
             raw = secrets.token_hex(32)
             expiry = datetime.fromtimestamp(expires_at, timezone.utc)
@@ -251,9 +269,9 @@ async def handle_oidc_callback(request):
         response.del_cookie(FLOW_COOKIE, path="/", secure=True, httponly=True, samesite="Lax")
         return response
     except IdentityError as exc:
-        return _error(exc.code, exc.status)
+        return _error(exc.code, exc.status, request=request)
     except Exception:
-        return _error("oidc_authentication_failed", 503)
+        return _error("oidc_authentication_failed", 503, request=request)
 
 
 async def handle_oidc_logout(request):

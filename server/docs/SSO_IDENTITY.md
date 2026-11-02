@@ -109,6 +109,16 @@ upstream access/refresh tokens and issues the existing HttpOnly browser cookie. 
 token, verifier or refresh token reaches browser JavaScript. Success redirects
 to `/app`; no arbitrary return URL is accepted.
 
+For browser login/callback navigation (`Accept: text/html`), failures redirect to
+the fixed `/app/login?sso_error=<local-code>` and delete the flow cookie. Only
+whitelisted local categories reach that URL. The login page renders static Russian
+recovery guidance for unlinked/inactive identities, provider failure, disabled SSO
+and rate limits. Provider text, callback parameters and request return targets are
+never displayed or forwarded. JSON callers retain the existing error/status
+contract. Recovery never creates an account, binds an identity or changes roles;
+an unknown/unconfirmed identity requires independent administrator verification
+against the employee's existing profile.
+
 The initial access/ID token validity is capped at 15 minutes. When a refresh
 token is issued, the opaque local session/cookie has a fixed eight-hour maximum;
 without refresh it expires with the initial token. At 30 seconds before access
@@ -170,6 +180,11 @@ browser query parameters cannot choose an issuer, callback or return target.
 The existing password form remains available for gradual migration. Failed or
 legacy capabilities responses hide the SSO entry; they do not prevent password
 login. The login form remains first on small screens.
+
+Registration remains conditional on the existing self-registration policy. Both
+its disabled/loading return link and enabled form's existing-account login link
+retain a safe `/app` return path, as does successful registration. The login page
+checks the authenticated account's workspace access before following that path.
 
 Authenticated session payloads retain `auth_type: ui_token` and expose a separate
 `login_method: password|oidc` derived from the verified persisted credential.

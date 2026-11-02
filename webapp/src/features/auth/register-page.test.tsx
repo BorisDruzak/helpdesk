@@ -59,6 +59,20 @@ afterEach(() => {
 });
 
 describe("RegisterPage", () => {
+  it("preserves the app return path when an existing user returns to login", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/web/session/capabilities") {
+        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
+      }
+      return jsonResponse({ status: "error" }, 401);
+    }));
+    renderRegisterPage("/app/register?next=%2Fapp%2Frequester%2Fdevices%2Flink");
+    await screen.findByRole("button", { name: "Создать аккаунт" });
+    expect(screen.getByRole("link", { name: "Войти" })).toHaveAttribute(
+      "href", "/app/login?next=%2Fapp%2Frequester%2Fdevices%2Flink"
+    );
+  });
+
   it("creates an account-only requester user and redirects to the login success notice", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

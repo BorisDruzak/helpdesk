@@ -223,7 +223,7 @@ export function RegisterPage() {
 
             <div className="flex items-center justify-between gap-3 rounded-[1.2rem] bg-surface-subtle px-4 py-4 text-sm text-slate-500">
               <span>Уже есть аккаунт?</span>
-              <Link className="font-semibold text-brand-700 hover:text-brand-900" to="/app/login">
+              <Link className="font-semibold text-brand-700 hover:text-brand-900" to={withPreservedNext("/app/login", searchParams.get("next"))}>
                 Войти
               </Link>
             </div>
