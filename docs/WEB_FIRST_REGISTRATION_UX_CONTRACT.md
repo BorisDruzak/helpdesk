@@ -5,6 +5,35 @@ Account registration uses login, password and repeated password only. The public
 `GET /api/web/session/capabilities` projects the server registration flag; disabled
 registration leaves login available and shows a clear state on the register route.
 Account registration is separate from device binding and Endpoint Agent enrollment.
+
+On the approved staging host (`test-helpdesk`, `192.168.101.118`), run
+`python scripts/configure_helpdesk_registration.py --enabled true` to enable
+requester registration (`false` disables it). The utility updates only
+`WEB_SELF_REGISTRATION_ENABLED` in `/etc/helpdesk-staging/helpdesk.env`, retains
+a private backup, and preserves unrelated settings. Restart only
+`helpdesk-staging.service` through `scripts/manage_remote_stack.py` using the
+staging remote profile, then verify `/api/web/session/capabilities` and the
+registration flow. New accounts always receive role `user`; this does not
+provision AD accounts or grant support/administrator privileges.
+
+Staging acceptance on 2026-11-04: registration was enabled with a private
+configuration backup; unrelated configuration and file permissions were verified
+unchanged. Helpdesk was restarted through the project lifecycle command and
+left running. TLS health returned 200, registration and SSO capabilities were
+both true, and the application release remained `376b46c012160473fe2ebc40a0185784f692e487`.
+Live browser registration returned 201; first login returned 200 and opened the
+requester workspace. The new synthetic account had role `user` and only the
+`requester` workspace. The new-ticket page opened and requested profile
+completion before ordinary catalog requests. Registration does not complete a
+personal profile automatically. Two synthetic accounts with prefix
+`registration.check.20261104.` were created during verification; the first UI
+run reached successful registration but its verification callback failed, so
+first-login acceptance used the second account. No real employee credentials
+were reset. Browser console errors and failed application requests were absent
+in the successful run. The configuration utility's three tests and
+`python scripts/verify_workspace.py` passed; no frontend assets or application
+code were changed or redeployed.
+
 Retired Helpdesk browser pairing and account-session issuance remain unavailable.
 
 | Route | Purpose | Authority | Evidence |
