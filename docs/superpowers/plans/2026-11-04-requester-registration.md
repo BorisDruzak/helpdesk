@@ -78,11 +78,11 @@
 
 - [x] Test normalization, 30-name uniqueness, plan-only behavior, idempotent second apply, stale baseline rejection, foreign database rejection, exact synthetic-only archival and retained references.
 - [x] Implement the names-only import and audited archival. Do not infer employees, real department assignments or department merges beyond the three documented name aliases.
-- [ ] Review the complete task diff and focused checks; inspect staged files and `git diff --check` before each atomic commit. Preserve unrelated changes and report full SHAs.
-- [ ] Take the canonical staging database backup, install the committed app/migration through `deploy_helpdesk_release.py`, then apply the reviewed catalog plan. Retain a private restoration receipt.
-- [ ] Verify exact deployed SHA, health/capabilities, 30 active real departments and no active synthetic choices. Check prior row/reference counts and repeat import no-op.
-- [ ] Run a live owned synthetic signup through profile completion, home and explicit ticket-form opening; verify `user`/requester-only workspaces, filled profile, no auto-created ticket, no location requirement, successful existing AD login and no MFA regression.
-- [ ] Run `python scripts/verify_workspace.py`; update acceptance notes and leave staging running. Production deployment/full CI are outside this task.
+- [x] Review the complete task diff and focused checks; inspect staged files and `git diff --check` before each atomic commit. Preserve unrelated changes and report full SHAs.
+- [x] Take the canonical staging database backup, install the committed app/migration through `deploy_helpdesk_release.py`, then apply the reviewed catalog plan. Retain a private restoration receipt.
+- [x] Verify exact deployed SHA, health/capabilities, 30 active real departments and no active synthetic choices. Check prior row/reference counts and repeat import no-op.
+- [x] Run a live owned synthetic signup through profile completion, home and explicit ticket-form opening; verify `user`/requester-only workspaces, filled profile, no auto-created ticket, no location requirement, OIDC initiation with no MFA request. Fresh real-credential AD login was not repeated; record this verification limit.
+- [x] Run `python scripts/verify_workspace.py`; update acceptance notes and leave staging running. Production deployment/full CI are outside this task.
 
 ## Plan review
 
@@ -91,3 +91,10 @@ profile, DB, API or browser assertions above. A schema migration is required for
 the durable signup receipt; it must be called out in the release receipt and
 tested against the actual Alembic head before deployment. Native execution in
 this session preserves the current checkout and avoids concurrent source edits.
+
+## Acceptance receipt
+
+Completed on staging at application SHA `153dc3faf16f2759469c84758f131d58a4f538ca`.
+Migration152, backup, 30 active departments, 29+29 archived choices, preserved
+history and owned live signup/home/manual-form acceptance verified. Service
+left running. Full evidence and limitations: `docs/UX_REGISTRATION_ACCEPTANCE_2026-11-04.md`.
