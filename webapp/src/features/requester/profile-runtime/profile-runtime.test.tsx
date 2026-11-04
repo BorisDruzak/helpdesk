@@ -110,7 +110,6 @@ describe("requester profile runtime", () => {
       person_id: "person-1",
       full_name: "Иван Петров",
       department_id: "dept-it",
-      location_id: "loc-ekb",
       phone: "",
       internal_extension: "8899",
       custom_fields: {

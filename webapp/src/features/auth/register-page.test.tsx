@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -50,12 +50,9 @@ function renderRegisterPage(initialEntry = "/app/register") {
   );
 }
 
-function getRegisterCalls(fetchMock: ReturnType<typeof vi.fn>) {
-  return fetchMock.mock.calls.filter(([input]) => String(input) === "/api/web/session/register");
-}
-
 afterEach(() => {
   vi.unstubAllGlobals();
+  sessionStorage.clear();
 });
 
 describe("RegisterPage", () => {
@@ -67,160 +64,9 @@ describe("RegisterPage", () => {
       return jsonResponse({ status: "error" }, 401);
     }));
     renderRegisterPage("/app/register?next=%2Fapp%2Frequester%2Fdevices%2Flink");
-    await screen.findByRole("button", { name: "Создать аккаунт" });
+    await screen.findByRole("link", { name: "Войти" });
     expect(screen.getByRole("link", { name: "Войти" })).toHaveAttribute(
       "href", "/app/login?next=%2Fapp%2Frequester%2Fdevices%2Flink"
-    );
-  });
-
-  it("creates an account-only requester user and redirects to the login success notice", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/web/session/capabilities") {
-        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
-      }
-      if (url === "/api/web/session/me") {
-        return jsonResponse({ status: "error" }, 401);
-      }
-      if (url === "/api/web/session/register") {
-        expect(init?.method).toBe("POST");
-        expect(JSON.parse(String(init?.body))).toEqual({
-          login: "new.user",
-          password: "StrongPass123!",
-          password_repeat: "StrongPass123!"
-        });
-        return jsonResponse(
-          {
-            status: "success",
-            data: {
-              user_login: "new.user",
-              actor_role: "user",
-              next_path: "/app/login?registered=1",
-              device_link: {
-                accepted: true,
-                purpose: "registration",
-                expires_at: "2026-06-15T12:00:00Z"
-              }
-            }
-          },
-          201
-        );
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock as typeof fetch);
-
-    const { container } = renderRegisterPage("/app/register?device_link_code=ABCD-1234");
-
-    expect(await screen.findByRole("button", { name: /Создать аккаунт/ })).toBeInTheDocument();
-    expect(container.textContent ?? "").not.toMatch(/ФИО|Подразделение|Локация|full_name|department|location/i);
-    expect(screen.queryByLabelText("Код привязки устройства")).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Логин"), { target: { value: " new.user " } });
-    fireEvent.change(screen.getByLabelText("Пароль"), { target: { value: "StrongPass123!" } });
-    fireEvent.change(screen.getByLabelText("Повторите пароль"), { target: { value: "StrongPass123!" } });
-    fireEvent.click(screen.getByRole("button", { name: /Создать аккаунт/ }));
-
-    expect(await screen.findByText("Аккаунт создан. Войдите, чтобы продолжить настройку доступа.")).toBeInTheDocument();
-    expect(screen.getByTestId("location")).toHaveTextContent("/app/login?registered=1");
-  });
-
-  it("blocks mismatched passwords before calling the registration API", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/web/session/capabilities") {
-        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
-      }
-      if (String(input) === "/api/web/session/me") {
-        return jsonResponse({ status: "error" }, 401);
-      }
-      throw new Error(`Unexpected fetch: ${String(input)}`);
-    });
-    vi.stubGlobal("fetch", fetchMock as typeof fetch);
-
-    renderRegisterPage();
-
-    fireEvent.change(await screen.findByLabelText("Логин"), { target: { value: "new.user" } });
-    fireEvent.change(screen.getByLabelText("Пароль"), { target: { value: "StrongPass123!" } });
-    fireEvent.change(screen.getByLabelText("Повторите пароль"), { target: { value: "DifferentPass123!" } });
-    fireEvent.click(screen.getByRole("button", { name: /Создать аккаунт/ }));
-
-    expect(await screen.findByText("Пароли не совпадают.")).toBeInTheDocument();
-    expect(getRegisterCalls(fetchMock)).toHaveLength(0);
-  });
-
-  it("shows duplicate-login errors from the server without logging the user in", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/web/session/capabilities") {
-        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
-      }
-      if (url === "/api/web/session/me") {
-        return jsonResponse({ status: "error" }, 401);
-      }
-      if (url === "/api/web/session/register") {
-        return jsonResponse(
-          {
-            status: "error",
-            error: "Пользователь с таким логином уже существует.",
-            error_code: "LOGIN_ALREADY_EXISTS"
-          },
-          409
-        );
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock as typeof fetch);
-
-    renderRegisterPage();
-
-    fireEvent.change(await screen.findByLabelText("Логин"), { target: { value: "new.user" } });
-    fireEvent.change(screen.getByLabelText("Пароль"), { target: { value: "StrongPass123!" } });
-    fireEvent.change(screen.getByLabelText("Повторите пароль"), { target: { value: "StrongPass123!" } });
-    fireEvent.click(screen.getByRole("button", { name: /Создать аккаунт/ }));
-
-    expect(await screen.findByText("Пользователь с таким логином уже существует.")).toBeInTheDocument();
-    await waitFor(() => expect(getRegisterCalls(fetchMock)).toHaveLength(1));
-    expect(screen.getByTestId("location")).toHaveTextContent("/app/register");
-  });
-
-  it("preserves the device registration return path after account creation", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/web/session/capabilities") {
-        return jsonResponse({ status: "success", data: { self_registration_enabled: true } });
-      }
-      if (url === "/api/web/session/me") {
-        return jsonResponse({ status: "error" }, 401);
-      }
-      if (url === "/api/web/session/register") {
-        expect(init?.method).toBe("POST");
-        return jsonResponse(
-          {
-            status: "success",
-            data: {
-              user_login: "new.device.user",
-              actor_role: "user",
-              next_path: "/app/login?registered=1",
-            },
-          },
-          201
-        );
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock as typeof fetch);
-
-    renderRegisterPage("/app/register?next=%2Fapp%2Frequester%2Fdevices%2Flink");
-
-    fireEvent.change(await screen.findByLabelText("Логин"), { target: { value: "new.device.user" } });
-    fireEvent.change(screen.getByLabelText("Пароль"), { target: { value: "StrongPass123!" } });
-    fireEvent.change(screen.getByLabelText("Повторите пароль"), { target: { value: "StrongPass123!" } });
-    fireEvent.click(screen.getByRole("button", { name: /Создать аккаунт/ }));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("location")).toHaveTextContent(
-        "/app/login?registered=1&next=%2Fapp%2Frequester%2Fdevices%2Flink"
-      )
     );
   });
 
@@ -293,6 +139,6 @@ describe("server registration policy", () => {
     renderRegisterPage();
     expect(await screen.findByText(/Самостоятельная регистрация недоступна/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Пароль")).not.toBeInTheDocument();
-    expect(getRegisterCalls(fetchMock)).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/register-requester"))).toHaveLength(0);
   });
 });

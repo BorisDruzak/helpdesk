@@ -1,5 +1,6 @@
 import { Save, X } from "lucide-react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { useState } from "react";
 
 import {
   RequesterProfileFieldControl,
@@ -10,7 +11,7 @@ import type {
   RequesterProfileCompletion,
   RequesterProfileSchemaField,
 } from "../../features/requester/types";
-import { Button, FormActions, StickyActionBar } from "../../features/requester/ui/form-controls";
+import { Button, FormActions } from "../../features/requester/ui/form-controls";
 import {
   fieldValue,
   groupedFields,
@@ -73,7 +74,7 @@ export function ProfileReadSections({
       <aside className="surface-panel h-fit px-5 py-4">
         <p className="text-sm font-semibold text-slate-950">{displayName}</p>
         <p className="mt-2 text-sm text-slate-600">
-          {profileComplete ? "Профиль заполнен. Данные можно обновить, если изменилось подразделение, место работы или способ связи." : "Профиль нужно заполнить перед созданием обычного обращения."}
+          {profileComplete ? "Профиль заполнен. Данные можно обновить, если изменился отдел или способ связи." : "Профиль нужно заполнить перед созданием обычного обращения."}
         </p>
       </aside>
     </section>
@@ -81,6 +82,7 @@ export function ProfileReadSections({
 }
 
 export function ProfileEditSections({
+  hasExistingName = false,
   cancelEdit,
   dirty,
   fieldErrors,
@@ -94,6 +96,7 @@ export function ProfileEditSections({
   systemValues,
   values,
 }: {
+  hasExistingName?: boolean;
   cancelEdit: () => void;
   dirty: boolean;
   fieldErrors: Record<string, string>;
@@ -107,12 +110,29 @@ export function ProfileEditSections({
   systemValues?: RequesterProfileSystemValues;
   values: RequesterProfileValues;
 }) {
+  const [setupStep, setSetupStep] = useState(hasExistingName ? 1 : 0);
+  const isSetup = mode === "setup";
+  const displayedFields = isSetup ? fields.filter(field => field.editable !== false &&
+    (setupStep === 0 ? field.key === "full_name" : field.key !== "full_name")) : fields;
+  function advanceSetup() {
+    if (!values.full_name.trim()) {
+      setFieldErrors(current => ({...current, full_name:"Укажите ФИО."}));
+      fieldRefs.current.full_name?.focus();
+      return;
+    }
+    setSetupStep(1);
+  }
   return (
     <form className="space-y-5" noValidate onSubmit={(event) => {
       event.preventDefault();
-      onSubmit();
+      if (isSetup && setupStep === 0) advanceSetup();
+      else onSubmit();
     }}>
-      {groupedFields(fields).map(([section, sectionFields], index) => (
+      {isSetup ? <ol aria-label="Шаги заполнения профиля" className="flex gap-4 text-sm">
+        <li aria-current={setupStep === 0 ? "step" : undefined}>1. ФИО</li>
+        <li aria-current={setupStep === 1 ? "step" : undefined}>2. Отдел и связь</li>
+      </ol> : null}
+      {groupedFields(displayedFields).map(([section, sectionFields], index) => (
         <section aria-labelledby={`requester-profile-section-${index}`} className="surface-panel px-5 py-4" key={section}>
           <h2 className="text-lg font-semibold text-slate-950" id={`requester-profile-section-${index}`}>{sectionTitle(section)}</h2>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -139,19 +159,20 @@ export function ProfileEditSections({
           </div>
         </section>
       ))}
-      <StickyActionBar className="bottom-4 justify-between rounded-panel shadow-lg">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border bg-white p-4">
         <p className="text-sm text-slate-600">
           {dirty ? "Есть несохраненные изменения" : "Изменений нет"}
         </p>
         <FormActions>
+          {isSetup && setupStep === 1 ? <Button type="button" variant="outline" onClick={() => setSetupStep(0)}>Назад</Button> : null}
           <Button leadingIcon={<X className="h-4 w-4" />} onClick={cancelEdit} type="button" variant="outline">
             Отменить
           </Button>
           <Button disabled={savePending || (!dirty && mode !== "setup")} leadingIcon={<Save className="h-4 w-4" />} type="submit">
-            {savePending ? "Сохраняем..." : "Сохранить профиль"}
+            {savePending ? "Сохраняем..." : isSetup && setupStep === 0 ? "Продолжить" : "Сохранить профиль"}
           </Button>
         </FormActions>
-      </StickyActionBar>
+      </div>
     </form>
   );
 }

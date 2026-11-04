@@ -380,7 +380,7 @@ export type RequesterProfileSchemaField = {
   storage_target?: string;
   help_text?: string | null;
   validation?: Record<string, unknown>;
-  options?: Array<string | { value: string; label: string }>;
+  options?: Array<string | { value: string; label: string; disabled?: boolean }>;
   audit_behavior?: string;
 };
 
@@ -410,7 +410,7 @@ export type RequesterProfileUpdatePayload = {
   person_id?: string;
   full_name: string;
   department_id: string;
-  location_id: string;
+  location_id?: string;
   phone: string;
   internal_extension?: string;
   position?: string;
@@ -536,6 +536,7 @@ export type RequesterBootstrapNextAction = {
 
 export type RequesterBootstrap = {
   workspace: "requester";
+  account_summary?: RequesterAccountSummary;
   profile?: RequesterProfile | null;
   profile_completion?: RequesterProfileCompletion;
   profile_schema?: RequesterProfileSchema;

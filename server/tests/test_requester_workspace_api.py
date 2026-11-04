@@ -449,7 +449,6 @@ async def test_requester_bootstrap_reports_profile_completion_gate_for_new_user(
     assert {item["key"] for item in completion["missing_fields"]} == {
         "full_name",
         "department_id",
-        "location_id",
         "phone",
     }
     assert completion["blocks"]["ticket_create"] is True
@@ -2905,6 +2904,10 @@ async def test_requester_ticket_message_retry_rejects_same_message_id_with_diffe
             assert ticket_id == fake_ticket.ticket_id
             assert resolved_message_id == message_id
             return SimpleNamespace(id=43, created_at=created_at, payload=existing_payload)
+
+        async def get_ticket(self, ticket_id, *, for_update=False):
+            assert ticket_id == fake_ticket.ticket_id and for_update
+            return fake_ticket
 
     class FakeSession:
         async def commit(self):

@@ -36,8 +36,7 @@ const EDITABLE_BUILT_IN_FIELDS = new Set([
 
 const REQUIRED_PROFILE_FIELDS = [
   { key: "full_name", label: "ФИО" },
-  { key: "department_id", label: "Подразделение" },
-  { key: "location_id", label: "Локация" },
+  { key: "department_id", label: "Отдел" },
   { key: "phone", label: "Телефон или внутренний номер" },
 ] as const;
 
@@ -70,13 +69,14 @@ export type RequesterProfileSchemaValidation = {
 type NormalizedOption = {
   label: string;
   value: string;
+  disabled?: boolean;
 };
 
-export function normalizeProfileOption(option: string | { value: string; label: string }): NormalizedOption {
+export function normalizeProfileOption(option: string | { value: string; label: string; disabled?: boolean }): NormalizedOption {
   if (typeof option === "string") {
     return { label: option, value: option };
   }
-  return { label: option.label || option.value, value: option.value };
+  return { label: option.label || option.value, value: option.value, ...(option.disabled ? {disabled:true} : {}) };
 }
 
 function trimText(value: unknown): string {
@@ -128,13 +128,13 @@ export function buildProfileValues(profile?: RequesterProfile | null): Requester
 export function profileFieldsFromSchema(schema?: RequesterProfileSchema | null): RequesterProfileSchemaField[] {
   const fields = schema?.fields ?? [];
   if (fields.length) {
-    return fields.filter(isVisible);
+    return fields.filter(field => isVisible(field) && field.key !== "location_id")
+      .map(field => field.key === "department_id" ? { ...field, label: "Отдел" } : field);
   }
   return [
     { key: "full_name", label: "ФИО", type: "text", required: true, visible: true, system: true, editable: true },
-    { key: "department_id", label: "Подразделение", type: "select", required: true, visible: true, system: true, editable: true },
-    { key: "location_id", label: "Локация", type: "select", required: true, visible: true, system: true, editable: true },
-    { key: "phone", label: "Телефон", type: "phone", required: true, visible: true, system: true, editable: true },
+    { key: "department_id", label: "Отдел", type: "select", required: true, visible: true, system: true, editable: true },
+    { key: "phone", label: "Телефон или внутренний номер", type: "phone", required: true, visible: true, system: true, editable: true },
     { key: "internal_extension", label: "Внутренний номер", type: "phone", visible: true, editable: true },
     { key: "position", label: "Должность", type: "text", visible: true, editable: true },
     { key: "workplace_label", label: "Кабинет или рабочее место", type: "text", visible: true, editable: true },
@@ -168,7 +168,7 @@ export function missingProfileFields(
           label: field.label || field.key,
         })),
       ];
-  return required.filter((item) => {
+  return required.filter(item => item.key !== "location_id").filter((item) => {
     if (item.key === "phone") {
       return !trimText(values.phone) && !trimText(values.internal_extension);
     }
@@ -193,7 +193,6 @@ export function buildProfilePayload(
     person_id: existingProfile?.person_id ?? values.person_id,
     full_name: trimText(values.full_name),
     department_id: trimText(values.department_id),
-    location_id: trimText(values.location_id),
     phone: trimText(values.phone),
   };
 
@@ -334,7 +333,7 @@ export function RequesterProfileFieldControl({
           {(field.options ?? []).map((option) => {
             const normalized = normalizeProfileOption(option);
             return (
-              <option key={normalized.value} value={normalized.value}>
+              <option disabled={normalized.disabled} key={normalized.value} value={normalized.value}>
                 {normalized.label}
               </option>
             );

@@ -539,8 +539,26 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   include provenance for the administrator requests tab; possession conflicts
   remain subject to separate explicit ownership review.
 
-- `server/web_api/session_handlers.py` projects only the public registration
-  capability flag; registration never accepts a retired device-link field.
+- `server/web_api/session_handlers.py` projects registration capabilities and the
+  bounded public `GET /api/web/session/registration-options` schema/department
+  list; `POST /api/web/session/register-requester` completes requester signup.
+  Neither route grants caller-selected roles, profiles or device bindings.
+- `server/auth/requester_registration.py` owns transliteration, concurrent login
+  allocation and atomic account/own-profile creation through the canonical
+  `UiUsersRepo` and `RequesterIdentityResolver`. Migration `152` persists
+  `web_requester_registrations` retry receipts; replay requires the original
+  password and exact original non-password payload. Existing repo callers retain
+  `create_user` commit behavior; signup explicitly uses `commit=False`.
+- `registry/profile_schema_service.py` and `requester/identity_service.py` retire
+  required requester locations, expose «Отдел», preserve historical location links
+  and allow an existing own archived department to remain during contact edits.
+  `registry/registration_form_service.py` returns only active new choices.
+- `scripts/helpdesk_requester_departments.py` imports the names-only 30-department
+  catalog at `server/registry/requester_departments_20260831.json` and archives
+  exact reviewed synthetic staging records through audited Registry operations.
+  It requires a database guard, actor, backup-owning wrapper and plan fingerprint;
+  existing profile/device/ticket references are retained. See
+  `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md` for the lifecycle and browser path.
 - `server/web_api/requester_handlers.py::handle_web_requester_device_link`
   resolves a complete authenticated RegistryPerson before typed Endpoint
   redemption through `server/endpoint_adapter/http.py` and `wire.py`.

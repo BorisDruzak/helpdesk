@@ -91,8 +91,8 @@ def _optional_field(key: str, label: str, field_type: str, storage_target: str) 
 DEFAULT_PROFILE_FIELDS: tuple[dict[str, Any], ...] = (
     _system_field("full_name", "ФИО", "text", "registry_people.full_name", required=True),
     _system_field("login_identity", "Логин учетной записи", "identity", "registry_person_identities.ui_login", required=False, editable=False),
-    _system_field("department_id", "Подразделение", "department_picker", "registry_people.department_id", required=True),
-    _system_field("location_id", "Локация", "location_picker", "registry_people.location_id", required=True),
+    _system_field("department_id", "Отдел", "department_picker", "registry_people.department_id", required=True),
+    {**_system_field("location_id", "Локация", "location_picker", "registry_people.location_id", required=False), "visible": False, "can_hide": True},
     _system_field("phone", "Телефон или внутренний номер", "phone", "registry_people.phone", required=True),
     _optional_field("internal_extension", "Внутренний номер", "phone", "registry_people.metadata_json.internal_extension"),
     _system_field("active_device_links", "Активные привязки устройств", "device_links", "device_user_bindings", required=False, editable=False),
@@ -200,6 +200,11 @@ class RequesterProfileSchemaService:
                     details[field_key] = "Настройка поля должна быть объектом."
                 continue
             field = fields[field_key]
+            # Location remains historical Registry context, outside employee onboarding.
+            # Retire old persisted required/visible overrides as well as defaults.
+            if field_key == "location_id":
+                field.update(visible=False, required=False)
+                continue
             visible = _bool(raw_override.get("visible"), default=bool(field["visible"]))
             required = _bool(raw_override.get("required"), default=bool(field["required"]))
             if field.get("system"):

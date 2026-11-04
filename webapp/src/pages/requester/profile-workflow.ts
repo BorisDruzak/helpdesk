@@ -97,7 +97,7 @@ export function fieldsWithRuntimeOptions(
   return profileFieldsFromSchema(schema)
     .map((field) => {
       if (field.key === "department_id") {
-        return { ...field, type: "select", options: field.options?.length ? field.options : departments };
+        return { ...field, type: "select", options: departments };
       }
       if (field.key === "location_id") {
         return { ...field, type: "select", options: field.options?.length ? field.options : locations };

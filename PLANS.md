@@ -2820,3 +2820,13 @@ Final164 network events without failures, warn/error console empty; exact SHA,
 13 source digests, TLS health200 and serviceactive verified. Staging left running.
 No production deployment, push, role/schema/dependency change or Endpoint action.
 Report: `docs/UX_SUPPORT_FOLLOWUP_2026-11-02.md`; evidence in task tmp directory.
+
+## Requester onboarding — 2026-11-04
+
+- Goal: guided employee registration with completed profile, generated login and a ready requester home; ticket creation remains a separate explicit action.
+- Scope: Helpdesk staging only, keep running; one shared 30-department catalog; archive exact synthetic choices and retain historical links.
+- Decisions: ФИО → отдел и контакты → пароль, ipetrov/ipetrov2; no required location; no AD account/employee import or privilege grant.
+- Current State: server/UI implementation and migration152 verified locally. Frontend160 files/955 passed, latest focused11 passed; current build and browser5 passed. Original extended DB60 passed/2 obsolete-fixture failures, corrected with focused chat1 and current DB4 green129.59s; all temporary DB roles cleaned. Signup DB5 and catalog DB1 passed; noDB/API87 passed. Final independent review clean.
+- Review fixes: package catalog outside ignored runtime data, strict anonymous schema, exact pending-payload replay, actual-login password validation, and contact edits retaining an existing archived department.
+- Next Steps: commit exact task files; fresh backup, canonical staging release/migration, catalog plan/apply and live signup/home/profile checks.
+- Handoff: docs/superpowers/specs/2026-11-04-requester-registration-design.md; docs/superpowers/plans/2026-11-04-requester-registration.md; private progress/evidence in .superpowers/sdd/2026-11-04-requester-registration and tmp/onboarding-20261104. Production unchanged.

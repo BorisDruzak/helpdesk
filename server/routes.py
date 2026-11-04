@@ -263,6 +263,8 @@ from web_api.session_handlers import (
     handle_web_session_me,
     handle_web_session_password_reset_request,
     handle_web_session_register,
+    handle_web_requester_register,
+    handle_web_registration_options,
     handle_web_session_capabilities,
 )
 from web_api.access_handlers import (
@@ -578,6 +580,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/ui_session', handle_ui_session),
         web.post('/api/web/session/login', handle_web_session_login),
         web.post('/api/web/session/register', handle_web_session_register),
+        web.post('/api/web/session/register-requester', handle_web_requester_register),
+        web.get('/api/web/session/registration-options', handle_web_registration_options),
         web.get('/api/web/session/capabilities', handle_web_session_capabilities),
         web.post('/api/web/session/password-reset-requests', handle_web_session_password_reset_request),
         web.post('/api/web/session/logout', handle_web_session_logout),

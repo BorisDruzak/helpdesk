@@ -29,8 +29,7 @@ from tickets.ticket_context import requester_legacy_scope_clause, requester_neut
 
 REQUESTER_PROFILE_REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
     ("full_name", "ФИО"),
-    ("department_id", "Подразделение"),
-    ("location_id", "Локация"),
+    ("department_id", "Отдел"),
     ("phone", "Телефон или внутренний номер"),
 )
 REQUESTER_PROFILE_EDITABLE_FIELDS: tuple[str, ...] = (
@@ -450,20 +449,20 @@ class RequesterIdentityResolver:
             details["phone"] = "Укажите телефон или внутренний номер."
         if not department_id:
             details["department_id"] = "Выберите подразделение из справочника."
-        if not location_id:
-            details["location_id"] = "Выберите локацию из справочника."
         details.update(schema_details)
         if details:
             raise RequesterProfileValidationError("Заполните обязательные поля профиля.", details)
 
         department = await self.registry_repo.get_department(department_id)
-        if department is None or getattr(department, "status", "active") != "active":
+        keep_historical_department = current is not None and current.department_id == department_id
+        if department is None or (getattr(department, "status", "active") != "active" and not keep_historical_department):
             raise RequesterProfileValidationError(
                 "Выберите подразделение из справочника.",
                 {"department_id": "Выберите подразделение из справочника."},
             )
-        location = await self.registry_repo.get_location(location_id)
-        if location is None or getattr(location, "status", "active") != "active":
+        location = await self.registry_repo.get_location(location_id) if location_id else None
+        keep_historical_location = current is not None and current.location_id == location_id
+        if location_id and (location is None or (getattr(location, "status", "active") != "active" and not keep_historical_location)):
             raise RequesterProfileValidationError(
                 "Выберите локацию из справочника.",
                 {"location_id": "Выберите локацию из справочника."},
@@ -471,14 +470,14 @@ class RequesterIdentityResolver:
 
         now = datetime.now(timezone.utc)
         metadata_patch = {
-            "position": position or None,
-            "workplace_label": workplace_label or None,
-            "preferred_contact_method": preferred_contact_method or None,
-            "internal_extension": internal_extension or None,
             "profile_updated_from": "requester_web",
             "profile_updated_by": actor_login,
             "profile_updated_at": now.isoformat(),
         }
+        for key, value in (("position", position), ("workplace_label", workplace_label),
+                           ("preferred_contact_method", preferred_contact_method), ("internal_extension", internal_extension)):
+            if key in payload:
+                metadata_patch[key] = value or None
         if custom_values:
             existing_custom: dict[str, Any] = {}
             if current is not None and isinstance(current.metadata_json, dict):
@@ -494,7 +493,7 @@ class RequesterIdentityResolver:
                 phone=phone or None,
                 email=actor_login if "@" in actor_login else None,
                 department_id=department.department_id,
-                location_id=location.location_id,
+                location_id=location.location_id if location is not None else None,
                 source="web_profile",
                 status="self_reported",
                 profile_key=actor_login,
@@ -519,7 +518,8 @@ class RequesterIdentityResolver:
             current.full_name = full_name
             current.phone = phone or None
             current.department_id = department.department_id
-            current.location_id = location.location_id
+            if location is not None:
+                current.location_id = location.location_id
             current.last_seen_at = now
             current.metadata_json = {**metadata, **metadata_patch}
             identity = await self.registration_repo.create_or_update_person_identity(
@@ -995,6 +995,7 @@ class RequesterIdentityResolver:
         ticket_preview_allowed = not bool(blocks.get("ticket_preview", not profile_completion["complete"]))
         return {
             "workspace": "requester",
+            "account_summary": self.account_summary(actor_id=actor_id, person=person),
             "profile": self.serialize_person(person, profile_schema=profile_schema),
             "profile_schema": self.serialize_profile_schema_for_requester(profile_schema),
             "profile_completion": profile_completion,

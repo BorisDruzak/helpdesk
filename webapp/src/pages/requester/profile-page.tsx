@@ -1,7 +1,7 @@
 import { CheckCircle2, Pencil } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useBlocker, useLocation } from "react-router-dom";
+import { Link, useBlocker, useLocation, useNavigate } from "react-router-dom";
 
 import { updateRequesterProfile } from "../../features/requester/api";
 import {
@@ -32,6 +32,7 @@ import {
 
 export function RequesterProfilePage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const profileQuery = useRequesterProfileQuery();
   const registryOptionsQuery = useRequesterRegistryOptionsQuery();
@@ -44,10 +45,14 @@ export function RequesterProfilePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [setupComplete, setSetupComplete] = useState(false);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const schema = detail?.profile_schema ?? null;
-  const departments = registryOptionsQuery.data?.departments ?? [];
+  const activeDepartments = registryOptionsQuery.data?.departments ?? [];
+  const departments = useMemo(() => profile?.department_id && !activeDepartments.some(option => option.value === profile.department_id)
+    ? [...activeDepartments, {value:profile.department_id,label:detail?.requester_context?.profile?.department || "Ранее указанный отдел",disabled:true}]
+    : activeDepartments, [activeDepartments,profile?.department_id,detail?.requester_context?.profile?.department]);
   const locations = registryOptionsQuery.data?.locations ?? [];
   const fields = useMemo(() => fieldsWithRuntimeOptions(schema, departments, locations), [departments, locations, schema]);
   const visibleEditableFields = useMemo(
@@ -85,11 +90,16 @@ export function RequesterProfilePage() {
         profile_schema: result.profile_schema ?? detail?.profile_schema,
       });
       await requesterInvalidations.afterProfileUpdate(queryClient);
+      if(isSetupRoute && result.profile_completion.complete) setSetupComplete(true);
     },
     onError: (error) => {
       setLocalError(requesterErrorMessage(error, "Не удалось сохранить профиль", { domain: "profile", operation: "profile_save" }));
     },
   });
+
+  useEffect(() => {
+    if(setupComplete && !dirty) navigate("/app/requester",{replace:true});
+  },[setupComplete,dirty,navigate]);
 
   useEffect(() => {
     if (!profileQuery.data) {
@@ -238,6 +248,7 @@ export function RequesterProfilePage() {
         />
       ) : (
         <ProfileEditSections
+          hasExistingName={Boolean(profile?.full_name?.trim())}
           cancelEdit={cancelEdit}
           dirty={dirty}
           fieldErrors={fieldErrors}

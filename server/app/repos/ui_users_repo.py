@@ -61,6 +61,8 @@ class UiUsersRepo:
         password_hash: str,
         actor_role: str = DEFAULT_USER_ROLE,
         actor_id: Optional[str] = None,
+        *,
+        commit: bool = True,
     ) -> UiUser:
         """Создать пользователя; отклонить невалидную роль и дубликат логина."""
         login = normalize_user_login(user_login)
@@ -83,11 +85,15 @@ class UiUsersRepo:
         self.session.add(user)
         await self._audit(login, "user_created", actor_id, {"actor_role": role})
         try:
-            await self.session.commit()
-            await self.session.refresh(user)
+            if commit:
+                await self.session.commit()
+                await self.session.refresh(user)
+            else:
+                await self.session.flush()
             return user
         except IntegrityError:
-            await self.session.rollback()
+            if commit:
+                await self.session.rollback()
             logger.error("[UiUsersRepo] create_user conflict")
             raise ValueError("User already exists") from None
 

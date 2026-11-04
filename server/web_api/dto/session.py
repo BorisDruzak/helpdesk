@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,6 +47,24 @@ class WebSessionRegisterPayload(BaseModel):
     user_login: str
     actor_role: str
     next_path: str
+
+
+class WebRequesterRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    patronymic: str = Field(default="", max_length=100)
+    department_id: str = Field(min_length=1, max_length=80)
+    phone: str = Field(default="", max_length=80)
+    internal_extension: str = Field(default="", max_length=80)
+    position: str = Field(default="", max_length=160)
+    workplace_label: str = Field(default="", max_length=160)
+    preferred_contact_method: str = Field(default="", max_length=80)
+    custom_fields: dict[str, str | bool | int | float | None] = Field(default_factory=dict, max_length=50)
+    password: str = Field(max_length=1024)
+    password_repeat: str = Field(max_length=1024)
 
 
 class WebSessionLogoutPayload(BaseModel):

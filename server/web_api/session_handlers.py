@@ -25,6 +25,7 @@ from web_api.dto.session import (
     WebSessionPayload,
     WebSessionRegisterPayload,
     WebSessionRegisterRequest,
+    WebRequesterRegisterRequest,
 )
 
 
@@ -386,6 +387,64 @@ async def handle_web_session_register(request):
         ),
         status=201,
     )
+
+
+async def handle_web_registration_options(request):
+    if not getattr(config_module, "WEB_SELF_REGISTRATION_ENABLED", False):
+        return _error("Самостоятельная регистрация недоступна.", "SELF_REGISTRATION_DISABLED", status=403)
+    from app.repos.registry_repo import RegistryRepo
+    from registry.profile_schema_service import RequesterProfileSchemaService
+    from requester.identity_service import RequesterIdentityResolver
+    async with get_session() as session:
+        departments = await RegistryRepo(session).list_departments()
+        schema = await RequesterProfileSchemaService(session).get_schema()
+        public_schema = RequesterIdentityResolver(session).serialize_profile_schema_for_requester(schema)
+        fields = [field for field in public_schema["fields"]
+            if field.get("visible", True) and field.get("editable", True)
+            and field["key"] not in {"location_id", "login_identity", "active_device_links"}]
+        public_schema = {"schema_key": public_schema["schema_key"], "version": public_schema.get("version"),
+            "fields": fields, "custom_fields": [field for field in fields if field.get("custom")],
+            "required_fields": [{"key": field["key"], "label": field["label"]} for field in fields if field.get("required")]}
+        data = {"departments": [{"value": department.department_id, "label": department.name}
+                for department in departments if department.status == "active"], "profile_schema": public_schema}
+    response = web.json_response({"status": "success", "data": data})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+async def handle_web_requester_register(request):
+    if not getattr(config_module, "WEB_SELF_REGISTRATION_ENABLED", False):
+        return _error("Самостоятельная регистрация недоступна.", "SELF_REGISTRATION_DISABLED", status=403)
+    from auth.middleware import _same_origin_error
+    origin_error = _same_origin_error(request)
+    if origin_error:
+        return _error("Откройте регистрацию на странице Helpdesk и повторите попытку.", origin_error[0], status=403)
+    if not check_rate_limit("requester_registration", client_ip(request), limit=5, window_seconds=60):
+        return rate_limited_response()
+    try:
+        payload = WebRequesterRegisterRequest.model_validate(await request.json())
+    except (ValidationError, ValueError):
+        return _error("Проверьте поля регистрации.", "VALIDATION_ERROR", status=400)
+    from auth.requester_registration import register_requester, RegistrationConflict
+    from requester.identity_service import RequesterProfileValidationError
+    try:
+        async with get_session() as session:
+            result = await register_requester(session, payload.model_dump(mode="json"))
+    except RegistrationConflict as exc:
+        return _error(str(exc), "REGISTRATION_CONFLICT", status=409)
+    except PasswordPolicyError as exc:
+        return _error(_password_policy_message(exc), "PASSWORD_POLICY_ERROR", status=400)
+    except RequesterProfileValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "PROFILE_VALIDATION_ERROR", "details": exc.details}, status=400)
+    except ValueError as exc:
+        return _error(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception:
+        logger.warning("[web_requester_register] registration transaction unavailable")
+        return _error("Ответ о регистрации не получен. Повторите завершение с теми же данными или используйте вход.", "REGISTRATION_UNAVAILABLE", status=503)
+    if not result["replayed"]:
+        await _write_web_session_observer_event(request, event_type="register_succeeded", severity="info",
+            result="succeeded", actor_id=result["user_login"], actor_role="user", payload={"profile_complete": True})
+    return web.json_response({"status": "success", "data": result}, status=200 if result["replayed"] else 201)
 
 
 async def handle_web_session_logout(request):

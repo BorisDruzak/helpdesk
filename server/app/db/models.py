@@ -1810,6 +1810,17 @@ class Device(Base):
         return self.deleted_at is not None
 
 
+class WebRequesterRegistration(Base):
+    """Durable signup retry receipt; it is not a login credential."""
+    __tablename__ = "web_requester_registrations"
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_login: Mapped[str] = mapped_column(String(100), sa.ForeignKey("ui_users.user_login", ondelete="CASCADE"), nullable=False, unique=True)
+    person_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"), nullable=False, unique=True)
+    profile_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class RegistryDepartment(Base):
     """Lightweight registry department used by people, assets and routing context."""
     __tablename__ = "registry_departments"

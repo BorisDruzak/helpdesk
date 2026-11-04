@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, CheckCircle2, Monitor, Plus, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { REGISTRATION_LOGIN_KEY } from "../../features/auth/requester-registration";
 import { Link } from "react-router-dom";
 
 import {
@@ -41,8 +42,18 @@ const secondaryLinkClasses =
   "inline-flex h-10 items-center justify-center gap-2 rounded-pill border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800";
 
 export function RequesterHomePage() {
+  const [registeredLogin] = useState(() => {
+    try {
+      return sessionStorage.getItem(REGISTRATION_LOGIN_KEY);
+    } catch { /* The notice is optional; it never grants access. */ }
+    return null;
+  });
   const queryClient = useQueryClient();
   const bootstrapQuery = useRequesterBootstrapQuery();
+  const registrationMatches = registeredLogin && registeredLogin === bootstrapQuery.data?.account_summary?.login;
+  useEffect(() => {
+    if(registrationMatches) {try {sessionStorage.removeItem(REGISTRATION_LOGIN_KEY);} catch { /* Optional notice. */ }}
+  },[registrationMatches]);
   const ticketsQuery = useRequesterTicketsQuery();
   const consentsQuery = useRequesterConsentsQuery();
   const [consentNotice, setConsentNotice] = useState<string | null>(null);
@@ -106,6 +117,7 @@ export function RequesterHomePage() {
 
   return (
     <PageShell ariaLabelledBy="requester-home-title" as="div" className="bg-app">
+      {registrationMatches ? <p role="status" className="rounded-panel border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Регистрация завершена, профиль заполнен. Ваш логин: <strong>{registeredLogin}</strong>. Создать обращение можно кнопкой в кабинете.</p> : null}
       <PageHeader
         actions={
           showHeaderCreateAction ? (

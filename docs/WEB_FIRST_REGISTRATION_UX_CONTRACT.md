@@ -1,10 +1,54 @@
 # Requester and device visibility contract
 
 Helpdesk keeps authenticated requester and administrator web workspaces.
-Account registration uses login, password and repeated password only. The public
+Employee registration guides the requester through ФИО → отдел и контакты → пароль.
+The server generates a lowercase transliterated login from the first-name initial
+and surname (`Иван Петров` → `ipetrov`), adding a suffix starting at `2` on a
+collision. Existing logins and confirmed domain identities are never renamed.
+Account, complete own profile and verified own `ui_login` alias are created in one
+transaction, always with role `user`. The browser then uses ordinary password
+login and opens `/app/requester`. It shows the actual login; the ticket form opens
+only when the employee clicks «Создать обращение». Registration creates no ticket
+and does not follow a pre-registration `next` directly to the ticket form.
+
+The public
 `GET /api/web/session/capabilities` projects the server registration flag; disabled
 registration leaves login available and shows a clear state on the register route.
 Account registration is separate from device binding and Endpoint Agent enrollment.
+
+`GET /api/web/session/registration-options` returns only active departments and a
+strict editable signup schema, with no people, locations, device links, hidden
+fields or administrator metadata. `POST /api/web/session/register-requester`
+accepts name parts, department/contact/profile fields, password/repeat and a UUID
+`request_id`; caller-selected login, role, person and location are forbidden.
+Both routes enforce the registration flag. Signup also retains same-origin,
+password and rate-limit checks. The legacy account-only register API remains
+compatible; its clients complete their own profile through authenticated setup.
+
+Migration `152` adds `web_requester_registrations`: a retry receipt, not a session
+or credential. A retry uses the original request ID and exact non-password fields,
+and must verify the original password. Competing requests are serialized and
+partial failures roll back account/profile creation. The browser retains only the
+request ID, non-password pending profile and confirmed login in session storage;
+passwords are never persisted. A refresh after an uncertain response asks for the
+password again and repeats the same attempt even if the profile schema changed.
+
+Requester profiles require ФИО, «Отдел» and telephone/internal number plus any
+published required custom fields. Location is hidden and optional; old required
+location overrides are retired. Hidden historical location values are preserved.
+Existing profiles may keep their own archived department when updating contacts;
+the historical label remains readable, but that department is unavailable for new
+profiles and other assignments. Existing incomplete accounts receive a profile
+setup wizard without creating another account or changing their login.
+
+The names-only catalog is `server/registry/requester_departments_20260831.json`.
+`scripts/helpdesk_requester_departments.py::publish_department_catalog` plans or
+applies its 30 shared departments on staging only. The caller must provide the
+exact reviewed synthetic IDs/names, administrator actor, fresh private backup and
+unchanged plan fingerprint. Canonical Registry operations archive synthetic
+departments/locations with audit and retain all prior profile/device/history
+references. A second publication is a no-op. Employees from the source DOCX are
+not imported, and the two employment groups do not produce separate departments.
 
 On the approved staging host (`test-helpdesk`, `192.168.101.118`), run
 `python scripts/configure_helpdesk_registration.py --enabled true` to enable
@@ -16,7 +60,7 @@ staging remote profile, then verify `/api/web/session/capabilities` and the
 registration flow. New accounts always receive role `user`; this does not
 provision AD accounts or grant support/administrator privileges.
 
-Staging acceptance on 2026-11-04: registration was enabled with a private
+Earlier staging acceptance on 2026-11-04, before guided onboarding: registration was enabled with a private
 configuration backup; unrelated configuration and file permissions were verified
 unchanged. Helpdesk was restarted through the project lifecycle command and
 left running. TLS health returned 200, registration and SSO capabilities were
@@ -24,8 +68,8 @@ both true, and the application release remained `376b46c012160473fe2ebc40a018578
 Live browser registration returned 201; first login returned 200 and opened the
 requester workspace. The new synthetic account had role `user` and only the
 `requester` workspace. The new-ticket page opened and requested profile
-completion before ordinary catalog requests. Registration does not complete a
-personal profile automatically. Two synthetic accounts with prefix
+completion before ordinary catalog requests. At that checkpoint registration did
+not complete the personal profile automatically. Two synthetic accounts with prefix
 `registration.check.20261104.` were created during verification; the first UI
 run reached successful registration but its verification callback failed, so
 first-login acceptance used the second account. No real employee credentials

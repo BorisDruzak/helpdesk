@@ -48,6 +48,15 @@ afterEach(() => {
 });
 
 describe("RequesterProfilePage", () => {
+  it("shows and preserves an existing archived department without offering it to new profiles", async () => {
+    installProfileMock({archivedDepartment:true});
+    renderProfilePage();
+    expect(await screen.findByText("Исторический отдел")).toBeInTheDocument();
+    expect(screen.queryByText("dept-it")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button",{name:"Редактировать"}));
+    expect(screen.getByLabelText("Отдел")).toHaveValue("dept-it");
+    expect(screen.getByRole("option",{name:"Исторический отдел"})).toBeDisabled();
+  });
   it("renders a safe read mode without provider, verified or Registry status details", async () => {
     installProfileMock();
     renderProfilePage();
@@ -55,7 +64,7 @@ describe("RequesterProfilePage", () => {
     expect(await screen.findByRole("heading", { name: "Профиль" })).toBeInTheDocument();
     expect(screen.getAllByText("Иван Петров").length).toBeGreaterThan(0);
     expect(screen.getByText("ИТ")).toBeInTheDocument();
-    expect(screen.getByText("Екатеринбург")).toBeInTheDocument();
+    expect(screen.queryByText("Екатеринбург")).not.toBeInTheDocument();
     expect(screen.getByText("4567")).toBeInTheDocument();
     expect(screen.queryByText(/Registry/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/verified/i)).not.toBeInTheDocument();
@@ -79,10 +88,10 @@ describe("RequesterProfilePage", () => {
 
     expect(await screen.findByRole("heading", { name: "Заполните профиль" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("ФИО"), { target: { value: "Иван Петров" } });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
     fireEvent.change(screen.getByLabelText("Телефон"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Внутренний номер"), { target: { value: "8899" } });
-    fireEvent.change(screen.getByLabelText("Подразделение"), { target: { value: "dept-it" } });
-    fireEvent.change(screen.getByLabelText("Локация"), { target: { value: "loc-ekb" } });
+    fireEvent.change(screen.getByLabelText("Отдел"), { target: { value: "dept-it" } });
     fireEvent.change(screen.getByLabelText("Центр затрат"), { target: { value: "CC-42" } });
     fireEvent.click(screen.getByRole("button", { name: "Сохранить профиль" }));
 
@@ -95,7 +104,6 @@ describe("RequesterProfilePage", () => {
             person_id: "person-1",
             full_name: "Иван Петров",
             department_id: "dept-it",
-            location_id: "loc-ekb",
             phone: "",
             internal_extension: "8899",
             custom_fields: { cost_center: "CC-42" },
@@ -103,7 +111,7 @@ describe("RequesterProfilePage", () => {
         }),
       );
     });
-    expect(await screen.findByText("Профиль сохранен")).toBeInTheDocument();
+    expect(await screen.findByText("Главная заявителя")).toBeInTheDocument();
   });
 
   it("warns before canceling unsaved profile changes", async () => {
@@ -111,7 +119,9 @@ describe("RequesterProfilePage", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderProfilePage("/app/requester/profile/setup");
 
-    fireEvent.change(await screen.findByLabelText("Внутренний номер"), { target: { value: "9999" } });
+    await screen.findByLabelText("ФИО");
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.change(screen.getByLabelText("Внутренний номер"), { target: { value: "9999" } });
     fireEvent.click(screen.getByRole("button", { name: "Отменить" }));
 
     expect(confirmSpy).toHaveBeenCalledWith("Есть несохраненные изменения профиля. Отменить их?");
@@ -123,7 +133,9 @@ describe("RequesterProfilePage", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderProfilePage("/app/requester/profile/setup");
 
-    fireEvent.change(await screen.findByLabelText("Внутренний номер"), { target: { value: "9999" } });
+    await screen.findByLabelText("ФИО");
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.change(screen.getByLabelText("Внутренний номер"), { target: { value: "9999" } });
     fireEvent.click(screen.getByRole("link", { name: "Устройства" }));
 
     expect(confirmSpy).toHaveBeenCalledWith("Есть несохраненные изменения профиля. Покинуть страницу?");
@@ -136,7 +148,8 @@ describe("RequesterProfilePage", () => {
     renderProfilePage("/app/requester/profile/setup");
 
     await screen.findByLabelText("ФИО");
-    const department = screen.getByLabelText("Подразделение");
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    const department = screen.getByLabelText("Отдел");
     fireEvent.click(screen.getByRole("button", { name: "Сохранить профиль" }));
 
     await waitFor(() => expect(department).toHaveFocus());
@@ -145,7 +158,7 @@ describe("RequesterProfilePage", () => {
   });
 });
 
-function installProfileMock({ complete = true }: { complete?: boolean } = {}) {
+function installProfileMock({ complete = true, archivedDepartment = false }: { complete?: boolean; archivedDepartment?: boolean } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === "/api/web/requester/profile") {
@@ -191,6 +204,7 @@ function installProfileMock({ complete = true }: { complete?: boolean } = {}) {
             status: "active",
             custom_fields: complete ? { cost_center: "CC-10" } : {},
           },
+          requester_context: {profile:{department:archivedDepartment ? "Исторический отдел" : "ИТ"}},
           account_summary: {
             login: "ivan.account@example.test",
             display_name: "Иван Петров",
@@ -244,7 +258,7 @@ function installProfileMock({ complete = true }: { complete?: boolean } = {}) {
       return jsonResponse({
         status: "success",
         data: {
-          departments: [{ value: "dept-it", label: "ИТ" }],
+          departments: archivedDepartment ? [] : [{ value: "dept-it", label: "ИТ" }],
           locations: [{ value: "loc-ekb", label: "Екатеринбург" }],
         },
       });

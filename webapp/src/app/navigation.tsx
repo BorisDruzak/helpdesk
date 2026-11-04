@@ -197,7 +197,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Профиль",
-    description: "Контакты, подразделение и локация",
+    description: "Контакты и отдел сотрудника",
     icon: UserRound,
     section: "requester",
     workspace: "requester",

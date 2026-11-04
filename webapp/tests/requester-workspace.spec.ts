@@ -846,6 +846,7 @@ test("requester rating and reopen actions render from ticket policy capabilities
   );
 
   await page.goto(`/app/requester/tickets/${ticketCode}`);
+  await page.getByRole("button", {name:"Оценить решение", exact:true}).click();
   await expect(page.getByLabel("Оценка обращения")).toBeVisible();
   await page.getByLabel("Оценка обращения").fill("2");
   await page.getByRole("textbox", { name: "Комментарий", exact: true }).fill("VPN still fails after reconnect.");
@@ -855,6 +856,7 @@ test("requester rating and reopen actions render from ticket policy capabilities
   await feedbackRequest;
 
   const reopenRequest = page.waitForRequest(`**/api/web/requester/tickets/${ticketCode}/reopen`);
+  await page.getByRole("button", {name:"Проблема не решена", exact:true}).click();
   await page.getByLabel("Комментарий для возврата в работу").fill("Please continue troubleshooting.");
   await page.getByRole("button", { name: "Вернуть в работу" }).click();
   await reopenRequest;

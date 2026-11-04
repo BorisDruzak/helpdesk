@@ -62,12 +62,14 @@ async def build_lightweight_registry_options(session: AsyncSession) -> dict[str,
                     or location.location_id,
                 )
                 for location in locations
+                if getattr(location, "status", "active") == "active"
             ]
         ),
         "departments": _compact_options(
             [
                 _option(department.department_id, department.name or department.code)
                 for department in departments
+                if getattr(department, "status", "active") == "active"
             ]
         ),
         "services": _compact_options(
