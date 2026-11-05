@@ -195,7 +195,8 @@ requester identity, with ownership reread after the ticket lock.
 Additional mode retains tools, SLA, passport, Quality, saved queue views and bulk
 actions; returning to ordinary work is explicit. `?advanced=1` directly opens
 those existing surfaces. Ordinary entry ignores old expanded-mode preferences.
-No API, event history or subsystem is removed. No migration or dependency added.
+No API, event history or subsystem is removed. Existing tooling and dependencies
+are retained; the ticket-attachment migration is described above.
 
 ## Verification
 
