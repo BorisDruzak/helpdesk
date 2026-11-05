@@ -254,3 +254,37 @@ synthetic callback code/state/Referer values. Its result reports only sentinel
 counts and preserved path/status/metrics, never raw logs. Existing private logs
 are not inputs to this check. `server/tests/test_access_log_no_db.py` covers the
 real aiohttp logger, redirects, callback failures and request-ID preservation.
+
+
+## Helpdesk-to-WorkTime handoff v1
+
+Opt-in `WORKTIME_HANDOFF_ENABLED=true` requires secure browser cookies, same-origin
+CSRF and the exact Helpdesk/Endpoint environment pair. `WORKTIME_PORTAL_URL`
+remains the approved `/employee` URL. The UI session exposes only the enabled flag.
+The explicit AD login entry remains `/api/web/session/oidc/login`; a validated,
+closed `/app/worktime/connect` continuation can survive its durable OIDC flow.
+
+`GET /api/web/session/worktime/authorize` accepts exactly `state`, S256
+`code_challenge`, `code_challenge_method` and the fixed `redirect_uri`. Only the
+actual persisted browser cookie authorizes it. Verified complete own profile,
+active account, source password policy, Registry guards and OIDC authority are
+rechecked. The 60-second hashed code is form-posted to the fixed Endpoint callback;
+it never enters a URL. The form uses nonce CSP and Referrer-Policy origin so the
+callback can require its exact Origin without disclosing a path/query.
+
+Dedicated existing identity service bearer authority protects these bounded POSTs:
+- `/api/integration/v1/worktime/sessions/exchange`: exactly code, code_verifier,
+  redirect_uri; returns version1, handle, person_id, department_id, expires_at.
+- `/api/integration/v1/worktime/sessions/introspect`: exactly handle; returns
+  version1, state=active, person_id, department_id, expires_at.
+- `/api/integration/v1/worktime/people/resolve`: exactly canonical person_id;
+  returns version1, state=active, person_id, department_id for an active complete
+  account with a verified UI alias. It never infers an AD binding.
+
+Exchange locks/consumes the code once. Codes/leases retain only hashes, reference
+the live source token/person and expire at most8h/source expiry. Each introspection
+revalidates source revocation, active profile/alias and OIDC authority; unavailable
+provider/configuration is503, invalid authority401, unavailable person403. Audit
+records issuance without code/handle values. Migration153 adds the two ephemeral
+tables and the closed OIDC return_path. No user/person/grant rows are migrated.
+Set the flag false to disable handoff; keep schema/history and separate AD entry.

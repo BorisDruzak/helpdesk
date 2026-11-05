@@ -24,7 +24,7 @@ describe("domain login entry", () => {
     render(<MemoryRouter initialEntries={[`/app/login?sso_error=${code}&error_description=private-provider-message&next=https://evil.test`]}><LoginPage /></MemoryRouter>);
     expect(screen.getByRole("alert")).toHaveTextContent(message);
     expect(screen.queryByText(/private-provider-message/)).not.toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: "Войти с доменной учётной записью" })).toHaveAttribute("href", "/api/web/session/oidc/login");
+    expect(await screen.findByRole("link", { name: "Войти через AD" })).toHaveAttribute("href", "/api/web/session/oidc/login");
     expect(screen.getByRole("button", { name: "Войти" })).toBeVisible();
   });
 
@@ -39,8 +39,8 @@ describe("domain login entry", () => {
       self_registration_enabled: false, sso_enabled: true,
     } }), { headers: { "content-type": "application/json" } })));
     render(<MemoryRouter initialEntries={["/app/login?next=https://untrusted.test"]}><LoginPage /></MemoryRouter>);
-    expect(screen.queryByRole("link", { name: "Войти с доменной учётной записью" })).not.toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: "Войти с доменной учётной записью" })).toHaveAttribute("href", "/api/web/session/oidc/login");
+    expect(screen.queryByRole("link", { name: "Войти через AD" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Войти через AD" })).toHaveAttribute("href", "/api/web/session/oidc/login");
     expect(screen.getByLabelText("Логин")).toBeVisible();
     expect(screen.getByLabelText("Пароль")).toBeVisible();
     expect(screen.getByRole("button", { name: "Войти" })).toBeVisible();
@@ -55,7 +55,7 @@ describe("domain login entry", () => {
     }));
     render(<MemoryRouter><LoginPage /></MemoryRouter>);
     await waitFor(() => expect(screen.queryByText("Проверяем доступность регистрации…")).not.toBeInTheDocument());
-    expect(screen.queryByRole("link", { name: "Войти с доменной учётной записью" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Войти через AD" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Войти" })).toBeVisible();
   });
 });

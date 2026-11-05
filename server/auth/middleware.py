@@ -35,6 +35,10 @@ _QUERY_TOKEN_AUTH_ATTEMPTS: deque[dict[str, object]] = deque(maxlen=QUERY_TOKEN_
 # Whitelist of endpoints that don't require authentication
 AUTH_WHITELIST = {
     "/api/integration/v1/identities/resolve",  # Own narrow service authority; no UI AuthContext.
+    "/api/integration/v1/worktime/sessions/exchange",
+    "/api/integration/v1/worktime/sessions/introspect",
+    "/api/integration/v1/worktime/people/resolve",
+    "/api/web/session/worktime/authorize",  # Authorizes only its own actual browser cookie.
     "/api/web/session/oidc/login",
     "/api/web/session/oidc/callback",
     "/api/ui_login",  # UI login endpoint

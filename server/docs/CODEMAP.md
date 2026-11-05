@@ -791,3 +791,16 @@ and paths from the existing admin handler without altering backend contracts.
   confirmation with `publish_policies=false`, no shared pack rewrite.
 - `scenario-offering-form.tsx`: explanation, separate-tab template creation and
   explicit template-list refresh preserving local offering draft values.
+
+
+## WorkTime handoff (2026-11-05)
+
+- `auth/worktime_authority.py`: current persisted source token, verified complete
+  own requester identity and Registry/OIDC blocking checks.
+- `auth/worktime_handoff.py`: fixed environment pair, S256 single-use exchange,
+  hashed source-bound leases, closed AD continuation and confidential person read.
+- `auth/worktime_handlers.py`: cookie-only form authorization, strict service
+  payloads, bounded bodies/rates, safe errors and secret-free audit.
+- Migration153: ephemeral code/lease tables and OIDC return_path. Browser entry
+  `/app/worktime/connect` is public/self-gated; session flag wires WorktimeLink.
+- Exact protocol/rollback: `SSO_IDENTITY.md`; no new Endpoint agent contract.

@@ -1810,6 +1810,27 @@ class Device(Base):
         return self.deleted_at is not None
 
 
+class WorktimeAuthorizationCode(Base):
+    __tablename__ = "worktime_authorization_codes"
+    __table_args__ = (Index("ix_worktime_authorization_codes_expires", "expires_at"),)
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_token_hash: Mapped[str] = mapped_column(String(64), sa.ForeignKey("ui_tokens.token_hash", ondelete="CASCADE"), nullable=False)
+    person_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"), nullable=False)
+    challenge: Mapped[str] = mapped_column(String(43), nullable=False)
+    callback: Mapped[str] = mapped_column(String(512), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class WorktimeSessionLease(Base):
+    __tablename__ = "worktime_session_leases"
+    __table_args__ = (Index("ix_worktime_session_leases_expires", "expires_at"),)
+    handle_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_token_hash: Mapped[str] = mapped_column(String(64), sa.ForeignKey("ui_tokens.token_hash", ondelete="CASCADE"), nullable=False)
+    person_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+
 class WebRequesterRegistration(Base):
     """Durable signup retry receipt; it is not a login credential."""
     __tablename__ = "web_requester_registrations"
@@ -4274,6 +4295,7 @@ class OidcFlow(Base):
     browser_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     nonce: Mapped[str] = mapped_column(String(100), nullable=False)
     verifier_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    return_path: Mapped[str] = mapped_column(String(1800),nullable=False,default='/app',server_default='/app')
     expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, index=True)
 
 

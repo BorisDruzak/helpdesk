@@ -8,6 +8,7 @@ import { requestPasswordReset, WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
 import { resolveNextWorkspacePath } from "./workspace-access";
 import { useSessionCapabilities } from "./use-session-capabilities";
+import { safeWorktimeContinuation } from "./worktime-navigation";
 
 function resolveNextPath(nextParam: string | null, session: ReturnType<typeof useSession>["session"]) {
   return resolveNextWorkspacePath(nextParam, session) ?? "/app";
@@ -184,9 +185,10 @@ export function LoginPage() {
             {ssoError ? <p role="alert" className="rounded-[1rem] bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">{ssoError}</p> : null}
 
             {capabilities?.sso_enabled ? <div className="space-y-3">
-              <a className="flex min-h-12 items-center justify-center rounded-pill bg-brand-700 px-5 py-3 text-center text-sm font-semibold text-white hover:bg-brand-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700" href="/api/web/session/oidc/login">
-                Войти с доменной учётной записью
+              <a className="flex min-h-12 items-center justify-center rounded-pill bg-brand-700 px-5 py-3 text-center text-sm font-semibold text-white hover:bg-brand-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700" href={'/api/web/session/oidc/login'+(safeWorktimeContinuation(searchParams.get('next')) ? '?'+new URLSearchParams({next:searchParams.get('next')!}).toString() : '')}>
+                Войти через AD
               </a>
+              <p className="text-center text-sm text-slate-600">Используйте свою доменную учётную запись.</p>
               <p className="text-center text-sm text-slate-500">Или используйте существующий логин и пароль</p>
             </div> : null}
 

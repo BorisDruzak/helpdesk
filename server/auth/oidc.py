@@ -123,7 +123,11 @@ async def _introspect(meta, token, binding, sid):
         and (not sid or value.get("sid") == sid))
 
 
-async def validate_oidc_session(session, token_record, user):
+class OidcAuthorityUnavailable(Exception):
+    """Provider transport/configuration failed; contains no upstream details."""
+
+
+async def validate_oidc_session(session, token_record, user, *, raise_unavailable=False):
     """No stale-positive cache: issuer outage/revocation denies the current operation."""
     try:
         # Serialize refresh token rotation across app workers; no refresh replay race.
@@ -136,7 +140,12 @@ async def validate_oidc_session(session, token_record, user):
         if not binding or binding.user_login != user.user_login or binding.issuer != config.OIDC_ISSUER:
             return False
         await IdentityService(session)._active(binding)
-        meta = await metadata()
+        try:
+            meta = await metadata()
+        except (ValueError, KeyError, TypeError):
+            if raise_unavailable:
+                raise OidcAuthorityUnavailable('oidc_authority_unavailable') from None
+            return False
         if record.expires_at <= now + timedelta(seconds=30):
             if not record.refresh_token_encrypted:
                 return False
@@ -160,6 +169,12 @@ async def validate_oidc_session(session, token_record, user):
             await session.flush()
         upstream = _cipher().decrypt(record.upstream_token_encrypted.encode()).decode()
         return await _introspect(meta, upstream, binding, record.upstream_sid)
+    except OidcAuthorityUnavailable:
+        raise
+    except (httpx.HTTPError, RuntimeError):
+        if raise_unavailable:
+            raise OidcAuthorityUnavailable('oidc_authority_unavailable') from None
+        return False
     except Exception:
         # Provider messages may include credentials; never interpolate exceptions.
         return False
@@ -200,9 +215,11 @@ async def handle_oidc_login(request):
             url, state = client.create_authorization_url(meta["authorization_endpoint"], code_verifier=verifier, **options)
         async with get_session() as session:
             now = datetime.now(timezone.utc)
+            from auth.worktime_handoff import safe_worktime_continuation
+            next_path=safe_worktime_continuation(request.query.get('next'))
             await session.execute(delete(OidcFlow).where(OidcFlow.expires_at <= now))
             session.add(OidcFlow(state_hash=digest(state), browser_hash=digest(browser), nonce=nonce,
-                verifier_encrypted=_cipher().encrypt(verifier.encode()).decode(), expires_at=now + timedelta(seconds=FLOW_TTL)))
+                verifier_encrypted=_cipher().encrypt(verifier.encode()).decode(), expires_at=now + timedelta(seconds=FLOW_TTL),return_path=next_path))
             await session.commit()
         response = web.HTTPFound(url, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
         response.set_cookie(FLOW_COOKIE, browser, secure=True, httponly=True, samesite="Lax", path="/", max_age=FLOW_TTL)
@@ -264,7 +281,8 @@ async def handle_oidc_callback(request):
                 nonce=flow.nonce, expires_at=expiry, max_expires_at=max_expiry, acr=acr))
             service._audit(binding, "sso_login_succeeded", user.user_login)
             await session.commit()
-        response = web.HTTPFound("/app", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+        from auth.worktime_handoff import safe_worktime_continuation
+        response = web.HTTPFound(safe_worktime_continuation(getattr(flow,"return_path","/app")), headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
         response.set_cookie(WEB_SESSION_COOKIE_NAME, raw, secure=True, httponly=True, samesite="Lax", path="/", max_age=max(1, int(max_expiry.timestamp() - time.time())))
         response.del_cookie(FLOW_COOKIE, path="/", secure=True, httponly=True, samesite="Lax")
         return response

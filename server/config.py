@@ -133,6 +133,7 @@ OIDC_ENABLED = os.getenv("OIDC_ENABLED", "false").lower() == "true"
 # Optional employee navigation, paired with the canonical SERVER_PUBLIC_BASE_URL.
 # Blank or a cross-environment URL keeps the entry hidden.
 WORKTIME_PORTAL_URL = os.getenv("WORKTIME_PORTAL_URL", "").strip()
+WORKTIME_HANDOFF_ENABLED = os.getenv("WORKTIME_HANDOFF_ENABLED", "false").lower() == "true"
 OIDC_ISSUER = os.getenv("OIDC_ISSUER", "").strip()
 OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "").strip()
 OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")

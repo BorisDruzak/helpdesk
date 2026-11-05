@@ -12,6 +12,7 @@ from web_api.admin_endpoint_handlers import (
 from auth.handlers import handle_ui_login, handle_ui_session
 from auth.identity_handlers import handle_identity_resolve, handle_identity_admin
 from auth.oidc import handle_oidc_login, handle_oidc_callback, handle_oidc_logout
+from auth.worktime_handlers import handle_worktime_authorize, handle_worktime_integration
 from auth.admin_users_handlers import (
     handle_admin_users_list,
     handle_admin_users_post,
@@ -573,6 +574,9 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         web.post('/api/ui_login', handle_ui_login),  # UI user login
         web.post('/api/integration/v1/identities/resolve', handle_identity_resolve),
+        web.post('/api/integration/v1/worktime/sessions/{action:exchange|introspect}', handle_worktime_integration),
+        web.post('/api/integration/v1/worktime/people/{action:resolve}', handle_worktime_integration),
+        web.get('/api/web/session/worktime/authorize', handle_worktime_authorize),
         web.post('/api/web/admin/identities/{action:propose|confirm|revoke|migrate-password}', handle_identity_admin),
         web.get('/api/web/session/oidc/login', handle_oidc_login),
         web.get('/api/web/session/oidc/callback', handle_oidc_callback),

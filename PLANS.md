@@ -2840,3 +2840,15 @@ Report: `docs/UX_SUPPORT_FOLLOWUP_2026-11-02.md`; evidence in task tmp directory
 - Current State: complete. App ecd784075a2d758125ae5568ff2b682aeb57c639 deployed canonically after fresh verified backup. Source28 digests/strict TLShealth200/serviceactive and both PNG200 verified. Focused41/build pass; browser27 earlier +3 final pass1366/1920/390. Independent final review clean. Live real-session catalog/guide and public registration/toggles pass, console0, no account/ticket/binding writes. WorkTime separate AD/OIDC identity requirement confirmed from current runtime and login page; local Helpdesk-account login requires a separate trust contract, not implemented here.
 - Next Steps: task complete; leave staging running. Acceptance and WorkTime findings: docs/UX_REQUESTER_FOLLOWUP_2026-11-05.md. Production/Endpoint code unchanged, no push/PR.
 - Handoff: docs/superpowers/plans/2026-11-05-requester-usability.md; tmp/requester-usability-20261105 evidence.
+
+
+## Helpdesk to WorkTime login — 2026-11-05
+
+Goal: Registered Helpdesk employees open their own WorkTime without a second login; preserve explicit AD entry.
+Scope: Helpdesk source authority and fixed single-use PKCE handoff; Endpoint WorkTime-only session and same-person identity continuity.
+Constraints: Staging only; preserve unrelated changes and AD/DLP/admin boundaries; both services remain running.
+Decisions: Approved design in docs/superpowers/specs/2026-11-05-helpdesk-worktime-login-design.md; native implementation and independent final review.
+Current State: Server implementation and isolated PostgreSQL handoff tests pass. Frontend integration and real-browser mobile/entry checks passed. Confirmed separate breakglass expiry overshoot fixed with one clock instant; GREEN passed in isolated PostgreSQL.
+Next Steps: Freeze reviewed commits; canonical staging deploy and live acceptance.
+Verification: Helpdesk18 unit/API,3 handoff DB and12 OIDC/profile-boundary DB passed. Endpoint38 pure,5 isolated DB,23 WorkTime regression and143 contract checks passed. Frontend30+20 and both builds passed. No new deployment yet.
+Handoff: Detailed plan docs/superpowers/plans/2026-11-05-helpdesk-worktime-login.md; private evidence tmp/worktime-handoff-20261105/.

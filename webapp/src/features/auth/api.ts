@@ -4,6 +4,7 @@ export type WebSession = {
   auth_type: string;
   login_method?: "password" | "oidc";
   worktime_portal_url?: string | null;
+  worktime_handoff_enabled?: boolean;
   default_workspace: string | null;
   available_workspaces: string[];
   permissions?: string[];

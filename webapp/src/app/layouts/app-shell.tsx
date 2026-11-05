@@ -49,10 +49,12 @@ function RequesterMobileNavigation({
   currentPath,
   permissions,
   worktimePortalUrl,
+  worktimeHandoffEnabled,
 }: {
   currentPath: string;
   permissions: string[];
   worktimePortalUrl?: string | null;
+  worktimeHandoffEnabled?:boolean;
 }) {
   const items = getVisibleNavigationItems("requester", permissions, { includeWorkspaceHome: true });
   if (!items.length && !worktimePortalUrl) {
@@ -89,7 +91,7 @@ function RequesterMobileNavigation({
             </Link>
           );
         })}
-        <WorktimeLink url={worktimePortalUrl} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-panel px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950" />
+        <WorktimeLink handoffEnabled={worktimeHandoffEnabled} url={worktimePortalUrl} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-panel px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950" />
       </div>
     </nav>
   );
@@ -165,6 +167,7 @@ export function AppShell({ children }: AppShellProps) {
           permissions={session?.permissions ?? []}
           showCollapseToggle={shouldManageSidebar}
           worktimePortalUrl={session?.worktime_portal_url}
+          worktimeHandoffEnabled={session?.worktime_handoff_enabled}
         />
 
         <div className={`flex min-w-0 flex-1 flex-col ${isFullHeightWorkspace ? "h-full min-h-0" : "min-h-screen"}`}>
@@ -183,6 +186,7 @@ export function AppShell({ children }: AppShellProps) {
               currentPath={`${location.pathname}${location.search}${location.hash}`}
               permissions={session?.permissions ?? []}
               worktimePortalUrl={session?.worktime_portal_url}
+              worktimeHandoffEnabled={session?.worktime_handoff_enabled}
             />
           ) : null}
 

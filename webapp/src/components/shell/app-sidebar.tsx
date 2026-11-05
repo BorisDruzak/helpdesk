@@ -28,6 +28,7 @@ type AppSidebarProps = {
   permissions?: string[];
   showCollapseToggle?: boolean;
   worktimePortalUrl?: string | null;
+  worktimeHandoffEnabled?:boolean;
 };
 
 const ADMIN_GROUP_STORAGE_KEY = "pc-client:admin-sidebar-open-groups";
@@ -319,6 +320,7 @@ export function AppSidebar({
   permissions = [],
   showCollapseToggle = false,
   worktimePortalUrl,
+  worktimeHandoffEnabled,
 }: AppSidebarProps) {
   const location = useLocation();
   const currentPath = `${location.pathname}${location.search}${location.hash}`;
@@ -384,7 +386,7 @@ export function AppSidebar({
             onCollapsedChange={onCollapsedChange}
             onNavigate={onNavigate}
           >
-            <WorktimeLink url={worktimePortalUrl} className="flex items-center gap-3 rounded-panel px-3 py-3 text-sm font-semibold text-brand-50/90 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white" />
+            <WorktimeLink handoffEnabled={worktimeHandoffEnabled} url={worktimePortalUrl} className="flex items-center gap-3 rounded-panel px-3 py-3 text-sm font-semibold text-brand-50/90 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white" />
           </SupportSidebar>
         ) : null}
         {workspace === "admin" ? (

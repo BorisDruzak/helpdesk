@@ -41,6 +41,7 @@ import {
   TicketPassportPrintPage,
 } from "./routes/lazy-pages";
 import { LoginPage } from "../features/auth/login-page";
+import { WorktimeConnectPage } from "../features/auth/worktime-connect-page";
 import { RegisterPage } from "../features/auth/register-page";
 import { useSession } from "../features/auth/session-provider";
 import {
@@ -215,6 +216,7 @@ export const appRoutes: RouteObject[] = [
         path: "register",
         element: <RegisterPage />
       },
+      {path:"worktime/connect",element:<WorktimeConnectPage/>},
       {
         path: "help",
         element: (

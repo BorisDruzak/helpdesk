@@ -6,6 +6,7 @@ import {
   isWorkspacePath,
 } from "../../app/navigation";
 import type { WebSession } from "./api";
+import { safeWorktimeContinuation } from "./worktime-navigation";
 
 export type AppWorkspace = "support" | "admin" | "requester";
 export const REQUEST_STUDIO_PATH = "/app/admin/request-template-studio";
@@ -84,6 +85,7 @@ export function resolveNextWorkspacePath(
   nextPath: string | null,
   session: WebSession | null
 ): string | null {
+  if(safeWorktimeContinuation(nextPath) && resolveDefaultWorkspacePath(session))return nextPath;
   if (session?.actor_role === "auditor" && nextPath && normalizePath(nextPath) === REQUEST_STUDIO_PATH) {
     return nextPath;
   }
