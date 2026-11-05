@@ -13,6 +13,7 @@ The users table renders it and searches it. Older responses without the field
 show “Имя не указано”; there is no API-error placeholder. The initial status
 filter is Active, and the users tab count is the active count. Disabled accounts
 remain accessible through the status filter for audit/restoration.
+Overview users and elevated-role metrics also count active accounts only.
 
 ## Approved staging cleanup
 

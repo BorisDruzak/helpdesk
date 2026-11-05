@@ -345,6 +345,8 @@ describe("AdminAccessPage", () => {
     expect(screen.getByText("Отключённые пользователи с доступом")).toBeInTheDocument();
     expect(screen.getByText("Группы без участников")).toBeInTheDocument();
     expect(screen.getByText("Очереди без участников")).toBeInTheDocument();
+    expect(screen.getByText("Активные пользователи").parentElement).toHaveTextContent("2");
+    expect(screen.getByRole("heading", { name: "Администраторы и поддержка" }).closest(".surface-panel")).toHaveTextContent("2");
 
     for (const tab of ["Обзор", "Пользователи", "Группы", "Очереди", "Роли", "Каталог прав", "Аудит"]) {
       expect(screen.getByRole("button", { name: new RegExp(tab) })).toBeInTheDocument();

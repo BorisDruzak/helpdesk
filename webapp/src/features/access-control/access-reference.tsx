@@ -81,13 +81,14 @@ export function AccessOverview({
     (count, group) => count + group.permissions.filter((code) => permissionMap.get(code)?.risk === "high").length,
     0,
   );
-  const elevatedUsers = summary.users.filter((user) => ["admin", "support"].includes(user.actor_role)).length;
+  const activeUsers = summary.users.filter((user) => user.is_active);
+  const elevatedUsers = activeUsers.filter((user) => ["admin", "support"].includes(user.actor_role)).length;
 
   return (
     <div className="space-y-5">
       <div className="grid gap-3 md:grid-cols-4">
         <MetricCard label="Версия каталога" value={catalog.version} />
-        <MetricCard label="Пользователи" value={summary.users.length} />
+        <MetricCard label="Активные пользователи" value={activeUsers.length} />
         <MetricCard label="Группы доступа" value={accessGroups.length} />
         <MetricCard label="Очереди" value={summary.queues.length} />
       </div>
@@ -129,7 +130,7 @@ export function AccessOverview({
         />
         <AuditFindingCard
           count={elevatedUsers}
-          description="Пользователи с ролями администратора или поддержки по текущей сводке."
+          description="Активные пользователи с ролями администратора или поддержки."
           title="Администраторы и поддержка"
           tone={elevatedUsers > 0 ? "warning" : "neutral"}
         />
