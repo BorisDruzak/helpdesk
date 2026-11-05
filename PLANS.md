@@ -2901,5 +2901,5 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Actor/job: requester conversation; view support and own screenshots without losing a reply draft.
 - Scope/decision: share ChatAttachment and its standalone stylesheet through webapp/src/components; keep canonical cookie-protected artifact route, safe MIME/URL/legacy ticket_id guards and existing requester ownership. No backend/API/schema/dependency changes.
 - State: implementation/review complete.20 component tests and7 browser cases (requester1366/1920/390 plus support4widths) pass, including real HTTP download, Escape/backdrop, focus restoration, preserved draft and no overflow/console errors. Build/workspace/diff checks pass.
-- Next: review/docs, exact-SHA canonical staging deploy, fresh requester direct-route live check; preserve user tabs/data and leave staging running.
-- Evidence: tmp/requester-preview-20261105. Production/Endpoint/native agent unchanged.
+- Complete: exactcf51046d5f864f11fa4ea1dea40164acf2ce0a0b installed canonically after verified154 backup.10source hashes/retired viewer absence/schema154/TLS200/3active services verified. Live own requester T-000058 thumbnail/full420x100 image/same URL/close-focus/console0 confirmed. No new message/upload/status command; staging left running. No required work remains.
+- Evidence: docs/REQUESTER_IMAGE_PREVIEW_ACCEPTANCE_2026-11-05.md and tmp/requester-preview-20261105. Fixture port closed; unrelated edits preserved. Production/Endpoint/native unchanged; full CI not requested.
