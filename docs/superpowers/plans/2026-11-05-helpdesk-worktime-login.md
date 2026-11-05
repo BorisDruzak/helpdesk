@@ -86,18 +86,18 @@ Companion/DLP retain their existing AD login and session behavior.
 
 ## Task4 — Reviewed staging release and live acceptance
 
-- [ ] Independent final review of both diffs and contract/migration/auth scope.
+- [x] Independent final review of both diffs and contract/migration/auth scope.
   Run focused gates, workspace verification, full diff/check and atomic commits;
   preserve unrelated dirty state. No push/production/full fleet action.
-- [ ] Fresh private backups for both databases, exact current revisions and
+- [x] Fresh private backups for both databases, exact current revisions and
   WorkTime/business/auth baseline. Use canonical build/deploy/migration procedures,
   explicit staging flags and fixed origin configuration; never patch runtime files.
-- [ ] Verify installed SHAs/digests, TLS, service health and schema revisions;
+- [x] Verify installed SHAs/digests, TLS, service health and schema revisions;
   preserve prior personnel/grant/session rows apart from expected audited checks.
-- [ ] Live current Helpdesk user→WorkTime own cabinet→reload, without starting a
+- [x] Live current Helpdesk user→WorkTime own cabinet→reload, without starting a
   day/correction/device action. AD button initiation and isolation checks; if no
   current AD credential proof available, report that precise limit.
-- [ ] Record report, final own PLANS section and progress ledger; leave both
+- [x] Record report, final own PLANS section and progress ledger; leave both
   staging services running.
 
 ## Design review rulings
@@ -107,3 +107,13 @@ recorded in the spec: source hash validation/typed OIDC outage, CSRF from select
 cookie, and successful explicit AD recovery clearing the WorkTime cookie.
 The user's latest approval covers the proposed one-time handoff and all local
 registered employees. No additional design or routine deployment permission asked.
+
+
+## Acceptance
+
+Completed on .118 only. Helpdesk7d8dda5d814e88c40d5eac2dfa1e7324135638f3 and
+Endpointee86a9458a0c7976659b5dc43cc8572e3bb451df installed; flags enabled with
+private config backups. Live bdryzhak Helpdesk→WorkTime day/reload succeeded
+without a second password. Same-person identity and unchanged personnel/grant
+seals verified; both HTTPS services200 and all three services active. Fresh AD
+credential completion not claimed. Full evidence: docs/WORKTIME_HELPDESK_ACCEPTANCE_2026-11-05.md.

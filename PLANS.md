@@ -2845,10 +2845,10 @@ Report: `docs/UX_SUPPORT_FOLLOWUP_2026-11-02.md`; evidence in task tmp directory
 ## Helpdesk to WorkTime login — 2026-11-05
 
 Goal: Registered Helpdesk employees open their own WorkTime without a second login; preserve explicit AD entry.
-Scope: Helpdesk source authority and fixed single-use PKCE handoff; Endpoint WorkTime-only session and same-person identity continuity.
-Constraints: Staging only; preserve unrelated changes and AD/DLP/admin boundaries; both services remain running.
-Decisions: Approved design in docs/superpowers/specs/2026-11-05-helpdesk-worktime-login-design.md; native implementation and independent final review.
-Current State: Server implementation and isolated PostgreSQL handoff tests pass. Frontend integration and real-browser mobile/entry checks passed. Confirmed separate breakglass expiry overshoot fixed with one clock instant; GREEN passed in isolated PostgreSQL.
-Next Steps: Freeze reviewed commits; canonical staging deploy and live acceptance.
-Verification: Helpdesk18 unit/API,3 handoff DB and12 OIDC/profile-boundary DB passed. Endpoint38 pure,5 isolated DB,23 WorkTime regression and143 contract checks passed. Frontend30+20 and both builds passed. No new deployment yet.
-Handoff: Detailed plan docs/superpowers/plans/2026-11-05-helpdesk-worktime-login.md; private evidence tmp/worktime-handoff-20261105/.
+Scope: Live source-bound single-use PKCE handoff, isolated WorkTime session, own profile and verified same-person AD continuity.
+Constraints: Staging only; preserve unrelated changes and AD/DLP/admin boundaries; services remain running.
+Decisions: Approved design docs/superpowers/specs/2026-11-05-helpdesk-worktime-login-design.md; native implementation, independent review and canonical frozen releases.
+Current State: Complete. Helpdesk7d8dda5d814e88c40d5eac2dfa1e7324135638f3 and Endpointee86a9458a0c7976659b5dc43cc8572e3bb451df installed, revisions153/0044, flags enabled with private backups. Live bdryzhak→WorkTime day and reload required no second password; same person/data preservation verified.
+Next Steps: No required implementation remains. Fresh live AD credential round trip remains user-dependent acceptance; initiation verified without MFA request.
+Verification: Helpdesk18 unit/API,3 handoff DB,12 OIDC/profile DB,30 frontend; Endpoint38 identity,5 DB,23 WorkTime,143 contracts,69 targeted+2 platform skips,5 deploy guards,76 frontend. Builds/workspace/diff checks passed. Strict TLS200 and three active services confirmed.
+Handoff: docs/WORKTIME_HELPDESK_ACCEPTANCE_2026-11-05.md; private evidence tmp/worktime-handoff-20261105/. Production and agent/native packages untouched; unrelated dirty state preserved.
