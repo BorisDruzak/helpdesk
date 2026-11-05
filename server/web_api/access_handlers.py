@@ -16,6 +16,7 @@ from app.db import get_session
 from app.repos.access_control_repo import AccessControlRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ui_users_repo import UiUsersRepo
+from app.services.user_display_names import ui_user_display_names
 from auth.password_service import PasswordPolicyError, hash_password, validate_password_policy
 from auth.middleware import require_auth
 from web_api.dto.access_control import (
@@ -112,6 +113,7 @@ async def _summary_payload() -> AccessSummaryPayload:
             queue_repo = TicketAdminConfigRepo(session)
             access_repo = AccessControlRepo(session)
             users_rows = await users_repo.list_users(include_inactive=True, limit=500)
+            display_names = await ui_user_display_names(session, [str(user.user_login) for user in users_rows])
             queues = await queue_repo.list_queues(include_inactive=True)
 
             queue_members_by_actor: dict[str, int] = {}
@@ -140,6 +142,7 @@ async def _summary_payload() -> AccessSummaryPayload:
             users = [
                 AccessUserItem(
                     user_login=str(user.user_login),
+                    display_name=display_names[str(user.user_login)],
                     actor_role=str(user.actor_role),
                     role_label=get_role_label(user.actor_role),
                     is_active=bool(user.is_active),

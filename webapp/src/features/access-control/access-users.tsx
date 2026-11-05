@@ -37,7 +37,7 @@ export function UsersAccessTable({
 }: UsersAccessTableProps) {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
   const [flagFilter, setFlagFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [passwordTarget, setPasswordTarget] = useState<AccessUserItem | null>(null);
@@ -70,10 +70,10 @@ export function UsersAccessTable({
           <div className="flex flex-col gap-3">
             <div>
               <CardTitle>Пользователи</CardTitle>
-              <p className="text-sm text-slate-500">Найдите пользователя, затем откройте объяснение итогового доступа.</p>
+              <p className="text-sm text-slate-500">Найдите пользователя, затем откройте объяснение итогового доступа. Отключённые учётные записи доступны через фильтр статуса.</p>
             </div>
             <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_160px_170px_220px]">
-              <SearchField onChange={(event) => setQuery(event.target.value)} placeholder="Логин, имя, email или роль" value={query} />
+              <SearchField onChange={(event) => setQuery(event.target.value)} placeholder="Логин, имя или роль" value={query} />
               <Select aria-label="Фильтр по роли" onChange={(event) => setRoleFilter(event.target.value)} value={roleFilter}>
                 <option value="all">Все роли</option>
                 {roleOptions.map((role) => (
@@ -147,7 +147,7 @@ export function UsersAccessTable({
                       <td className="px-5 py-4">
                         <p className="font-semibold text-slate-950">{user.user_login}</p>
                       </td>
-                      <td className="px-5 py-4 text-slate-500">Не передано API</td>
+                      <td className="px-5 py-4 text-slate-500">{user.display_name?.trim() || "Имя не указано"}</td>
                       <td className="px-5 py-4">
                         <p className="font-semibold text-slate-950">{user.role_label}</p>
                         <p className="font-mono text-xs text-slate-500">{user.actor_role}</p>

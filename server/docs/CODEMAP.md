@@ -98,6 +98,15 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   changing its DTO. Device presence requires current requester ownership and exact
   Registry/Endpoint references; failure is unavailable, never inferred offline.
   The detail response is no-store and template-hidden fields remain excluded.
+- `app/services/user_display_names.py` batches verified `ui_login` Registry names
+  for requester specialists and admin `access/summary`'s optional
+  `users[].display_name`, with login fallback. This is display-only. Access user
+  search includes the name; its initial status filter/tab count shows active
+  accounts and retains disabled accounts through an explicit filter. The guarded
+  maintenance script `scripts/helpdesk_staging_user_cleanup.py` disables only
+  recognized staging fixtures with a frozen plan, fresh backup, token revocation
+  and audit, preserving identities/history. See
+  [display and cleanup procedure](../../docs/ACCESS_USER_DISPLAY_AND_STAGING_CLEANUP.md).
 - Requester detail unions separate newest200 public-message and200 raw-progress
   windows through `get_recent_timeline_events`, deduplicates chronologically and
   applies canonical requester visibility. Internal noise cannot evict replies;

@@ -117,6 +117,7 @@ class AccessUserItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     user_login: str
+    display_name: str | None = None
     actor_role: str
     role_label: str
     is_active: bool

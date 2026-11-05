@@ -4,11 +4,9 @@ from types import SimpleNamespace
 from urllib.parse import quote
 from uuid import UUID
 
-from sqlalchemy import select
-
-from app.db.models import RegistryPerson, RegistryPersonIdentity, TicketQueue, UiUser
-from app.repos.registration_repo import normalize_identifier
+from app.db.models import TicketQueue, UiUser
 from app.services.endpoint_device_reference_service import EndpointDeviceSnapshotV1
+from app.services.user_display_names import ui_user_display_names
 from domain_ports.endpoint import EndpointDevicePresenceProjection, EndpointDeviceRef
 from domain_ports.registry_contracts import DeviceContextProjection, DeviceRef
 from tickets.timer_projection import project_ticket_timer
@@ -27,11 +25,8 @@ async def assignee_name(session,login):
     if not login:return None
     user=await session.get(UiUser,login)
     if user is None or user.actor_role not in {'support','admin'}:return 'Специалист поддержки'
-    person=await session.scalar(select(RegistryPerson).join(RegistryPersonIdentity,
-        RegistryPersonIdentity.person_id==RegistryPerson.person_id).where(
-        RegistryPersonIdentity.provider=='ui_login',RegistryPersonIdentity.verified.is_(True),
-        RegistryPersonIdentity.normalized_identifier==normalize_identifier('ui_login',login)))
-    return display(getattr(person,'full_name',None)) or display(user.user_login) or 'Специалист поддержки'
+    names=await ui_user_display_names(session,[user.user_login])
+    return display(names[user.user_login]) or 'Специалист поддержки'
 
 
 async def requester_device(ticket,*,resolver,ports,actor_id):

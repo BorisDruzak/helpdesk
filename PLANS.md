@@ -2864,3 +2864,14 @@ Current State: Complete. Frozen1ba7c8166e1d0317479a965dcf63b1b7d2accd3a deployed
 Next Steps: No required chat implementation remains. Staging stays running. Binding remains separately diagnosed configuration/environment mismatch; production acceptance is not claimed.
 Verification: Fresh verified backup; nine source hashes match frozen Git, schema153 unchanged, strict TLShealth200, three services active and five business-table seals unchanged. Live console0; mobile/polling/draft/error fixtures pass; preview stopped.
 Handoff: docs/REQUESTER_CHAT_ACCEPTANCE_2026-11-05.md, matching spec/plan, private tmp/requester-chat-context-20261105. Return-link0554e70b0d4c679173d502af6000cc53ac17f27f accepted; login bdryzhak confirmed. Production/agent/grants unchanged; unrelated dirty work preserved.
+
+
+## Access users and staging cleanup — 2026-11-05
+
+Goal: Explain/fix specialist names and the API placeholder; leave admin, admin-2 and bdryzhak in the working account list.
+Scope: Verified Registry display names for requester/admin; active default list; reversible guarded staging cleanup, history retained.
+Constraints: Staging only; no reassignment, credential reset, production/Endpoint/native changes; preserve unrelated work; leave staging running.
+Decisions: admin's verified person carries an exact fixture name; clear only that label, never invent a real name. Disable known synthetic accounts, retain inactive audit access.
+Current State: Implementation/review ready.13 frontend,15 pure backend,7 script and3 isolated PostgreSQL/API tests pass; build/workspace and browser1366/390 pass. Fresh private verified backup153 prepared; read-only plan159 accounts/156 candidates/15 active to disable.
+Next Steps: Freeze task source; apply exact plan through reviewed CLI, verify protected account/history seals; canonical staging deployment and live UI/source/TLS acceptance.
+Handoff: docs/ACCESS_USER_DISPLAY_AND_STAGING_CLEANUP.md; private evidence tmp/access-cleanup-20261105. No data apply yet.

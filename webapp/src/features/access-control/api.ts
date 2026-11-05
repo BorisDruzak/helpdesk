@@ -25,6 +25,7 @@ export type AccessCatalogPayload = {
 
 export type AccessUserItem = {
   user_login: string;
+  display_name?: string | null;
   actor_role: string;
   role_label: string;
   is_active: boolean;

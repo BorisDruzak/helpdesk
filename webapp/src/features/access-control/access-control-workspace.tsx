@@ -66,14 +66,14 @@ export function AccessControlWorkspace({
         ...tab,
         count:
           tab.value === "users"
-            ? summary.users.length
+            ? summary.users.filter(user => user.is_active).length
             : tab.value === "groups"
               ? accessGroups.length
               : tab.value === "queues"
                 ? summary.queues.length
                 : undefined,
       })),
-    [accessGroups.length, summary.queues.length, summary.users.length],
+    [accessGroups.length, summary.queues.length, summary.users],
   );
 
   return (

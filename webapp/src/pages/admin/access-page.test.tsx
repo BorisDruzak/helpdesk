@@ -179,6 +179,7 @@ const summaryPayload = {
       queue_count: 1,
       role_label: "Поддержка",
       user_login: "support1",
+      display_name: "Иван Специалист",
     },
     {
       actor_role: "support",
@@ -318,6 +319,21 @@ afterEach(() => {
 });
 
 describe("AdminAccessPage", () => {
+  it("shows verified profile names, searches by name and keeps disabled accounts behind the status filter", async () => {
+    installAccessFetchMock();
+    renderAccessPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Пользователи/ }));
+    expect(screen.getByText("Иван Специалист")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Открыть доступ disabled1" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Не передано API")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Логин, имя или роль"), { target: { value: "Специалист" } });
+    expect(screen.getByRole("button", { name: "Открыть доступ support1" })).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Логин, имя или роль"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Фильтр по статусу"), { target: { value: "disabled" } });
+    expect(screen.getByRole("button", { name: "Открыть доступ disabled1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Открыть доступ support1" })).not.toBeInTheDocument();
+  });
+
   it("renders a Russian task-oriented workspace with internal navigation and overview audit cards", async () => {
     installAccessFetchMock();
 
@@ -350,7 +366,7 @@ describe("AdminAccessPage", () => {
     renderAccessPage();
 
     fireEvent.click(await screen.findByRole("button", { name: /Пользователи/ }));
-    fireEvent.change(screen.getByPlaceholderText("Логин, имя, email или роль"), { target: { value: "support1" } });
+    fireEvent.change(screen.getByPlaceholderText("Логин, имя или роль"), { target: { value: "support1" } });
 
     expect(screen.getAllByText("support1").length).toBeGreaterThan(0);
     expect(screen.queryByText("admin1")).not.toBeInTheDocument();
@@ -379,7 +395,7 @@ describe("AdminAccessPage", () => {
     renderAccessPage();
 
     fireEvent.click(await screen.findByRole("button", { name: /Пользователи/ }));
-    fireEvent.change(screen.getByPlaceholderText("Логин, имя, email или роль"), { target: { value: "support1" } });
+    fireEvent.change(screen.getByPlaceholderText("Логин, имя или роль"), { target: { value: "support1" } });
     fireEvent.click(screen.getByRole("button", { name: "Сменить пароль support1" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Сменить пароль" });

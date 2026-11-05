@@ -162,7 +162,7 @@ export function filterUsers(users: AccessUserItem[], query: string, role: string
   return users.filter((user) => {
     const matchesQuery =
       !normalized ||
-      [user.user_login, user.actor_role, user.role_label, ...user.groups].some((value) => normalizeText(value).includes(normalized));
+      [user.user_login, user.display_name, user.actor_role, user.role_label, ...user.groups].some((value) => normalizeText(value).includes(normalized));
     const matchesRole = role === "all" || user.actor_role === role;
     const matchesStatus =
       status === "all" || (status === "active" && user.is_active) || (status === "disabled" && !user.is_active);
