@@ -1,3 +1,5 @@
+import endpointTrayImage from "../../assets/guides/endpoint-tray-windows.png";
+import endpointMenuImage from "../../assets/guides/endpoint-helpdesk-menu.png";
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -46,7 +48,18 @@ export function RequesterDeviceLinkPage() {
     <header className="surface-panel p-5">
       <p className="workspace-boot__eyebrow">Мои устройства</p>
       <h1 className="mt-2 text-2xl font-semibold text-slate-950">Привязать компьютер</h1>
-      <p className="mt-3 text-sm leading-6 text-slate-600">Откройте Endpoint Agent в области уведомлений → «Привязать компьютер к Helpdesk». Введите показанный код.</p>
+      <h2 className="mt-4 font-semibold text-slate-950">Где взять код</h2>
+      <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">
+        <li>На этом компьютере нажмите стрелку «Показать скрытые значки» рядом с часами Windows. Найдите зелёный значок Endpoint Agent.</li>
+        <li>Нажмите на значок правой кнопкой мыши и выберите «Привязать компьютер к Helpdesk».</li>
+        <li>В открывшемся окне нажмите «Скопировать код», затем вставьте его в поле ниже.</li>
+      </ol>
+      <details className="mt-3 text-sm"><summary className="cursor-pointer font-semibold text-brand-700">Показать на скриншотах</summary>
+        <div className="mt-3 grid items-start gap-3 sm:grid-cols-2">
+          <figure><img src={endpointTrayImage} width="273" height="441" alt="Скрытые значки Windows: стрелка указывает на зелёный значок Endpoint Agent" className="h-auto max-w-full rounded-lg border"/><figcaption className="mt-1 text-slate-600">1. Найдите значок агента.</figcaption></figure>
+          <figure><img src={endpointMenuImage} width="313" height="295" alt="Меню Endpoint Agent с пунктом Привязать компьютер к Helpdesk" className="h-auto max-w-full rounded-lg border"/><figcaption className="mt-1 text-slate-600">2. Откройте получение кода.</figcaption></figure>
+        </div>
+      </details>
     </header>
     <div className="surface-panel p-5">
       {profileQuery.isLoading ? <p role="status">Проверяем профиль…</p> : profileQuery.error ?
@@ -57,10 +70,12 @@ export function RequesterDeviceLinkPage() {
           <form onSubmit={submit} className="space-y-4">
             <label className="block space-y-2"><span>Код привязки</span><Input name="code" inputMode="numeric" autoComplete="off" maxLength={7} placeholder="123-456" value={code} onChange={(event) => { setCode(event.target.value); rememberPendingDeviceCode(event.target.value); }} /></label>
             <p className="text-sm text-slate-600">Код действует 10 минут и используется один раз.</p>
+            <p className="text-sm text-slate-600">Если код истёк, нажмите «Получить новый код» в окне агента.</p>
             {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
             <Button type="submit" disabled={submitting}>{submitting ? "Проверяем…" : "Привязать устройство"}</Button>
           </form>}
     </div>
+    <details className="text-sm text-slate-600"><summary className="cursor-pointer font-semibold">Если значка нет или код не появился</summary><p className="mt-2">Проверьте скрытые значки рядом с часами. Если Endpoint Agent отсутствует или не подключён, создайте обращение в поддержку — компьютер можно будет привязать позже.</p><Link className="mt-2 inline-block font-semibold text-brand-700" to="/app/requester/new">Создать обращение</Link></details>
     <Link className="text-sm font-semibold text-brand-700" to="/app/requester/devices" onClick={clearPendingDeviceCode}>Отмена</Link>
   </section>;
 }

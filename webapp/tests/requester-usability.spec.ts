@@ -1,0 +1,65 @@
+import { test, expect } from "playwright/test";
+
+for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:390,height:844}]) {
+  test(`one catalog search and device instructions ${viewport.width}`,async({page},info)=>{
+    await page.setViewportSize(viewport);
+    const errors:string[]=[];const unexpected:string[]=[];let starts=0;let writes=0;
+    page.on('pageerror',error=>errors.push(error.message));
+    page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
+    const profile={person_id:'synthetic-usability',display_name:'Синтетический Сотрудник',full_name:'Синтетический Сотрудник',department_id:'it',phone:'0000'};
+    const completion={complete:true,required_fields:[],missing_fields:[],blocks:{}};
+    const print={offering_code:'print',full_code:'workplace.print',title:'Печать',request_template_key:'help',guided_scenario_enabled:true,
+      catalog_items:[{key:'no_print',title:'Принтер не печатает',description:'Проверка печати',entry_point_key:'no_print',synonyms:[]}]};
+    const scan={...print,offering_code:'scan',full_code:'workplace.scan',title:'Сканирование',catalog_items:[{key:'no_scan',title:'Сканер не сканирует',entry_point_key:'no_scan',synonyms:[]}]};
+    const step={id:'synthetic-session',revision:1,state:'active',back_targets:[],block:{id:'check',kind:'instruction',title:'Проверьте кабель принтера'}};
+    await page.route('**/api/**',async route=>{
+      const request=route.request();const url=new URL(request.url());const path=url.pathname;let data:unknown={};
+      if(path==='/api/web/session/me')data={user_login:'synthetic-usability',actor_role:'user',auth_type:'ui_token',default_workspace:'requester',available_workspaces:['requester'],permissions:['workspace.requester.view']};
+      else if(path==='/api/web/session/capabilities')data={self_registration_enabled:true};
+      else if(path==='/api/web/requester/bootstrap')data={workspace:'requester',profile,profile_completion:completion,devices:[],feature_flags:{requester_ticket_create:true,requester_no_device_create:true},policies:{}};
+      else if(path==='/api/web/requester/profile')data={profile,profile_completion:completion,profile_schema:{fields:[]},devices:[],active_bindings:[]};
+      else if(path==='/api/web/requester/tickets'){if(request.method()==='POST')writes++;data={tickets:[]};}
+      else if(path==='/api/web/requester/devices')data={devices:[],active_bindings:[]};
+      else if(path==='/api/web/requester/consents')data=[];
+      else if(path==='/api/web/notifications/unread_count')return route.fulfill({json:{status:'ok',unread_count:0}});
+      else if(path==='/api/service-catalog/current')return route.fulfill({json:url.searchParams.has('q') ? {status:'ok',search:{results:[{title:'Принтер не печатает',description:'Проверка печати',category:'Печать',offering_full_code:'workplace.print',entry_point_key:'no_print',help_mode:'guided',match_reason:'По описанию'}],suggestions:[],corrected_query:null}} : {status:'ok',catalog_version:'synthetic',services:[{service_code:'workplace',title:'Рабочее место',offerings:[print,scan]}]}});
+      else if(path==='/api/web/requester/request-scenarios/sessions'){starts++;data=step;}
+      else if(path==='/api/web/requester/request-scenarios/sessions/synthetic-session')data=step;
+      else {unexpected.push(path);return route.fulfill({status:404,json:{status:'error'}});}
+      return route.fulfill({json:{status:'success',data}});
+    });
+    await page.route('**/public_api/ticket_forms/current**',route=>route.fulfill({json:{status:'ok',pack:{key:'request_forms',version:'synthetic',forms:[{key:'help',title:'Помощь',availability_policy:{available_without_agent_binding:true},fields:[{key:'summary',label:'Описание',type:'textarea'}]}]}}}));
+    await page.goto('/app/requester/new');
+    const search=page.getByRole('searchbox',{name:'Найти проблему во всём каталоге'});
+    await search.click();
+    await expect(page.getByRole('button',{name:'Печать',exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Сканирование',exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Печать',exact:true}).click();
+    expect(starts).toBe(0);
+    await page.screenshot({path:info.outputPath('catalog.png'),fullPage:true});
+    await page.getByRole('button',{name:/^Принтер не печатает/}).click();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
+    expect(starts).toBe(1);
+    await expect(page.getByLabel('Найти проблему',{exact:true})).toHaveCount(0);
+    await expect(page.getByLabel('Категория обращения',{exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'Другой пункт каталога'}).click();
+    await page.getByRole('button',{name:/^Принтер не печатает/}).click();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
+    await search.fill('принтер');
+    await page.getByRole('button',{name:/Принтер не печатает.*Проверка печати/}).click();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
+    expect(writes).toBe(0);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.goto('/app/requester/devices/link');
+    await expect(page.getByRole('heading',{name:'Где взять код'})).toBeVisible();
+    await expect(page.getByText(/правой кнопкой мыши/)).toBeVisible();
+    const submit=page.getByRole('button',{name:'Привязать устройство',exact:true});
+    if(viewport.width>=1366)await expect(submit).toBeInViewport();
+    await page.screenshot({path:info.outputPath('device-guide.png'),fullPage:true});
+    await page.getByText('Показать на скриншотах',{exact:true}).click();
+    await expect(page.getByRole('img',{name:/Скрытые значки Windows/})).toBeVisible();
+    await expect.poll(()=>page.getByRole('img').evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0))).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    expect(errors).toEqual([]);expect(unexpected).toEqual([]);expect(writes).toBe(0);
+  });
+}

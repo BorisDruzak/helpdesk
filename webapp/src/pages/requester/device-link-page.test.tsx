@@ -24,6 +24,14 @@ beforeEach(() => { vi.clearAllMocks(); clearPendingDeviceCode(); mocks.profile.d
 afterEach(cleanup);
 
 describe("device binding requester wizard", () => {
+  it("explains Windows tray, right-click menu, copying and renewing the code", () => {
+    show();
+    expect(screen.getByRole("heading",{name:"Где взять код"})).toBeInTheDocument();
+    expect(screen.getByText(/правой кнопкой мыши/)).toBeInTheDocument();
+    expect(screen.getByText(/Скопировать код/)).toBeInTheDocument();
+    expect(screen.getByText(/Получить новый код/)).toBeInTheDocument();
+    expect(screen.getByText(/значка нет/)).toBeInTheDocument();
+  });
   it("keeps a fragment code only in memory while profile completion is required", () => {
     rememberPendingDeviceCode("123-456"); mocks.profile.data = { profile: null, profile_completion: { complete: false } };
     show(); fireEvent.click(screen.getByRole("link", { name: "Заполнить профиль" }));

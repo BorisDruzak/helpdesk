@@ -63,6 +63,13 @@ additional category select or within-category search on this page. Server search
 availability checks, direct links, owner-scoped scenario selection and form drafts
 remain authoritative. Search errors remain distinct from no matches.
 
+Device linking explains how to open the Windows tray, right-click Endpoint Agent,
+choose «Привязать компьютер к Helpdesk», and copy the code. Optional tray/menu
+illustrations are under `webapp/src/assets/guides`; no actual code is published.
+Expiry/renewal and missing-agent guidance keep the ordinary support path available.
+The code remains Endpoint-owned possession proof; Helpdesk binding and conflict
+review are unchanged.
+
 On the approved staging host (`test-helpdesk`, `192.168.101.118`), run
 `python scripts/configure_helpdesk_registration.py --enabled true` to enable
 requester registration (`false` disables it). The utility updates only

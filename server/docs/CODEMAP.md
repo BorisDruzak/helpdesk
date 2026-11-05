@@ -573,6 +573,8 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   is composed locally; unsupported external commands fail closed.
 - The requester wizard at `webapp/src/pages/requester/device-link-page.tsx`
   uses `device-link-state.ts` for memory-only fragment capture before auth routing.
+  Inline Windows tray/copy/renew instructions and optional images in
+  `webapp/src/assets/guides` explain possession-code retrieval without publishing a code.
 - Requester preview/create carry explicit `device_scope: none` through
   `TicketContextBuilder`; optional device selection cannot silently fall back to
   the primary computer. Ticket Endpoint snapshots require an exact Registry
