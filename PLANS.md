@@ -2831,3 +2831,12 @@ Report: `docs/UX_SUPPORT_FOLLOWUP_2026-11-02.md`; evidence in task tmp directory
 - Completed: commits d4a5b8774900502721180938c1988cdf30e7361a, fc3117756335c045894db9bdefa79b97184115b9 and deployed app 153dc3faf16f2759469c84758f131d58a4f538ca. Fresh backup, migration152, audited 30-department publication and repeat no-op verified. Live signup201/user-only, complete persistent profile, home before manual ticket form, zero ticket POSTs and browser errors. Final service active/health200, source21 digests match, OIDC initiation no MFA request; fresh AD credential login not repeated. Staging remains running.
 - Next Steps: complete; acceptance receipt docs/UX_REGISTRATION_ACCEPTANCE_2026-11-04.md. No production deploy or push.
 - Handoff: docs/superpowers/specs/2026-11-04-requester-registration-design.md; docs/superpowers/plans/2026-11-04-requester-registration.md; private progress/evidence in .superpowers/sdd/2026-11-04-requester-registration and tmp/onboarding-20261104. Production unchanged.
+
+## Requester usability follow-up — 2026-11-05
+
+- Goal: resolve four concrete browser comments: one department field, password visibility, one catalog search with category children, and actionable device-code instructions; investigate WorkTime login.
+- Scope/constraints: requester UI only; no server/auth/API/schema/dependency changes; preserve drafts, explicit scenario choice, retry/ownership guards and unrelated local changes. Staging only; leave running.
+- Decisions: existing React controls and server search, accessible department combobox, independent password toggles, expanded published problem leaves; two supplied tray/menu images, no code screenshot.
+- Current State: complete. App ecd784075a2d758125ae5568ff2b682aeb57c639 deployed canonically after fresh verified backup. Source28 digests/strict TLShealth200/serviceactive and both PNG200 verified. Focused41/build pass; browser27 earlier +3 final pass1366/1920/390. Independent final review clean. Live real-session catalog/guide and public registration/toggles pass, console0, no account/ticket/binding writes. WorkTime separate AD/OIDC identity requirement confirmed from current runtime and login page; local Helpdesk-account login requires a separate trust contract, not implemented here.
+- Next Steps: task complete; leave staging running. Acceptance and WorkTime findings: docs/UX_REQUESTER_FOLLOWUP_2026-11-05.md. Production/Endpoint code unchanged, no push/PR.
+- Handoff: docs/superpowers/plans/2026-11-05-requester-usability.md; tmp/requester-usability-20261105 evidence.

@@ -40,7 +40,7 @@ contract is established; never infer an AD identity from a local Helpdesk login.
 - [x] Run focused component tests, current TypeScript/build and real browser
   fixtures at1366/1920/mobile with console/network evidence. Review full diff,
   update registration/catalog docs/CODEMAP/own PLANS section, workspace verify.
-- [ ] Commit only task files, deploy exact reviewed SHA through canonical staging
+- [x] Commit only task files, deploy exact reviewed SHA through canonical staging
   release script, verify matching runtime and live public registration/guide
   flows where authorized. Keep staging running. No production or push.
 
@@ -61,3 +61,12 @@ Focused41 pass; build/typecheck pass. Existing browser27 cases pass; final new
 Initial selector mismatch and non-served guide URL were caught and corrected.
 Independent static review clean. Fresh verified staging backup at
 `/var/backups/helpdesk-requester-usability-20261105/backup.json`; schema152.
+
+## Completed staging acceptance
+
+App `ecd784075a2d758125ae5568ff2b682aeb57c639` installed through the canonical
+release script; source28 hashes, TLShealth200, serviceactive, both PNG200 verified.
+Live user-session catalog/search and device guidance verified without submission;
+registration department and password toggles also verified without signup.
+User tab returned to its original link page; service left running.
+Acceptance and WorkTime findings: `docs/UX_REQUESTER_FOLLOWUP_2026-11-05.md`.
