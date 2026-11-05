@@ -8,6 +8,7 @@ import { ScenarioConditionEditor } from "./scenario-condition-editor";
 import { ScenarioSeparatedInput } from "./scenario-separated-input";
 
 import { QuestionProcessingEffects } from "./scenario-processing-facts";
+import { ScenarioAuthorAttachments } from "./scenario-author-attachments";
 
 type Props = { field: ScenarioField; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (field: ScenarioField) => void };
 export function ScenarioFieldEditor({ field, definition, disabled, onChange }: Props) {
@@ -22,13 +23,13 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
     <label className="block">Что спросить?<Input maxLength={300} value={field.label} onChange={event => onChange({ ...field, label: event.target.value })} /></label>
     <label className="block">Тип ответа<Select value={field.type} onChange={event => onChange(changeFieldType(field, event.target.value as ScenarioFieldType))}>
       {Object.entries(fieldLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
-      <option disabled value="file">Вложение — защищённый backend пока недоступен</option>
+      <option disabled value="file">Вложение — отдельный тип ответа пока недоступен</option>
     </Select></label>
     <div className="flex flex-wrap gap-4">
       <label><input type="checkbox" checked={!!field.required} onChange={event => onChange({ ...field, required: event.target.checked })} /> Обязательный ответ</label>
       <label><input type="checkbox" checked={!!field.allow_unknown} onChange={event => onChange({ ...field, allow_unknown: event.target.checked, process_mapping: { ...field.process_mapping, effects: event.target.checked ? field.process_mapping?.effects : field.process_mapping?.effects?.filter(effect => effect.value !== null) } })} /> Разрешить «Не знаю»</label>
     </div>
-    <label className="block">Подсказка<Input maxLength={2000} value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label>
+    {["text", "textarea"].includes(field.type) ? <ScenarioAuthorAttachments blockId={currentPage?.id || ""} fieldKey={field.key} attachments={field.help_attachments} disabled={disabled}><label className="block">Подсказка<Input maxLength={2000} value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label></ScenarioAuthorAttachments> : <label className="block">Подсказка<Input maxLength={2000} value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label>}
     {roles.some(role => role.startsWith("priority_")) && <p className="studio-next-help">Ответ используется действующей политикой Helpdesk.</p>}
     {(definition.schema_version ?? 1) >= 2 && <QuestionProcessingEffects field={field} disabled={disabled} onChange={onChange}/>}
     <label className="block">Пример ответа<Input maxLength={500} value={field.placeholder ?? ""} onChange={event => onChange({ ...field, placeholder: event.target.value })} /></label>

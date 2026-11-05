@@ -13,8 +13,8 @@ reason = "Alembic owns the schema revision marker."
 [[rules]]
 name = "partial user and group survivors"
 classification = "special_cleanup"
-tables = ["access_group_members", "ui_users"]
-reason = "Cleanup preserves admin/support survivors and prunes non-survivors with special SQL."
+  tables = ["access_group_members", "ui_users", "request_studio_assets"]
+  reason = "Cleanup preserves admin/support survivors and Studio author material; special SQL removes runtime-only rows before their parent tables."
 
 [[rules]]
 name = "ticket runtime rows"

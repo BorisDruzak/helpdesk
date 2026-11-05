@@ -39,7 +39,7 @@ class RequestScenarioRepo:
         self.session, self.auth = session, auth
         self.catalog = ServiceCatalogRepo(session)
 
-    async def create_service(self, raw):
+    async def create_service(self, raw, *, copy_source_id=None):
         """Create the internal catalog binding with the map, in one transaction."""
         from web_api.dto.request_scenario import ScenarioDraftDefinition, CatalogCode, _bounded_input
         from pydantic import TypeAdapter
@@ -52,7 +52,9 @@ class RequestScenarioRepo:
         prior = await self.session.scalar(select(RequestStudioScenario).where(RequestStudioScenario.scenario_key == raw.get("scenario_key")))
         if prior:
             row, draft = await self.detail(prior.id)
-            comparable = deepcopy(draft.definition)
+            # Normalize additive DTO defaults before comparing an older draft
+            # with a retried create request.
+            comparable = ScenarioDraftDefinition.model_validate(draft.definition).model_dump(mode="json")
             comparable.update(offering_full_code="", publish_offering=False)
             comparable["process_binding"]["request_template_key"] = ""
             incoming = deepcopy(raw)
@@ -61,9 +63,18 @@ class RequestScenarioRepo:
                 "process_binding": {**incoming.get("process_binding", {}), "request_template_key": draft.definition["process_binding"]["request_template_key"]}}).model_dump(mode="json")
             incoming.update(offering_full_code="", publish_offering=False)
             incoming["process_binding"]["request_template_key"] = ""
-            if comparable != incoming:
+            rebindings = None
+            if copy_source_id is not None:
+                from tickets.request_scenario_assets import copy_material_sources, material_content_definition, material_references
+                await copy_material_sources(self.session, copy_source_id, incoming)
+                left = await material_content_definition(self.session, row.id, comparable)
+                right = await material_content_definition(self.session, copy_source_id, incoming)
+                rebindings = {old["asset_id"]: deepcopy(new) for old, new in zip(material_references(incoming), material_references(comparable))}
+            else:
+                left, right = comparable, incoming
+            if left != right:
                 raise ScenarioAdminError("REVISION_CONFLICT", 409)
-            return {"scenario": serialize(row), "draft": serialize(draft)}
+            return {"scenario": serialize(row), "draft": serialize(draft), **({"asset_rebindings": rebindings} if rebindings is not None else {})}
         if raw.get("offering_full_code") or (raw.get("process_binding") or {}).get("request_template_key"):
             raise ScenarioAdminError("CATALOG_BINDING_INVALID")
         configured = (service.get("metadata") or {}).get("studio_default_template")
@@ -100,7 +111,7 @@ class RequestScenarioRepo:
             "visibility": "public", "request_template_key": template_key, "ticket_type_code": template["ticket_type"],
             "request_type": "request", "metadata": {"studio_catalog": {"category_id": definition.category_id}, "studio_map_source": definition.scenario_key}},
             actor_id=self.auth.actor_id, actor_role=self.auth.actor_role)
-        return await self.create(definition)
+        return await self.create(definition, copy_source_id=copy_source_id)
 
     async def convert_offering(self, code, *, apply=False):
         from tickets.request_scenario_conversion import convert_form, ConversionBlocked
@@ -292,7 +303,11 @@ class RequestScenarioRepo:
     def _draft_audit(row, draft):
         return {"scenario": serialize(row), "revision": draft.revision, "definition_hash": definition_hash(draft.definition)}
 
-    async def create(self, definition):
+    async def create(self, definition, *, copy_source_id=None):
+        from tickets.request_scenario_assets import validate_material_references, copy_material_sources, clone_material_assets
+        sources = await copy_material_sources(self.session, copy_source_id, definition) if copy_source_id is not None else None
+        if sources is None:
+            await validate_material_references(self.session, None, definition)
         await self._service_lock(definition.service_code)
         await self._binding(definition)
         row = RequestStudioScenario(scenario_key=definition.scenario_key, service_code=definition.service_code,
@@ -300,11 +315,14 @@ class RequestScenarioRepo:
             description=definition.description, created_by=self.auth.actor_id, updated_by=self.auth.actor_id)
         self.session.add(row)
         await self.session.flush()
-        draft = RequestStudioDraft(scenario_id=row.id, definition=definition.model_dump(mode="json"), revision=1, updated_by=self.auth.actor_id)
+        raw, rebindings = definition.model_dump(mode="json"), None
+        if sources is not None:
+            raw, rebindings = await clone_material_assets(self.session, row.id, raw, sources, self.auth.actor_id)
+        draft = RequestStudioDraft(scenario_id=row.id, definition=raw, revision=1, updated_by=self.auth.actor_id)
         self.session.add(draft)
         await self.session.flush()
         await self._audit("scenario", row.id, "create", None, self._draft_audit(row, draft))
-        return {"scenario": serialize(row), "draft": serialize(draft)}
+        return {"scenario": serialize(row), "draft": serialize(draft), **({"asset_rebindings": rebindings} if rebindings is not None else {})}
 
     async def save(self, identifier, payload):
         current, _ = await self.detail(identifier)
@@ -317,6 +335,8 @@ class RequestScenarioRepo:
             raise ScenarioAdminError("CATALOG_BINDING_IMMUTABLE")
         await self._binding(definition)
         before = self._draft_audit(row, draft)
+        from tickets.request_scenario_assets import validate_material_references
+        await validate_material_references(self.session, row.id, definition)
         row.title, row.description, row.category_id = definition.title, definition.description, definition.category_id
         row.updated_by = draft.updated_by = self.auth.actor_id
         draft.definition = definition.model_dump(mode="json")

@@ -164,6 +164,20 @@ class FieldValidation(StrictModel):
         return self
 
 
+class ScenarioAttachment(StrictModel):
+    asset_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")]
+    name: Annotated[str, Field(min_length=1, max_length=255)]
+    mime_type: Annotated[str, Field(min_length=1, max_length=100)]
+    size_bytes: int = Field(ge=0, le=209715200)
+    url: Annotated[str, Field(max_length=200)]
+
+    @model_validator(mode="after")
+    def canonical_url(self):
+        if self.url != f"/api/web/request-scenario-assets/{self.asset_id}/download":
+            raise ValueError("attachment URL must identify its canonical asset")
+        return self
+
+
 class ScenarioField(StrictModel):
     key: Key
     type: FieldType
@@ -171,6 +185,7 @@ class ScenarioField(StrictModel):
     required: bool = False
     placeholder: str = Field(default="", max_length=500)
     help_text: str = Field(default="", max_length=2000)
+    help_attachments: Annotated[list[ScenarioAttachment], Field(max_length=10)] = Field(default_factory=list)
     options: Annotated[list[FieldOption], Field(max_length=100)] = Field(default_factory=list)
     visible_when: Condition | None = None
     required_when: Condition | None = None
@@ -207,6 +222,7 @@ class FormPage(BlockBase):
 class InstructionContent(StrictModel):
     format: Literal["markdown", "plain"] = "markdown"
     body: Annotated[str, Field(min_length=1, max_length=10000)]
+    attachments: Annotated[list[ScenarioAttachment], Field(max_length=10)] = Field(default_factory=list)
 
 
 class Instruction(BlockBase):

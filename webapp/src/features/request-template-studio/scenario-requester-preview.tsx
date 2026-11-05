@@ -10,7 +10,7 @@ export function ScenarioRequesterPreview({ definition, block }: { definition:Sce
  if(!block) return <p>Выберите блок на карте, чтобы увидеть его оформление для сотрудника.</p>;
  const projected:ScenarioStepDisplay={id:block.id,kind:block.kind,title:block.title};
  if(block.kind==="form_page"){projected.layout=block.layout;projected.fields=block.fields.map(({visible_when: _visible,required_when: _required,...field})=>field);}
- if(block.kind==="instruction"){projected.content={body:block.content.body,format:block.content.format??"plain"};projected.acknowledgment_required=block.acknowledgment_required;}
+ if(block.kind==="instruction"){projected.content={...block.content,format:block.content.format??"plain"};projected.acknowledgment_required=block.acknowledgment_required;}
  if(block.kind==="finish")projected.message=block.message;
 
  if(block.kind==="review") projected.answers=definition.blocks?.flatMap(item=>item.kind==="form_page"?item.fields.map(field=>({key:field.key,label:field.label,type:field.type,value:null,display_value:"Ответ сотрудника"})):[]);

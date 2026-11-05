@@ -2,11 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RequestStudioApiError } from "./api";
 import { archiveScenario, createScenario, createServiceScenario, fetchScenarioDetail, saveScenario, type ScenarioDetail } from "./scenario-api";
-import type { ScenarioDraftDefinition } from "./scenario-contract";
+import type { ScenarioAttachment, ScenarioDraftDefinition } from "./scenario-contract";
 
 function semanticJson(value: unknown): string {
   return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+}
+function rebindCopiedMaterials(definition: ScenarioDraftDefinition, rebindings: Record<string, ScenarioAttachment> = {}): ScenarioDraftDefinition {
+  if (!Object.keys(rebindings).length) return definition;
+  const materials = (items?: ScenarioAttachment[]) => items?.map(item => rebindings[item.asset_id] || item);
+  return { ...definition, blocks: definition.blocks?.map(block => block.kind === "instruction" ? { ...block, content: { ...block.content, attachments: materials(block.content.attachments) } } : block.kind === "form_page" ? { ...block, fields: block.fields.map(field => ({ ...field, help_attachments: materials(field.help_attachments) })) } : block) };
 }
 function blankScenario(): ScenarioDraftDefinition { return { schema_version: 3, processing: { routes: {}, sla_profiles: {}, defaults: { route: "", sla_profile: "" }, assignment_mode: "last_matching_branch" }, scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: "Новый сценарий", description: "", service_code: "", offering_full_code: "", category_id: null, entry_block_id: null, blocks: [], process_binding: { request_template_key: "" } }; }
 export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
@@ -20,28 +25,30 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
   const [loading, setLoading] = useState(false);
   const requestSequence = useRef(0);
   const saveSequence = useRef(0);
+  const copySourceId = useRef<string | null>(null);
   const latestDefinition = useRef(definition);
   latestDefinition.current = definition;
   const [loadId, setLoadId] = useState<string | null>(null);
   const dirty = !!definition && (detail ? semanticJson(definition) !== semanticJson(detail.draft.definition) : !mapFirst || semanticJson(definition) !== semanticJson(pristine.current));
-  function accept(value: ScenarioDetail) { setDetail(value); setDefinition(value.draft.definition); setConflict(false); setError(""); cache.setQueryData(["scenario-detail", value.scenario.id], value); }
+  function accept(value: ScenarioDetail) { copySourceId.current = null; setDetail(value); setDefinition(value.draft.definition); setConflict(false); setError(""); cache.setQueryData(["scenario-detail", value.scenario.id], value); }
   const save = useMutation({ mutationFn: async () => {
     if (!definition) throw new Error("Нет черновика");
     const snapshot = definition;
     const sequence = requestSequence.current;
     saveSequence.current = sequence;
-    const value = await (detail ? saveScenario(detail.scenario.id, snapshot, detail.draft.revision) : snapshot.offering_full_code ? createScenario(snapshot) : createServiceScenario(snapshot));
+    const value = await (detail ? saveScenario(detail.scenario.id, snapshot, detail.draft.revision) : snapshot.offering_full_code ? createScenario(snapshot) : createServiceScenario(snapshot, copySourceId.current));
     return { value, snapshot, sequence };
   }, onSuccess: async ({ value, snapshot, sequence }) => {
     if (sequence !== requestSequence.current) return;
+    copySourceId.current = null;
     setDetail(value); setConflict(false); setError("");
     if (semanticJson(latestDefinition.current) === semanticJson(snapshot)) setDefinition(value.draft.definition);
-    else if (!snapshot.offering_full_code && latestDefinition.current) setDefinition({
+    else if (!snapshot.offering_full_code && latestDefinition.current) setDefinition(rebindCopiedMaterials({
       ...latestDefinition.current, offering_full_code: value.draft.definition.offering_full_code,
       service_code: value.draft.definition.service_code,
       schema_version: value.draft.definition.schema_version, publish_offering: value.draft.definition.publish_offering,
       process_binding: { ...latestDefinition.current.process_binding, request_template_key: value.draft.definition.process_binding.request_template_key },
-    });
+    }, value.asset_rebindings));
     cache.setQueryData(["scenario-detail", value.scenario.id], value);
     setMessage(`Черновик сохранён. Ревизия ${value.draft.revision}.`); await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }, onError: value => {
     if (saveSequence.current !== requestSequence.current) return;
@@ -58,6 +65,7 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
     return archiveScenario(detail.scenario.id, detail.draft.revision);
   }, onSuccess: async value => { accept(value); setMessage("Сценарий архивирован."); await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }, onError: () => setError("Не удалось архивировать сценарий. Обновите серверную версию и повторите.") });
   async function open(id: string) {
+    copySourceId.current = null;
     const sequence = ++requestSequence.current;
     setLoadId(id);
     setLoading(true); setError(""); setMessage("");
@@ -66,13 +74,14 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
     finally { if (sequence === requestSequence.current) setLoading(false); }
   }
   function create(copy?: ScenarioDraftDefinition, asCopy = true) {
+    copySourceId.current = copy && asCopy ? detail?.scenario.id ?? null : null;
     requestSequence.current += 1; setLoadId(null); setLoading(false);
     setDetail(null); setMessage(""); setError(""); setConflict(false);
     const next = copy ? { ...structuredClone(copy), ...(asCopy ? { schema_version: copy.schema_version === 3 ? 3 as const : 2 as const, offering_full_code: "", process_binding: { ...copy.process_binding, request_template_key: "" } } : {}), scenario_key: `scenario_${crypto.randomUUID().replaceAll("-", "")}`, title: asCopy ? `${copy.title} — копия` : copy.title } : blankScenario();
     pristine.current = copy ? null : next;
     setDefinition(next);
   }
-  function close() { if (mapFirst) { create(); return; } requestSequence.current += 1; setLoadId(null); setLoading(false); setDefinition(null); setDetail(null); setError(""); setMessage(""); setConflict(false); }
+  function close() { if (mapFirst) { create(); return; } copySourceId.current = null; requestSequence.current += 1; setLoadId(null); setLoading(false); setDefinition(null); setDetail(null); setError(""); setMessage(""); setConflict(false); }
   function change(value: ScenarioDraftDefinition) { setDefinition(value); setMessage(""); }
   return { definition, detail, dirty, message, error, conflict, loading, loadId, save, archive, open, create, close, change, accept, busy: loading || save.isPending || archive.isPending };
 }

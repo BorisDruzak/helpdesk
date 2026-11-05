@@ -234,10 +234,46 @@ normalization, required/visibility checks and hidden-answer pruning.
 There is no pre-ticket network dispatch, operation or success outcome. The existing
 capability allowlist and required diagnostic fallback remain authoritative.
 
-Pre-ticket attachment staging is unavailable. The field DTO rejects `file`, the
-editor disables it, and readiness reports `attachments_unsupported` for an
-imported/stored malformed file field. No temporary upload, retention or download
-endpoint is introduced. Existing ticket-scoped attachments are unaffected.
+Supplementary files are supported on `text`/`textarea` answers and author
+instructions/help. The standalone `file` answer type remains unsupported; scalar
+answer validation, conditions and policy input are unchanged. `ScenarioField`
+adds `help_attachments`; `InstructionContent` adds `attachments`. Each collection
+has at most10 canonical asset descriptors (`asset_id,name,mime_type,size_bytes,url`).
+
+Schema155 introduces `request_studio_assets`, separately scoped to an author
+scenario or an owned requester session/field. Existing Artifact device-or-ticket
+invariants remain intact. Admin upload is under
+`POST /api/web/admin/request-studio/scenarios/{identifier}/attachments`.
+Requester upload/remove use
+`POST /api/web/requester/request-scenarios/sessions/{identifier}/attachments`
+and `DELETE` with an additional `/{asset_id}`. Upload multipart includes file,
+field_key,expected_block_id,revision and optional JSON draft answers for dynamic
+visibility. Removal JSON carries current block/revision. Upload/remove do not
+advance the wizard/revision or create a ticket. Projected fields/review rows
+carry server-owned `answer_attachments`; these are separate from scalar answers.
+
+Authenticated `GET /api/web/request-scenario-assets/{asset_id}/download` checks
+draft-admin, available published/pinned material or current owner-session access.
+Only raster files are previewed; other formats download with nosniff. Existing
+per-file200MiB limit applies. Save/publication revalidate canonical material refs
+against the scenario; foreign/forged refs fail. Back and final submission prune
+nonretained/hidden field files. Explicit final submission creates canonical
+ticket Artifacts, initial message refs and per-field context atomically, once.
+
+Existing «Создать копию» sends optional request-only `copy_source_id` to the
+service-create endpoint. Only canonical materials referenced by that source's
+saved draft/nonrevoked versions can be copied. New scenario-owned asset rows
+share immutable blobs and receive fresh IDs/URLs. `asset_rebindings` maps source
+IDs to canonical new descriptors; the editor merges them without overwriting
+concurrent text edits. Retries compare document placement/content and blob
+signatures rather than generated IDs, preserving repeated-reference structure.
+Generic cross-scenario save/import remains rejected.
+
+`server/scripts/cleanup_request_scenario_assets.py --limit 100` is dry-run by
+default; requires an explicit DATABASE_URL. It bounds expired unsubmitted session
+cleanup, locks candidate ownership rows and keeps author/version/ticket files.
+Only confirmed committed removal may unlink files; uncertain outcomes retain
+blobs for reconciliation. Referenced ticket lifecycle/purge remains canonical.
 
 ## Selected processing policies (P10 acceptance work)
 

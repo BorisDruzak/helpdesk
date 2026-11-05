@@ -2,10 +2,10 @@ import { Download, FileImage, FileText, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import "./chat-attachment.css";
 
-// Inline content uses only the existing same-origin, authorized artifact route.
+// Inline content uses only same-origin, authorized artifact/scenario asset routes.
 // Keep the server's historical ticket ownership fallback, but never embed query
 // credentials, unknown parameters, external URLs, SVG, HTML or document embeds.
-const artifactUrl = /^\/api\/artifacts\/[A-Za-z0-9_-]+\/download(?:\?ticket_id=[A-Za-z0-9_-]+)?$/;
+const artifactUrl = /^(?:\/api\/artifacts\/[A-Za-z0-9_-]+\/download(?:\?ticket_id=[A-Za-z0-9_-]+)?|\/api\/web\/request-scenario-assets\/[A-Za-z0-9_-]+\/download)$/;
 const rasterMime = /^image\/(png|jpeg|gif|webp|avif|bmp|x-ms-bmp)$/i;
 function imageAttachment(attachment: Record<string, unknown>, name: string) {
   const mime = String(attachment.mime_type ?? attachment.mime ?? "").toLowerCase();

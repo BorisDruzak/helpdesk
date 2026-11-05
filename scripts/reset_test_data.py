@@ -178,6 +178,7 @@ EXPLICIT_CLEAR_TABLES = {
 }
 
 SPECIAL_TABLES = {
+    "request_studio_assets",
     "access_group_members",
     "ui_users",
 }
@@ -197,9 +198,17 @@ class SpecialOperation:
     count_sql: str
     apply_sql: str
     kind: str = "delete"
+    before_tables: bool = False
 
 
 SPECIAL_OPERATIONS = (
+    SpecialOperation(
+        name="clear_requester_studio_assets_preserve_author_material",
+        table="request_studio_assets",
+        count_sql="SELECT count(*) FROM request_studio_assets WHERE session_id IS NOT NULL",
+        apply_sql="DELETE FROM request_studio_assets WHERE session_id IS NOT NULL",
+        before_tables=True,
+    ),
     SpecialOperation(
         name="prune_access_group_members_to_admin_support",
         table="access_group_members",
@@ -427,12 +436,9 @@ async def execute_plan(
     special_operations: Sequence[SpecialOperation],
 ) -> tuple[dict[str, int], list[dict[str, Any]]]:
     deleted_rows: dict[str, int] = {}
-    for table in delete_order:
-        result = await conn.execute(text(f"DELETE FROM {quote_ident(table)}"))
-        deleted_rows[table] = int(result.rowcount if result.rowcount is not None else 0)
-
     special_results: list[dict[str, Any]] = []
-    for operation in special_operations:
+
+    async def run_special(operation):
         before = await scalar_int(conn, operation.count_sql)
         result = await conn.execute(text(operation.apply_sql))
         affected = int(result.rowcount if result.rowcount is not None else 0)
@@ -447,6 +453,16 @@ async def execute_plan(
                 "matching_after": after,
             }
         )
+
+    for operation in special_operations:
+        if operation.before_tables:
+            await run_special(operation)
+    for table in delete_order:
+        result = await conn.execute(text(f"DELETE FROM {quote_ident(table)}"))
+        deleted_rows[table] = int(result.rowcount if result.rowcount is not None else 0)
+    for operation in special_operations:
+        if not operation.before_tables:
+            await run_special(operation)
     return deleted_rows, special_results
 
 
@@ -563,7 +579,7 @@ async def run_reset(args: argparse.Namespace) -> dict[str, Any]:
             deleted_rows, special_results = await execute_plan(
                 conn,
                 delete_order=delete_order,
-                special_operations=SPECIAL_OPERATIONS,
+                special_operations=tuple(operation for operation in SPECIAL_OPERATIONS if operation.table in actual_tables),
             )
 
             clear_counts_after = await count_tables(conn, clear_tables)

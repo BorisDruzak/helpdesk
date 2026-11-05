@@ -273,6 +273,24 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   `app/db/request_scenario_models.py`, additive migration 147. See
   `GUIDED_REQUEST_SCENARIOS.md` for limits, immutable version/session pins,
   cleanup classification and the 147 → 146 rollback boundary.
+- Studio materials and answer files: migration155 adds `RequestStudioAsset`;
+  `tickets/request_scenario_assets.py` validates scenario material refs, projects
+  owned session files and claims retained visible answers into canonical ticket
+  Artifacts/initial chat/context in the submission transaction. Authenticated
+  `web_api/request_scenario_asset_handlers.py` owns scoped streaming/upload/remove
+  and safe download. `request_scenario_session_repo` integrates projection/back/
+  submit; scalar answer DTOs/policy semantics remain unchanged. Frontend
+  `scenario-author-attachments.tsx` and requester `scenario-attachments.tsx`
+  add picker/drop/paste and reuse the safe in-page raster viewer.
+  `use-scenario-editor.ts` carries explicit copy provenance to service creation;
+  source material is rebased to fresh scenario-owned descriptors with idempotent
+  retries and async local-text preservation. Generic foreign refs remain invalid.
+  Bounded
+  `server/scripts/cleanup_request_scenario_assets.py` defaults to dry-run for
+  expired unsubmitted files; reset preserves author materials. Ticket purge
+  removes claimed ownership transactionally and unlinks only after confirmed
+  caller commit, retaining shared blobs/unknown outcomes. Contracts and limits:
+  [guided scenarios](GUIDED_REQUEST_SCENARIOS.md#diagnostic-and-attachment-boundary-p9).
 - Studio v3 entrances: the strict scenario DTO adds `entry_points` and
   `editor_layout.positions` to existing immutable definition JSONB. Session start
   and simulation accept `entry_point_key`; requester catalog projects safe

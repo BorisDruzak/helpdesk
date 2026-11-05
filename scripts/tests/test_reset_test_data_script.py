@@ -76,3 +76,20 @@ def test_delete_order_places_children_before_parents() -> None:
 def test_scenario_reset_clears_sessions_and_preserves_configuration():
     config = {"request_studio_categories", "request_studio_scenarios", "request_studio_scenario_versions", "request_studio_drafts"}
     assert reset_test_data.build_clear_tables(config | {"request_studio_sessions"}) == {"request_studio_sessions"}
+
+
+def test_studio_asset_reset_preserves_author_material_and_precedes_sessions():
+    assert "request_studio_assets" not in reset_test_data.build_clear_tables({"request_studio_assets", "request_studio_sessions"})
+    operation = next(item for item in reset_test_data.SPECIAL_OPERATIONS if item.table == "request_studio_assets")
+    assert operation.before_tables
+    assert operation.apply_sql == "DELETE FROM request_studio_assets WHERE session_id IS NOT NULL"
+
+
+async def test_studio_asset_partial_delete_runs_before_parent_delete():
+    from unittest.mock import AsyncMock
+    from types import SimpleNamespace
+    conn = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(rowcount=1, scalar_one=lambda: 1)))
+    operation = next(item for item in reset_test_data.SPECIAL_OPERATIONS if item.table == "request_studio_assets")
+    await reset_test_data.execute_plan(conn, delete_order=["request_studio_sessions"], special_operations=[operation])
+    sql = [str(call.args[0]) for call in conn.execute.call_args_list]
+    assert sql.index(operation.apply_sql) < sql.index('DELETE FROM "request_studio_sessions"')

@@ -62,6 +62,7 @@ class ScenarioDocumentInput(StrictModel):
 
 class ServiceScenarioCreate(StrictModel):
     definition: dict
+    copy_source_id: Identifier | None = None
 
 
 class ScenarioConversionInput(StrictModel):

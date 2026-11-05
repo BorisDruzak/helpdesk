@@ -88,6 +88,8 @@ class ScenarioPublicationService:
                                 "archived": row.archived, "source_snapshot": source})
 
     async def _assess(self, row, draft, source):
+        from tickets.request_scenario_assets import validate_material_references
+        await validate_material_references(self.session, row.id, draft.definition)
         issues, checked, outcomes = [], 0, []
         active_queue_ids = {queue["id"] for queue in source["queues"] if queue.get("is_active") is True}
         def add(code, message, path="process_binding"):

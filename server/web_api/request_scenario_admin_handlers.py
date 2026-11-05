@@ -115,7 +115,8 @@ async def handle_scenario_create(request):
 @require_auth("admin")
 async def handle_scenario_service_create(request):
     async def operation(repo):
-        return await repo.create_service((await _payload(request, ServiceScenarioCreate)).definition)
+        payload = await _payload(request, ServiceScenarioCreate)
+        return await repo.create_service(payload.definition, copy_source_id=payload.copy_source_id)
     return await _run(request, operation, write=True)
 
 

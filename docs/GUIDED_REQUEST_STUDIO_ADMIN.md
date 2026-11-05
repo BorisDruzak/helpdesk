@@ -370,9 +370,20 @@ explicitly marked «Симуляция — реальная операция н�
 consent is not a real authorization. Branch conditions use the same readable
 outcome labels. Actual requester diagnostics continue to use the safe fallback.
 
-The attachment field stays disabled until a reviewed secure pre-ticket storage
-contract exists. Imported unsupported attachment fields block publication with
-an explanation; the Studio does not stage or upload files.
+For text/textarea question help and instruction text, «Прикрепить скриншоты или
+файлы» adds up to10 screenshots/documents (200MiB per file). Drop files or paste
+an image with Ctrl+V, review/remove attachments, then save the draft normally.
+Uploads do not publish the scenario or replace typed text. Saved/published
+materials follow the scenario version. Employees can add supplementary files to
+their text answers; these follow their session and transfer with the retained
+answers when they explicitly create the ticket. Required text stays required.
+The standalone `file` answer type remains disabled; imported unsupported file
+fields still block publication. See the scoped asset contract in
+`server/docs/GUIDED_REQUEST_SCENARIOS.md`.
+
+«Создать копию» retains saved instruction/help materials, with independent
+scenario references. Save the original draft before copying; the existing dirty
+draft guard still applies. Saving the copy does not publish it.
 
 In «Обработка обращения», select published policies for priority, routing,
 SLA/OLA, approval, notifications, closure and visibility. Each choice has its

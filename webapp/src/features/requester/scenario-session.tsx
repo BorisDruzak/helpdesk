@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { type DynamicFormValues } from "./dynamic-form";
 import { ScenarioStepContent, type ScenarioStepDisplay } from "./scenario-step-content";
 import { Button } from "./ui/form-controls";
+import type { ScenarioAttachment } from "../request-template-studio/scenario-contract";
 
 type Step = {
   id: string;
@@ -40,6 +41,8 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
   const [values, setValues] = useState<DynamicFormValues>({});
   const [error, setError] = useState<SessionError | null>(null);
   const [busy, setBusy] = useState(false);
+  const attachmentFields = useRef(new Set<string>());
+  const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [reload, setReload] = useState(0);
   const [ticketPreview, setTicketPreview] = useState<TicketPreview | null>(null);
@@ -50,6 +53,32 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
   const previewTimer = useRef<number | null>(null);
   const previewController = useRef<AbortController | null>(null);
   const storageKey = owner ? `pc_client.scenario.session:${owner}:${offering}${entryPointKey ? `:entry:${encodeURIComponent(entryPointKey)}` : ""}` : null;
+  const stepRef = useRef(step); stepRef.current = step;
+
+  function attachmentBusy(key: string, pending: boolean) {
+    if (pending) { attachmentFields.current.add(key); cancelScheduledPreview(); requestSequence.current++; }
+    else attachmentFields.current.delete(key);
+    setAttachmentsBusy(attachmentFields.current.size > 0);
+  }
+  async function attachment(key: string, signal: AbortSignal, file?: File, assetId?: string) {
+    if (!step || commandBusy.current) return;
+    const generation = lifecycle.current;
+    const current = () => generation === lifecycle.current && !signal.aborted && stepRef.current?.id === step.id && stepRef.current?.revision === step.revision && stepRef.current?.block.id === step.block.id;
+    const body = new FormData();
+    if (file) { body.append("file", file); body.append("field_key", key); body.append("expected_block_id", step.block.id); body.append("revision", String(step.revision)); body.append("answers", JSON.stringify(values)); }
+    const response = await fetch(`${base}/${encodeURIComponent(step.id)}/attachments${assetId ? `/${encodeURIComponent(assetId)}` : ""}`, {
+      method: assetId ? "DELETE" : "POST", credentials: "same-origin", signal,
+      ...(assetId ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_block_id: step.block.id, revision: step.revision }) } : { body }),
+    });
+    const payload = await response.json();
+    if (!current()) return;
+    if (!response.ok || payload.status !== "success") {
+      const cause = new SessionError(payload.error_code || "ATTACHMENT_OPERATION_FAILED");
+      if (["REVISION_CONFLICT", "SESSION_EXPIRED", "SESSION_REVOKED", "SESSION_NOT_FOUND"].includes(cause.code)) setError(cause);
+      throw cause;
+    }
+    setStep(previous => previous && current() ? { ...previous, block: { ...previous.block, fields: previous.block.fields?.map(field => field.key !== key ? field : { ...field, answer_attachments: assetId ? (field.answer_attachments || []).filter(item => item.asset_id !== assetId) : [...(field.answer_attachments || []), payload.data as ScenarioAttachment] }) } } : previous);
+  }
 
   function cancelScheduledPreview() {
     if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
@@ -83,6 +112,7 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
 
   useEffect(() => {
     lifecycle.current++;
+    attachmentFields.current.clear(); setAttachmentsBusy(false);
     commandBusy.current = true;
     const controller = new AbortController();
     setStep(null); setError(null); setBusy(true); setTicketPreview(null);
@@ -104,7 +134,7 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
   useEffect(() => { heading.current?.focus(); }, [step?.block.id]);
 
   async function command(kind: string, body: unknown) {
-    if (!step || commandBusy.current) return;
+    if (!step || commandBusy.current || attachmentFields.current.size) return;
     if (kind === "submit" && (step.state !== "active" || !ticketPreview?.ok || ticketPreview.blockers.length || error)) return;
     cancelScheduledPreview();
     commandBusy.current = true;
@@ -143,7 +173,7 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
   }, [step, busy, ticketPreview, error]);
 
   async function preview(answers = values) {
-    if (!step?.block.has_dynamic_fields || busy || commandBusy.current) return;
+    if (!step?.block.has_dynamic_fields || busy || commandBusy.current || attachmentFields.current.size) return;
     cancelScheduledPreview();
     const sequence = ++requestSequence.current;
     const generation = lifecycle.current;
@@ -170,13 +200,17 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
     }
   }
 
+  // Native paste inserts its text after the clipboard event. Keep editors enabled
+  // during uploads, then project any edits once the attachment batch has finished.
+  useEffect(() => { if (!attachmentsBusy && attachmentFields.current.size === 0) void preview(); }, [attachmentsBusy]);
+
   function changeValue(key: string, value: DynamicFormValues[string]) {
     const next = { ...values, [key]: value };
     requestSequence.current++;
     cancelScheduledPreview();
     setValues(next);
     setError(null);
-    if (step?.block.has_dynamic_fields && !busy) {
+    if (step?.block.has_dynamic_fields && !busy && !attachmentFields.current.size) {
       const type = step.block.fields?.find(field => field.key === key)?.type;
       const delay = type && ["text", "textarea", "number"].includes(type) ? 150 : 0;
       previewTimer.current = window.setTimeout(() => { previewTimer.current = null; void preview(next); }, delay);
@@ -191,7 +225,7 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
   const expired = ["SESSION_EXPIRED", "SESSION_REVOKED", "SESSION_NOT_FOUND"].includes(error?.code || "");
   const deviceContext = deviceId === undefined ? {} : deviceId ? { device_id: deviceId } : { device_scope: "none" };
 
-  return <section className="grid gap-4 rounded-panel border border-slate-200 bg-white p-5" aria-busy={busy}>
+  return <section className="grid gap-4 rounded-panel border border-slate-200 bg-white p-5" aria-busy={busy || attachmentsBusy}>
     {error ? <div role="alert" className="text-sm text-rose-700">
       {error.code === "REVISION_CONFLICT" ? "Сценарий изменился в другом окне. Загрузите сохранённый шаг." : expired ? "Срок действия сценария завершён или доступ отозван." : "Не удалось выполнить действие. Проверьте ответы и повторите."}
       <Button type="button" variant="outline" onClick={() => {
@@ -203,9 +237,9 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
     {step ? <>
       <h2 ref={heading} tabIndex={-1} className="text-xl font-semibold text-slate-950">{step.block.title}</h2>
       <fieldset disabled={busy} className="grid min-w-0 gap-4" onBlur={() => void preview()}>
-        <ScenarioStepContent block={step.block} values={values} errors={error?.fields} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onValue={changeValue} onRequestTicket={()=>void answer("request_ticket")} />
+        <ScenarioStepContent block={step.block} values={values} errors={error?.fields} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onValue={changeValue} onRequestTicket={()=>void answer("request_ticket")} attachmentScope={`${offering}:${owner}:${deviceId}:${entryPointKey}:${reload}:${step.id}:${step.revision}`} attachmentsDisabled={busy || attachmentsBusy} onAttachmentBusy={attachmentBusy} onUpload={(key, file, signal) => attachment(key, signal, file)} onRemove={(key, id, signal) => attachment(key, signal, undefined, id)} />
       </fieldset>
-      <fieldset disabled={busy} className="grid min-w-0 gap-3 border-t border-slate-200 bg-white py-3" aria-label="Действия шага">
+      <fieldset disabled={busy || attachmentsBusy} className="grid min-w-0 gap-3 border-t border-slate-200 bg-white py-3" aria-label="Действия шага">
         {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}
         {["form_page", "instruction", "review"].includes(step.block.kind) ? <Button type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить</Button> : null}
         {step.block.kind === "finish" ? <Button type="button" onClick={() => void command("finish", { revision: step.revision })}>Завершить</Button> : null}

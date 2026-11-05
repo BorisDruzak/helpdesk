@@ -124,3 +124,27 @@ class RequestStudioSession(Timestamps, Base):
         sa.CheckConstraint("state IN ('active','completed_self_service','ticket_created','canceled','expired','revoked')", name="ck_studio_session_state"),
         sa.CheckConstraint("expires_at > created_at", name="ck_studio_session_expiry"),
     )
+
+
+class RequestStudioAsset(Base):
+    """Separate pre-ticket ownership; published material and claimed blobs persist."""
+    __tablename__ = "request_studio_assets"
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    scenario_id: Mapped[str | None] = mapped_column(sa.String(36), sa.ForeignKey("request_studio_scenarios.id", ondelete="RESTRICT"), index=True)
+    session_id: Mapped[str | None] = mapped_column(sa.String(36), sa.ForeignKey("request_studio_sessions.id", ondelete="RESTRICT"), index=True)
+    block_id: Mapped[str | None] = mapped_column(sa.String(100))
+    field_key: Mapped[str | None] = mapped_column(sa.String(100))
+    owner_actor_id: Mapped[str] = mapped_column(sa.Text)
+    storage_path: Mapped[str] = mapped_column(sa.Text)
+    name: Mapped[str] = mapped_column(sa.String(255))
+    mime_type: Mapped[str] = mapped_column(sa.String(100))
+    size_bytes: Mapped[int] = mapped_column(sa.BigInteger)
+    sha256: Mapped[str] = mapped_column(sa.String(64))
+    artifact_id: Mapped[str | None] = mapped_column(sa.String(36), sa.ForeignKey("artifacts.artifact_id", ondelete="RESTRICT"), unique=True)
+    removed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=sa.func.now())
+    __table_args__ = (
+        sa.CheckConstraint("(scenario_id IS NOT NULL AND session_id IS NULL AND block_id IS NULL AND field_key IS NULL) OR (scenario_id IS NULL AND session_id IS NOT NULL AND block_id IS NOT NULL AND field_key IS NOT NULL)", name="ck_studio_asset_scope"),
+        sa.CheckConstraint("size_bytes >= 0 AND size_bytes <= 209715200", name="ck_studio_asset_size"),
+        sa.CheckConstraint("sha256 ~ '^[a-f0-9]{64}$'", name="ck_studio_asset_hash"),
+    )

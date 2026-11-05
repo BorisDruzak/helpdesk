@@ -3784,6 +3784,8 @@ async def handle_web_admin_ticket_purge(request: web.Request):
         service = TicketPurgeService(session)
         try:
             result = await service.purge(ticket_ids, actor_id=actor_id, reason=reason)
+            await session.commit()
+            result = await service.finalize_committed_purge(result)
         except TicketPurgeBlockedError as exc:
             return _support_json_error(
                 "Ticket purge is blocked by active related records",

@@ -56,7 +56,7 @@ class RequestScenarioSessionRepo:
         for key in ("current_block_id", "revision", "answers", "history", "results", "state"):
             setattr(row, key, deepcopy(getattr(state, key)))
 
-    async def _projection(self, runtime, state):
+    async def _projection(self, runtime, state, row_id=None):
         projection = project_step(runtime.definition, state)
         fields = projection["block"].get("fields", [])
         options = await picker_options(self.session, self.owner, {item["type"] for item in fields} & PICKERS)
@@ -71,6 +71,9 @@ class RequestScenarioSessionRepo:
             for item in summary:
                 if item["type"] in PICKERS:
                     item["display_value"] = review_display_value(definitions[item["key"]], item["value"], options.get(item["type"], []))
+        if row_id:
+            from tickets.request_scenario_assets import project_answer_assets
+            await project_answer_assets(self.session, row_id, runtime, state, projection)
         return projection
 
     async def _view(self, row, runtime):
@@ -79,7 +82,7 @@ class RequestScenarioSessionRepo:
             "state": row.state, "expires_at": row.expires_at.isoformat(),
             "linked_ticket_id": row.linked_ticket_id,
             "entry_point": deepcopy(row.results.get("_entry_point")),
-            **await self._projection(runtime, self._state(row)),
+            **await self._projection(runtime, self._state(row), row.id),
         }
 
     async def start(self, offering, entry_point_key=None):
@@ -158,7 +161,7 @@ class RequestScenarioSessionRepo:
         row, runtime = await self.load(identifier)
         state = runtime.preview_answers(self._state(row), payload)
         await self._validate_pickers(runtime, state)
-        return {"id": row.id, "revision": row.revision, **await self._projection(runtime, state)}
+        return {"id": row.id, "revision": row.revision, **await self._projection(runtime, state, row.id)}
 
     async def prepare_submission(self, identifier, revision):
         from tickets.request_scenario_submission import build_scenario_submission
@@ -180,7 +183,7 @@ class RequestScenarioSessionRepo:
                 checked.current_block_id = key
                 checked.answers = snapshot["answers"]
                 await self._validate_pickers(runtime, checked)
-        snapshot["summary"] = (await self._projection(runtime, state))["block"]["answers"]
+        snapshot["summary"] = (await self._projection(runtime, state, row.id))["block"]["answers"]
         data["description"] = ("\n".join(f"{item['label']}: {item['display_value']}" for item in snapshot["summary"]) or runtime.definition.title)[:5000]
         devices = [snapshot["answers"][item.key] for block in runtime.definition.blocks
                    for item in getattr(block, "fields", ()) if item.type == "device_picker" and snapshot["answers"].get(item.key)]
@@ -191,6 +194,10 @@ class RequestScenarioSessionRepo:
         return row, runtime, data, snapshot
 
     async def complete_submission(self, row, ticket_id):
+        from tickets.request_scenario_assets import claim_answer_assets
+        version = await self.session.get(RequestStudioScenarioVersion, row.version_id)
+        runtime = ScenarioRuntime(ScenarioDefinition.model_validate(version.definition))
+        await claim_answer_assets(self.session, row, runtime, ticket_id)
         row.linked_ticket_id, row.state = ticket_id, "ticket_created"
         row.revision += 1
         await self.session.flush()
@@ -235,6 +242,8 @@ class RequestScenarioSessionRepo:
             state = runtime.advance(state, payload)
         state.results["_request_receipt"] = {"hash": fingerprint, "revision": state.revision}
         self._store(row, state)
+        from tickets.request_scenario_assets import prune_answer_assets
+        await prune_answer_assets(self.session, row.id, runtime, state)
         await self.session.flush()
         await self._audit(row, kind)
         return await self._view(row, runtime)

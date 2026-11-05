@@ -1,6 +1,7 @@
 /** Additive schema v1. The server validates and executes every transition. */
 export type ScenarioScalar = string | boolean | number | null;
 export type ScenarioAnswer = ScenarioScalar | string[];
+export type ScenarioAttachment = { asset_id: string; name: string; mime_type: string; size_bytes: number; url: string };
 export type ScenarioSource =
   | { source: "answer"; field: string }
   | { source: "current_result"; field?: null };
@@ -19,6 +20,7 @@ export type ScenarioField = {
   required?: boolean;
   placeholder?: string;
   help_text?: string;
+  help_attachments?: ScenarioAttachment[];
   options?: { value: string; label: string }[];
   visible_when?: ScenarioCondition | null;
   required_when?: ScenarioCondition | null;
@@ -38,7 +40,7 @@ export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; 
 type BlockBase = { id: string; title: string; transitions?: ScenarioTransition[] };
 export type ScenarioBlock = BlockBase & (
   | { kind: "form_page"; layout?: "single" | "group" | "section"; fields: ScenarioField[] }
-  | { kind: "instruction"; content: { format?: "markdown" | "plain"; body: string }; acknowledgment_required?: boolean }
+  | { kind: "instruction"; content: { format?: "markdown" | "plain"; body: string; attachments?: ScenarioAttachment[] }; acknowledgment_required?: boolean }
   | { kind: "decision" }
   | { kind: "resolution_check" }
   | { kind: "diagnostic"; capability?: string; require_consent?: boolean; timeout_seconds?: number; execution_mode?: "unavailable" }

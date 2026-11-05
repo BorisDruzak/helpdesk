@@ -52,6 +52,11 @@ Confirmation requires `resolved` plus a pending confirmation marker; after
 successful confirmation the fixture must report `closed` and remove the action.
 These checks remain fixture regression evidence, not live backend acceptance.
 
+For an isolated frontend candidate, the support fixture accepts `--webapp-dist`
+or `PC_CLIENT_WEBAPP_E2E_DIST` pointing to its complete built dist directory.
+Use this when another task is editing/building the shared checkout. The default
+still serves the workspace dist; this switch affects only the test fixture.
+
 ## Admin shell notifications
 
 The shared shell polls ticket notifications only. Retired Helpdesk agent enrollment

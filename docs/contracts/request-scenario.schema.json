@@ -596,6 +596,14 @@
           "minLength": 1,
           "title": "Body",
           "type": "string"
+        },
+        "attachments": {
+          "items": {
+            "$ref": "#/$defs/ScenarioAttachment"
+          },
+          "maxItems": 10,
+          "title": "Attachments",
+          "type": "array"
         }
       },
       "required": [
@@ -952,6 +960,48 @@
       "title": "Review",
       "type": "object"
     },
+    "ScenarioAttachment": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "mime_type": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "size_bytes": {
+          "maximum": 209715200,
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "url": {
+          "maxLength": 200,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "name",
+        "mime_type",
+        "size_bytes",
+        "url"
+      ],
+      "title": "ScenarioAttachment",
+      "type": "object"
+    },
     "ScenarioBranchProcessing": {
       "additionalProperties": false,
       "properties": {
@@ -1159,6 +1209,14 @@
           "maxLength": 2000,
           "title": "Help Text",
           "type": "string"
+        },
+        "help_attachments": {
+          "items": {
+            "$ref": "#/$defs/ScenarioAttachment"
+          },
+          "maxItems": 10,
+          "title": "Help Attachments",
+          "type": "array"
         },
         "options": {
           "items": {

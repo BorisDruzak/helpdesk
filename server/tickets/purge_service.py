@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from sqlalchemy import and_, bindparam, delete, func, or_, select, text
+from sqlalchemy import and_, bindparam, delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
@@ -23,6 +23,7 @@ from app.db.models import (
     TicketEvent,
 )
 from config import UPLOAD_DIR
+from app.db.request_scenario_models import RequestStudioAsset, RequestStudioSession
 
 
 ACTIVE_OPERATION_STATUSES = {
@@ -60,6 +61,7 @@ class TicketPurgeBlockedError(Exception):
 class TicketPurgeService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        self._pending_artifact_refs: list[ArtifactFileRef] = []
 
     @staticmethod
     def normalize_ticket_ids(raw_ticket_ids: Any) -> list[str]:
@@ -132,12 +134,29 @@ class TicketPurgeService:
         await self.session.execute(delete(ObserverErrorOccurrence).where(occurrence_filter))
         await self.session.execute(delete(ObserverTrace).where(ObserverTrace.ticket_id.in_(existing_ids)))
 
+        # A claimed Studio file shares the Artifact blob; remove its pre-ticket
+        # ownership before deleting the canonical Artifact. Cancel linked
+        # sessions so a purge cannot turn a completed session into a retry.
+        linked_sessions = select(RequestStudioSession.id).where(RequestStudioSession.linked_ticket_id.in_(existing_ids))
+        studio_filter = or_(RequestStudioAsset.session_id.in_(linked_sessions),
+            RequestStudioAsset.artifact_id.in_(select(Artifact.artifact_id).where(Artifact.ticket_id.in_(existing_ids))))
+        studio_files = (await self.session.execute(select(RequestStudioAsset.id, RequestStudioAsset.storage_path).where(studio_filter))).all()
+        artifact_refs.extend(ArtifactFileRef(artifact_id=identifier, storage_path=path) for identifier, path in studio_files)
+        await self.session.execute(delete(RequestStudioAsset).where(studio_filter))
+        await self.session.execute(update(RequestStudioSession).where(RequestStudioSession.linked_ticket_id.in_(existing_ids))
+            .values(state="canceled", linked_ticket_id=None, revision=RequestStudioSession.revision + 1))
         await self.session.execute(delete(Artifact).where(Artifact.ticket_id.in_(existing_ids)))
         await self.session.execute(delete(Operation).where(Operation.ticket_id.in_(existing_ids)))
         await self.session.execute(delete(Ticket).where(Ticket.ticket_id.in_(existing_ids)))
         await self.session.flush()
 
-        file_result = self._delete_artifact_files(artifact_refs)
+        # Do not unlink a blob still owned by another artifact or author material.
+        paths = {item.storage_path for item in artifact_refs}
+        retained_paths = set((await self.session.scalars(select(Artifact.storage_path).where(Artifact.storage_path.in_(paths)))).all())
+        retained_paths.update((await self.session.scalars(select(RequestStudioAsset.storage_path).where(RequestStudioAsset.storage_path.in_(paths)))).all())
+        unique_refs = {item.storage_path: item for item in artifact_refs if item.storage_path not in retained_paths}
+        self._pending_artifact_refs = list(unique_refs.values())
+        file_result = {"deleted": 0, "errors": []}
         result = await self.preview(ticket_ids)
         result.update(
             {
@@ -162,6 +181,22 @@ class TicketPurgeService:
             preview["affected_counts"],
             len(file_result["errors"]),
         )
+        return result
+
+    async def finalize_committed_purge(self, result: dict[str, Any]) -> dict[str, Any]:
+        """Unlink only after the caller has observed successful DB commit.
+
+        A rollback or an uncertain commit never calls this method. Recheck
+        storage ownership so even a mistaken call after rollback retains data.
+        """
+        if self.session.in_transaction():
+            raise RuntimeError("Purge must commit successfully before deleting blobs")
+        refs, self._pending_artifact_refs = self._pending_artifact_refs, []
+        paths = {item.storage_path for item in refs}
+        retained = set((await self.session.scalars(select(Artifact.storage_path).where(Artifact.storage_path.in_(paths)))).all())
+        retained.update((await self.session.scalars(select(RequestStudioAsset.storage_path).where(RequestStudioAsset.storage_path.in_(paths)))).all())
+        file_result = self._delete_artifact_files([item for item in refs if item.storage_path not in retained])
+        result.update(artifact_files_deleted=file_result["deleted"], artifact_file_errors=file_result["errors"])
         return result
 
     async def _existing_ticket_ids(self, ticket_ids: list[str]) -> list[str]:
@@ -274,6 +309,12 @@ class TicketPurgeService:
             counts[table_name] = await self._count_table(table_name, "ticket_id", ticket_ids)
 
         counts["ticket_links"] = await self._count_ticket_links(ticket_ids)
+        linked_sessions = select(RequestStudioSession.id).where(RequestStudioSession.linked_ticket_id.in_(ticket_ids))
+        counts["request_studio_sessions"] = int(await self.session.scalar(select(func.count()).select_from(RequestStudioSession)
+            .where(RequestStudioSession.linked_ticket_id.in_(ticket_ids))) or 0)
+        counts["request_studio_assets"] = int(await self.session.scalar(select(func.count()).select_from(RequestStudioAsset).where(
+            or_(RequestStudioAsset.session_id.in_(linked_sessions), RequestStudioAsset.artifact_id.in_(
+                select(Artifact.artifact_id).where(Artifact.ticket_id.in_(ticket_ids)))))) or 0)
         counts["ticket_events_archive"] = await self._count_ticket_events_archive(ticket_ids)
         counts["ticket_admin_audit"] = await self._count_ticket_admin_audit(ticket_ids)
         counts["ticket_admin_audit_archive"] = await self._count_ticket_admin_audit_archive(ticket_ids)
@@ -283,6 +324,8 @@ class TicketPurgeService:
     def _counted_relationship_names() -> list[str]:
         return [
             "tickets",
+            "request_studio_sessions",
+            "request_studio_assets",
             "ticket_waits",
             "ticket_resolution_passports",
             "ticket_evidence_items",

@@ -369,6 +369,10 @@ from web_api.request_scenario_admin_handlers import (
     handle_scenario_draft_save, handle_scenario_archive, handle_scenario_versions, handle_scenario_simulate,
     handle_scenario_readiness, handle_scenario_publish_preview, handle_scenario_publish, handle_scenario_rollback_draft,
 )
+from web_api.request_scenario_asset_handlers import (
+    handle_scenario_material_upload, handle_scenario_answer_upload,
+    handle_scenario_answer_remove, handle_scenario_asset_download,
+)
 from web_api.request_scenario_handlers import (
     handle_web_requester_scenario_start, handle_web_requester_scenario_session,
     handle_web_requester_scenario_answer, handle_web_requester_scenario_advance,
@@ -790,6 +794,10 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/playbooks/save', handle_web_admin_playbooks_save),
         web.get('/api/registry/options', handle_registry_options),
         web.get('/api/web/requester/bootstrap', handle_web_requester_bootstrap),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/attachments', handle_scenario_material_upload),
+        web.post('/api/web/requester/request-scenarios/sessions/{identifier}/attachments', handle_scenario_answer_upload),
+        web.delete('/api/web/requester/request-scenarios/sessions/{identifier}/attachments/{asset_id}', handle_scenario_answer_remove),
+        web.get('/api/web/request-scenario-assets/{asset_id}/download', handle_scenario_asset_download),
         web.post('/api/web/requester/request-scenarios/sessions', handle_web_requester_scenario_start),
         web.get('/api/web/requester/request-scenarios/sessions/{identifier}', handle_web_requester_scenario_session),
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/answer', handle_web_requester_scenario_answer),

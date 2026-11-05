@@ -1302,6 +1302,7 @@ FULL_CLEANUP_TABLES = (
     "oidc_flows",
     "identity_migration_candidates",
     "confirmed_identity_bindings",
+    "request_studio_assets",
     "request_studio_sessions",
     "request_studio_publish_tokens",
     "requester_ticket_create_requests",
@@ -1696,6 +1697,7 @@ CLEANUP_TABLES_BY_PROFILE = {
         "ui_users",
     ),
     "web_support": _cleanup_profile_subset(
+        "request_studio_assets",
         "request_studio_sessions",
         "requester_ticket_create_requests",
         "observer_integrity_check_runs",

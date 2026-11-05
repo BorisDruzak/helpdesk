@@ -9,6 +9,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import itertools
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -3150,11 +3151,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4173)
+    parser.add_argument("--webapp-dist", type=Path, default=os.environ.get("PC_CLIENT_WEBAPP_E2E_DIST"))
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.webapp_dist is not None:
+        import static_pages.webapp_assets as assets
+        directory = args.webapp_dist.resolve()
+        if not (directory / "index.html").is_file() or not (directory / "assets").is_dir():
+            raise ValueError("Fixture requires a complete webapp dist directory")
+        assets.WEBAPP_DIST_DIR = directory
     print(f"[support-fixture-server] serving on http://{args.host}:{args.port}")
     web.run_app(build_app(), host=args.host, port=args.port, print=None)
 

@@ -1,6 +1,6 @@
 import type { AdminServiceCatalogOffering, AdminServiceCatalogService } from "../service-catalog/api";
 import { RequestStudioApiError } from "./api";
-import type { ScenarioAnswerRequest, ScenarioBlock, ScenarioDraftDefinition, ScenarioEntryPoint } from "./scenario-contract";
+import type { ScenarioAnswerRequest, ScenarioAttachment, ScenarioBlock, ScenarioDraftDefinition, ScenarioEntryPoint } from "./scenario-contract";
 import type { RequestFormField } from "../requester/types";
 import type { DiagnosticFailureStatus } from "./scenario-diagnostics";
 
@@ -23,7 +23,7 @@ export type ScenarioItem = {
   published_public_entry_keys?: string[];
   issues?: { code: string; path: string; message: string }[];
 };
-export type ScenarioDetail = { scenario: ScenarioItem; draft: { revision: number; definition: ScenarioDraftDefinition } };
+export type ScenarioDetail = { scenario: ScenarioItem; draft: { revision: number; definition: ScenarioDraftDefinition }; asset_rebindings?: Record<string, ScenarioAttachment> };
 export type ScenarioCatalog = {
   categories: ScenarioCategory[]; services: AdminServiceCatalogService[]; offerings: AdminServiceCatalogOffering[];
   scenarios: ScenarioItem[]; total: number; offset: number; limit: number;
@@ -63,6 +63,13 @@ export type ScenarioPublicationPreview = {
   confirmation_token: string | null; expires_at: string | null;
 };
 const root = "/api/web/admin/request-studio";
+export async function uploadScenarioAttachment(id: string, file: File, blockId: string, fieldKey?: string, signal?: AbortSignal): Promise<ScenarioAttachment> {
+  const body = new FormData(); body.append("file", file); body.append("block_id", blockId); if (fieldKey) body.append("field_key", fieldKey);
+  const response = await fetch(`${root}/scenarios/${encodeURIComponent(id)}/attachments`, { method: "POST", body, signal, credentials: "same-origin" });
+  const payload = await response.json();
+  if (!response.ok || payload.status !== "success") throw new ScenarioApiError(response.status, payload.error_code);
+  return payload.data;
+}
 export class ScenarioApiError extends RequestStudioApiError {
   constructor(status: number, code?: string, public issues: { code: string; path: string }[] = []) {
     super("Не удалось выполнить действие в Студии", status, code);
@@ -83,7 +90,7 @@ export function fetchScenarioCatalog(q = "", status = "all", offset = 0, categor
 }
 export function fetchScenarioDetail(id: string) { return request<ScenarioDetail>(`/scenarios/${encodeURIComponent(id)}`); }
 export function createScenario(definition: ScenarioDraftDefinition) { return request<ScenarioDetail>("/scenarios", "POST", { definition }); }
-export function createServiceScenario(definition:ScenarioDraftDefinition){return request<ScenarioDetail>("/services","POST",{definition});}
+export function createServiceScenario(definition:ScenarioDraftDefinition,copySourceId?:string|null){return request<ScenarioDetail>("/services","POST",{definition,...(copySourceId?{copy_source_id:copySourceId}:{})});}
 export type ConversionItem={offering_full_code:string;title?:string;archived?:boolean;status:"existing"|"ready"|"converted"|"blocked";detail?:ScenarioDetail;issues?:{code:string;message:string}[]};
 export function convertForms(apply=false,offering_full_code?:string){return request<{items:ConversionItem[]}>("/convert-forms","POST",{apply,offering_full_code:offering_full_code??null});}
 export function validateScenarioDocument(content:string,format:"json"|"yaml",id?:string){return request<{definition:ScenarioDraftDefinition;issues:{code:string;path:string;message:string}[];diff:{path:string;before:unknown;after:unknown}[]}>(`/documents/validate${id?`?scenario_id=${encodeURIComponent(id)}`:""}`,"POST",{content,format});}

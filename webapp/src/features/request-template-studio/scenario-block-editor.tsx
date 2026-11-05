@@ -8,6 +8,7 @@ import { ScenarioFormPageEditor } from "./scenario-form-page-editor";
 import { ScenarioConditionEditor } from "./scenario-condition-editor";
 import { conditionFields } from "./scenario-builder-model";
 import { diagnosticFailureLabels } from "./scenario-diagnostics";
+import { ScenarioAuthorAttachments } from "./scenario-author-attachments";
 
 type Props = { block: ScenarioBlock; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioBlock) => void; focusTitle: boolean; focusTransitions?: boolean; hideTransitions?: boolean };
 export function ScenarioBlockEditor({ block, definition, disabled, onChange, focusTitle, focusTransitions, hideTransitions = false }: Props) {
@@ -31,7 +32,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
     {block.kind === "form_page" && block.fields.length === 1 ? <details><summary className="cursor-pointer text-sm font-semibold">Название шага на карте</summary><label className="block">Название блока<Input ref={titleRef} disabled={disabled} maxLength={300} value={block.title} onChange={event => onChange({ ...block, title: event.target.value })} /></label></details> : <label className="block">Название блока<Input ref={titleRef} disabled={disabled} maxLength={300} value={block.title} onChange={event => onChange({ ...block, title: event.target.value })} /></label>}
     {block.kind === "form_page" && <ScenarioFormPageEditor block={block} definition={definition} disabled={disabled} onChange={onChange} />}
     {block.kind === "instruction" && <fieldset disabled={disabled} className="space-y-3">
-      <label className="block">Текст инструкции<textarea className="field-base min-h-40 w-full" maxLength={10000} value={block.content.body} onChange={event => onChange({ ...block, content: { ...block.content, body: event.target.value } })} /></label>
+      <ScenarioAuthorAttachments blockId={block.id} attachments={block.content.attachments} disabled={disabled}><label className="block">Текст инструкции<textarea className="field-base min-h-40 w-full" maxLength={10000} value={block.content.body} onChange={event => onChange({ ...block, content: { ...block.content, body: event.target.value } })} /></label></ScenarioAuthorAttachments>
       <label><input type="checkbox" checked={!!block.acknowledgment_required} onChange={event => onChange({ ...block, acknowledgment_required: event.target.checked })} /> Требовать подтверждение прочтения</label>
       <AdvancedDisclosure title="Расширенные настройки"><label className="block">Формат текста<Select value={block.content.format ?? "plain"} onChange={event => onChange({ ...block, content: { ...block.content, format: event.target.value as "plain" | "markdown" } })}><option value="plain">Обычный текст</option><option value="markdown">Markdown</option></Select></label><p>HTML и исполняемые ссылки запрещены. Предпросмотр показывает текст безопасно.</p></AdvancedDisclosure>
     </fieldset>}
