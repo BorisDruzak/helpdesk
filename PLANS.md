@@ -2958,5 +2958,5 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Cause: literal per-field token matching omitted related symptom phrases and repeated one offering; no result for printer startup.
 - Change: curated explicit symptom intents plus noun anchors, offering interleaving and visible offering names; no auth/profile/catalog/schema/dependency changes.
 - Verification:53Python/34UI tests, build/workspace and3browser viewport cases pass. Three reviewer precision issues fixed with red/green regressions; followup has no findings.
-- Next: verified backup, exact frozen staging install, source hashes/health/counts and real public search before/after checks. Keep staging active for user testing.
+- Complete: runtime17327fbc981ba1d3261fa0a77f0fb37b863b8550 installed; verified155backup/6source hashes/health200/3active services, unchanged catalog and business counts. Live API generic20distinct, startup7, login13; network and named systems narrowed. Staging active; production unchanged.
 - Evidence: docs/CATALOG_SYMPTOM_SEARCH_2026-11-05.md and tmp/catalog-symptom-search-20261105. Shared checkout/index preserved through private freeze on ab80b1a2.

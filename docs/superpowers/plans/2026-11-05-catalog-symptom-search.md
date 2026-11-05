@@ -9,6 +9,6 @@
 - [x] Reproduce current misses on the published catalog snapshot; add failing phrase/diversity/named-service/negation/bounds regressions in `server/tests/test_service_catalog_search.py`.
 - [x] Implement bounded intent matching and offering interleaving in `server/tickets/service_catalog_search.py`; expose additive `offering_title`, render it in requester search and cover it with a component regression.
 - [x] Verify focused Python/UI tests, build, workspace sanity and browser viewports with actual search-produced results; review the narrow diff and update catalog/CODEMAP docs.
-- [ ] Freeze exact source, verified staging backup, canonical immutable install, source hash/health/count/API checks. Keep staging active for the user's requested changes; record live/fixture evidence separately.
+- [x] Freeze exact source, verified staging backup, canonical immutable install, source hash/health/count/API checks. Keep staging active for the user's requested changes; record live/fixture evidence separately.
 
 **Review focus:** do not match positive actions to negative symptoms; do not lose a device/system noun while expanding intent; no admin/draft inputs; no duplicate-heavy generic page; broad unknown queries remain empty and use the explicit existing fallback.
