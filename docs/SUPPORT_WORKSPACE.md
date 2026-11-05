@@ -184,6 +184,13 @@ they will be sent with the text. One message command carries text and all select
 `attachment_refs`; file-only messages remain available. Removing a draft item
 does not delete stored history or send a message.
 
+Ctrl+V in either chat also adds clipboard images to the same draft queue. Existing
+reply text is preserved; plain text and the text part of a mixed image/text paste
+use native insertion/caret behavior. Only image files supplied by the paste event
+are attached; HTML image links are not fetched. This requires no clipboard-read
+permission or background clipboard access. Existing disabled/history/role guards
+apply, and send remains explicit. The composers show a Ctrl+V hint.
+
 Shared `components/chat-file-draft.tsx` provides the overlay/group. The scoped
 serial queue in `components/use-chat-uploads.ts` accepts repeated drops, retains
 successful files after partial failure and blocks send until uploads finish.

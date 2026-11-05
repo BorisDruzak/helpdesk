@@ -90,7 +90,8 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   Requester `pages/requester/ticket-conversation.tsx` reuses this viewer for both
   message senders; its standalone CSS works on direct requester navigation, with
   existing cookie authentication and canonical requester ownership unchanged.
-  Shared `components/chat-file-draft.tsx` adds file-drop/draft grouping and
+  Shared `components/chat-file-draft.tsx` adds file-drop/draft grouping, handles
+  Ctrl+V images from the paste event while retaining native text insertion, and
   `components/use-chat-uploads.ts` scopes serial uploads to ticket/audience and
   capabilities, preserving partial success and discarding stale callbacks.
   Requester `use-ticket-chat.ts` and support `list-page.tsx` send the existing

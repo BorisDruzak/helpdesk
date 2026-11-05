@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { Paperclip, X } from "lucide-react";
 import { ChatAttachment } from "./chat-attachment";
 import "./chat-file-draft.css";
@@ -16,6 +16,18 @@ export function useChatFileDrop(disabled: boolean, onFiles?: (files: File[]) => 
   const hasFiles = (event: DragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes("Files");
   const hasUrl = (event: DragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).some(type => ["text/uri-list", "text/html"].includes(type));
   return { dragging, feedback, handlers: {
+    onPaste: (event: ClipboardEvent<HTMLElement>) => {
+      if (event.defaultPrevented) return;
+      const images = (files: File[]) => files.filter(file => file.type.startsWith("image/"));
+      const items = images(Array.from(event.clipboardData.items ?? []).flatMap(item => {
+        const file = item.kind === "file" ? item.getAsFile() : null;
+        return file ? [file] : [];
+      }));
+      const files = items.length ? items : images(Array.from(event.clipboardData.files ?? []));
+      if (!files.length) return;
+      if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+      if (!disabled && onFiles) { setFeedback(null); onFiles(files); }
+    },
     onDragEnter: (event: DragEvent<HTMLElement>) => {
       if (!hasFiles(event)) { if (hasUrl(event)) event.preventDefault(); return; }
       event.preventDefault();

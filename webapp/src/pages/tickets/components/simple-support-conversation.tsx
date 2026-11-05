@@ -98,7 +98,7 @@ export function SimpleSupportConversation(props: SimpleSupportConversationProps)
       <ChatAttachmentDrafts attachments={props.attachments} onRemove={props.onRemoveAttachment} disabled={props.pending} uploading={props.uploading} />
       {props.uploadError ? <p role="alert" className="simple-risk">{props.uploadError}</p> : null}
       <div className="simple-composer__actions">{props.onUpload ? <><input ref={props.inputRef} type="file" multiple hidden onChange={props.onUpload} /><button className="simple-button simple-attach" type="button" disabled={!allowed || props.pending} onClick={() => props.inputRef?.current?.click()}><Paperclip size={16} aria-hidden />Прикрепить файл</button></> : null}
-        <span className="simple-keyboard-hint">Ctrl+Enter — отправить</span><button className="simple-button simple-button--primary" type="submit" disabled={!canSend}>{props.pending ? <LoaderCircle size={15} aria-hidden /> : <Send size={15} aria-hidden />}{props.pending ? "Отправляем…" : "Отправить"}</button></div>
+        <span className="simple-keyboard-hint">Ctrl+V — скриншот · Ctrl+Enter — отправить</span><button className="simple-button simple-button--primary" type="submit" disabled={!canSend}>{props.pending ? <LoaderCircle size={15} aria-hidden /> : <Send size={15} aria-hidden />}{props.pending ? "Отправляем…" : "Отправить"}</button></div>
     </form> : null}
   </section>;
 }

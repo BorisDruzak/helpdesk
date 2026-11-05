@@ -16,7 +16,7 @@ async function fixture(page: Page, actor: Actor, rejectFile = false) {
     attachments.set(id, item);
     await route.fulfill({json: {status: "success", ...item}});
   });
-  await page.route("**/api/artifacts/drop-*/download", route => route.fulfill({contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOC8AAAAASUVORK5CYII=", "base64")}));
+  await page.route("**/api/artifacts/drop-*/download", route => route.fulfill({contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAAT0lEQVR4nNXOMREAIBDAsNIJd9hBPiJ+4BoFWfseyiRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4vwdmHqdZQEPa89hlQAAAABJRU5ErkJggg==", "base64")}));
   const record = async (route: import("playwright/test").Route) => {
     const body = route.request().postDataJSON(); sent.push(body);
     const message = {event_id: `sent-${sent.length}`, message_id: `sent-${sent.length}`, event_type: "chat_message", visibility: body.visibility || "public", from_role: actor === "support" ? "support" : "user", text: body.text, ts: "2026-11-05T10:00:00Z", attachments: body.attachment_refs.map((id: string) => attachments.get(id))};
@@ -137,4 +137,66 @@ test("support keeps private file drafts separate from the public reply", async (
   await page.getByRole("button", {name: "Отправить", exact: true}).click();
   await expect(page.getByRole("textbox", {name: "Внутренняя заметка", exact: true})).toHaveValue("");
   expect(state.sent).toHaveLength(1); expect(state.sent[0]).toMatchObject({visibility: "internal", text: "Внутренний черновик", attachment_refs: ["drop-1"]});
+});
+
+async function copyScreenshot(page: Page) {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(async () => {
+    const bytes = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAAT0lEQVR4nNXOMREAIBDAsNIJd9hBPiJ+4BoFWfseyiRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4iRO4vwdmHqdZQEPa89hlQAAAABJRU5ErkJggg=="), char => char.charCodeAt(0));
+    await navigator.clipboard.write([new ClipboardItem({"image/png": new Blob([bytes], {type: "image/png"})})]);
+  });
+}
+for (const actor of ["requester", "support"] as const) {
+  for (const width of [1366, 390]) {
+    test(`${actor} pastes a screenshot with Ctrl+V and sends it with text at ${width}`, async ({page}, info) => {
+      await page.setViewportSize({width, height: width === 390 ? 844 : 768});
+      const errors: string[] = [];
+      page.on("pageerror", error => errors.push(error.message));
+      page.on("console", message => {if (message.type() === "error") errors.push(message.text());});
+      page.on("response", response => {if (response.status() >= 400) errors.push(`${response.status()} ${new URL(response.url()).pathname}`);});
+      const state = await fixture(page, actor);
+      const reply = page.getByRole("textbox", {name: actor === "requester" ? "Ответ заявителя" : "Сообщение сотруднику"});
+      await reply.fill("Описание ошибки: ");
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await page.evaluate(() => navigator.clipboard.writeText("обычный текст"));
+      await reply.press("Control+v");
+      await expect(reply).toHaveValue("Описание ошибки: обычный текст");
+      expect(state.uploads).toHaveLength(0);
+      await copyScreenshot(page); await reply.press("Control+v");
+      const group = page.getByRole("region", {name: "Вложения к сообщению"});
+      await expect(group.getByText("Будут отправлены вместе с текстом")).toBeVisible();
+      await expect(group.getByRole("button", {name: /^Открыть изображение/})).toHaveCount(1);
+      await expect(reply).toHaveValue("Описание ошибки: обычный текст");
+      expect(state.uploads).toHaveLength(1); expect(state.sent).toHaveLength(0);
+      await reply.press("Control+v");
+      await expect(group.getByRole("button", {name: /^Открыть изображение/})).toHaveCount(2);
+      await expect(group.getByText("Будут отправлены вместе с текстом")).toBeVisible();
+      expect(state.uploads).toHaveLength(2);
+      const send = page.getByRole("button", {name: "Отправить", exact: true});
+      await expect(send).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+      await page.screenshot({path: info.outputPath(`clipboard-draft-${actor}-${width}.png`)});
+      await send.click(); await expect(reply).toHaveValue("");
+      expect(state.sent).toHaveLength(1);
+      expect(state.sent[0]).toMatchObject({text: "Описание ошибки: обычный текст", attachment_refs: ["drop-1", "drop-2"]});
+      await expect(group).toHaveCount(0);
+      expect(errors).toEqual([]);
+    });
+  }
+}
+test("support clipboard screenshot stays in the internal note draft", async ({page}) => {
+  const state = await fixture(page, "support");
+  await page.getByRole("tab", {name: "Внутренние заметки", exact: true}).click();
+  const note = page.getByRole("textbox", {name: "Внутренняя заметка", exact: true});
+  await note.fill("Приватное описание");
+  await copyScreenshot(page); await note.press("Control+v");
+  await expect(page.getByText("Будут отправлены вместе с текстом")).toBeVisible();
+  await page.getByRole("tab", {name: "Диалог", exact: true}).click();
+  await expect(page.getByRole("region", {name: "Вложения к сообщению"})).toHaveCount(0);
+  await page.getByRole("tab", {name: "Внутренние заметки", exact: true}).click();
+  await expect(note).toHaveValue("Приватное описание");
+  await page.getByRole("button", {name: "Отправить", exact: true}).click();
+  await expect(note).toHaveValue("");
+  expect(state.sent).toHaveLength(1);
+  expect(state.sent[0]).toMatchObject({visibility: "internal", text: "Приватное описание", attachment_refs: ["drop-1"]});
 });

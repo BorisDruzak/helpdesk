@@ -2911,3 +2911,11 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - State: shared drop/group UI and scoped serial upload queue implemented in requester/support. 32 focused unit tests and 11 desktop/mobile browser scenarios passed; build/workspace checks passed. Independent review has no remaining blockers.
 - Complete: exact f69b5632dddbd9adb7d6693b15bacacbc5cb2ae4 installed canonically after verified154 backup.14source hashes/schema154/TLS200/3active services pass. Live own synthetic T-000058 sent one text+PNG+TXT message; reload/image decode/overflow0/console0 verified. Only one event and two artifacts added; ticket/status counts unchanged. Staging left running; no required task work remains.
 - Evidence: docs/CHAT_FILE_DROP_ACCEPTANCE_2026-11-05.md and tmp/chat-drop-20261105.11 fixture scenarios verify drops, responsive grouping, partial failure, queueing and privacy; live picker uses same queue. Fixture port closed; unrelated local changes, real tickets, production and Endpoint preserved. Full CI/backend suites not requested for frontend-only change; no push.
+
+## Clipboard screenshots and Studio form files (2026-11-05)
+
+- Goal: Ctrl+V screenshots join requester/support reply drafts; Studio authors can attach images/files to text-field instructions and requesters can attach files to their answers. User explicitly confirmed both Studio uses.
+- Scope/constraints: reuse canonical upload/ownership/capability/storage boundaries; no background clipboard reads, remote HTML image fetch or automatic send. Preserve unrelated edits, production and Endpoint. Leave staging running.
+- State: shared paste handler and composer hints implemented;37 focused unit tests/build/workspace checks pass; independent review has no findings. 16 browser scenarios pass, including5 native Ctrl+V cases after replacement of an invalid PNG test fixture. Studio mapping is read-only and parallel to chat acceptance.
+- Next: finish native clipboard acceptance and exact-SHA staging release; implement Studio files after verifying author/pre-ticket upload contracts and test coverage. Track both obligations until complete.
+- Evidence: tmp/chat-paste-20261105; live staging remains on f69b5632dddbd9adb7d6693b15bacacbc5cb2ae4 until canonical deployment.

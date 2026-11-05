@@ -309,7 +309,7 @@ export function TicketReplyComposer({
           {messageSending ? "Отправляем..." : "Отправить"}
         </Button>
       </FormActions>
-      <p className="mt-2 text-xs text-slate-500">Ctrl+Enter — отправить. Enter — новая строка.</p>
+      <p className="mt-2 text-xs text-slate-500">{canAttachFiles ? "Ctrl+V — вставить скриншот. " : ""}Ctrl+Enter — отправить. Enter — новая строка.</p>
     </section>
   );
 }
