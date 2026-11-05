@@ -320,6 +320,10 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
             if operation_id and sha256_hex:
                 existing = await repo.get_by_sha256_and_operation_id(sha256_hex, operation_id)
                 if existing:
+                    if existing.ticket_id != ticket_id or existing.device_id != device_id:
+                        return web.json_response(
+                            {"status": "error", "error": "forbidden"}, status=403,
+                        )
                     download_url = f"/api/artifacts/{existing.artifact_id}/download"
                     logger.info(f"Идемпотентный upload: возвращаем существующий артефакт {existing.artifact_id}")
                     return web.json_response({
@@ -369,10 +373,11 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
             "kind": kind,
         })
 
-    except Exception as e:
-        logger.error(f"Ошибка загрузки файла: {e}", exc_info=True)
+    except Exception as exc:
+        # Exception values can include SQL, bound parameters and internal paths.
+        logger.error("Upload failed: type={}", type(exc).__name__)
         return web.json_response(
-            {"status": "error", "error": str(e)},
+            {"status": "error", "error": "Не удалось загрузить файл. Повторите попытку позже.", "error_code": "UPLOAD_FAILED"},
             status=500,
         )
     finally:

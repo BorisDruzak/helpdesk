@@ -55,7 +55,7 @@ Agent uploads have two ticket-bound modes:
 - Runtime/tool artifacts: if an agent-token upload includes both `ticket_id` and `operation_id`, the server authorizes it by the operation binding. The operation must exist and its `ticket_id` and `device_id` must match the upload context.
 - Manual requester attachments from the local agent UI: if an agent-token upload includes `ticket_id` without `operation_id`, the server requires an active binding for the authenticated device and matching ticket requester scope.
 
-UI/requester uploads also require `ticket_id`. Staff UI roles may upload to accessible ticket workflows; authenticated requester role `user` may upload only to tickets owned by the web session requester identity. The stored artifact inherits the ticket `device_id` and is later referenced from chat via `attachment_refs`.
+UI/requester uploads also require `ticket_id`. Staff UI roles may upload to accessible ticket workflows; authenticated requester role `user` may upload only to tickets owned by the web session requester identity. The stored artifact inherits the ticket `device_id`, including `NULL` for a browser ticket without a device, and is later referenced from chat via `attachment_refs`. Revision `154` permits this while requiring every artifact to retain a device or ticket scope. No synthetic device is created. Operation upload deduplication must match both stored ticket and device before returning an existing artifact.
 
 ### Ограничения
 
@@ -91,7 +91,7 @@ UI/requester uploads also require `ticket_id`. Staff UI roles may upload to acce
 | 401 | Нет или невалидный токен |
 | 403 | Active-binding access denied for manual agent upload, UI/requester ticket ownership denied, or `operation_id` does not match the authenticated agent/ticket context |
 | 413 | Размер файла превышает 200 MB |
-| 500 | Внутренняя ошибка сервера |
+| 500 | `UPLOAD_FAILED`: безопасное сообщение без SQL, параметров запроса и внутренних путей |
 
 ---
 
@@ -101,6 +101,7 @@ UI/requester uploads also require `ticket_id`. Staff UI roles may upload to acce
 
 **Аутентификация:** обязательна (Bearer token).  
 Public-ticket session tokens are accepted on this route and are scoped by `AuthContext.ticket_scope`; they still pass through `ArtifactService` ticket/artifact visibility checks.
+Requester UI downloads use the same resolved requester identity as uploads and ticket access, including neutral person-bound browser tickets. A supplied `ticket_id` cannot override an artifact's persisted ticket binding or authorize another requester. Staff queue visibility and agent device ownership remain mandatory.
 Доступ к артефакту проверяется по привязке к тикету: пользователь (UI token) может скачать артефакт, привязанный к тикету (тикет должен существовать); агент (agent token) — только к своим артефактам (по device_id). Артефакты без ticket_id в БД доступны только агенту-владельцу, **кроме случая fallback** (см. ниже).
 
 ### Query-параметры

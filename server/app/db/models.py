@@ -5081,7 +5081,7 @@ class DownloadAudit(Base):
 
 class Artifact(Base):
     """
-    Артефакт (файл), загруженный агентом: скриншоты, запись экрана.
+    Файл агента или вложение тикета, в том числе без устройства.
     
     Метаданные хранятся в БД, файл — на диске (storage_path относительно UPLOAD_DIR).
     """
@@ -5094,7 +5094,7 @@ class Artifact(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     kind: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     ticket_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(
@@ -5108,6 +5108,10 @@ class Artifact(Base):
     
     __table_args__ = (
         Index("ix_artifacts_sha256", "sha256"),
+        sa.CheckConstraint(
+            "device_id IS NOT NULL OR ticket_id IS NOT NULL",
+            name="ck_artifacts_device_or_ticket",
+        ),
     )
     
     def __repr__(self) -> str:

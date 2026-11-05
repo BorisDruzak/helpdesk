@@ -24,7 +24,7 @@ class ArtifactsRepo:
         mime_type: str,
         size_bytes: int,
         sha256: str,
-        device_id: str,
+        device_id: Optional[str],
         kind: Optional[str] = None,
         ticket_id: Optional[str] = None,
         operation_id: Optional[str] = None,

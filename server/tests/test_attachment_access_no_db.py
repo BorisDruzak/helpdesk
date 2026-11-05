@@ -20,6 +20,12 @@ from uploads import handlers
 pytestmark = pytest.mark.no_db
 
 
+def test_ticket_artifact_model_allows_missing_device_but_requires_scope():
+    from app.db.models import Artifact
+    assert Artifact.__table__.c.device_id.nullable is True
+    assert any(constraint.name == "ck_artifacts_device_or_ticket" for constraint in Artifact.__table__.constraints)
+
+
 @pytest.fixture
 def attachment_store(monkeypatch, tmp_path):
     ticket = SimpleNamespace(
@@ -228,6 +234,42 @@ async def test_uncommitted_upload_failure_removes_blob(attachment_store, tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_upload_storage_failure_returns_safe_error(attachment_store, tmp_path):
+    attachment_store.failure = "create"
+    async with upload_client(ui_actor("administrator", "admin")) as client:
+        response = await client.post("/api/upload", data=upload_form())
+        payload = await response.json()
+
+    assert response.status == 500
+    assert payload["error_code"] == "UPLOAD_FAILED"
+    assert "insert failed" not in str(payload)
+    assert attachment_store.artifacts == []
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["existing.txt"]
+
+
+@pytest.mark.asyncio
+async def test_download_requester_uses_resolved_identity(attachment_store):
+    # Neutral browser tickets use the resolved person, not a legacy login ID.
+    attachment_store.ticket.requester_id = "person:resolved-requester-a"
+    attachment_store.ticket.device_id = None
+    attachment_store.artifact.device_id = None
+    artifact, reason = await ArtifactService(None).get_artifact_for_download(
+        "artifact-a", ui_actor("requester-a", "user"),
+    )
+    assert artifact is attachment_store.artifact
+    assert reason is None
+
+
+@pytest.mark.asyncio
+async def test_no_device_artifact_does_not_grant_agent_download(attachment_store):
+    attachment_store.artifact.device_id = None
+    actor = AuthContext("device-a", "agent", AuthType.AGENT_TOKEN)
+    artifact, reason = await ArtifactService(None).get_artifact_for_download("artifact-a", actor)
+    assert artifact is None
+    assert reason == FORBIDDEN
+
+
+@pytest.mark.asyncio
 async def test_duplicate_upload_removes_candidate_and_retains_existing_blob(attachment_store, tmp_path):
     attachment_store.duplicate = attachment_store.artifact
     async with upload_client(ui_actor("administrator", "admin")) as client:
@@ -239,6 +281,18 @@ async def test_duplicate_upload_removes_candidate_and_retains_existing_blob(atta
     assert attachment_store.artifacts == []
     assert sorted(path.name for path in tmp_path.iterdir()) == ["existing.txt"]
     assert (tmp_path / "existing.txt").read_bytes() == b"existing"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_operation_cannot_return_another_ticket_artifact(attachment_store, tmp_path):
+    attachment_store.artifact.ticket_id = "foreign-ticket"
+    attachment_store.duplicate = attachment_store.artifact
+    async with upload_client(ui_actor("administrator", "admin")) as client:
+        response = await client.post("/api/upload", data=upload_form(operation_id="operation-a"))
+        payload = await response.json()
+    assert response.status == 403
+    assert "artifact_id" not in payload
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["existing.txt"]
 
 
 @pytest.mark.asyncio

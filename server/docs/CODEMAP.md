@@ -26,6 +26,10 @@
   ticket read/write authorization. Precommit rejections/cancellation remove
   temporary blobs. Files survive an uncertain commit result for reconciliation;
   successful commit is recorded before session-close cleanup can fail.
+  Requester downloads resolve the same identity as uploads. Browser tickets
+  without a device retain `ticket_id` with nullable `artifacts.device_id`
+  (migration `154` and `ck_artifacts_device_or_ticket`); upload failures return
+  safe `UPLOAD_FAILED` errors, and operation duplicates retain ticket/device scope.
 - Retired module-administration helpers/handlers were removed from
   `web_api/admin_handlers.py`; their routes were already absent. Endpoint
   module ownership and external HTTP contracts are unchanged.

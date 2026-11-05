@@ -6,6 +6,14 @@
 **Миграции:** Alembic, каталог `server/app/db/migrations/versions/`.  
 **Модели:** `server/app/db/models.py`.
 
+Revision `154` makes `artifacts.device_id` nullable for ticket attachments from
+browser tickets without a device. `ck_artifacts_device_or_ticket` requires at
+least one persisted scope (`device_id` or `ticket_id`); existing device artifacts
+remain unchanged. Apply this additive migration before accepting no-device
+uploads. Downgrade refuses while no-device attachments exist: preserve those
+records/files and keep the compatible schema rather than inventing device IDs
+or deleting data to force rollback.
+
 Revision `145` widens `diagnostic_sessions.started_by_user_id` from
 `varchar(36)` to `varchar(100)`, matching the supported UI login length.
 The field stores the authenticated actor login, not just a UUID. Existing

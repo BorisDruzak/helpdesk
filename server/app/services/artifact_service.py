@@ -94,8 +94,14 @@ class ArtifactService:
 
                 if await can_read_ui_ticket(self._ticket_repo, ticket, auth_context):
                     return artifact, None
-            if auth_context.actor_role == "user" and auth_context.actor_id == getattr(ticket, "requester_id", None):
-                return artifact, None
+            if auth_context.actor_role == "user":
+                from requester.identity_service import RequesterIdentityResolver
+
+                owned_ticket = await RequesterIdentityResolver(self.session).get_ticket(
+                    actor_id=auth_context.actor_id, ticket_id=target_ticket_id,
+                )
+                if owned_ticket is not None:
+                    return artifact, None
             logger.warning(
                 f"[ArtifactService] FORBIDDEN: actor_role={auth_context.actor_role} cannot download artifact {artifact_id}"
             )
