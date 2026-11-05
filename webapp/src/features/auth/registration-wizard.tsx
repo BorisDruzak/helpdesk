@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { SearchableSelect } from "../../components/ui/searchable-select";
+import { PasswordInput } from "../../components/ui/password-input";
 import { buildProfilePayload, buildProfileValues, missingProfileFields, RequesterProfileFieldControl, type RequesterProfileValues } from "../requester/profile-runtime";
 import { fieldsWithRuntimeOptions } from "../../pages/requester/profile-workflow";
 import { WebSessionApiError } from "./api";
@@ -21,7 +23,6 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   const [step,setStep] = useState(attempt?.submission ? 2 : 0);
   const [password,setPassword] = useState("");
   const [repeat,setRepeat] = useState("");
-  const [search,setSearch] = useState("");
   const [error,setError] = useState<string | null>(null);
   const [errors,setErrors] = useState<Record<string,string>>({});
   const [pending,setPending] = useState(false);
@@ -31,7 +32,7 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   const preview = registrationLoginPreview(names.first_name,names.last_name);
   const fullName = [names.last_name,names.first_name,names.patronymic].map(v => v.trim()).filter(Boolean).join(" ");
   const profileValues = {...values,full_name:fullName};
-  const departments = (options?.departments ?? []).filter(option => option.value === values.department_id || option.label.toLowerCase().includes(search.trim().toLowerCase()));
+  const departments = options?.departments ?? [];
   const fields = fieldsWithRuntimeOptions(options?.profile_schema,departments,[])
     .filter(field => !["full_name","login_identity","active_device_links"].includes(field.key));
 
@@ -95,6 +96,8 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   }
   function submit(event: FormEvent) {event.preventDefault(); if(step < 2 && !attempt?.user_login) advance(); else void finish();}
   function control(field: typeof fields[number]) {
+    if(field.key==='department_id') return <SearchableSelect key={field.key} label="Отдел" required={field.required} value={values.department_id}
+      options={departments} error={errors.department_id} onChange={value=>setValues(current=>({...current,department_id:value}))}/>;
     return <RequesterProfileFieldControl key={field.key} field={field} error={errors[field.key] ?? errors[`custom_fields.${field.key}`]}
       value={field.custom ? values.custom_fields[field.key] : values[field.key as keyof Omit<RequesterProfileValues,"custom_fields">]}
       onChange={value => setValues(current => field.custom ? {...current,custom_fields:{...current.custom_fields,[field.key]:value}} : {...current,[field.key]:value})}/>;
@@ -112,14 +115,13 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
       {!attempt.user_login && step===0 ? <div className="space-y-4">{([['last_name','Фамилия'],['first_name','Имя'],['patronymic','Отчество']] as const).map(([key,label]) =>
         <label key={key} className="block space-y-1 text-sm font-medium">{label}<Input className="w-full" aria-label={label} aria-invalid={errors[key] ? true : undefined} autoComplete={key==='last_name' ? 'family-name' : key==='first_name' ? 'given-name' : 'additional-name'} maxLength={100} value={names[key]} onChange={event => setNames({...names,[key]:event.target.value})}/>{errors[key] ? <span className="block text-rose-700">{errors[key]}</span> : null}</label>)}</div> : null}
       {!attempt.user_login && step===1 ? <div className="space-y-4">
-        <label className="block space-y-1 text-sm">Найти отдел<Input className="w-full" type="search" aria-label="Найти отдел" value={search} onChange={event => setSearch(event.target.value)}/></label>
         {fields.filter(field => field.required || field.key==='department_id' || field.key==='phone').map(control)}
         {fields.some(field => !field.required && !['department_id','phone'].includes(field.key)) ? <details><summary className="cursor-pointer text-sm font-semibold">Дополнительные сведения (необязательно)</summary><div className="mt-4 space-y-4">{fields.filter(field => !field.required && !['department_id','phone'].includes(field.key)).map(control)}</div></details> : null}
       </div> : null}
       {step===2 || attempt.user_login ? <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {!attempt.user_login ? <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-xl bg-slate-50 p-3 text-sm md:col-span-2"><dt>Сотрудник</dt><dd className="font-semibold break-words">{fullName}</dd><dt>Отдел</dt><dd>{options.departments.find(item => item.value===values.department_id)?.label}</dd><dt>Связь</dt><dd>{values.phone || values.internal_extension}</dd></dl> : null}
-        <label className="block space-y-1 text-sm font-medium">Пароль<Input className="w-full" aria-label="Пароль" aria-invalid={errors.password ? true : undefined} type="password" autoComplete={attempt.user_login ? "current-password" : "new-password"} maxLength={1024} value={password} onChange={event => setPassword(event.target.value)}/><span className="block text-xs text-slate-500">Не менее 12 символов.</span></label>
-        {!attempt.user_login ? <label className="block space-y-1 text-sm font-medium">Повторите пароль<Input className="w-full" aria-label="Повторите пароль" aria-invalid={errors.password_repeat ? true : undefined} type="password" autoComplete="new-password" maxLength={1024} value={repeat} onChange={event => setRepeat(event.target.value)}/></label> : null}
+        <PasswordInput label="Пароль" aria-invalid={errors.password ? true : undefined} autoComplete={attempt.user_login ? "current-password" : "new-password"} maxLength={1024} value={password} onChange={event=>setPassword(event.target.value)} hint="Не менее 12 символов."/>
+        {!attempt.user_login ? <PasswordInput label="Повторите пароль" toggleLabel="повтор пароля" aria-invalid={errors.password_repeat ? true : undefined} autoComplete="new-password" maxLength={1024} value={repeat} onChange={event=>setRepeat(event.target.value)}/> : null}
       </div> : null}
     </fieldset>
     {preview && !attempt.user_login ? <p className="rounded-xl bg-brand-50 p-3 text-sm">Ваш логин: <strong className="break-all">{preview}</strong><span className="mt-1 block text-xs text-slate-600">Если логин занят, добавится номер. Итоговый логин появится в кабинете.</span></p> : null}

@@ -2,6 +2,11 @@
 
 Helpdesk keeps authenticated requester and administrator web workspaces.
 Employee registration guides the requester through ФИО → отдел и контакты → пароль.
+«Отдел» is one searchable selection field: typing filters active published names;
+only explicitly selecting an option supplies its ID. Unmatched text cannot submit
+an old selection. Keyboard arrows/Enter select without advancing the wizard.
+Password and confirmation each have their own show/hide button, without storing
+either value or submitting the form.
 The server generates a lowercase transliterated login from the first-name initial
 and surname (`Иван Петров` → `ipetrov`), adding a suffix starting at `2` on a
 collision. Existing logins and confirmed domain identities are never renamed.

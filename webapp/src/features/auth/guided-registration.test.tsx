@@ -48,7 +48,8 @@ async function names() {
   fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
 }
 async function contacts(position?:string) {
-  fireEvent.change(await screen.findByLabelText("Отдел"), {target:{value:"real"}});
+  fireEvent.focus(await screen.findByRole("combobox",{name:"Отдел"}));
+  fireEvent.click(screen.getByRole("option",{name:"Юридический отдел"}));
   fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"), {target:{value:"1234"}});
   if(position) fireEvent.change(screen.getByLabelText("Должность"),{target:{value:position}});
   fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
@@ -61,6 +62,40 @@ async function password() {
 afterEach(() => {vi.unstubAllGlobals(); sessionStorage.clear();});
 
 describe("guided employee registration", () => {
+  it("uses one department input for search and explicit keyboard selection", async () => {
+    install(); show(); await names();
+    const department = screen.getByRole("combobox", { name: "Отдел" });
+    expect(department.tagName).toBe("INPUT");
+    expect(screen.queryByLabelText("Найти отдел")).not.toBeInTheDocument();
+    fireEvent.focus(department);
+    fireEvent.change(department, {target:{value:"юрид"}});
+    fireEvent.keyDown(department, {key:"ArrowDown"});
+    fireEvent.keyDown(department, {key:"Enter"});
+    expect(department).toHaveValue("Юридический отдел");
+    expect(screen.getByLabelText("Телефон или внутренний номер")).toBeInTheDocument();
+    fireEvent.focus(department);
+    fireEvent.change(department, {target:{value:"такого отдела нет"}});
+    fireEvent.blur(department);
+    fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"),{target:{value:"1234"}});
+    fireEvent.click(screen.getByRole("button",{name:"Продолжить"}));
+    expect(screen.getByRole("alert")).toHaveTextContent("Заполните обязательные поля профиля");
+  });
+  it("shows and hides both password values without submitting or losing them", async () => {
+    const requests=install(); show(); await names(); await contacts();
+    const first=screen.getByLabelText("Пароль",{exact:true});
+    const second=screen.getByLabelText("Повторите пароль");
+    fireEvent.change(first,{target:{value:"Synthetic-long-password-43!"}});
+    fireEvent.change(second,{target:{value:"Synthetic-long-password-43!"}});
+    fireEvent.click(screen.getByRole("button",{name:"Показать пароль"}));
+    expect(first).toHaveAttribute("type","text");
+    expect(second).toHaveAttribute("type","password");
+    fireEvent.click(screen.getByRole("button",{name:"Показать повтор пароля"}));
+    expect(second).toHaveAttribute("type","text");
+    fireEvent.click(screen.getByRole("button",{name:"Скрыть пароль"}));
+    expect(first).toHaveAttribute("type","password");
+    expect(first).toHaveValue("Synthetic-long-password-43!");
+    expect(requests.mock.calls.some(([url])=>String(url).endsWith('/register-requester'))).toBe(false);
+  });
   it("retains name/profile values going backwards and previews the generated login", async () => {
     install(); show(); await names();
     expect(screen.getByText("ipetrov")).toBeInTheDocument();
