@@ -7,6 +7,51 @@ import { SimpleSupportConversation } from "./simple-support-conversation";
 const raw = (extra: Record<string, unknown>) => ({ event_type: "chat_message", visibility: "public", text: "Здравствуйте", attachments: [], from_role: "support", message_id: null, event_id: null, ts: null, direction: "to_agent", reply_to: null, ...extra }) as SupportTicketDetailPayload["timeline"][number];
 
 describe("clean support conversation", () => {
+  const imageProps = (attachment: Record<string, unknown>) => ({items: mapSupportTimelineEntries([raw({event_id: 55, attachments: [attachment]})]), text: "", onTextChange: vi.fn(), onModeChange: vi.fn(), mode: "public" as const, canReply: true, canNote: true, onSend: vi.fn(), pending: false, attachments: [], onRemoveAttachment: vi.fn()});
+  it("opens a screenshot in the current page and keeps download as an explicit action", () => {
+    render(<SimpleSupportConversation {...imageProps({artifact_id: "image-1", name: "Ошибка.png", mime_type: "image/png", url: "/api/artifacts/image-1/download"})} />);
+    const thumbnail = screen.getByRole("img", {name: "Миниатюра: Ошибка.png"});
+    expect(thumbnail).toHaveAttribute("src", "/api/artifacts/image-1/download");
+    fireEvent.click(screen.getByRole("button", {name: "Открыть изображение Ошибка.png"}));
+    const dialog = screen.getByRole("dialog", {name: "Просмотр изображения: Ошибка.png"});
+    expect(dialog).toBeVisible();
+    expect(screen.getByRole("link", {name: "Скачать Ошибка.png"})).toHaveAttribute("download");
+    fireEvent.click(screen.getByRole("button", {name: "Закрыть просмотр изображения"}));
+    fireEvent(dialog, new Event("close"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  it.each(["https://foreign.test/private.png", "//foreign.test/private.png", "/api/artifacts/image-1/download?token=secret", "/other/image.png"])("does not load untrusted image URL %s", (url) => {
+    render(<SimpleSupportConversation {...imageProps({name: "Ошибка.png", mime_type: "image/png", url})} />);
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: /Открыть изображение/})).not.toBeInTheDocument();
+  });
+  it("preserves the canonical legacy ticket scope for preview and download", () => {
+    const url = "/api/artifacts/legacy-image/download?ticket_id=ticket-1";
+    render(<SimpleSupportConversation {...imageProps({artifact_id: "legacy-image", name: "История.png", url})} />);
+    expect(screen.getByRole("img", {name: "Миниатюра: История.png"})).toHaveAttribute("src", url);
+    expect(screen.getByRole("link", {name: "Скачать История.png"})).toHaveAttribute("href", url);
+  });
+  it.each(["image/svg+xml", "text/html", "application/pdf"])("does not embed %s even with a misleading raster filename", (mime_type) => {
+    render(<SimpleSupportConversation {...imageProps({artifact_id: "doc", name: "Ошибка.png", mime_type, url: "/api/artifacts/doc/download"})} />);
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", {name: "Ошибка.png"})).toBeInTheDocument();
+  });
+  it("keeps download available when the full image cannot be decoded", () => {
+    render(<SimpleSupportConversation {...imageProps({artifact_id: "bad", name: "Ошибка.png", url: "/api/artifacts/bad/download"})} />);
+    fireEvent.click(screen.getByRole("button", {name: "Открыть изображение Ошибка.png"}));
+    fireEvent.error(screen.getByRole("img", {name: "Ошибка.png"}));
+    expect(screen.getByText("Не удалось открыть изображение. Попробуйте скачать файл.")).toBeVisible();
+    expect(screen.getByRole("link", {name: "Скачать изображение"})).toHaveAttribute("href", "/api/artifacts/bad/download");
+  });
+  it("keeps non-image attachments as downloads and explains an unavailable thumbnail", () => {
+    const view = render(<SimpleSupportConversation {...imageProps({artifact_id: "doc", name: "Инструкция.pdf", mime_type: "application/pdf", url: "/api/artifacts/doc/download"})} />);
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", {name: "Инструкция.pdf"})).toBeInTheDocument();
+    view.rerender(<SimpleSupportConversation {...imageProps({artifact_id: "bad", name: "Ошибка.png", url: "/api/artifacts/bad/download"})} />);
+    fireEvent.error(screen.getByRole("img", {name: "Миниатюра: Ошибка.png"}));
+    expect(screen.getByText("Миниатюра недоступна")).toBeVisible();
+    expect(screen.getByRole("link", {name: "Скачать Ошибка.png"})).toBeInTheDocument();
+  });
   it("requests the matching server stream when switching dialogue, notes and history", () => {
     const changed = vi.fn();
     render(<SimpleSupportConversation items={[]} text="" onTextChange={vi.fn()} onModeChange={vi.fn()} onTabChange={changed} mode="public" canReply canNote onSend={vi.fn()} pending={false} attachments={[]} onRemoveAttachment={vi.fn()} />);

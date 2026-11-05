@@ -37,7 +37,7 @@ describe("simple support ticket", () => {
   });
   it("shows the problem and actual public result without opening a dialog", () => {
     render(<SimpleSupportTicket detail={{ ...detail, ticket: { ...detail.ticket, requester_resolution_summary: "Заменён картридж", resolution_summary: "Внутренняя диагностика", status: "closed" } }} actorId="operator" canWork onStatus={vi.fn()} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={null} />);
-    expect(within(screen.getByRole("region", { name: "Проблема и результат" })).getByText("Не печатает")).toBeVisible();
+    expect(within(screen.getByRole("region", { name: "Контекст обращения" })).getByText("Не печатает")).toBeVisible();
     expect(screen.getByText("Заменён картридж")).toBeVisible();
     expect(screen.queryByText("Внутренняя диагностика")).not.toBeInTheDocument();
     expect(screen.getByText("205")).toBeInTheDocument();
@@ -70,7 +70,11 @@ describe("simple support ticket", () => {
   it("shows compact content, scenario answers and a single take action without an agent", () => {
     const status = vi.fn();
     render(<SimpleSupportTicket detail={detail} actorId="operator" canWork onStatus={status} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={<div>Переписка</div>} />);
-    expect(within(screen.getByRole("region", { name: "Проблема и результат" })).getByText("Не печатает")).toBeVisible();
+    const facts = screen.getByRole("complementary", { name: "Сведения об обращении" });
+    const context = within(facts).getByRole("region", { name: "Контекст обращения" });
+    expect(within(context).getByText("Не печатает")).toBeVisible();
+    expect(within(context).getByText("205")).toBeVisible();
+    expect(within(screen.getByRole("main")).queryByText("Не печатает")).not.toBeInTheDocument();
     expect(screen.getByText("205")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Взять в работу" }));
     expect(status).toHaveBeenCalledWith("in_progress");

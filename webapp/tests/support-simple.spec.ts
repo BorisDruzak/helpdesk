@@ -49,6 +49,18 @@ async function login(page: Page) {
   await expect(page.getByRole("heading", { name: "Очередь обращений", exact: true })).toBeVisible();
 }
 
+async function openContext(page: Page) {
+  const toggle = page.getByRole("button", { name: "Сведения", exact: true });
+  await page.locator(".simple-ticket").waitFor();
+  if (await toggle.isVisible()) await toggle.click();
+  return page.getByRole("region", { name: "Контекст обращения", exact: true });
+}
+
+async function closeContext(page: Page) {
+  const close = page.getByRole("button", { name: "Закрыть сведения", exact: true });
+  if (await close.isVisible()) await close.click();
+}
+
 test("unified queue keeps the full list reachable and restores the resizable inspector", async ({ page }, info) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   const errors: string[] = [];
@@ -97,6 +109,7 @@ for (const width of [1366, 1440, 1920, 390]) {
     page.on("response", (response) => { if (response.status() >= 400) failures.push(`${response.status()} ${new URL(response.url()).pathname}`); });
     page.on("requestfailed", (request) => failures.push(`${request.method()} ${new URL(request.url()).pathname}`));
     await page.route("**/api/web/notifications/unread_count", (route) => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+    await page.route("**/api/artifacts/fixture-attachment/download", route => route.fulfill({contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOC8AAAAASUVORK5CYII=", "base64")}));
     let currentStatus = "new";
     let currentAssignee: string | null = null;
     let publicResult = "";
@@ -153,24 +166,40 @@ for (const width of [1366, 1440, 1920, 390]) {
     await expect(reply).toBeDisabled();
     const take = page.getByRole("button", { name: "Взять в работу", exact: true });
     await expect(take).toBeInViewport();
-    const summary = page.getByRole("region", { name: "Проблема и результат", exact: true });
+    const summary = await openContext(page);
     await expect(summary.getByText(problem, { exact: true })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    // Full question/answer details remain available as a secondary action.
-    await page.getByRole("button", { name: /Описание и ответы сотрудника/ }).click();
-    await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByText("205", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Закрыть описание", exact: true }).click();
+    await page.screenshot({path: info.outputPath(`context-${width}.png`), fullPage: true});
+    await closeContext(page);
     await expect(page.getByText("Расчёт SLA для теста")).toHaveCount(0);
     await expect(page.getByText("Проверить картридж — только для поддержки")).toHaveCount(0);
     await expect(page.getByText("Принтер не печатает", { exact: true })).toHaveCount(1);
-    await expect(page.getByRole("link", { name: "Ошибка.png" })).toHaveAttribute("href", "/api/artifacts/fixture-attachment/download");
+    await expect(page.getByRole("link", { name: "Скачать Ошибка.png" })).toHaveAttribute("href", "/api/artifacts/fixture-attachment/download");
+    const preview = page.getByRole("button", {name: "Открыть изображение Ошибка.png"});
+    await preview.scrollIntoViewIfNeeded();
+    await expect(page.getByRole("img", {name: "Миниатюра: Ошибка.png"})).toHaveJSProperty("naturalWidth", 1);
+    let downloads = 0; page.on("download", () => downloads++);
+    await preview.click();
+    await expect(page.getByRole("dialog", {name: "Просмотр изображения: Ошибка.png"})).toBeVisible();
+    const viewerBounds = (await page.getByRole("dialog").boundingBox())!;
+    expect(Math.abs(viewerBounds.x + viewerBounds.width / 2 - width / 2)).toBeLessThan(2);
+    expect(viewerBounds.y).toBeGreaterThan(0);
+    await page.screenshot({path: info.outputPath(`image-viewer-${width}.png`), fullPage: true});
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(preview).toBeFocused();
+    expect(downloads).toBe(0);
     await expect(reply).toBeInViewport();
     await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeInViewport();
     expect((await page.getByRole("tabpanel", { name: "Диалог", exact: true }).boundingBox())?.height).toBeGreaterThan(width < 760 ? 110 : 180);
     await page.screenshot({ path: info.outputPath(`ticket-before-take-${width}.png`), fullPage: true });
     await take.click();
     await expect(reply).toBeEnabled();
+    await reply.fill("Черновик сохранён при просмотре изображения");
+    await preview.click();
+    await page.getByRole("button", {name: "Закрыть просмотр изображения"}).click();
+    await expect(reply).toHaveValue("Черновик сохранён при просмотре изображения");
     await reply.fill("Бумага добавлена. Проверьте печать.");
     await reply.press("Control+Enter");
     await expect(page.getByText("Бумага добавлена. Проверьте печать.", { exact: true })).toBeVisible();
@@ -191,8 +220,10 @@ for (const width of [1366, 1440, 1920, 390]) {
     await resolution.getByRole("button", { name: "Решить и закрыть", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByText("Обращение закрыто. Переписка и история доступны для просмотра.", { exact: true })).toBeVisible();
+    await openContext(page);
     await expect(summary.getByRole("heading", { name: "Результат решения", exact: true })).toBeVisible();
     await expect(summary.getByText("Печать восстановлена, бумага добавлена.", { exact: true })).toBeVisible();
+    await closeContext(page);
     expect(completionCommands).toHaveLength(1);
     await expect(page.getByText("Подтвердите решение", { exact: true })).toHaveCount(0);
     await expect(reply).toHaveCount(0);
@@ -273,7 +304,7 @@ test("legacy code-only requirements allow completion without manual code entry",
   await expect(complete).toBeEnabled();
   await complete.click();
   await expect(page.getByText("Обращение закрыто. Переписка и история доступны для просмотра.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Проблема и результат", exact: true }).getByText("Печать восстановлена без кода решения.", { exact: true })).toBeVisible();
+  await expect((await openContext(page)).getByText("Печать восстановлена без кода решения.", { exact: true })).toBeVisible();
   expect(commands).toHaveLength(1);
 });
 
@@ -323,7 +354,7 @@ for (const width of [1366, 1920, 390]) {
     });
     await login(page);
     await page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "T-200001", exact: true }).click();
-    const summary = page.getByRole("region", { name: "Проблема и результат", exact: true });
+    const summary = await openContext(page);
     const expand = summary.getByRole("button", { name: "Показать результат полностью", exact: true });
     await expect(expand).toHaveAttribute("aria-expanded", "false");
     const resultId = await expand.getAttribute("aria-controls");

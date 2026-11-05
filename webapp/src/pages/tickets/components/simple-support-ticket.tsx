@@ -1,5 +1,5 @@
-import { useId, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, X } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
+import { X } from "lucide-react";
 import type { SupportTicketDetailPayload } from "../../../features/queues/api";
 import type { SupportWorkspaceContext, SupportWorkspaceSelectedTicket } from "../../../features/queues/support-workspace-model";
 
@@ -13,8 +13,6 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
   const { detail, context, ticket, actorId, isAdmin, canWork, onStatus, onAdvanced } = props;
   const raw = detail.ticket;
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const descriptionRef = useRef<HTMLDialogElement>(null);
-  const descriptionTitle = useId();
   const resultId = useId();
   const [expandedResultTicket, setExpandedResultTicket] = useState<string | null>(null);
   const resultExpanded = expandedResultTicket === raw.ticket_id;
@@ -62,25 +60,19 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
       {props.error ? <p role="alert" className="simple-notice simple-risk">{props.error}</p> : null}
       {takeReason ? <p className="simple-notice simple-take-reason">{takeReason}</p> : other && !isAdmin ? <p className="simple-notice">Назначено другому оператору. Доступен просмотр; изменение исполнителя выполняется отдельно с проверкой прав.</p> : raw.status === "resolved" ? <p className="simple-notice">{detail.actions.requester_confirmation_required ? "Решение отправлено сотруднику. Ожидаем подтверждение: сотрудник может закрыть обращение или вернуть его в работу." : "Решение отправлено сотруднику. Закрытие выполняется по действующей политике."}</p> : raw.status === "closed" ? <p className="simple-muted">Обращение закрыто. Переписка и история доступны для просмотра.</p> : null}
       <div className="simple-ticket__content">
-        <section className="simple-ticket__summary" aria-label="Проблема и результат">
-          <div><div className="simple-ticket__summary-heading"><h3>Проблема</h3>
-            <button className="simple-description-toggle" type="button" onClick={() => descriptionRef.current?.showModal()} aria-haspopup="dialog">Описание и ответы сотрудника{rows.length ? ` · ${rows.length}` : ""}<ChevronDown size={14} aria-hidden /></button>
-          </div>
-          <p>{!descriptionIsAnswers ? raw.description || "Описание не указано" : rows.map((row) => `${row.label}: ${row.value}`).join("\n")}</p></div>
-          {raw.requester_resolution_summary ? <div><h3>Результат решения</h3><p id={resultId} data-expanded={resultExpanded} tabIndex={resultExpanded ? 0 : undefined}>{raw.requester_resolution_summary}</p>
-            <button className="simple-link simple-result-toggle" type="button" aria-controls={resultId} aria-expanded={resultExpanded} onClick={() => setExpandedResultTicket(resultExpanded ? null : raw.ticket_id)}>{resultExpanded ? "Свернуть результат" : "Показать результат полностью"}</button>
-          </div> : null}
-        </section>
-        <dialog className="simple-description-dialog" ref={descriptionRef} aria-labelledby={descriptionTitle} onClick={(event) => { if (event.target === event.currentTarget) descriptionRef.current?.close(); }}>
-          <header><h3 id={descriptionTitle}>Описание и ответы сотрудника</h3><form method="dialog"><button type="submit" className="simple-button" aria-label="Закрыть описание"><X size={18} aria-hidden /></button></form></header>
-          {!descriptionIsAnswers ? <p>{raw.description || "Описание не указано"}</p> : null}
-          {rows.length ? <dl className="simple-facts">{rows.map((row) => <div key={row.key}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl> : null}
-        </dialog>
         {props.conversation}
       </div>
     </main>
     <aside className="simple-ticket__facts" data-open={detailsOpen} aria-label="Сведения об обращении">
       <button className="simple-button simple-ticket__facts-close" type="button" onClick={() => setDetailsOpen(false)}>Закрыть сведения <X size={15} aria-hidden /></button>
+      <section className="simple-panel simple-ticket-context" aria-label="Контекст обращения">
+        <h3>Контекст</h3>
+        {!descriptionIsAnswers ? <div className="simple-ticket-context__description"><h4>Описание проблемы</h4><p>{raw.description || "Описание не указано"}</p></div> : null}
+        {rows.length ? <dl className="simple-facts">{rows.map((row) => <div key={row.key}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl> : null}
+        {raw.requester_resolution_summary ? <div className="simple-ticket-context__result"><h4>Результат решения</h4><p id={resultId} data-expanded={resultExpanded} tabIndex={resultExpanded ? 0 : undefined}>{raw.requester_resolution_summary}</p>
+          <button className="simple-link simple-result-toggle" type="button" aria-controls={resultId} aria-expanded={resultExpanded} onClick={() => setExpandedResultTicket(resultExpanded ? null : raw.ticket_id)}>{resultExpanded ? "Свернуть результат" : "Показать результат полностью"}</button>
+        </div> : null}
+      </section>
       {props.inspector ?? <><section className="simple-panel"><h3>Заявитель</h3><dl className="simple-facts">
         <div><dt>ФИО</dt><dd>{context?.requester.name ?? raw.requester_display_name ?? "Не указан"}</dd></div>
         <div><dt>Телефон</dt><dd>{context?.requester.phone ?? "Не указан"}</dd></div><div><dt>Email</dt><dd>{context?.requester.email ?? "Не указан"}</dd></div>

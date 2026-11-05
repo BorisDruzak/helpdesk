@@ -2885,3 +2885,12 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verification:117 focused Python tests;5 attachment PostgreSQL/HTTP/migration cases; owner accept/reject and legacy opt-out API cases; latest publication/idempotency/pending/special-policy PostgreSQL case;20 frontend tests, build and workspace check pass. Built-browser fixture verifies acceptance/rejection at1366/390 with no page errors or horizontal overflow.
 - Next steps: no required work remains. Two backups verified,30source hashes/TLS200/3active services confirmed. Live requester PNG upload→file-only send→support view→download passed with matching SHA256; one artifact/message on synthetic T-000058. Real T-000075 unchanged. Console0; temporary DB/role resources absent; preview stopped. Staging left running.
 - Handoff: docs/TICKET_CLOSURE_ATTACHMENTS_ACCEPTANCE_2026-11-05.md; private logs under tmp/closure-confirmation-20261105 and tmp/attachments-20261105. Production/Endpoint unchanged; full CI not requested. Downgrade154 refuses while NULL-device attachment data exists.
+
+## Support context and screenshot viewer (2026-11-05)
+
+- Goal: move description/answers/result into a separate right-panel Context block; show screenshot thumbnails and open them inside Helpdesk, keeping download separate.
+- Actor/job: support workbench; primary job is conversation and resolving the request. Context belongs to the existing inspector, available via Сведения on narrow screens. Preserve drafts, current workflow and advanced tooling.
+- Scope: frontend only, existing authenticated artifact download route; safe raster images only, no external URLs or new dependencies.
+- Current state: implementation and independent review complete. Context is in the right inspector; raster thumbnail opens a centered native modal with explicit download. Canonical historical ticket_id scope preserved.
+- Verification:32 component tests,15 full support browser scenarios plus4 final centered-viewer/draft checks at1366/1440/1920/390 pass; build/workspace/diff checks pass. Preview error/MIME/URL guards covered. Next: exact-SHA canonical staging deploy and live read-only acceptance; leave staging running.
+- Evidence: tmp/context-preview-20261105. Production and business ticket state stay unchanged.

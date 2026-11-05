@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
-import { ArrowDown, FileText, LoaderCircle, LockKeyhole, Paperclip, Send } from "lucide-react";
+import { ArrowDown, LoaderCircle, LockKeyhole, Paperclip, Send } from "lucide-react";
 import type { SupportTicketAttachmentUpload } from "../../../features/queues/api";
 import type { SupportWorkspaceTimelineItem } from "../../../features/queues/support-workspace-model";
+import { ChatAttachment } from "./chat-attachment";
 
 export type SimpleSupportConversationProps = {
   items: SupportWorkspaceTimelineItem[]; mode: "public" | "internal"; text: string;
@@ -74,10 +75,7 @@ export function SimpleSupportConversation(props: SimpleSupportConversationProps)
                   {initial ? <details className="simple-original-message"><summary>Первичное обращение · Показать текст</summary><p>{item.body}</p></details> : <p>{item.body}</p>}
                   {item.operation ? <p className="simple-muted">{item.operation.statusLabel}{item.operation.summary ? ` · ${item.operation.summary}` : ""}</p> : null}
                   {item.attachments.length ? <ul className="simple-message__attachments">{item.attachments.map((attachment, attachmentIndex) => {
-                    const url = String(attachment.url ?? attachment.download_url ?? "");
-                    const safe = url.startsWith("/") && !url.startsWith("//") && !url.includes("\\");
-                    const name = String(attachment.name ?? attachment.filename ?? attachment.file_name ?? "Вложение");
-                    return <li key={String(attachment.artifact_id ?? attachmentIndex)}>{safe ? <a href={url} target="_blank" rel="noreferrer"><FileText size={18} aria-hidden />{name}</a> : <span>{name}</span>}</li>;
+                    return <li key={String(attachment.artifact_id ?? attachmentIndex)}><ChatAttachment key={String(attachment.artifact_id ?? attachment.url ?? attachmentIndex)} attachment={attachment} /></li>;
                   })}</ul> : null}
                 </div>
               </div>

@@ -82,7 +82,11 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   request-local read cache of canonical assignment/workflow checks. The command
   revalidates membership and destination load and returns specific safe denial
   codes. The Messenger conversation anchors its composer, preserves scroll and
-  separate audience drafts, and opens structured description in a native dialog.
+  separate audience drafts. Description/answers/public result occupy the right
+  inspector's Context block. `components/chat-attachment.tsx` shows lazy raster
+  thumbnails and a native in-page image dialog with explicit download, using
+  the existing authenticated artifact route, including the historical `ticket_id`
+  ownership fallback; external URLs and unknown query parameters are not embedded.
 - `test_support_work.py` covers PostgreSQL competing operators, persisted
   ownership, SLA and administrator access; the no-DB companion covers error
   ordering. Existing FSM, assignment, closure, audit and internal visibility stay

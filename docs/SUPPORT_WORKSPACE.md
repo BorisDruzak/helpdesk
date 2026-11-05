@@ -156,9 +156,14 @@ replay behavior is unchanged. Existing stored messages are not rewritten.
 
 The Messenger layout keeps only the message feed scrolling, with the editor
 anchored below it. Bubbles have bounded line lengths, sender/time labels and
-date separators. Description and structured answers open in a keyboard-accessible
-dialog; an identical initial chat message is collapsible. Attachments retain
-their canonical download links. Ctrl/Command+Enter sends an allowed nonempty
+date separators. Description, structured answers and the public result appear in
+the separate **Контекст** block of the right inspector, available via **Сведения**
+on narrow screens. They no longer consume conversation height. An identical initial
+chat message stays collapsible. Raster screenshot attachments show lazy thumbnails;
+click opens a native modal in the current page, with Escape/backdrop/close controls
+and focus restoration. Download is a separate explicit action. Only exact same-origin
+artifact routes and raster types are previewed; errors leave the download available.
+Other files retain their canonical download links. Ctrl/Command+Enter sends an allowed nonempty
 draft, while Enter inserts a line break. New messages preserve the reading
 position when the operator has scrolled back and offer a return-to-latest button.
 Resolved/closed public conversations show a concise read-only notice instead of
