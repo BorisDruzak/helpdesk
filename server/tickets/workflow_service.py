@@ -293,6 +293,8 @@ async def validate_transition_for_ticket(
     to_status_canonical: str,
     is_support_or_admin: bool,
 ) -> bool:
+    if is_support_or_admin and to_status_canonical == "closed" and await requires_requester_confirmation(session, ticket):
+        return False
     profile = await load_ticket_workflow_profile(session, ticket)
     return validate_transition_for_profile(
         profile,
@@ -307,6 +309,13 @@ class WorkflowTransitionConflict(ValueError):
 
     def __init__(self):
         super().__init__("Состояние обращения изменилось. Обновите обращение и повторите действие.")
+
+
+class RequesterConfirmationRequired(ValueError):
+    """Staff cannot complete a requester-owned acceptance step."""
+
+    def __init__(self):
+        super().__init__("closure_policy requires requester confirmation before closing")
 
 
 class TicketWorkflowService:
@@ -589,6 +598,8 @@ class TicketWorkflowService:
             )
         now = datetime.now(timezone.utc)
         workflow_profile = await load_ticket_workflow_profile(self.session, ticket)
+        if to_status == "closed" and actor_role in {"admin", "support"} and await requires_requester_confirmation(self.session, ticket):
+            raise RequesterConfirmationRequired()
         if close_after_resolve:
             if to_status != "resolved" or actor_role not in {"admin", "support"}:
                 raise ValueError("workflow_profile close_after_resolve requires a staff resolution")
@@ -599,7 +610,7 @@ class TicketWorkflowService:
             if not str(requester_resolution_summary or getattr(ticket, "requester_resolution_summary", None) or "").strip():
                 raise ValueError("closure_policy requires requester_resolution_summary")
             if await requires_requester_confirmation(self.session, ticket):
-                raise ValueError("closure_policy requires requester confirmation before closing")
+                raise RequesterConfirmationRequired()
             if not validate_transition_for_profile(workflow_profile, from_status, "resolved", True) or not validate_transition_for_profile(
                 workflow_profile, "resolved", "closed", True
             ):

@@ -93,6 +93,18 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   other workflow guards remain enforced. Missing resolution-code prerequisites
   are retired, including historical snapshots and effective transition gates;
   optional stored classification metadata is preserved.
+- Required requester acceptance filters staff `closed` status actions and is
+  checked again by `TicketWorkflowService` under the ticket lock. Direct staff
+  closure returns409 `REQUESTER_CONFIRMATION_REQUIRED`; the owner's requester
+  confirmation remains the closing authority. `requester_confirmation_required`
+  explains the waiting step in the support UI; resolved requester handling points
+  the next action to the requester while confirmation is pending. The reviewed
+  `scripts/helpdesk_requester_confirmation.py` publishes ordinary1.0.3, with a
+  content-bound plan, audited policy version, no automatic expiry, and reconciliation
+  of newly affected resolved tickets to pending confirmation. Existing decisions
+  and special policies are preserved; pending ordinary expiry is cleared without
+  replacing its request ID. Pending acceptance can be rejected independently of
+  the optional rating window. See the support workspace procedure.
 - Requester message/confirm/feedback/reopen reuse requester identity scope for
   users and administrators, rereading ownership under the ticket lock. Public
   result views use `requester_resolution_summary`; internal results stay private.

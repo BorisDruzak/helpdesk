@@ -51,6 +51,45 @@ def headers_for(token):
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.mark.parametrize("choice", ["close", "reopen"])
+async def test_resolution_waits_for_owner_acceptance_and_rejects_staff_close(test_client, test_engine, choice):
+    from tests.test_requester_workspace_api import _person_for_login
+    owner = "confirm-owner-" + uuid.uuid4().hex[:8]
+    foreign = "confirm-other-" + uuid.uuid4().hex[:8]
+    maker, ticket_id = await seed(test_engine, confirmation=True, requester=owner)
+    async with maker() as session:
+        person = await _person_for_login(session, login=owner)
+        await _person_for_login(session, login=foreign)
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.requester_person_id = person.person_id
+        ticket.requester_external_ref = person.person_id
+        ticket.requester_snapshot_json = {"person": {"external_id": person.person_id}, "display_name": "Synthetic owner"}
+        await session.commit()
+    resolved = await test_client.post(f"/api/web/support/tickets/{ticket_id}/status", headers=headers_for(TEST_UI_SUPPORT_TOKEN),
+        json={"to_status": "resolved", "requester_resolution_summary": "Проверьте, пожалуйста, работу принтера"})
+    assert resolved.status == 200, await resolved.text()
+    assert (await resolved.json())["data"]["status"] == "resolved"
+    for token in (TEST_UI_SUPPORT_TOKEN, TEST_UI_ADMIN_TOKEN):
+        denied = await test_client.post(f"/api/web/support/tickets/{ticket_id}/status", headers=headers_for(token), json={"to_status": "closed"})
+        assert denied.status == 409, await denied.text()
+        assert (await denied.json())["error_code"] == "REQUESTER_CONFIRMATION_REQUIRED"
+    detail = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=headers_for(TEST_UI_SUPPORT_TOKEN))
+    assert not any(option["value"] == "closed" for option in (await detail.json())["data"]["actions"]["status_options"])
+    own_headers = headers_for(TEST_UI_USER_PREFIX + owner)
+    public = await test_client.get(f"/api/web/requester/tickets/{ticket_id}", headers=own_headers)
+    data = (await public.json())["data"]
+    assert data["ticket"]["status"] == "resolved" and data["ticket"]["actions"]["can_confirm_solution"]
+    assert data["handling"]["next_action_owner"] == "requester"
+    not_owner = await test_client.post(f"/api/web/requester/tickets/{ticket_id}/close", headers=headers_for(TEST_UI_USER_PREFIX + foreign), json={})
+    assert not_owner.status == 404
+    chosen = await test_client.post(f"/api/web/requester/tickets/{ticket_id}/{choice}", headers=own_headers,
+        json={} if choice == "close" else {"reason_code": "not_resolved", "reason_comment": "Принтер всё ещё не печатает"})
+    assert chosen.status == 200, await chosen.text()
+    async with maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket.status == "closed" if choice == "close" else ticket.status not in {"resolved", "closed"}
+
+
 async def test_atomic_completion_api_persists_both_audits_and_public_result(test_client, test_engine):
     maker, ticket_id = await seed(test_engine)
     headers = headers_for(TEST_UI_SUPPORT_TOKEN)

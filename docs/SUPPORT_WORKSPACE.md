@@ -9,6 +9,44 @@ three-area ticket and conversation. The former command center remains at
 `/app/support/advanced`. `simple-resolution-form.tsx` presents the public result,
 remaining policy fields and optional internal information.
 
+## Requester acceptance of a solution
+
+Ordinary support completion is `in_progress → resolved → closed`: support writes
+the public result and resolves the ticket; the requester sees **Проверьте решение**
+with **Подтвердить решение** and **Проблема не решена**. Only the owner's acceptance
+closes it. A rejection uses the existing canonical reopen service. It is separate
+from optional rating and internal approval processes. Resolution SLA stops when
+the result is prepared; the ticket stays available for acceptance.
+
+`actions.requester_confirmation_required` explains this in the support card and
+resolution form. When required, staff status options omit `closed`, the direct
+status API returns409 `REQUESTER_CONFIRMATION_REQUIRED`, and the workflow service
+rechecks under the ticket lock before effects. An administrator uses the same
+guard; confirming their own request uses the owner-scoped requester endpoint.
+Explicit opt-out policies still support atomic resolve-and-close where authorized.
+
+On staging, `scripts/helpdesk_requester_confirmation.py` plans/publishes ordinary
+closure `guided_studio_20261011_closure`1.0.2→1.0.3 through the audited registry.
+It enables confirmation, disables automatic expiry closure, and preserves summary,
+evidence, classification and special-policy requirements. Host/release/private
+backup gates belong to the approved staging transport. Apply rechecks a fingerprint
+and locks policy/ticket writes. Previously resolved tickets newly affected by the
+policy receive canonical pending-confirmation state and an audit event, preserving
+status/history; existing requester decisions require review rather than replacement.
+Existing pending ordinary confirmations also lose their stored automatic expiry;
+their request ID and decision state stay intact. Explicit special-policy expiries
+are preserved. A pending acceptance may still be rejected after the optional
+feedback window expires, including after a previous positive rating.
+The requester action panel becomes visible on the next normal refresh. The plan
+is read-only and a fresh repeated apply is idempotent. Already closed tickets are
+not reopened. Do not replay the older phase-one catalog publication against the
+new active policy; its historical version guard intentionally rejects that state.
+
+Ticket attachments can be uploaded without a computer. Revision154 allows a
+ticket-bound artifact with no device while requiring at least ticket/device scope;
+ownership/download checks remain authoritative. See
+[artifact contract](../server/docs/ARTIFACTS_API.md).
+
 ## Queue partitioning and layout
 
 Queue definitions, members and OLA settings live in `/app/settings`, tab

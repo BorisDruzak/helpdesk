@@ -94,6 +94,7 @@ def requester_ticket_actions(ticket: Any, *, now: datetime | None = None) -> dic
     policy = _requester_action_policy(ticket)
     in_feedback_window = _feedback_window_open(ticket, now=now)
     latest_feedback_present = has_latest_requester_feedback(ticket)
+    pending_acceptance = status == "resolved" and _resolution_confirmation_pending(ticket)
 
     can_send_message = (
         bool(status)
@@ -114,9 +115,9 @@ def requester_ticket_actions(ticket: Any, *, now: datetime | None = None) -> dic
     )
     can_reopen = (
         status in REQUESTER_FEEDBACK_STATUSES
-        and in_feedback_window
+        and (in_feedback_window or pending_acceptance)
         and _closure_allows_reopen(ticket)
-        and latest_requester_feedback_allows_reopen(ticket)
+        and (pending_acceptance or latest_requester_feedback_allows_reopen(ticket))
         and _policy_enabled(policy, "can_reopen", True)
     )
     return {

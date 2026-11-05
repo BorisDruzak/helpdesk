@@ -83,3 +83,16 @@ async def test_current_presence_requires_exact_owned_registry_and_provider_refer
     endpoint.read_device_presence.side_effect=RuntimeError('DO NOT ECHO PROVIDER DETAILS')
     result=await requester_device(row,resolver=resolver,ports=ports,actor_id='owner')
     assert result['presence']=='unavailable' and 'DO NOT ECHO' not in str(result)
+
+
+@pytest.mark.parametrize('positive_feedback',[False,True])
+def test_pending_acceptance_can_be_rejected_after_optional_feedback_window_expires(positive_feedback):
+    from tickets.requester_policy import requester_ticket_actions
+    row=ticket(status='resolved',resolved_at=NOW-timedelta(days=30),
+        custom_fields={'resolution_confirmation':{'pending':True}},
+        _requester_latest_feedback_reopen_available=not positive_feedback)
+    actions=requester_ticket_actions(row,now=NOW)
+    assert actions['can_confirm_solution'] and actions['can_reopen']
+    assert actions['can_rate_solution'] is False
+    row.custom_fields={'resolution_confirmation':{'pending':False}}
+    assert requester_ticket_actions(row,now=NOW)['can_reopen'] is False

@@ -186,9 +186,9 @@ export function TicketResolutionPanel({
     <section className="rounded-panel border border-slate-200 bg-white p-4">
       <h3 className="text-lg font-semibold text-slate-950">Решение обращения</h3>
       {canClose ? (
-        <Button className="mt-3" disabled={actionSubmitting} onClick={closeTicket} type="button">
+        <div><p className="mt-2 text-sm text-slate-600">Проверьте результат. Обращение закроется после вашего подтверждения.</p><Button className="mt-3" disabled={actionSubmitting} onClick={closeTicket} type="button">
           Подтвердить решение
-        </Button>
+        </Button></div>
       ) : null}
       {canRate ? (
         <div className="mt-3">

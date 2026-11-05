@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { SimpleResolutionForm } from "./simple-resolution-form";
 
 describe("simple resolution form", () => {
+  it("explains that employee acceptance is needed before closing", () => {
+    render(<SimpleResolutionForm confirmationRequired requirements={[]} pending={false} onSubmit={vi.fn()} onCancel={vi.fn()} onAdvanced={vi.fn()} />);
+    expect(screen.getByText("Сотрудник получит результат и проверит его. Обращение закроется после подтверждения сотрудником.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Решить и закрыть" })).not.toBeInTheDocument();
+  });
   it("requires a public result for ordinary resolve and close without a manual code", () => {
     const save = vi.fn();
     render(<SimpleResolutionForm closeAfterResolve requirements={[]} pending={false} onSubmit={save} onCancel={vi.fn()} onAdvanced={vi.fn()} />);

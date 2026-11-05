@@ -4718,6 +4718,7 @@ export function TicketListPage() {
                 {resolutionCloseDraft && simpleMode ? (
                   <div className="support-simple"><SimpleResolutionForm
                     closeAfterResolve={workspaceQuery.data?.detail.actions.can_resolve_and_close === true}
+                    confirmationRequired={workspaceQuery.data?.detail.actions.requester_confirmation_required === true}
                     requirements={workspaceQuery.data?.detail.actions.closure_requirements ?? []}
                     initial={resolutionCloseDraft} pending={resolutionCloseMutation.isPending}
                     error={resolutionCloseMutation.error instanceof Error ? resolutionCloseMutation.error.message : null}

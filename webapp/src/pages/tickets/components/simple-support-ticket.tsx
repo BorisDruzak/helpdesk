@@ -60,7 +60,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
         </div>
       </header>
       {props.error ? <p role="alert" className="simple-notice simple-risk">{props.error}</p> : null}
-      {takeReason ? <p className="simple-notice simple-take-reason">{takeReason}</p> : other && !isAdmin ? <p className="simple-notice">Назначено другому оператору. Доступен просмотр; изменение исполнителя выполняется отдельно с проверкой прав.</p> : raw.status === "resolved" ? <p className="simple-notice">Решение отправлено сотруднику. Закрытие выполняется по действующей политике.</p> : raw.status === "closed" ? <p className="simple-muted">Обращение закрыто. Переписка и история доступны для просмотра.</p> : null}
+      {takeReason ? <p className="simple-notice simple-take-reason">{takeReason}</p> : other && !isAdmin ? <p className="simple-notice">Назначено другому оператору. Доступен просмотр; изменение исполнителя выполняется отдельно с проверкой прав.</p> : raw.status === "resolved" ? <p className="simple-notice">{detail.actions.requester_confirmation_required ? "Решение отправлено сотруднику. Ожидаем подтверждение: сотрудник может закрыть обращение или вернуть его в работу." : "Решение отправлено сотруднику. Закрытие выполняется по действующей политике."}</p> : raw.status === "closed" ? <p className="simple-muted">Обращение закрыто. Переписка и история доступны для просмотра.</p> : null}
       <div className="simple-ticket__content">
         <section className="simple-ticket__summary" aria-label="Проблема и результат">
           <div><div className="simple-ticket__summary-heading"><h3>Проблема</h3>

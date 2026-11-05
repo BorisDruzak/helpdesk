@@ -2875,3 +2875,13 @@ Decisions: admin's verified person carries an exact fixture name; clear only tha
 Current State: Complete. Guarded cleanup retains159 historical accounts but only admin/admin-2/bdryzhak active; exact admin fixture name cleared. Canonical frozen e0ff50496442801a9fc5eb143af406d02a991a23 deployed after41c751623ac9f25038c7d8ff8a0ae49cd8a51621.13 frontend,15 pure backend,7 script,3 disposable DB/API and build/workspace/browser checks pass; review clean.
 Next Steps: No required work remains. Staging left running.10 source hashes/schema153/TLS200/three active services and unchanged history/protected-account seals verified; live browser rows3/overview3+2/placeholder0/console0. Preview stopped; production/Endpoint/native unchanged.
 Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedure; private backups and evidence tmp/access-cleanup-20261105. Roles/passwords of protected accounts and ticket/identity history preserved; unrelated work unstaged.
+
+## Requester acceptance and ticket attachments (2026-11-05)
+
+- Goal: ordinary support resolves a ticket; only its requester accepts closure or returns it to work. Browser attachments work without a linked computer.
+- Scope: Helpdesk only, isolated staging101.118; production and Endpoint unchanged. Preserve existing closed tickets, decisions, special policies and unrelated local work.
+- Decisions: canonical policy registry ordinary closure1.0.3, no automatic expiry; staff guard under the ticket lock. Migration154 permits ticket-bound NULL device artifacts, keeping ownership and scope checks.
+- Current state: implementation and independent review complete. Attachment commit f65519dae504e1ed7cbae7d549a285e745ab3bd1. Staging deployment/policy publication and live browser acceptance pending.
+- Verification:117 focused Python tests;5 attachment PostgreSQL/HTTP/migration cases; owner accept/reject and legacy opt-out API cases; latest publication/idempotency/pending/special-policy PostgreSQL case;20 frontend tests, build and workspace check pass. Built-browser fixture verifies acceptance/rejection at1366/390 with no page errors or horizontal overflow.
+- Next steps: verified153 backup; canonical exact-SHA staging deploy154; fresh policy plan/apply with backup; live browser upload and solution-form acceptance; record evidence and leave staging running as requested.
+- Handoff: private logs under tmp/closure-confirmation-20261105 and tmp/attachments-20261105. Do not send test messages to real T-000075.

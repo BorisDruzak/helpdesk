@@ -8,6 +8,12 @@ const detail = { ticket: { ticket_id: "one", ticket_code: "T-001", title: "Пр�
 } as unknown as SupportTicketDetailPayload;
 
 describe("simple support ticket", () => {
+  it("sends the result for employee acceptance instead of offering final closure", () => {
+    render(<SimpleSupportTicket detail={{ ...detail, ticket: { ...detail.ticket, status: "resolved", assignee_id: "operator" }, actions: { ...detail.actions, requester_confirmation_required: true, status_options: [] } }} actorId="operator" canWork onStatus={vi.fn()} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={null} />);
+    expect(screen.queryByRole("button", { name: "Закрыть обращение" })).not.toBeInTheDocument();
+    expect(screen.getByText("Решение отправлено сотруднику. Ожидаем подтверждение: сотрудник может закрыть обращение или вернуть его в работу.")).toBeVisible();
+  });
+
   it("offers an explicit claim instead of resolution for an unassigned in-progress admin ticket", () => {
     const claim = vi.fn();
     render(<SimpleSupportTicket detail={{ ...detail, ticket: { ...detail.ticket, status: "in_progress", assignee_id: null }, actions: { ...detail.actions, status_options: [{ value: "resolved", label: "Решить" }] } }} actorId="admin" isAdmin canWork canAssign onClaim={claim} onStatus={vi.fn()} onResolve={vi.fn()} onAdvanced={vi.fn()} onQueue={vi.fn()} conversation={null} />);

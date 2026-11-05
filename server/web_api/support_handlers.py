@@ -1286,10 +1286,11 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_a
             "pending_count": approval_summary.get("pending_count", 0),
         }
     closure_requirements = await build_closure_requirements(session, ticket)
+    confirmation_required = await requires_requester_confirmation(session, ticket)
     can_resolve_and_close = (
         any(option.value == "resolved" for option in options)
         and _support_public_reply_error(ticket, actor_id=actor_id, is_admin=is_admin) is None
-        and not await requires_requester_confirmation(session, ticket)
+        and not confirmation_required
         and all(item.get("met") or item.get("key") == "public_summary" for item in closure_requirements)
         and (await can(session, auth_context, "ticket.status.change") if auth_context is not None else True)
     )
@@ -1316,6 +1317,7 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_a
         can_send_internal_note=True,
         can_send_public_message=_support_public_reply_error(ticket, actor_id=actor_id, is_admin=is_admin) is None,
         can_resolve_and_close=can_resolve_and_close,
+        requester_confirmation_required=confirmation_required,
         take_in_work=await _SupportTakeProjector(session, repo or TicketEventsRepo(session), auth_context).project(
             ticket, transition_allowed=any(option.value == "in_progress" for option in options)
         ) if auth_context is not None else None,
@@ -5649,6 +5651,11 @@ async def handle_web_support_change_status(request: web.Request):
 
             is_staff = auth_context.actor_role in {"admin", "support"}
             from_status = ticket.status
+            if to_status == "closed" and is_staff and await requires_requester_confirmation(session, ticket):
+                return _support_json_error(
+                    "Решение ожидает подтверждения заявителя. Закрытие доступно сотруднику в его обращении.",
+                    status=409, error_code="REQUESTER_CONFIRMATION_REQUIRED",
+                )
             if not await validate_transition_for_ticket(session, ticket, to_status, is_staff):
                 return web.json_response(
                     {
@@ -5751,11 +5758,11 @@ async def handle_web_support_change_status(request: web.Request):
                 if isinstance(closure_policy_payload, dict)
                 else None
             )
-            requires_requester_confirmation = True
+            confirmation_required = True
             if isinstance(requester_confirmation_policy, dict) and "required" in requester_confirmation_policy:
-                requires_requester_confirmation = bool(requester_confirmation_policy.get("required"))
+                confirmation_required = bool(requester_confirmation_policy.get("required"))
 
-            if to_status == "resolved" and is_staff and requires_requester_confirmation:
+            if to_status == "resolved" and is_staff and confirmation_required:
                 confirmation_request = _build_resolution_confirmation_request()
                 if isinstance(requester_confirmation_policy, dict) and requester_confirmation_policy:
                     confirmation_request["policy"] = {

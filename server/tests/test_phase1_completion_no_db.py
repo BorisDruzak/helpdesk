@@ -68,6 +68,32 @@ async def test_completion_records_both_canonical_transitions_without_committing(
     completion.session.commit.assert_not_awaited()
 
 
+@pytest.mark.parametrize("role", ["support", "admin"])
+async def test_staff_cannot_skip_requester_acceptance_with_direct_close(completion, role):
+    completion.ticket.status = "resolved"
+    completion.ticket.custom_fields["request_template"]["closure_policy"]["requester_confirmation"]["required"] = True
+    completion.ticket.custom_fields["resolution_confirmation"] = {"pending": True}
+    assert not await workflow.validate_transition_for_ticket(completion.session, completion.ticket, "closed", True)
+    with pytest.raises(ValueError, match="requester confirmation"):
+        await completion.service.apply_status_transition(
+            ticket_id="completion", from_status="resolved", to_status="closed",
+            actor_id="support1", actor_role=role,
+        )
+    assert completion.ticket.status == "resolved" and completion.events == []
+    completion.session.commit.assert_not_awaited()
+
+
+async def test_direct_staff_close_returns_acceptance_conflict_without_side_effects(web_support_client, mutations):
+    mutations.ticket.status = "resolved"
+    mutations.ticket.custom_fields = {"request_template": {"closure_policy": {"requester_confirmation": {"required": True}}},
+        "resolution_confirmation": {"pending": True}}
+    response = await web_support_client.post(f"/api/web/support/tickets/{mutations.ticket.ticket_id}/status", json={"to_status": "closed"})
+    assert response.status == 409, await response.text()
+    assert (await response.json())["error_code"] == "REQUESTER_CONFIRMATION_REQUIRED"
+    mutations.session.commit.assert_not_awaited()
+    mutations.pushed.assert_not_awaited()
+
+
 @pytest.mark.parametrize("failure", ["confirmation", "owner", "summary", "stale"])
 async def test_completion_rejects_before_mutating(completion, failure):
     kwargs = {}

@@ -557,6 +557,7 @@ export type SupportTicketDetailPayload = {
   };
   actions: {
     can_resolve_and_close?: boolean;
+    requester_confirmation_required?: boolean;
     take_in_work?: SupportTakeInWorkAvailability | null;
     status_options: Array<{
       value: string;

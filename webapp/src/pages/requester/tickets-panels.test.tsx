@@ -30,6 +30,7 @@ describe("requester result actions", () => {
     const props = { ...panelProps(), canClose: true, canRate: true, canReopen: true };
     render(<TicketResolutionPanel {...props} />);
     expect(screen.getByRole("button", { name: "Подтвердить решение" })).toBeVisible();
+    expect(screen.getByText("Проверьте результат. Обращение закроется после вашего подтверждения.")).toBeVisible();
     expect(screen.queryByRole("spinbutton", { name: "Оценка обращения" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Отправить оценку" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Вернуть в работу" })).not.toBeInTheDocument();

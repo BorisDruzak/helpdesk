@@ -90,6 +90,8 @@ async def build_ticket_handling(session,ticket,payload,*,resolver,ports,actor_id
         'next_action_owner':payload.get('next_action_owner'),'updated_at':payload.get('updated_at'),
         'created_at':payload.get('created_at'),'as_of':now.isoformat()}
     if getattr(ticket,'status',None) in {'resolved','closed','canceled','archived'}:result['next_action_owner']=None
+    if getattr(ticket,'status',None)=='resolved' and (payload.get('actions') or {}).get('can_confirm_solution'):
+        result['next_action_owner']='requester'
     if not hidden.intersection({'handling.assignee','assignee','assignee_id'}):
         result['assignee']={'assigned':bool(getattr(ticket,'assignee_id',None)),
             'display_name':await assignee_name(session,getattr(ticket,'assignee_id',None))}
