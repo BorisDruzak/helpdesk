@@ -161,6 +161,12 @@ and retains separate explicit administrator review for ownership conflicts.
 
 ## Tickets
 
+Requester solution decisions stay in a compact footer outside the scrolling chat
+history, including the description/history view. Confirmation, optional rating and
+return-to-work remain gated by the server action flags; cached access denial hides
+the footer. Expanded decision forms have bounded scrolling on small screens.
+Read-only text is shown only when no reply or solution action is granted.
+
 Normal forms allow tickets without a computer by default. The historical policy
 key `available_without_agent_binding` remains compatible; explicit `false` still
 requires a selected device. Device-picker fields are optional for forms allowing

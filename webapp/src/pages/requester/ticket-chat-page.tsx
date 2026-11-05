@@ -69,12 +69,12 @@ function RequesterTicketChat({ ticketId }: { ticketId: string | undefined }) {
           : <div className="space-y-3">
             <TicketResultSummary ticket={ticket} />
             <RequesterConsentList consents={chat.pendingConsents} disabled={chat.actionSubmitting} onDecision={chat.decideConsent} />
-            {chat.canClose || chat.canRate || chat.canReopen ? <TicketResolutionPanel {...chat} /> : null}
             <RequesterConversation messages={messages} events={events} />
           </div>}
       </div>
+      {ticket && (chat.canClose || chat.canRate || chat.canReopen) ? <section aria-label="Действия по решению обращения" className="mt-2 max-h-[50dvh] shrink-0 overflow-y-auto overscroll-contain"><TicketResolutionPanel {...chat} compact /></section> : null}
       {ticket && !showDetails && chat.canSendMessage ? <div className="mt-2 shrink-0 rounded-panel border border-slate-200 bg-white p-3"><TicketReplyComposer {...chat} /></div> : null}
-      {ticket && !showDetails && !chat.canSendMessage ? <p className="mt-2 shrink-0 rounded-panel border border-slate-200 bg-white p-3 text-sm text-slate-600">Переписка доступна для просмотра. {chat.canReopen ? "Если проблема повторилась, верните обращение в работу." : "Ответ в текущем статусе недоступен."}</p> : null}
+      {ticket && !showDetails && !chat.canSendMessage && !chat.canClose && !chat.canRate && !chat.canReopen ? <p className="mt-2 shrink-0 rounded-panel border border-slate-200 bg-white p-3 text-sm text-slate-600">Переписка доступна для просмотра. Ответ в текущем статусе недоступен.</p> : null}
       <p className="mt-2 shrink-0 text-xs text-slate-500">Обновляется автоматически</p>
       </div>
       </div>
