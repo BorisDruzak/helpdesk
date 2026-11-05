@@ -2947,6 +2947,6 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Goal: search actual service names, add Электронный бюджет and ЕИС, offer explicit Не знаю when no matches.
 - Cause: search indexed entrances but not offering names; advertised other.unknown was absent from current31published offerings, hiding fallback.
 - Changes: additive service rows expand categories without cached scenario launch; explicit public fallback entry; guarded canonical publication of2maps,3entrances each, inheriting current business-system routing/SLA/policies.
-- Verification:26Python,32frontend,3browser cases and build/workspace checks pass. Reviewer lock-order/hidden-parent issues fixed with regressions. No new schema/dependencies or ticket commands.
-- Next: verified155 backup, exact-commit staging install, fingerprinted catalog publication/idempotence/history checks and live search/fallback smoke.
+- Verification:26Python,33frontend,3browser cases and build/workspace checks pass. Reviewer lock-order/hidden-parent issues fixed with regressions. No new schema/dependencies or ticket commands.
+- Complete: runtime f85af9310468780cf87768671043a1e0409684bd installed with verified155 backup,13source hashes,health200 and3active services.2maps published (33offerings); previous74versions/54drafts/76tickets preserved; repeat apply idempotent.26Python/33frontend/3browser checks pass. Real API search/fallback verified; live incomplete-profile guard retained. Staging remains active; production unchanged.
 - Handoff: docs/CATALOG_SERVICE_SEARCH_2026-11-05.md; private tmp/catalog-service-search-20261105. Preserve earlier installed requester controls and shared checkout/index.
