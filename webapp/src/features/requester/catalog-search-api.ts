@@ -3,6 +3,7 @@ export type CatalogSearchResult = {
   description: string;
   category: string;
   offering_full_code: string;
+  offering_title?: string;
   entry_point_key: string | null;
   help_mode: "guided" | "request";
   match_reason: string;

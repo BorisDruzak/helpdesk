@@ -47,6 +47,18 @@ it("opens categories from the only search field and starts only an explicit prob
   expect(select).toHaveBeenCalledWith("workplace.print","no_print");
 });
 
+it("identifies different services for equally worded symptom results", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", search: {
+    results: [{ ...result, title: "Не запускается", offering_title: "Принтеры и МФУ" },
+      { ...result, title: "Не запускается", offering_title: "Офисные программы", offering_full_code: "workplace.print", entry_point_key: "office" }],
+    suggestions: [], corrected_query: null,
+  } }), { headers: { "Content-Type": "application/json" } })));
+  mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "не запускается" } });
+  await screen.findByText(/Принтеры и МФУ · Оборудование/);
+  expect(screen.getByText(/Офисные программы · Оборудование/)).toBeVisible();
+});
+
 it("shows an empty state and offers the explicit other-problem fallback", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", search: {
     results: [], suggestions: [], corrected_query: null,

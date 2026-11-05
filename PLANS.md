@@ -2950,3 +2950,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verification:26Python,33frontend,3browser cases and build/workspace checks pass. Reviewer lock-order/hidden-parent issues fixed with regressions. No new schema/dependencies or ticket commands.
 - Complete: runtime f85af9310468780cf87768671043a1e0409684bd installed with verified155 backup,13source hashes,health200 and3active services.2maps published (33offerings); previous74versions/54drafts/76tickets preserved; repeat apply idempotent.26Python/33frontend/3browser checks pass. Real API search/fallback verified; live incomplete-profile guard retained. Staging remains active; production unchanged.
 - Handoff: docs/CATALOG_SERVICE_SEARCH_2026-11-05.md; private tmp/catalog-service-search-20261105. Preserve earlier installed requester controls and shared checkout/index.
+
+
+## Requester symptom search (2026-11-05)
+
+- Goal: ordinary failure/startup/login/opening phrases find different services, keeping named systems/devices specific.
+- Cause: literal per-field token matching omitted related symptom phrases and repeated one offering; no result for printer startup.
+- Change: curated explicit symptom intents plus noun anchors, offering interleaving and visible offering names; no auth/profile/catalog/schema/dependency changes.
+- Verification:53Python/34UI tests, build/workspace and3browser viewport cases pass. Three reviewer precision issues fixed with red/green regressions; followup has no findings.
+- Next: verified backup, exact frozen staging install, source hashes/health/counts and real public search before/after checks. Keep staging active for user testing.
+- Evidence: docs/CATALOG_SYMPTOM_SEARCH_2026-11-05.md and tmp/catalog-symptom-search-20261105. Shared checkout/index preserved through private freeze on ab80b1a2.

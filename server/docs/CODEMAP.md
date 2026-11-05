@@ -325,6 +325,8 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   and refuses downgrade with v3 rows. Document import validates configured active
   queues/calendars without saving or publishing. `service_catalog_search` ranks
   only the authorized published catalog exposed by `/api/service-catalog/current?q=`;
+  explicit Russian symptom families retain device/system anchors, and symptom-only
+  queries interleave offerings before repeating one; `offering_title` labels results.
   requester catalog search opens a selected offering/entry without authority input.
   `approval_policy` resolves a missing requester-manager snapshot through trusted
   Registry/UI identity; policy health and actual creation share canonical approver

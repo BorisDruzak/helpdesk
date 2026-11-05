@@ -52,6 +52,17 @@ ranking, query bounds, layout correction and negation handling remain. The reque
 opens a matching service's problem list without starting a cached scenario; no
 matches offers «Не знаю / моей услуги нет в списке» into the current fallback.
 
+Failure phrases (`не работает`, `не включается`, `не запускается`, `не могу войти`,
+`не могу открыть` and related printing/signing/connection/slowness phrases) also
+match explicit symptom families. Specific phrases take precedence over overlapping
+generic words (a login error is not every error). Remaining device/system words
+must match the public offering/problem context; unknown entities are not dropped.
+For a named service without an exact matching entrance, a service row lets the
+requester browse its published problems. Symptom-only queries interleave offerings
+before repeating one. Additive `offering_title` labels distinguish services on
+problem rows. Literal matches keep their priority within these rounds. This is a
+bounded local vocabulary, not an external semantic service or an ACL bypass.
+
 `scripts/helpdesk_catalog_service_search.py` plans and atomically publishes the
 Электронный бюджет / ЕИС maps under the existing information-systems section. It
 uses canonical service/source lock order, authenticated admin context, staging DB

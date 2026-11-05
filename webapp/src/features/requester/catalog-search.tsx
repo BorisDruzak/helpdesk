@@ -75,7 +75,7 @@ export function CatalogSearch({ availableOfferings, fallbackOffering, fallbackEn
               } else choose(item.offering_full_code, item.entry_point_key ?? undefined);
             }}>
             <span className="block font-semibold text-slate-950">{item.title}</span>
-            <span className="block text-xs text-slate-500">{item.category} · {item.result_kind === "service" ? "Услуга · Выбрать проблему" : item.help_mode === "guided" ? "Пошаговая помощь" : "Обращение в поддержку"}</span>
+            <span className="block text-xs text-slate-500">{item.result_kind !== "service" && item.offering_title ? `${item.offering_title} · ` : ""}{item.category} · {item.result_kind === "service" ? "Услуга · Выбрать проблему" : item.help_mode === "guided" ? "Пошаговая помощь" : "Обращение в поддержку"}</span>
             {item.description ? <span className="mt-1 block text-sm text-slate-700">{item.description}</span> : null}
             <span className="mt-1 block text-xs text-slate-500">{item.match_reason}</span>
           </button>
