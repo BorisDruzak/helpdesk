@@ -626,8 +626,15 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   is composed locally; unsupported external commands fail closed.
 - The requester wizard at `webapp/src/pages/requester/device-link-page.tsx`
   uses `device-link-state.ts` for memory-only fragment capture before auth routing.
-  Inline Windows tray/copy/renew instructions and optional images in
-  `webapp/src/assets/guides` explain possession-code retrieval without publishing a code.
+  `device-connection-guide.tsx` provides keyboard-accessible Windows and Linux/ALT
+  instructions: Windows tray/copy/renew with optional images in `webapp/src/assets/guides`;
+  Linux uses the existing owner-change assistance route, since its agent has no tray
+  code UI. Codes are never published by the instructions.
+- `webapp/src/pages/requester/home-page.tsx`, `home-readiness.tsx` and `home.css`
+  compose the requester action dashboard, flat recent-ticket rows and server-derived
+  profile/device readiness, preserving consent decisions and no-device form policies.
+  `components/shell/requester-sidebar.tsx` and `requester-shell.css` scope the light
+  navigation to requesters; the shared shell keeps staff workspace switching available.
 - Requester preview/create carry explicit `device_scope: none` through
   `TicketContextBuilder`; optional device selection cannot silently fall back to
   the primary computer. Ticket Endpoint snapshots require an exact Registry

@@ -6,6 +6,23 @@ import { AppTopbar } from "./app-topbar";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it("keeps staff workspace switching and profile/logout available in the calm requester header", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "ok", unread_count: 1 }), { headers: { "Content-Type": "application/json" } })));
+  const onLogout = vi.fn(); const onWorkspaceChange = vi.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<MemoryRouter initialEntries={["/app/requester"]}><QueryClientProvider client={client}>
+    <AppTopbar onLogout={onLogout} onWorkspaceChange={onWorkspaceChange} searchPlaceholder="Поиск" userLogin="employee" userRoleLabel="Пользователь" workspaceValue="requester" workspaceOptions={[{ label: "Кабинет пользователя", value: "requester" }, { label: "Поддержка", value: "support" }]} />
+  </QueryClientProvider></MemoryRouter>);
+  fireEvent.change(screen.getByRole("combobox", { name: "Рабочая зона" }), { target: { value: "support" } });
+  expect(onWorkspaceChange).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("Меню профиля"));
+  expect(screen.getByRole("link", { name: "Мой профиль" })).toHaveAttribute("href", "/app/requester/profile");
+  fireEvent.click(screen.getByRole("button", { name: "Выйти" }));
+  expect(onLogout).toHaveBeenCalledOnce();
+  view.unmount(); client.clear();
+});
+
 it("keeps ticket notifications without polling retired agent enrollment routes", async () => {
   const requested: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {

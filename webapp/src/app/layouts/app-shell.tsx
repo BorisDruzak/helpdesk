@@ -11,6 +11,7 @@ import {
 } from "../navigation";
 import { AppSidebar } from "../../components/shell/app-sidebar";
 import { AppTopbar } from "../../components/shell/app-topbar";
+import "../../components/shell/requester-shell.css";
 import { DomainTabs } from "../../components/shell/domain-tabs";
 import { useSession } from "../../features/auth/session-provider";
 import { WorktimeLink } from "../../features/auth/worktime-link";
@@ -156,7 +157,7 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   return (
-    <div className={`${isFullHeightWorkspace ? "h-dvh overflow-hidden" : "min-h-screen"} bg-app text-slate-950`}>
+    <div className={`${isFullHeightWorkspace ? "h-dvh overflow-hidden" : "min-h-screen"} ${currentWorkspace === "requester" ? "requester-shell" : "bg-app"} text-slate-950`}>
       <div className={`flex ${isFullHeightWorkspace ? "h-full min-h-0" : "min-h-screen"}`}>
         <AppSidebar
           collapsed={shouldManageSidebar ? adminSidebarCollapsed : false}

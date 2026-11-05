@@ -69,7 +69,7 @@ for (const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:
     await page.screenshot({path:info.outputPath("password.png"),fullPage:true});
     await submit.click();
     await expect(page).toHaveURL(/\/app\/requester$/);
-    await expect(page.getByRole("heading",{name:"Главная",exact:true})).toBeVisible();
+    await expect(page.getByRole("heading",{name:"Чем можем помочь?",exact:true})).toBeVisible();
     await expect(page.getByRole("status").filter({hasText:"Ваш логин"})).toContainText("ipetrov2");
     expect(registrations).toBe(1);expect(ticketWrites).toBe(0);
     await page.screenshot({path:info.outputPath("home.png"),fullPage:true});
@@ -109,6 +109,6 @@ test("an existing incomplete account completes its profile and returns home with
   await page.getByRole("button",{name:"Продолжить",exact:true}).click();
   await page.getByRole("button",{name:"Сохранить профиль",exact:true}).click();
   await expect(page).toHaveURL(/\/app\/requester$/);
-  await expect(page.getByRole("heading",{name:"Главная",exact:true})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Чем можем помочь?",exact:true})).toBeVisible();
   expect(accountWrites).toBe(0);
 });

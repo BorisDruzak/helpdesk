@@ -2,7 +2,7 @@ import { Bell, ChevronDown, CircleUserRound, LogOut } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { ChangeEvent } from "react";
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { SearchField } from "../ui/search-field";
 import { Button } from "../ui/button";
@@ -60,6 +60,27 @@ export function AppTopbar({
 
   const unreadCount = unreadNotificationsQuery.data ?? 0;
   const notificationCount = unreadCount;
+
+  if (workspaceValue === "requester") return (
+    <header className="requester-topbar">
+      {workspaceOptions.length > 1 ? <Select aria-label="Рабочая зона" className="h-10 max-w-full bg-transparent text-sm text-slate-600" onChange={onWorkspaceChange} value={workspaceValue}>
+        {workspaceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </Select> : <span className="text-sm text-slate-500">Кабинет сотрудника</span>}
+      <div className="requester-topbar__account">
+        <div className="relative">
+          <button aria-label="Уведомления" aria-expanded={notificationsOpen} className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-brand-50" type="button" onClick={() => setNotificationsOpen((value) => !value)}>
+            <Bell aria-hidden="true" className="h-4 w-4" />
+            {notificationCount > 0 ? <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-brand-600"><span className="sr-only">Новых событий: {notificationCount}</span></span> : null}
+          </button>
+          {notificationsOpen ? <div className="requester-topbar__menu"><p className="mb-3 font-semibold">{notificationCount ? `Новых событий: ${notificationCount}` : "Новых событий нет"}</p><Link className="text-brand-700 underline" onClick={() => setNotificationsOpen(false)} to="/app/requester/tickets">Мои обращения</Link></div> : null}
+        </div>
+        <details className="relative">
+          <summary aria-label="Меню профиля" className="flex cursor-pointer list-none items-center gap-2"><span className="requester-topbar__avatar">{userLogin.slice(0, 2).toUpperCase()}</span><span className="hidden sm:inline">{userLogin}</span></summary>
+          <div className="requester-topbar__menu"><Link className="block rounded px-3 py-2 hover:bg-brand-50" to="/app/requester/profile">Мой профиль</Link><button className="w-full rounded px-3 py-2 text-left hover:bg-brand-50" type="button" onClick={onLogout}>Выйти</button></div>
+        </details>
+      </div>
+    </header>
+  );
 
   return (
     <header className="sticky top-0 z-20 border-b border-border/80 bg-white/80 backdrop-blur-xl">

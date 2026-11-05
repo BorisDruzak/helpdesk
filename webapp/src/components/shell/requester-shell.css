@@ -1,0 +1,23 @@
+.requester-shell { background: #fafaf7; }
+.requester-sidebar { display: none; }
+@media (min-width: 1024px) {
+  .requester-sidebar { display: flex; flex-direction: column; flex-shrink: 0; width: 280px; padding: 28px 12px 20px; background: white; border-right: 1px solid #e1e5df; }
+}
+.requester-sidebar__brand { display: flex; align-items: center; gap: 12px; padding: 0 8px; margin-bottom: 48px; }
+.requester-sidebar__logo { width: 40px; height: 40px; background: #0d6a3d; color: white; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 850; letter-spacing: 2px; flex-shrink: 0; }
+.requester-sidebar__brand strong { font-size: 17px; font-weight: 750; line-height: 1.4; display: block; }
+.requester-sidebar__brand small { display: block; font-size: 14px; color: #667080; margin-top: 3px; }
+.requester-sidebar__nav { display: flex; flex-direction: column; gap: 12px; }
+.requester-sidebar__link { display: flex; align-items: center; gap: 14px; padding: 14px 16px; color: #3d4854; font-size: 17px; border-radius: 6px; min-height: 48px; }
+.requester-sidebar__link svg { width: 20px; height: 20px; flex-shrink: 0; }
+.requester-sidebar__link:hover { background: #f1f6ef; }
+.requester-sidebar__link[aria-current="page"] { background: #eaf2e7; color: #125b36; box-shadow: inset 3px 0 #0d6a3d; font-weight: 700; }
+.requester-sidebar__footer { margin-top: auto; padding-top: 32px; }
+.requester-sidebar__footer > a { border-top: 1px solid #e1e5df; border-radius: 0; }
+.requester-sidebar a:focus-visible { outline: 2px solid #288c59; outline-offset: 2px; }
+.requester-topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; min-height: 72px; padding: 12px 28px; border-bottom: 1px solid #e1e5df; background: #fafaf7; }
+.requester-topbar__account { display: flex; align-items: center; gap: 16px; color: #56606d; font-size: 14px; }
+.requester-topbar__avatar { display: inline-flex; height: 36px; width: 36px; border-radius: 50%; background: #e3e7e5; align-items: center; justify-content: center; color: #3d4854; font-weight: 700; }
+.requester-topbar a:focus-visible, .requester-topbar button:focus-visible, .requester-topbar summary:focus-visible { outline: 2px solid #288c59; outline-offset: 3px; }
+.requester-topbar__menu { position: absolute; right: 0; top: 48px; border: 1px solid #d7e1db; border-radius: 8px; padding: 12px; background: white; width: min(280px, calc(100vw - 32px)); }
+@media (max-width: 639px) { .requester-topbar { min-height: 60px; padding: 12px 16px; } .requester-topbar__account { gap: 12px; } }

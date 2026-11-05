@@ -32,6 +32,17 @@ describe("device binding requester wizard", () => {
     expect(screen.getByText(/Получить новый код/)).toBeInTheDocument();
     expect(screen.getByText(/значка нет/)).toBeInTheDocument();
   });
+  it("separates Linux instructions and does not promise a Windows tray on Linux", () => {
+    show();
+    fireEvent.click(screen.getByRole("tab", { name: "Linux / ALT Linux" }));
+    expect(screen.getByRole("tab", { name: "Linux / ALT Linux" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/В Linux получение кода через значок агента пока недоступно/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Попросить помочь с привязкой" })).toHaveAttribute("href", "/app/requester/new?intent=device_owner_change");
+    expect(screen.queryByText(/часами Windows/)).not.toBeInTheDocument();
+    expect(mocks.link).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "Windows" }));
+    expect(screen.getByText(/часами Windows/)).toBeVisible();
+  });
   it("keeps a fragment code only in memory while profile completion is required", () => {
     rememberPendingDeviceCode("123-456"); mocks.profile.data = { profile: null, profile_completion: { complete: false } };
     show(); fireEvent.click(screen.getByRole("link", { name: "Заполнить профиль" }));

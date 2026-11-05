@@ -1,5 +1,3 @@
-import endpointTrayImage from "../../assets/guides/endpoint-tray-windows.png";
-import endpointMenuImage from "../../assets/guides/endpoint-helpdesk-menu.png";
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -9,6 +7,7 @@ import { Input } from "../../components/ui/input";
 import { linkRequesterDevice, RequesterApiError } from "../../features/requester/api";
 import { clearPendingDeviceCode, normalizeDeviceCode, pendingDeviceCode, rememberPendingDeviceCode } from "../../features/requester/device-link-state";
 import { requesterInvalidations, useRequesterProfileQuery } from "../../features/requester/queries";
+import { DeviceConnectionGuide } from "./device-connection-guide";
 
 // Requester wizard: obtain code -> submit proof -> ownership result.
 export function RequesterDeviceLinkPage() {
@@ -48,18 +47,7 @@ export function RequesterDeviceLinkPage() {
     <header className="surface-panel p-5">
       <p className="workspace-boot__eyebrow">Мои устройства</p>
       <h1 className="mt-2 text-2xl font-semibold text-slate-950">Привязать компьютер</h1>
-      <h2 className="mt-4 font-semibold text-slate-950">Где взять код</h2>
-      <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">
-        <li>На этом компьютере нажмите стрелку «Показать скрытые значки» рядом с часами Windows. Найдите зелёный значок Endpoint Agent.</li>
-        <li>Нажмите на значок правой кнопкой мыши и выберите «Привязать компьютер к Helpdesk».</li>
-        <li>В открывшемся окне нажмите «Скопировать код», затем вставьте его в поле ниже.</li>
-      </ol>
-      <details className="mt-3 text-sm"><summary className="cursor-pointer font-semibold text-brand-700">Показать на скриншотах</summary>
-        <div className="mt-3 grid items-start gap-3 sm:grid-cols-2">
-          <figure><img src={endpointTrayImage} width="273" height="441" alt="Скрытые значки Windows: стрелка указывает на зелёный значок Endpoint Agent" className="h-auto max-w-full rounded-lg border"/><figcaption className="mt-1 text-slate-600">1. Найдите значок агента.</figcaption></figure>
-          <figure><img src={endpointMenuImage} width="313" height="295" alt="Меню Endpoint Agent с пунктом Привязать компьютер к Helpdesk" className="h-auto max-w-full rounded-lg border"/><figcaption className="mt-1 text-slate-600">2. Откройте получение кода.</figcaption></figure>
-        </div>
-      </details>
+      <DeviceConnectionGuide />
     </header>
     <div className="surface-panel p-5">
       {profileQuery.isLoading ? <p role="status">Проверяем профиль…</p> : profileQuery.error ?

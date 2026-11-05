@@ -117,7 +117,22 @@ retired Helpdesk legacy endpoint must return `404` or `410`.
 
 ## Device binding
 
+The requester home uses a light, requester-only shell and two primary destinations:
+create an обращение and open own tickets. Recent tickets use grouped rows, followed
+by compact, server-derived profile and computer readiness. A linked offline computer
+is distinguished from no binding, ambiguous primary selection and pending ownership
+review. Pending consents retain explicit approval/denial; read errors never imply
+that the profile, computer or consent check succeeded. Profile/create and ownership
+guards remain authoritative in the existing routes and APIs; appropriate forms still
+allow requests without a linked computer.
+
 The existing Windows Endpoint tray offers copy, new-code and open-Helpdesk actions.
+The device-link page separates Windows and Linux / ALT Linux instructions into
+keyboard-accessible tabs. Windows retains optional screenshots. Current Linux
+agents have no tray code-issuance UI: the guide asks for the hostname (system settings
+or unprivileged `hostname`), OS and department in the existing owner-change assistance
+flow. It does not promise self-service code issuance or direct access to protected
+agent credentials. An already obtained valid code can still be entered manually.
 Six ASCII digits (`123456` or `123-456`) expire after ten minutes and redeem once.
 Browser links put the code only in a fragment. The application captures and removes
 that fragment before auth routing, retains the code only in memory across login or

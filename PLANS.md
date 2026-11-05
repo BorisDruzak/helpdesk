@@ -2919,3 +2919,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - State: shared paste handler and composer hints implemented;37 focused unit tests/build/workspace checks pass; independent review has no findings. 16 browser scenarios pass, including5 native Ctrl+V cases after replacement of an invalid PNG test fixture. Studio mapping is read-only and parallel to chat acceptance.
 - Next: finish native clipboard acceptance and exact-SHA staging release; implement Studio files after verifying author/pre-ticket upload contracts and test coverage. Track both obligations until complete.
 - Evidence: tmp/chat-paste-20261105; live staging remains on f69b5632dddbd9adb7d6693b15bacacbc5cb2ae4 until canonical deployment.
+
+
+## Requester home redesign (2026-11-05)
+
+- Goal/actor: requester sees a clear create action, own recent tickets and compact profile/computer readiness; implement the first displayed white-sidebar concept on staging.
+- Scope: requester shell/home/device guide, existing queries/routes/ownership/consents, no new dependencies/API/schema; preserve unrelated Studio/chat work.
+- Decisions: keep profile completion gates, distinguish missing/offline/ambiguous/pending devices; retain no-device request policies. Windows guide keeps screenshots; Linux/ALT uses the existing owner-check assistance form because the current agent has no Linux code UI.
+- State: implementation and independent review complete; incorrect Linux intent fixed through failing regression and browser click-through. 64 component checks, build/workspace checks, 11 initial browser cases and final5 home cases at1366/1440/1488/1920/390 pass. No unexpected browser errors/requests or horizontal overflow.
+- Next: canonical exact-commit staging deployment after verified154 backup, remote source/TLS/health verification and read-only browser acceptance. Leave the requested staging application available.
+- Handoff: docs/superpowers/plans/2026-11-05-requester-home-redesign.md; docs/REQUESTER_HOME_DESIGN_QA_2026-11-05.md; private evidence tmp/requester-home-20261105. Production/Endpoint unchanged; full CI not requested.

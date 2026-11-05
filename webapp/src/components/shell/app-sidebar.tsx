@@ -4,7 +4,6 @@ import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 import {
   ADMIN_HOME_PATH,
-  REQUESTER_HOME_PATH,
   type AppNavItem,
   type AppWorkspaceId,
   canUseNavigationItemInContext,
@@ -16,7 +15,7 @@ import {
   resolveNavigationItemTarget,
 } from "../../app/navigation";
 import { cn } from "../../shared/ui/cn";
-import { WorktimeLink } from "../../features/auth/worktime-link";
+import { RequesterSidebar } from "./requester-sidebar";
 
 type AppSidebarProps = {
   collapsed?: boolean;
@@ -340,6 +339,8 @@ export function AppSidebar({
     [permissions],
   );
 
+  if (workspace === "requester") return <RequesterSidebar items={requesterItems} currentPath={currentPath} onNavigate={onNavigate} worktimePortalUrl={worktimePortalUrl} worktimeHandoffEnabled={worktimeHandoffEnabled} />;
+
   return (
     <aside
       className={cn(
@@ -354,7 +355,7 @@ export function AppSidebar({
           collapsed ? "justify-center px-2" : "",
         )}
         title={collapsed ? "pc_client HelpDesk workspace" : undefined}
-        to={workspace === "admin" ? ADMIN_HOME_PATH : workspace === "requester" ? REQUESTER_HOME_PATH : "/app/support"}
+        to={workspace === "admin" ? ADMIN_HOME_PATH : "/app/support"}
       >
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-panel bg-white text-brand-700 shadow-soft">
           <span className={cn("text-base font-black", collapsed ? "tracking-normal" : "tracking-[0.18em]")}>PC</span>
@@ -362,7 +363,7 @@ export function AppSidebar({
         <div className={cn("min-w-0", collapsed ? "sr-only" : "")}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-100/70">pc_client</p>
           <p className="text-sm font-semibold leading-tight">
-            {workspace === "admin" ? "Администрирование" : workspace === "requester" ? "Кабинет пользователя" : "Поддержка"}
+            {workspace === "admin" ? "Администрирование" : "Поддержка"}
           </p>
         </div>
       </Link>
@@ -376,18 +377,6 @@ export function AppSidebar({
             onCollapsedChange={onCollapsedChange}
             onNavigate={onNavigate}
           />
-        ) : null}
-        {workspace === "requester" ? (
-          <SupportSidebar
-            collapsed={collapsed}
-            currentPath={currentPath}
-            items={requesterItems}
-            label="Боковая навигация заявителя"
-            onCollapsedChange={onCollapsedChange}
-            onNavigate={onNavigate}
-          >
-            <WorktimeLink handoffEnabled={worktimeHandoffEnabled} url={worktimePortalUrl} className="flex items-center gap-3 rounded-panel px-3 py-3 text-sm font-semibold text-brand-50/90 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white" />
-          </SupportSidebar>
         ) : null}
         {workspace === "admin" ? (
           <AdminSidebar

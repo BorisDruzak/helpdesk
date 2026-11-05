@@ -42,6 +42,9 @@ function installDashboardMock({
   primaryDeviceResolution = primaryDevice ? "available" : "missing",
   profileComplete = true,
   pendingConsents = 1,
+  ticketsEmpty = false,
+  pendingClaims = [],
+  bootstrapStatus = 200,
   nextActions,
 }: {
   devices?: Array<Record<string, unknown>>;
@@ -50,6 +53,9 @@ function installDashboardMock({
   primaryDeviceResolution?: "available" | "missing" | "ambiguous";
   profileComplete?: boolean;
   pendingConsents?: number;
+  ticketsEmpty?: boolean;
+  pendingClaims?: Array<Record<string, unknown>>;
+  bootstrapStatus?: number;
 } = {}) {
   const rawTicketId = "550e8400-e29b-41d4-a716-446655440000";
   let pendingConsentCount = pendingConsents;
@@ -85,7 +91,7 @@ function installDashboardMock({
             candidate_count: primaryDeviceResolution === "ambiguous" ? devices.length : primaryDevice ? 1 : 0,
           },
           active_bindings: [],
-          pending_registration_claims: [],
+          pending_registration_claims: pendingClaims,
           open_ticket_count: 1,
           tickets_requiring_user_action_count: pendingConsentCount ? 1 : 0,
           pending_consent_count: pendingConsentCount,
@@ -93,15 +99,16 @@ function installDashboardMock({
           recent_tickets: [],
           feature_flags: { requester_ticket_create: profileComplete, requester_no_device_create: false },
         },
-      });
+      }, bootstrapStatus);
     }
     if (url === "/api/web/requester/tickets") {
       return jsonResponse({
         status: "success",
         data: {
-          tickets: [
+          tickets: ticketsEmpty ? [] : [
             {
               ticket_id: rawTicketId,
+              ticket_code: "T-000042",
               title: "VPN",
               description: "Не подключается VPN.",
               status: "waiting_user",
@@ -160,21 +167,23 @@ describe("RequesterHomePage", () => {
 
     renderHomePage();
 
-    expect(await screen.findByRole("heading", { name: "Главная" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Чем можем помочь?" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Создать обращение" })).toHaveAttribute("href", "/app/requester/new");
-    expect(screen.getByRole("link", { name: "Проверить согласия" })).toHaveAttribute("href", "/app/requester/tickets");
+    expect(screen.getByRole("link", { name: "Открыть список" })).toHaveAttribute("href", "/app/requester/tickets");
     expect(screen.getByRole("heading", { name: "Ожидают вашего решения" })).toBeInTheDocument();
     expect(screen.getAllByText("Просмотр экрана").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Обращение 550e8400").length).toBeGreaterThan(0);
     expect(screen.queryByText("consent-0")).not.toBeInTheDocument();
     expect(screen.queryByText("remote-session-secret")).not.toBeInTheDocument();
     expect(screen.queryByText("550e8400-e29b-41d4-a716-446655440000")).not.toBeInTheDocument();
-    expect(screen.getByText("WORKSTATION-1")).toBeInTheDocument();
+    expect(screen.getByText(/WORKSTATION-1/)).toBeInTheDocument();
+    expect(screen.getByText("Профиль заполнен")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Краткие показатели")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Готовность кабинета" })).not.toBeInTheDocument();
     expect(screen.queryByText("Новое обращение")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Форма обращения заявителя")).not.toBeInTheDocument();
     expect(screen.queryByText("Код привязки")).not.toBeInTheDocument();
     expect(screen.queryByText("Публичный доступ")).not.toBeInTheDocument();
-    expect(screen.queryByText("Мой профиль")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Мой профиль" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/web/requester/bootstrap", expect.anything());
@@ -201,7 +210,7 @@ describe("RequesterHomePage", () => {
 
     renderHomePage();
 
-    expect(await screen.findByRole("heading", { name: "Главная" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Чем можем помочь?" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Заполнить профиль" })).toHaveAttribute("href", "/app/requester/profile/setup");
     expect(screen.getAllByText("Профиль нужно заполнить").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Устройство не привязано").length).toBeGreaterThan(0);
@@ -216,7 +225,7 @@ describe("RequesterHomePage", () => {
 
     renderHomePage();
 
-    expect(await screen.findByRole("heading", { name: "Главная" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Чем можем помочь?" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Создать обращение" })).toHaveLength(1);
   });
 
@@ -233,9 +242,42 @@ describe("RequesterHomePage", () => {
 
     renderHomePage();
 
-    expect(await screen.findByRole("heading", { name: "Главная" })).toBeInTheDocument();
-    expect(screen.getAllByText("Устройство не привязано").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Чем можем помочь?" })).toBeInTheDocument();
+    expect(screen.getByText("Основной компьютер не выбран")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Мои устройства" })).toHaveAttribute("href", "/app/requester/devices");
     expect(screen.queryByText("WORKSTATION-1")).not.toBeInTheDocument();
     expect(screen.queryByText("WORKSTATION-2")).not.toBeInTheDocument();
+  });
+
+  it("keeps one create action and a useful empty state without requiring a computer", async () => {
+    installDashboardMock({ devices: [], ticketsEmpty: true, pendingConsents: 0 });
+    renderHomePage();
+    expect(await screen.findByText("Обращений пока нет")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Создать обращение" })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Привязать компьютер" })).toHaveAttribute("href", "/app/requester/devices/link");
+  });
+
+  it("distinguishes a linked offline computer from a missing binding", async () => {
+    installDashboardMock({ devices: [{ device_id: "d1", hostname: "LINUX-1", online: false }], pendingConsents: 0 });
+    renderHomePage();
+    expect(await screen.findByText(/LINUX-1/)).toBeInTheDocument();
+    expect(screen.getByText(/Не в сети/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Привязать компьютер" })).not.toBeInTheDocument();
+  });
+
+  it("shows pending ownership review instead of requesting another code", async () => {
+    installDashboardMock({ devices: [], pendingConsents: 0, pendingClaims: [{ claim_id: "claim-1" }] });
+    renderHomePage();
+    expect(await screen.findByText("Привязка на проверке")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Привязать компьютер" })).not.toBeInTheDocument();
+  });
+
+  it("does not report readiness before loading or when bootstrap fails", async () => {
+    installDashboardMock({ bootstrapStatus: 503 });
+    renderHomePage();
+    expect(screen.getByText("Загружаем главную страницу кабинета")).toBeInTheDocument();
+    expect(screen.queryByText("Профиль заполнен")).not.toBeInTheDocument();
+    expect(await screen.findByText("Не удалось открыть кабинет", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText("Профиль заполнен")).not.toBeInTheDocument();
   });
 });
