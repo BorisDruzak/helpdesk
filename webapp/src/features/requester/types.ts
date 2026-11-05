@@ -237,6 +237,7 @@ export type PublicTicketMessage = {
   ts?: string | null;
   created_at?: string | null;
   metadata?: {
+    message_kind?: string | null;
     confirmation_request?: PublicTicketConfirmationRequest;
   } | null;
   attachment_refs?: string[];
@@ -610,8 +611,37 @@ export type RequesterTicketClaimPublicResult = {
 
 export type RequesterTicketDetail = {
   ticket: AuthenticatedRequesterTicket;
+  handling?: RequesterTicketHandling | null;
   messages?: PublicTicketMessage[];
   events?: PublicTicketEvent[];
+};
+
+export type RequesterSlaTimer = {
+  status?: string;
+  due_at?: string | null;
+  effective_due_at?: string | null;
+  remaining_seconds?: number | null;
+  completed_at?: string | null;
+  completed_within_target?: boolean | null;
+};
+
+export type RequesterTicketHandling = {
+  status?: string | null;
+  status_label?: string | null;
+  next_action_owner?: string | null;
+  assignee?: { assigned: boolean; display_name?: string | null } | null;
+  team?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  as_of?: string | null;
+  sla?: { first_response?: RequesterSlaTimer; resolution?: RequesterSlaTimer } | null;
+  device?: {
+    state: "none" | "linked";
+    display_name?: string | null;
+    presence?: "online" | "offline" | "retired" | "unavailable";
+    last_seen_at?: string | null;
+    details_path?: string | null;
+  } | null;
 };
 
 export type RequesterTicketMessageResult = {

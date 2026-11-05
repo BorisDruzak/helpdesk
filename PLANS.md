@@ -2852,3 +2852,15 @@ Current State: Complete. Helpdesk7d8dda5d814e88c40d5eac2dfa1e7324135638f3 and En
 Next Steps: No required implementation remains. Fresh live AD credential round trip remains user-dependent acceptance; initiation verified without MFA request.
 Verification: Helpdesk18 unit/API,3 handoff DB,12 OIDC/profile DB,30 frontend; Endpoint38 identity,5 DB,23 WorkTime,143 contracts,69 targeted+2 platform skips,5 deploy guards,76 frontend. Builds/workspace/diff checks passed. Strict TLS200 and three active services confirmed.
 Handoff: docs/WORKTIME_HELPDESK_ACCEPTANCE_2026-11-05.md; private evidence tmp/worktime-handoff-20261105/. Production and agent/native packages untouched; unrelated dirty state preserved.
+
+
+## Requester chat context — 2026-11-05
+
+Goal: Show status, specialist, response/resolution SLA, device and public progress beside the employee conversation.
+Scope: Owner-safe detail projection and usable responsive requester chat; existing polling and actions.
+Constraints: Staging only, no business/identity/grant changes, preserve unrelated dirty state and drafts.
+Decisions: Shared canonical timer projection; safe handling sibling after ownership check; public events in conversation, no raw diagnostics or internal notes.
+Current State: Implementation and independent review complete;29 pure backend,2 disposable PostgreSQL/API and27 frontend tests pass; built desktop/mobile, polling/draft and503/404 cases verified.
+Next Steps: Freeze task-only commit, canonical staging release, source/TLS/live-browser readback and acceptance record. No schema or grant changes.
+Verification: Build/workspace/diff checks pass. Owner404 and private-event flood regressions pass. Fresh verified staging backup at schema153; shared support timer contract retained.
+Handoff: docs/superpowers/specs/2026-11-05-requester-chat-context-design.md and matching plan. Return-link0554e70b0d4c679173d502af6000cc53ac17f27f already deployed; binding diagnosis403 and production-origin local agent remain separate with no permission/config writes.

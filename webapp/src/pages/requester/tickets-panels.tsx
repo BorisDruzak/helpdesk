@@ -287,6 +287,7 @@ export function TicketReplyComposer({
         aria-label="Ответ заявителя"
         className="mt-2 h-20 min-h-16 max-h-40 text-sm"
         onChange={(event) => setMessageText(event.currentTarget.value)}
+        onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) { event.preventDefault(); handleSendMessage(); } }}
         value={messageText}
       />
       <input aria-label="Прикрепить файл к ответу" className="sr-only" onChange={handleAttachmentUpload} ref={attachmentInputRef} type="file" />
@@ -312,6 +313,7 @@ export function TicketReplyComposer({
           {messageSending ? "Отправляем..." : "Отправить"}
         </Button>
       </FormActions>
+      <p className="mt-2 text-xs text-slate-500">Ctrl+Enter — отправить. Enter — новая строка.</p>
     </section>
   );
 }

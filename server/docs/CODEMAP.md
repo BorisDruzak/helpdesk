@@ -92,6 +92,21 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - Requester message/confirm/feedback/reopen reuse requester identity scope for
   users and administrators, rereading ownership under the ticket lock. Public
   result views use `requester_resolution_summary`; internal results stay private.
+- `requester/ticket_handling.py` projects the owner-only authenticated detail
+  `handling` sibling: public status/next step, verified specialist, SLA and device.
+  `tickets/timer_projection.py` shares the existing support timer rules without
+  changing its DTO. Device presence requires current requester ownership and exact
+  Registry/Endpoint references; failure is unavailable, never inferred offline.
+  The detail response is no-store and template-hidden fields remain excluded.
+- Requester detail unions separate newest200 public-message and200 raw-progress
+  windows through `get_recent_timeline_events`, deduplicates chronologically and
+  applies canonical requester visibility. Internal noise cannot evict replies;
+  older progress can fall outside the bounded history. `ticket-conversation.tsx`
+  renders safe progress and role-correct messages; `ticket-context-panel.tsx`
+  keeps SLA/device visible on desktop and in an expandable mobile summary.
+  Existing10s polling preserves drafts and cached chat on transient failures;
+  authorization failures hide cached ticket content. See
+  [requester chat contract](CHAT_MESSAGE_CONTRACT.md#authenticated-requester-detail).
 - `requester/scenario-session.tsx` automatically obtains the processing preview
   on the submission step and opens the created ticket directly. Terminal preview
   responses use the session generation/abort guard. Acknowledged successful

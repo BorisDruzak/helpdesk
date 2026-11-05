@@ -1051,24 +1051,43 @@ async def handle_web_requester_ticket_detail(request: web.Request) -> web.Respon
     auth_context = request["auth_context"]
     ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
     async with get_session() as session:
-        ticket = await RequesterIdentityResolver(session, state=request.app.get("state")).get_ticket(
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
+        ticket = await resolver.get_ticket(
             actor_id=auth_context.actor_id,
             ticket_id=ticket_id,
         )
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
         repo = TicketEventsRepo(session)
-        raw_events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=200)
+        # Read public chat independently: private/technical traffic must never
+        # displace the conversation from its bounded newest window.
+        progress_events = await repo.get_recent_timeline_events(ticket.ticket_id, limit=200)
+        public_messages = await repo.get_recent_timeline_events(
+            ticket.ticket_id, limit=200, chat_visibility="public"
+        )
+        raw_events = sorted(
+            {event.id: event for event in [*progress_events, *public_messages]}.values(),
+            key=lambda event: (event.created_at, event.id),
+        )
         visible_events = [event for event in raw_events if _event_visible_to_requester(event)]
         messages = [event for event in visible_events if getattr(event, "event_type", None) == "chat_message"]
         payload = ticket_to_dict(ticket, visibility="requester")
-    return _success(
+        from requester.ticket_handling import build_ticket_handling
+        handling = await build_ticket_handling(
+            session, ticket, payload, resolver=resolver,
+            ports=DomainPortContainer.from_config(registry_session=session),
+            actor_id=auth_context.actor_id,
+        )
+    response = _success(
         {
             "ticket": payload,
+            "handling": handling,
             "messages": [_serialize_message_for_requester(event, ticket=ticket) for event in messages],
             "events": [_serialize_event_for_requester(event, ticket=ticket) for event in visible_events],
         }
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @require_auth("user", "admin")
