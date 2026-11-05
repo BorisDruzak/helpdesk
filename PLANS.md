@@ -2940,3 +2940,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verification:25component cases, build/workspace checks,3browser viewport cases passed; confirmation/reopen dispatch, rating expansion, cached401/403/404, long-history scroll and no overflow covered. Independent review has no blockers.
 - Complete: runtime860c5677f26f5aabc575089819cfa41da1782124 installed over independently deployed Studio dc60; verified155 backup/4source hashes/health200/3active services and unchanged business counts. Live own synthetic requester ticket confirms3buttons stay visible after scrolling. No decision submitted on T-000075. Staging remains available; production unchanged.
 - Evidence: docs/REQUESTER_CONFIRM_CONTROLS_2026-11-05.md and tmp/requester-confirm-controls-20261105. Task is frozen with a private index and its own branch to avoid shared Studio staging.
+
+
+## Service-name search and missing-service intake (2026-11-05)
+
+- Goal: search actual service names, add Электронный бюджет and ЕИС, offer explicit Не знаю when no matches.
+- Cause: search indexed entrances but not offering names; advertised other.unknown was absent from current31published offerings, hiding fallback.
+- Changes: additive service rows expand categories without cached scenario launch; explicit public fallback entry; guarded canonical publication of2maps,3entrances each, inheriting current business-system routing/SLA/policies.
+- Verification:26Python,32frontend,3browser cases and build/workspace checks pass. Reviewer lock-order/hidden-parent issues fixed with regressions. No new schema/dependencies or ticket commands.
+- Next: verified155 backup, exact-commit staging install, fingerprinted catalog publication/idempotence/history checks and live search/fallback smoke.
+- Handoff: docs/CATALOG_SERVICE_SEARCH_2026-11-05.md; private tmp/catalog-service-search-20261105. Preserve earlier installed requester controls and shared checkout/index.

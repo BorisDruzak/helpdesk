@@ -161,6 +161,13 @@ and retains separate explicit administrator review for ownership conflicts.
 
 ## Tickets
 
+Catalog search includes service names, section names and individual published
+problems. Choosing a service expands its problems without starting an old cached
+scenario. An empty search offers «Не знаю / моей услуги нет в списке» and opens
+the explicitly configured public Other entrance. A network failure remains an
+error with retry rather than being reported as no matches. Электронный бюджет
+and ЕИС each provide login, signature and general system-error entrances.
+
 Requester solution decisions stay in a compact footer outside the scrolling chat
 history, including the description/history view. Confirmation, optional rating and
 return-to-work remain gated by the server action flags; cached access denial hides

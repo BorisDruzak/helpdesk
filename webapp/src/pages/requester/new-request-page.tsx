@@ -818,6 +818,7 @@ function RequesterNewRequestContent() {
           error={categoryError} inputRef={element=>{categorySelectRef.current=element;}}
           availableOfferings={categoryOptions.flatMap(option => option.offering ? [option.offering.full_code] : [])}
           fallbackOffering={categoryOptions.find(option => option.offering?.full_code === catalogQuery.data?.fallback?.full_code)?.offering?.full_code}
+          fallbackEntryPointKey={catalogQuery.data?.fallback?.entry_point_key ?? undefined}
           onSelect={(offeringCode, entry) => {
             const option = categoryOptions.find(item => item.offering?.full_code === offeringCode);
             if (option) { selectCategoryKey(option.key); setSelectedSearchEntry(entry); }

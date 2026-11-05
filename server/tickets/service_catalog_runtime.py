@@ -29,6 +29,21 @@ class ServiceCatalogResolutionError(ValueError):
         self.details = details
 
 
+def configured_requester_fallback(offerings, guided_offerings, visible_services):
+    """An explicit fallback must identify one currently public executable entrance."""
+    candidates = []
+    for offering in offerings:
+        if offering.get("service_code") not in visible_services or offering.get("visibility") != "public" or offering.get("lifecycle_status") != "published":
+            continue
+        settings = (offering.get("metadata") or {}).get("requester_fallback")
+        if not isinstance(settings, dict):
+            continue
+        key = settings.get("entry_point_key")
+        if key and any(entry.get("entry_point_key") == key for entry in guided_offerings.get(offering.get("full_code"), [])):
+            candidates.append((offering, key))
+    return candidates[0] if len(candidates) == 1 else None
+
+
 @dataclass(frozen=True)
 class ServiceCatalogSelection:
     service: dict[str, Any] | None
@@ -210,16 +225,14 @@ class ServiceCatalogRuntimeResolver:
             if offering.get("visibility") == "public"
         ]
         by_service: dict[str, list[dict[str, Any]]] = {}
+        visible_service_codes = {service.get("code") for service in services}
         for offering in offerings:
             by_service.setdefault(str(offering.get("service_code") or ""), []).append(offering)
         if FALLBACK_SERVICE_CODE not in {str(service.get("code") or "") for service in services}:
             services.append(fallback_service_dict())
             by_service[FALLBACK_SERVICE_CODE] = [fallback_offering_dict()]
-        fallback_service = next(
-            (service for service in services if str(service.get("code") or "") == FALLBACK_SERVICE_CODE),
-            fallback_service_dict(),
-        )
-        fallback_offering = next(
+        configured = configured_requester_fallback(offerings, guided_offerings, visible_service_codes)
+        fallback_offering = configured[0] if configured else next(
             (
                 offering
                 for offering in by_service.get(FALLBACK_SERVICE_CODE, [])
@@ -228,9 +241,13 @@ class ServiceCatalogRuntimeResolver:
             ),
             fallback_offering_dict(),
         )
+        fallback_service_code = fallback_offering.get("service_code") or FALLBACK_SERVICE_CODE
+        fallback_service = next((service for service in services if service.get("code") == fallback_service_code), fallback_service_dict())
         fallback_payload = serialize_offering_for_requester(fallback_offering)
-        fallback_payload["service_code"] = FALLBACK_SERVICE_CODE
+        fallback_payload["service_code"] = fallback_service_code
         fallback_payload["service_title"] = fallback_service.get("public_title") or fallback_service.get("name")
+        if configured:
+            fallback_payload["entry_point_key"] = configured[1]
         result = {
             "catalog_version": "runtime",
             "services": [

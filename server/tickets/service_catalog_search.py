@@ -73,6 +73,9 @@ def _documents(catalog: dict[str, Any]):
         for offering in service.get("offerings", []):
             # Entries have already passed scenario/category/entrance ACL checks.
             entries = offering.get("catalog_items", [])
+            if entries:
+                yield service, offering, {"title": offering.get("title"), "description": offering.get("description"),
+                    "help_mode": "guided" if offering.get("guided_scenario_enabled") else "request", "result_kind": "service"}
             if not entries:
                 entries = [{"title": offering.get("title"), "description": offering.get("description"),
                             "help_mode": "guided" if offering.get("guided_scenario_enabled") else "request"}]
@@ -93,6 +96,8 @@ def search_public_catalog(catalog: dict[str, Any], query: str, *, limit: int = 2
     ranked = []
     for service, offering, entry in _documents(catalog):
         fields = [("title", _normalize(entry.get("title"))), ("description", _normalize(entry.get("description")))]
+        if entry.get("result_kind") == "service":
+            fields.append(("category", _normalize(service.get("title"))))
         fields.extend(("synonym", _normalize(synonym)) for synonym in entry.get("synonyms", []))
         matches = [(rank, corrected_layout) for value, corrected_layout in variants for kind, field in fields
                    if (rank := _field_rank(value, field, kind)) is not None]
@@ -103,6 +108,7 @@ def search_public_catalog(catalog: dict[str, Any], query: str, *, limit: int = 2
                "description": entry.get("description") or "", "category": entry.get("category_title") or service.get("title"),
                "service_code": service.get("service_code"), "offering_full_code": offering.get("full_code"),
                "entry_point_key": entry.get("entry_point_key"), "help_mode": entry.get("help_mode") or "guided",
+               "result_kind": entry.get("result_kind") or "problem",
                "match_reason": "Исправлена раскладка клавиатуры" if layout else _REASONS[rank]}
         ranked.append((rank + (6 if layout else 0), _normalize(row["title"]), str(row["offering_full_code"]),
                        str(row["entry_point_key"] or ""), row, layout))

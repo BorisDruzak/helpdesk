@@ -106,7 +106,7 @@ export type ServiceCatalogService = {
 export type ServiceCatalogCurrent = {
   catalog_version: string;
   services: ServiceCatalogService[];
-  fallback?: ServiceCatalogOffering & { service_code?: string | null; service_title?: string | null };
+  fallback?: ServiceCatalogOffering & { service_code?: string | null; service_title?: string | null; entry_point_key?: string | null };
 };
 
 export type ServiceCatalogPreviewPayload = {

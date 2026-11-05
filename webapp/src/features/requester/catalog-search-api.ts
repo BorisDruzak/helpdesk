@@ -6,6 +6,7 @@ export type CatalogSearchResult = {
   entry_point_key: string | null;
   help_mode: "guided" | "request";
   match_reason: string;
+  result_kind?: "service" | "problem";
 };
 
 export type CatalogSearchResponse = {

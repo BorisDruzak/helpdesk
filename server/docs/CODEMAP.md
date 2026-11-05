@@ -817,7 +817,11 @@ from `pages/requester/new-request-page.tsx`; legacy offering UI remains default.
 `features/requester/catalog-search.tsx` and `catalog-categories.tsx` provide one
 server-backed search plus category/entrance browsing. Category expansion performs
 no command; explicit leaf selection delegates to `scenario-entrances.tsx`, which
-retains owner-scoped resume selection without a second search field. Ordinary
+retains owner-scoped resume selection for explicit entrances; category browsing
+does not restore a remembered problem before the user chooses it. Service-name
+search rows expand categories; the configured published fallback identifies an
+explicit entrance. `scripts/helpdesk_catalog_service_search.py` publishes the two
+additional information-system maps through canonical audited services. Ordinary
 categories delegate to the existing form panel; drafts and direct links remain.
 `tickets/request_scenario_submission.py` revalidates visited pages and maps typed
 facts/roles into the existing form submission, retaining a support snapshot.

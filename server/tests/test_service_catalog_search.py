@@ -79,6 +79,55 @@ def test_legacy_guided_offering_without_named_entrances_remains_searchable():
     assert result['help_mode'] == 'guided'
 
 
+def test_offering_name_is_searchable_even_when_none_of_its_problem_names_match():
+    payload = catalog(("Не удаётся подписать документ", [], "Ошибка при работе с сертификатом"))
+    payload['services'][0]['offerings'][0]['title'] = 'Электронная подпись и сертификаты'
+    result = search(payload, 'электронная подпись')['results']
+    assert result[0]['title'] == 'Электронная подпись и сертификаты'
+    assert result[0]['result_kind'] == 'service'
+    assert result[0]['entry_point_key'] is None
+
+
+def test_service_section_names_find_only_the_public_offering_rows():
+    result = search(catalog(("Не печатает документ", [], "")), 'рабочее место')['results']
+    assert len(result) == 1
+    assert result[0]['title'] == 'Печать'
+    assert result[0]['result_kind'] == 'service'
+
+
+def test_configured_fallback_must_resolve_to_one_public_published_entrance():
+    from tickets.service_catalog_runtime import configured_requester_fallback
+    offering = {'full_code': 'other.actual', 'service_code': 'other', 'visibility': 'public',
+        'lifecycle_status': 'published', 'metadata': {'requester_fallback': {'entry_point_key': 'not_found'}}}
+    entries = {'other.actual': [{'entry_point_key': 'not_found'}]}
+    assert configured_requester_fallback([offering], entries, {'other'}) == (offering, 'not_found')
+    assert configured_requester_fallback([offering], entries, {'internal'}) is None
+    assert configured_requester_fallback([offering], {}, {'other'}) is None
+    assert configured_requester_fallback([offering, {**offering, 'full_code': 'other.second'}],
+        {**entries, 'other.second': entries['other.actual']}, {'other'}) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('visibility', ['public', 'internal'])
+async def test_runtime_fallback_uses_real_parent_visibility_before_synthetic_defaults(monkeypatch, visibility):
+    from tickets.service_catalog_runtime import ServiceCatalogRuntimeResolver
+    from tickets import request_scenario_catalog
+    offering = {'service_code': 'other', 'code': 'actual', 'full_code': 'other.actual', 'public_title': 'Другая проблема',
+        'visibility': 'public', 'lifecycle_status': 'published', 'metadata': {'requester_fallback': {'entry_point_key': 'not_found'}}}
+    class Repo:
+        async def list_services(self, **kwargs):
+            return [{'code': 'other', 'public_title': 'Другое', 'visibility': visibility, 'lifecycle_status': 'published'}]
+        async def list_offerings(self, **kwargs):
+            return [offering]
+    async def published(session):
+        return {'other.actual': [{'entry_point_key': 'not_found'}]}
+    monkeypatch.setattr(request_scenario_catalog, 'published_catalog_entries', published)
+    resolver = ServiceCatalogRuntimeResolver(None)
+    resolver.repo = Repo()
+    payload = await resolver.current_catalog_for_requester()
+    assert payload['fallback']['full_code'] == ('other.actual' if visibility == 'public' else 'other.unknown')
+
+
 @pytest.mark.asyncio
 async def test_current_handler_searches_only_the_requester_runtime_projection(monkeypatch):
     import json
