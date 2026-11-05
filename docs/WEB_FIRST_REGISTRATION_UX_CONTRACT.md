@@ -55,6 +55,14 @@ departments/locations with audit and retain all prior profile/device/history
 references. A second publication is a no-op. Employees from the source DOCX are
 not imported, and the two employment groups do not produce separate departments.
 
+The new-request catalog has one whole-catalog search. Focusing it with an empty
+query opens all available categories; a guided category expands its published
+problem entrances. Expansion does not start a scenario. Choosing a problem starts
+or resumes that entrance; ordinary categories open the existing form. There is no
+additional category select or within-category search on this page. Server search,
+availability checks, direct links, owner-scoped scenario selection and form drafts
+remain authoritative. Search errors remain distinct from no matches.
+
 On the approved staging host (`test-helpdesk`, `192.168.101.118`), run
 `python scripts/configure_helpdesk_registration.py --enabled true` to enable
 requester registration (`false` disables it). The utility updates only

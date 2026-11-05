@@ -12,7 +12,9 @@ const result = { title: "Принтер не печатает", description: "П
 function mount(onSelect = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><CatalogSearch onSelect={onSelect}
-    availableOfferings={["workplace.print"]} fallbackOffering="general.unknown" /></QueryClientProvider>);
+    availableOfferings={["workplace.print"]} fallbackOffering="general.unknown"
+    categories={[{key:"print",title:"Печать",offeringFullCode:"workplace.print",items:[{key:"no_print",title:"Принтер не печатает",entry_point_key:"no_print"}]}]}
+    onCategorySelect={()=>{}} /></QueryClientProvider>);
   return onSelect;
 }
 
@@ -31,6 +33,18 @@ it("suggests a published problem across the catalog and opens only the selected 
   expect(onSelect).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: /Принтер не печатает/ }));
   expect(onSelect).toHaveBeenCalledWith("workplace.print", "no_print");
+});
+
+it("opens categories from the only search field and starts only an explicit problem", () => {
+  vi.stubGlobal("fetch",vi.fn());
+  const select=mount();
+  const input=screen.getByRole("searchbox");
+  fireEvent.focus(input);
+  fireEvent.click(screen.getByRole("button",{name:"Печать"}));
+  expect(select).not.toHaveBeenCalled();
+  expect(screen.getAllByRole("searchbox")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button",{name:"Принтер не печатает"}));
+  expect(select).toHaveBeenCalledWith("workplace.print","no_print");
 });
 
 it("shows an empty state and offers the explicit other-problem fallback", async () => {

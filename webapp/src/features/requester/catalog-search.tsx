@@ -1,15 +1,23 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { searchRequesterCatalog } from "./catalog-search-api";
+import { CatalogCategories, type CatalogCategory } from "./catalog-categories";
 
 /** Requester job: describe a problem, then explicitly choose a published entrance. */
-export function CatalogSearch({ availableOfferings, fallbackOffering, onSelect }: {
+export function CatalogSearch({ availableOfferings, fallbackOffering, onSelect, categories=[], selectedKey, selectedTitle, onCategorySelect, inputRef, error }: {
   availableOfferings: string[];
   fallbackOffering?: string;
   onSelect: (offering: string, entry: string | undefined) => void;
+  categories?:CatalogCategory[];
+  selectedKey?:string;
+  selectedTitle?:string;
+  onCategorySelect?:(key:string)=>void;
+  inputRef?:(element:HTMLInputElement | null)=>void;
+  error?:string | null;
 }) {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [browsing,setBrowsing]=useState(false);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 200);
     return () => window.clearTimeout(timer);
@@ -24,18 +32,27 @@ export function CatalogSearch({ availableOfferings, fallbackOffering, onSelect }
   function choose(offering: string, entry?: string) {
     setQuery("");
     setDebounced("");
+    setBrowsing(false);
     onSelect(offering, entry);
   }
   return <section className="rounded-panel border border-slate-200 bg-white p-4" aria-label="Поиск по каталогу">
     <label className="block font-semibold text-slate-950" htmlFor="requester-catalog-search">Найти проблему во всём каталоге</label>
-    <input id="requester-catalog-search" type="search" maxLength={200} autoComplete="off" value={query}
-      className="field-base mt-2 w-full" placeholder="Например: принтер не печатает"
-      aria-describedby="requester-search-status" onChange={event => setQuery(event.target.value)} />
+    <input id="requester-catalog-search" ref={inputRef} type="search" maxLength={200} autoComplete="off" value={query}
+      className="field-base mt-2 h-11 w-full px-4 text-sm" placeholder="Например: принтер не печатает"
+      aria-describedby="requester-search-status" aria-expanded={browsing || Boolean(query.trim())} aria-controls="requester-catalog-choices" aria-invalid={error ? true : undefined}
+      onFocus={()=>setBrowsing(true)} onClick={()=>setBrowsing(true)}
+      onKeyDown={event=>{if(event.key==='Escape'){setBrowsing(false);event.currentTarget.blur();}}}
+      onChange={event => {setQuery(event.target.value);setBrowsing(true);}} />
+    {selectedTitle ? <p className="mt-2 text-sm text-slate-700">Выбрано: <strong>{selectedTitle}</strong></p> : null}
+    {error ? <p className="mt-2 text-sm text-rose-700">{error}</p> : null}
     <div id="requester-search-status" role="status" aria-live="polite" className="mt-2 text-sm text-slate-600">
-      {!query.trim() ? "Опишите проблему своими словами или выберите категорию ниже." : updating ? "Ищем подходящие проблемы…" : null}
+      {!query.trim() ? "Нажмите на поле, чтобы открыть все категории, или опишите проблему своими словами." : updating ? "Ищем подходящие проблемы…" : null}
       {query.trim() && !updating && !search.isError && search.data && !results.length
         ? "Подходящих проблем не найдено. Попробуйте другое описание." : null}
     </div>
+    <div id="requester-catalog-choices">
+    {browsing && !query.trim() && categories.length ? <CatalogCategories key={selectedKey} categories={categories} selectedKey={selectedKey}
+      onSelect={choose} onCategorySelect={key=>{setBrowsing(false);onCategorySelect?.(key);}}/> : null}
     {query.trim() && !updating && search.isError ? <div role="alert" className="mt-2 text-sm text-rose-700">
       Не удалось выполнить поиск. <button type="button" className="underline" onClick={() => { void search.refetch(); }}>Повторить поиск</button>
     </div> : null}
@@ -55,5 +72,6 @@ export function CatalogSearch({ availableOfferings, fallbackOffering, onSelect }
       </ul>
       {fallbackOffering ? <button type="button" className="mt-3 text-sm font-semibold text-brand-700 underline" onClick={() => choose(fallbackOffering)}>Другая проблема</button> : null}
     </> : null}
+    </div>
   </section>;
 }

@@ -734,6 +734,11 @@ TTL, immutable version pinning, last-command replay and redacted catalog audit.
 `request_scenario_catalog.py` adds per-offering availability to the existing
 Service Catalog. Requester UI uses `features/requester/scenario-session.tsx`
 from `pages/requester/new-request-page.tsx`; legacy offering UI remains default.
+`features/requester/catalog-search.tsx` and `catalog-categories.tsx` provide one
+server-backed search plus category/entrance browsing. Category expansion performs
+no command; explicit leaf selection delegates to `scenario-entrances.tsx`, which
+retains owner-scoped resume selection without a second search field. Ordinary
+categories delegate to the existing form panel; drafts and direct links remain.
 `tickets/request_scenario_submission.py` revalidates visited pages and maps typed
 facts/roles into the existing form submission, retaining a support snapshot.
 `web_api/requester_handlers.py` exposes caller-transaction create/preview helpers:

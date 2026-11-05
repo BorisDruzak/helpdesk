@@ -1,4 +1,4 @@
-import { Button, FieldShell, Input, Select, Textarea } from "../../features/requester/ui/form-controls";
+import { Button, FieldShell, Input, Textarea } from "../../features/requester/ui/form-controls";
 import { requesterDeviceLabel } from "../../features/requester/labels";
 import type { DynamicFormValues } from "../../features/requester/dynamic-form";
 import type {
@@ -35,59 +35,6 @@ export type RecommendedOffering = {
   confident: boolean;
   offering: ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string };
 };
-
-export function CategorySelector({
-  canShowAll = false,
-  error,
-  inputRef,
-  onChange,
-  onShowAll,
-  options,
-  recommendedKey,
-  selectedKey,
-}: {
-  canShowAll?: boolean;
-  error?: string | null;
-  inputRef?: (element: HTMLSelectElement | null) => void;
-  onChange: (key: string) => void;
-  onShowAll?: () => void;
-  options: CategoryOption[];
-  recommendedKey: string | null;
-  selectedKey: string;
-}) {
-  return (
-    <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-3">
-      <FieldShell error={error} label="Выберите категорию обращения">
-        <Select
-          aria-invalid={error ? true : undefined}
-          aria-label="Категория обращения"
-          className="mt-2 w-full bg-white font-normal"
-          onChange={(event) => onChange(event.currentTarget.value)}
-          ref={inputRef}
-          value={selectedKey}
-        >
-          <option value="">Выберите...</option>
-          {options.map((option) => (
-            <option key={option.key} value={option.key}>
-              {option.label}
-              {option.key === recommendedKey ? " (подходит по описанию)" : ""}
-            </option>
-          ))}
-        </Select>
-      </FieldShell>
-      {selectedKey ? (
-        <p className="mt-2 text-xs text-slate-500">Вы можете изменить категорию перед созданием обращения.</p>
-      ) : (
-        <p className="mt-2 text-xs text-slate-500">Автоматически первая форма не выбирается. Если нет точного совпадения, выберите вариант вручную.</p>
-      )}
-      {canShowAll ? (
-        <Button className="mt-2" onClick={onShowAll} size="sm" type="button" variant="outline">
-          Выбрать другую категорию
-        </Button>
-      ) : null}
-    </div>
-  );
-}
 
 export function OnBehalfPanel({
   affectedPersonError,
