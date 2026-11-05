@@ -2938,5 +2938,5 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Cause: real T-000075 is resolved/pending; controls were before messages inside the transcript scroller while the footer showed a read-only notice.
 - Fix: compact bounded footer outside history, also available in description view; existing action flags/access denial preserved. No real ticket decision submitted.
 - Verification:25component cases, build/workspace checks,3browser viewport cases passed; confirmation/reopen dispatch, rating expansion, cached401/403/404, long-history scroll and no overflow covered. Independent review has no blockers.
-- Next: verified154 staging backup, canonical exact-SHA install and remote/browser acceptance; preserve unrelated work and leave staging available.
+- Complete: runtime860c5677f26f5aabc575089819cfa41da1782124 installed over independently deployed Studio dc60; verified155 backup/4source hashes/health200/3active services and unchanged business counts. Live own synthetic requester ticket confirms3buttons stay visible after scrolling. No decision submitted on T-000075. Staging remains available; production unchanged.
 - Evidence: docs/REQUESTER_CONFIRM_CONTROLS_2026-11-05.md and tmp/requester-confirm-controls-20261105. Task is frozen with a private index and its own branch to avoid shared Studio staging.

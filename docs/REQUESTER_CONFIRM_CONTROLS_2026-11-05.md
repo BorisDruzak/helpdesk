@@ -32,6 +32,38 @@ submitted for a real employee during this work.
 - Read-only independent review: no blocking findings; permission-denial regression and rating-expansion coverage strengthened afterward.
 - Canonical requester contract updated. No API, schema, dependency or CODEMAP entrypoint change. Full CI, backend DB mutation tests and production rollout are outside this UI-placement fix.
 
-Staging release and final receipt: pending canonical installation. Private evidence
-is under `tmp/requester-confirm-controls-20261105`. Existing unrelated Studio work
-is preserved and excluded from this change.
+## Installed staging acceptance
+
+Branch: `codex/requester-confirm-controls`. Initial fix:
+`8202ab17a9a9059e0378178c9c3bb87f5ce465be`,
+`fix(requester): keep solution decisions visible below chat`.
+Installed runtime: `860c5677f26f5aabc575089819cfa41da1782124`,
+`fix(requester): retain visible decisions on current staging baseline`.
+The latter preserves the independently deployed Studio baseline
+`dc60f34573602be834bfeebbf58424db6ccbb929`; its first-parent diff contains only this
+task's7files. No Studio migration or feature was rolled back.
+
+Canonical `scripts/deploy_helpdesk_release.py` rebuilt the exact Git source with
+its frozen lockfile and installed only on isolated staging101.118. Before release,
+schema155 backup was verified (13697988bytes, SHA256
+`59577427b117b34eaf7df9cf7d5def754765897f35a415678c5d8189d655ff10`).
+Installed source identity and all4frontend source/test hashes match. Schema155,
+strict-CA HTTPS health200 and Helpdesk/Endpoint/worker active states confirmed.
+Business counts unchanged across this release: tickets76, events18122, artifacts5,
+users160, people44. No new profile, message or ticket decision was submitted.
+
+Live read-only browser opened the current admin session's own synthetic T-000065,
+scrolled to the latest support message and observed all3decision buttons in the
+viewport outside the transcript. Live width1280, scrollWidth1280; console errors0.
+The auxiliary verification tab was closed, preserving the user's original support
+tab. The real T-000075 remains for its requester to decide.
+
+Private evidence: `tmp/requester-confirm-controls-20261105`, including verified
+backup, source/health receipt, canonical deploy log, fixture screenshots and
+`live-pinned-controls.jpg`. Production unchanged; staging left active.
+
+During freezing, a concurrent Studio staging operation occupied the shared Git
+index. An accidental unpublished local commit was immediately restored atomically,
+preserving all49staged files. Studio's own commit proceeded normally. This task
+then used a private index/branch and waited for that deployment before installing
+its compatible follow-up. Shared HEAD and index are not owned by this task.
