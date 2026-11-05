@@ -1,4 +1,5 @@
-import { Clock3, Paperclip } from "lucide-react";
+import { Clock3 } from "lucide-react";
+import { ChatAttachment } from "../../components/chat-attachment";
 import { formatRussianDateTime } from "../../components/ui-page";
 import { requesterSafeAttachmentName } from "../../features/requester/labels";
 import type { PublicTicketEvent, PublicTicketMessage } from "../../features/requester/types";
@@ -25,7 +26,7 @@ export function RequesterConversation({ messages, events }: { messages: PublicTi
         return <li key={row.key} className={`flex ${support ? "justify-start" : "justify-end"}`}><article className={`min-w-0 max-w-[92%] rounded-panel border p-3 sm:max-w-[85%] ${support ? "border-slate-200 bg-white" : "border-brand-200 bg-brand-50"}`}>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-semibold text-slate-700">{support ? "Поддержка" : "Вы"}</span>{row.at ? <time className="text-slate-500" dateTime={row.at}>{formatRussianDateTime(row.at, { emptyText: "" })}</time> : null}</div>
           {message.text ? <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800 [overflow-wrap:anywhere]">{message.text}</p> : null}
-          {message.attachments?.length ? <ul className="mt-2 flex flex-wrap gap-2">{message.attachments.map(attachment => <li key={attachment.artifact_id}><a className="inline-flex items-center gap-1 rounded-panel border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-brand-700 underline" href={attachment.url || `/api/artifacts/${encodeURIComponent(attachment.artifact_id)}/download`}><Paperclip className="h-3 w-3" />{requesterSafeAttachmentName(attachment.name)}</a></li>)}</ul> : null}
+          {message.attachments?.length ? <ul className="mt-2 flex max-w-full flex-wrap gap-2">{message.attachments.map(attachment => <li className="min-w-0 max-w-full" key={attachment.artifact_id}><ChatAttachment attachment={{...attachment, name: requesterSafeAttachmentName(attachment.name), url: attachment.url || `/api/artifacts/${encodeURIComponent(attachment.artifact_id)}/download`}} /></li>)}</ul> : null}
         </article></li>;
       })}
     </ol>

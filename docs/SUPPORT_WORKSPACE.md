@@ -163,6 +163,10 @@ chat message stays collapsible. Raster screenshot attachments show lazy thumbnai
 click opens a native modal in the current page, with Escape/backdrop/close controls
 and focus restoration. Download is a separate explicit action. Only exact same-origin
 artifact routes and raster types are previewed; errors leave the download available.
+`webapp/src/components/chat-attachment.tsx` and its standalone stylesheet provide
+this same viewer in authenticated requester chat, for employee and support images.
+Direct requester entry loads the viewer styles without visiting support first;
+its draft and cookie-authorized artifact access remain unchanged.
 Other files retain their canonical download links. Ctrl/Command+Enter sends an allowed nonempty
 draft, while Enter inserts a line break. New messages preserve the reading
 position when the operator has scrolled back and offer a return-to-latest button.

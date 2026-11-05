@@ -2894,3 +2894,12 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Current state: implementation and independent review complete. Context is in the right inspector; raster thumbnail opens a centered native modal with explicit download. Canonical historical ticket_id scope preserved.
 - Verification:32 component tests,15 full support browser scenarios plus4 repeated final centered-viewer/draft cases at1366/1440/1920/390 pass; build/workspace/diff checks pass. Exact228f59c0c279d8261883b720ab4a688b9529b4bb deployed canonically;9source hashes/schema154/TLS200/3active services verified. Live T-000075 Context4answers, thumbnail/full292x296 image, close/focus restoration and console0 confirmed. No message/upload/status command submitted. No required work remains; staging left running.
 - Evidence: docs/SUPPORT_CONTEXT_PREVIEW_ACCEPTANCE_2026-11-05.md and tmp/context-preview-20261105. Backup verified; fixture ports closed. Production/Endpoint unchanged; unrelated edits preserved. Full CI not requested.
+
+## Requester screenshot preview (2026-11-05)
+
+- Goal: requester chat opens screenshots inside Helpdesk with the same thumbnail/modal and separate download as support.
+- Actor/job: requester conversation; view support and own screenshots without losing a reply draft.
+- Scope/decision: share ChatAttachment and its standalone stylesheet through webapp/src/components; keep canonical cookie-protected artifact route, safe MIME/URL/legacy ticket_id guards and existing requester ownership. No backend/API/schema/dependency changes.
+- State: implementation/review complete.20 component tests and7 browser cases (requester1366/1920/390 plus support4widths) pass, including real HTTP download, Escape/backdrop, focus restoration, preserved draft and no overflow/console errors. Build/workspace/diff checks pass.
+- Next: review/docs, exact-SHA canonical staging deploy, fresh requester direct-route live check; preserve user tabs/data and leave staging running.
+- Evidence: tmp/requester-preview-20261105. Production/Endpoint/native agent unchanged.

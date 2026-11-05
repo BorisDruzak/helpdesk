@@ -83,10 +83,13 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   revalidates membership and destination load and returns specific safe denial
   codes. The Messenger conversation anchors its composer, preserves scroll and
   separate audience drafts. Description/answers/public result occupy the right
-  inspector's Context block. `components/chat-attachment.tsx` shows lazy raster
+  inspector's Context block. Shared `webapp/src/components/chat-attachment.tsx` shows lazy raster
   thumbnails and a native in-page image dialog with explicit download, using
   the existing authenticated artifact route, including the historical `ticket_id`
   ownership fallback; external URLs and unknown query parameters are not embedded.
+  Requester `pages/requester/ticket-conversation.tsx` reuses this viewer for both
+  message senders; its standalone CSS works on direct requester navigation, with
+  existing cookie authentication and canonical requester ownership unchanged.
 - `test_support_work.py` covers PostgreSQL competing operators, persisted
   ownership, SLA and administrator access; the no-DB companion covers error
   ordering. Existing FSM, assignment, closure, audit and internal visibility stay

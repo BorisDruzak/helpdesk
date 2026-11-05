@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import itertools
@@ -43,6 +44,18 @@ STATUS_LABELS = {
     "waiting_on_user": "Ждём пользователя",
     "resolved": "Решено",
 }
+
+
+async def handle_preview_image_fixture(request: web.Request):
+    # Real HTTP bytes let Chromium exercise an explicit download; route.fulfill
+    # cannot reliably replay a previously loaded image as a download on Windows.
+    return web.Response(
+        body=base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOC8AAAAASUVORK5CYII="),
+        content_type="image/png",
+        headers={"Content-Disposition": 'attachment; filename="fixture.png"'},
+    )
+
+
 SUPPORT_PERMISSIONS = [
     "workspace.support.view",
     "ticket.queue.view",
@@ -3121,6 +3134,8 @@ def build_app() -> web.Application:
             web.post("/api/web/notifications/preferences", handle_notification_preferences),
             web.get("/api/web/notifications", handle_notifications),
             web.get("/api/web/admin/tech/alerts", handle_admin_tech_alerts),
+            web.get("/api/artifacts/fixture-preview-owner/download", handle_preview_image_fixture),
+            web.get("/api/artifacts/fixture-preview-support/download", handle_preview_image_fixture),
             web.get("/assets/{asset_path:.*}", handle_webapp_asset),
             web.get("/favicon.svg", handle_webapp_public_asset),
             web.get("/ws_ui", handle_ws_ui),

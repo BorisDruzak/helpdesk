@@ -267,6 +267,55 @@ test.beforeEach(async ({ page }) => {
   await installRequesterMocks(page);
 });
 
+for (const width of [1366, 1920, 390]) {
+  test(`requester screenshot preview stays in Helpdesk and preserves the reply at ${width}`, async ({page}, info) => {
+    await page.setViewportSize({width, height: width === 1920 ? 1080 : width === 390 ? 844 : 768});
+    const errors: string[] = []; let downloads = 0;
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+    page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+    page.on("download", () => downloads++);
+    await page.route(`**/api/web/requester/tickets/${ticketCode}`, route => fulfillJson(route, {status: "success", data: {
+      ticket: {ticket_id: ticketId, ticket_code: ticketCode, title: "Проверка скриншотов", status: "waiting_on_user", requester_status_label: "Нужен ваш ответ", actions: {can_send_message: true, can_attach_files: true}},
+      events: [], messages: [
+        {event_id: "fixture-preview-support", from_role: "support", text: "Проверьте настройки", attachments: [{artifact_id: "fixture-preview-support", name: "Решение.png", mime_type: "image/png", url: "/api/artifacts/fixture-preview-support/download"}]},
+        {event_id: "fixture-preview-owner", from_role: "user", text: "Прикладываю скриншот", attachments: [{artifact_id: "fixture-preview-owner", name: "Ошибка.png", mime_type: "image/png"}]},
+      ],
+    }}));
+    await page.goto(`/app/requester/tickets/${ticketCode}`);
+    const reply = page.getByRole("textbox", {name: "Ответ заявителя"});
+    await reply.fill("Черновик не должен пропадать");
+    const preview = page.getByRole("button", {name: "Открыть изображение Ошибка.png"});
+    await preview.scrollIntoViewIfNeeded();
+    await expect(page.getByRole("img", {name: "Миниатюра: Ошибка.png"})).toHaveJSProperty("naturalWidth", 1);
+    await page.screenshot({path: info.outputPath(`requester-thumbnails-${width}.png`)});
+    await preview.click();
+    const dialog = page.getByRole("dialog", {name: "Просмотр изображения: Ошибка.png"});
+    await expect(dialog.getByRole("img", {name: "Ошибка.png", exact: true})).toHaveJSProperty("naturalWidth", 1);
+    const bounds = (await dialog.boundingBox())!;
+    expect(bounds.width).toBeLessThan(width);
+    expect(Math.abs(bounds.x + bounds.width / 2 - width / 2)).toBeLessThan(2);
+    await expect(page).toHaveURL(new RegExp(`/app/requester/tickets/${ticketCode}$`));
+    await page.screenshot({path: info.outputPath(`requester-preview-${width}.png`)});
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(preview).toBeFocused();
+    await expect(reply).toHaveValue("Черновик не должен пропадать");
+    await page.getByRole("button", {name: "Открыть изображение Решение.png"}).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.mouse.click(2, 2); // Native backdrop, outside the centered dialog.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(downloads).toBe(0);
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("link", {name: "Скачать Ошибка.png"}).click();
+    await (await downloadPromise).saveAs(info.outputPath("explicit-download.png"));
+    expect(downloads).toBe(1);
+    await expectNoHorizontalOverflow(page);
+    await expect(reply).toHaveValue("Черновик не должен пропадать");
+    expect(errors).toEqual([]);
+  });
+}
+
 test("requester receives external operator message and status without reload", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));

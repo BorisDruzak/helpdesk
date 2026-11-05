@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ChangeEvent, type RefObject
 import { ArrowDown, LoaderCircle, LockKeyhole, Paperclip, Send } from "lucide-react";
 import type { SupportTicketAttachmentUpload } from "../../../features/queues/api";
 import type { SupportWorkspaceTimelineItem } from "../../../features/queues/support-workspace-model";
-import { ChatAttachment } from "./chat-attachment";
+import { ChatAttachment } from "../../../components/chat-attachment";
 
 export type SimpleSupportConversationProps = {
   items: SupportWorkspaceTimelineItem[]; mode: "public" | "internal"; text: string;
