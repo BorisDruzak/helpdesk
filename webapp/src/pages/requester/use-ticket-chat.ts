@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { ChangeEvent } from "react";
 import { useRef, useState } from "react";
+import { useChatUploads } from "../../components/use-chat-uploads";
 
 import {
   approveRequesterConsent,
@@ -30,7 +31,6 @@ export function useRequesterTicketChat(ticketId: string | undefined) {
   const [messageText, setMessageText] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<Array<PublicTicketAttachment & { name: string }>>([]);
   const [messageSending, setMessageSending] = useState(false);
-  const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [feedbackRating, setFeedbackRating] = useState(5);
@@ -66,24 +66,20 @@ export function useRequesterTicketChat(ticketId: string | undefined) {
     await detailQuery.refetch();
   }
 
-  async function handleAttachmentUpload(event: ChangeEvent<HTMLInputElement>) {
-    if (!ticketId) {
-      return;
-    }
-    const files = Array.from(event.currentTarget.files ?? []);
-    if (!files.length) {
-      return;
-    }
-    setAttachmentUploading(true);
-    setNotice(null);
-    try {
-      const uploaded = await Promise.all(files.map((file) => uploadRequesterTicketAttachment(selectedInternalTicketId ?? ticketId, file)));
-      setPendingAttachments((current) => [...current, ...uploaded.map((item) => attachmentFromUpload(item))]);
-    } catch (exc) {
-      setNotice(requesterErrorMessage(exc, "Не удалось загрузить вложение"));
-    } finally {
-      setAttachmentUploading(false);
-    }
+  const { uploading: attachmentUploading, addFiles: attachFiles } = useChatUploads({
+    scope: selectedInternalTicketId ?? ticketId ?? null,
+    enabled: canSendMessage && canAttachFiles && !messageSending,
+    upload: (file) => uploadRequesterTicketAttachment(selectedInternalTicketId ?? ticketId!, file),
+    onStart: () => setNotice(null), onError: setNotice,
+    errorMessage: (error) => requesterErrorMessage(error, "Не удалось загрузить вложение"),
+    onUploaded: (item, file) => setPendingAttachments(current => [...current, {...attachmentFromUpload(item), name: file.name || item.filename || "Вложение", mime_type: file.type || item.mime_type}]),
+  });
+  function handleAttachmentUpload(event: ChangeEvent<HTMLInputElement>) {
+    attachFiles(Array.from(event.currentTarget.files ?? []));
+    event.currentTarget.value = "";
+  }
+  function removePendingAttachment(id: string) {
+    if (!messageSending) setPendingAttachments(current => current.filter(item => item.artifact_id !== id));
   }
 
   async function handleSendMessage() {
@@ -229,6 +225,8 @@ export function useRequesterTicketChat(ticketId: string | undefined) {
     attachmentInputRef,
     attachmentUploading,
     handleAttachmentUpload,
+    attachFiles,
+    removePendingAttachment,
     handleSendMessage,
     messageSending,
     messageText,

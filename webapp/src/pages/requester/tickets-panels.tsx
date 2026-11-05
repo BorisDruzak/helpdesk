@@ -1,6 +1,7 @@
 import { Paperclip, Send } from "lucide-react";
 import { useId, useState, type ChangeEvent, type MutableRefObject } from "react";
 import { Link } from "react-router-dom";
+import { ChatAttachmentDrafts } from "../../components/chat-file-draft";
 
 import { formatRussianDateTime, formatStatusLabel } from "../../components/ui-page";
 import { requesterTicketNextActionLabel } from "../../features/requester/labels";
@@ -268,6 +269,7 @@ export function TicketReplyComposer({
   messageSending,
   messageText,
   pendingAttachments,
+  removePendingAttachment,
   setMessageText,
 }: {
   attachmentInputRef: MutableRefObject<HTMLInputElement | null>;
@@ -278,6 +280,7 @@ export function TicketReplyComposer({
   messageSending: boolean;
   messageText: string;
   pendingAttachments: Array<PublicTicketAttachment & { name: string }>;
+  removePendingAttachment: (id: string) => void;
   setMessageText: (value: string) => void;
 }) {
   return (
@@ -285,23 +288,16 @@ export function TicketReplyComposer({
       <h3 className="text-lg font-semibold text-slate-950" id="requester-reply-title">Ответить</h3>
       <Textarea
         aria-label="Ответ заявителя"
+        disabled={messageSending}
         className="mt-2 h-20 min-h-16 max-h-40 text-sm"
         onChange={(event) => setMessageText(event.currentTarget.value)}
         onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) { event.preventDefault(); handleSendMessage(); } }}
         value={messageText}
       />
-      <input aria-label="Прикрепить файл к ответу" className="sr-only" onChange={handleAttachmentUpload} ref={attachmentInputRef} type="file" />
-      {pendingAttachments.length ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {pendingAttachments.map((attachment) => (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700" key={attachment.artifact_id}>
-              {attachment.name}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <input aria-label="Прикрепить файл к ответу" className="sr-only" multiple onChange={handleAttachmentUpload} ref={attachmentInputRef} type="file" />
+      <ChatAttachmentDrafts attachments={pendingAttachments} onRemove={removePendingAttachment} disabled={messageSending} uploading={attachmentUploading} />
       <FormActions className="mt-3">
-        <Button disabled={!canAttachFiles || attachmentUploading || messageSending} leadingIcon={<Paperclip className="h-4 w-4" />} onClick={() => attachmentInputRef.current?.click()} type="button" variant="outline">
+        <Button disabled={!canAttachFiles || messageSending} leadingIcon={<Paperclip className="h-4 w-4" />} onClick={() => attachmentInputRef.current?.click()} type="button" variant="outline">
           {attachmentUploading ? "Загружаем..." : "Вложить файл"}
         </Button>
         <Button

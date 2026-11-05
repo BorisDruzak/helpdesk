@@ -90,6 +90,11 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   Requester `pages/requester/ticket-conversation.tsx` reuses this viewer for both
   message senders; its standalone CSS works on direct requester navigation, with
   existing cookie authentication and canonical requester ownership unchanged.
+  Shared `components/chat-file-draft.tsx` adds file-drop/draft grouping and
+  `components/use-chat-uploads.ts` scopes serial uploads to ticket/audience and
+  capabilities, preserving partial success and discarding stale callbacks.
+  Requester `use-ticket-chat.ts` and support `list-page.tsx` send the existing
+  single message with text + attachment refs. No upload/message contract change.
 - `test_support_work.py` covers PostgreSQL competing operators, persisted
   ownership, SLA and administrator access; the no-DB companion covers error
   ordering. Existing FSM, assignment, closure, audit and internal visibility stay

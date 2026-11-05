@@ -136,6 +136,7 @@ import { getTicketsWorkspaceUrlState } from "./url-state";
 import { SimpleSupportQueue, type SimpleQueueFilter } from "./components/simple-support-queue";
 import { SimpleSupportTicket } from "./components/simple-support-ticket";
 import { SimpleSupportConversation } from "./components/simple-support-conversation";
+import { useChatUploads } from "../../components/use-chat-uploads";
 import { SimpleResolutionForm } from "./components/simple-resolution-form";
 
 
@@ -1269,7 +1270,6 @@ export function TicketListPage() {
   const [composerText, setComposerText] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<SupportTicketAttachmentUpload[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [simpleTimelineFilter, setSimpleTimelineFilter] = useState<"messages" | "internal" | "all">("messages");
   useEffect(() => { setSimpleTimelineFilter(composerMode === "internal" ? "internal" : "messages"); }, [selectedTicketId, composerMode]);
@@ -1339,7 +1339,6 @@ export function TicketListPage() {
 
   useLayoutEffect(() => {
     composerGenerationRef.current += 1;
-    setUploadingAttachments(false);
     setAttachmentError(null);
     return () => { composerGenerationRef.current += 1; };
   }, [selectedTicketId, composerMode]);
@@ -1847,33 +1846,19 @@ export function TicketListPage() {
     });
   };
 
-  const handleAttachmentInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const files = Array.from(input.files ?? []);
-    if (!selectedTicketId || files.length === 0) {
-      return;
-    }
-    const ticketId = selectedTicketId;
-    const generation = composerGenerationRef.current;
-    setUploadingAttachments(true);
-    setAttachmentError(null);
-    try {
-      const uploaded: SupportTicketAttachmentUpload[] = [];
-      for (const file of files) {
-        uploaded.push(await uploadSupportTicketAttachment(ticketId, file));
-        if (composerGenerationRef.current !== generation) return;
-      }
-      setPendingAttachments((current) => [...current, ...uploaded]);
-    } catch (error) {
-      if (composerGenerationRef.current === generation) {
-        setAttachmentError(error instanceof Error ? error.message : "Не удалось прикрепить файл");
-      }
-    } finally {
-      if (composerGenerationRef.current === generation) {
-        setUploadingAttachments(false);
-        input.value = "";
-      }
-    }
+  const { uploading: uploadingAttachments, addFiles: attachComposerFiles } = useChatUploads({
+    scope: selectedTicketId ? `${selectedTicketId}:${composerMode}` : null,
+    enabled: Boolean(selectedTicketId) && !messageMutation.isPending && (composerMode === "internal"
+      ? workspaceQuery.data?.detail.actions.can_send_internal_note === true
+      : workspaceQuery.data?.detail.actions.can_send_public_message === true),
+    upload: (file) => uploadSupportTicketAttachment(selectedTicketId!, file),
+    onStart: () => setAttachmentError(null), onError: setAttachmentError,
+    errorMessage: (error) => error instanceof Error ? error.message : "Не удалось прикрепить файл",
+    onUploaded: (item) => setPendingAttachments(current => [...current, item]),
+  });
+  const handleAttachmentInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    attachComposerFiles(Array.from(event.currentTarget.files ?? []));
+    event.currentTarget.value = "";
   };
 
   const toolRunMutation = useMutation({
@@ -3779,7 +3764,7 @@ export function TicketListPage() {
               replyBlockedReason={rawTicket && ["new", "queued", "assigned"].includes(rawTicket.status) ? workspaceQuery.data.detail.actions.take_in_work?.reason : rawTicket && ["resolved", "closed", "canceled"].includes(rawTicket.status) ? "Обращение завершено. Переписка доступна для просмотра." : undefined}
               mode={composerMode} text={composerText} canReply={publicReplyAllowed} canNote={hasPermission("ticket.comment.internal") && internalNoteAllowed}
               onTabChange={setSimpleTimelineFilter}
-              pending={messageMutation.isPending || uploadingAttachments} loading={timelineQuery.isLoading} error={timelineQuery.isError}
+              pending={messageMutation.isPending} uploading={uploadingAttachments} onFiles={attachComposerFiles} loading={timelineQuery.isLoading} error={timelineQuery.isError}
               onTextChange={(text) => { simpleTextDraftsRef.current[composerMode] = text; setComposerText(text); }}
               onModeChange={(mode) => { simpleTextDraftsRef.current[composerMode] = composerText; simpleAttachmentDraftsRef.current[composerMode] = pendingAttachments; setComposerMode(mode); setComposerText(simpleTextDraftsRef.current[mode]); setPendingAttachments(simpleAttachmentDraftsRef.current[mode]); }}
               onSend={sendComposerMessage}

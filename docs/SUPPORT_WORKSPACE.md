@@ -174,6 +174,26 @@ Resolved/closed public conversations show a concise read-only notice instead of
 an unusable editor. Authorized internal notes keep their separate composer and
 draft/attachment state.
 
+## Files in a reply
+
+Requester chat and ordinary support Dialog/Internal notes accept local files
+dropped anywhere over their conversation. Files upload into a draft; sending
+remains explicit. The existing picker accepts multiple files. **Вложения к
+сообщению** groups ready images/files, allows preview/removal and explains that
+they will be sent with the text. One message command carries text and all selected
+`attachment_refs`; file-only messages remain available. Removing a draft item
+does not delete stored history or send a message.
+
+Shared `components/chat-file-draft.tsx` provides the overlay/group. The scoped
+serial queue in `components/use-chat-uploads.ts` accepts repeated drops, retains
+successful files after partial failure and blocks send until uploads finish.
+Ticket, audience, permission change or unmount invalidates late callbacks and
+stops queued work; public and private drafts stay separate. Canonical server
+capabilities, requester ownership and staff work/assignment checks remain
+authoritative. Closed/read-only/history views do not accept uploads. URL/HTML
+drops cannot navigate away or fetch external images; directories are skipped with
+an explanation. Plain text dragging keeps normal editing behavior.
+
 ## Resolution and additional functions
 
 Resolve opens one form using `actions.closure_requirements`. Resolution code is

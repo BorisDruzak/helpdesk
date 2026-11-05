@@ -12,6 +12,7 @@ import { TimelinePanel } from "./tickets-workflow";
 import { useRequesterTicketChat } from "./use-ticket-chat";
 import { RequesterTicketContext, RequesterTicketContextBrief } from "./ticket-context-panel";
 import { RequesterConversation } from "./ticket-conversation";
+import { ChatFileDropFeedback, ChatFileDropOverlay, useChatFileDrop } from "../../components/chat-file-draft";
 
 export function RequesterTicketChatPage() {
   const { ticketId } = useParams();
@@ -35,6 +36,7 @@ function RequesterTicketChat({ ticketId }: { ticketId: string | undefined }) {
   const { detailQuery } = chat;
   const denied = detailQuery.isError && detailQuery.error instanceof RequesterApiError && [401, 403, 404].includes(detailQuery.error.status);
   const ticket = denied ? null : chat.selectedTicket;
+  const fileDrop = useChatFileDrop(!ticket || showDetails || !chat.canSendMessage || !chat.canAttachFiles || chat.messageSending, chat.attachFiles);
   const handling = denied ? null : detailQuery.data?.handling;
   const messages = detailQuery.data?.messages ?? [];
   const events = detailQuery.data?.events ?? [];
@@ -43,7 +45,9 @@ function RequesterTicketChat({ ticketId }: { ticketId: string | undefined }) {
     if (scroller && followMessages.current && !showDetails && !ticket?.requester_resolution_summary && !chat.canClose && !chat.canRate && !chat.canReopen && !chat.pendingConsents.length) scroller.scrollTop = scroller.scrollHeight;
   }, [messages, events, showDetails, ticket?.requester_resolution_summary, chat.canClose, chat.canRate, chat.canReopen, chat.pendingConsents.length]);
   return (
-    <section aria-label="Чат обращения" className="flex min-h-0 flex-1 flex-col bg-slate-50">
+    <section aria-label="Чат обращения" className="chat-file-drop-target flex min-h-0 flex-1 flex-col bg-slate-50" {...fileDrop.handlers}>
+      <ChatFileDropOverlay active={fileDrop.dragging} />
+      <ChatFileDropFeedback message={fileDrop.feedback} />
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
         <div className="min-w-0 w-full">
           <div className="flex flex-wrap items-center justify-between gap-2"><Link className="inline-flex items-center gap-1 text-sm font-semibold text-brand-700" to="/app/requester/tickets"><ArrowLeft className="h-4 w-4" />Все обращения</Link>

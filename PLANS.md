@@ -2903,3 +2903,11 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - State: implementation/review complete.20 component tests and7 browser cases (requester1366/1920/390 plus support4widths) pass, including real HTTP download, Escape/backdrop, focus restoration, preserved draft and no overflow/console errors. Build/workspace/diff checks pass.
 - Complete: exactcf51046d5f864f11fa4ea1dea40164acf2ce0a0b installed canonically after verified154 backup.10source hashes/retired viewer absence/schema154/TLS200/3active services verified. Live own requester T-000058 thumbnail/full420x100 image/same URL/close-focus/console0 confirmed. No new message/upload/status command; staging left running. No required work remains.
 - Evidence: docs/REQUESTER_IMAGE_PREVIEW_ACCEPTANCE_2026-11-05.md and tmp/requester-preview-20261105. Fixture port closed; unrelated edits preserved. Production/Endpoint/native unchanged; full CI not requested.
+
+## Chat file drop and grouped replies (2026-11-05)
+
+- Goal/actor: requester and support can drop screenshots/files over chat, review/remove grouped attachments, and send them with text as one message. Upload is automatic; send remains explicit.
+- Scope: existing authenticated upload/message endpoints and permission/lifecycle guards; no backend/schema/dependency changes. Shared drop/draft UI and scoped serial upload queue; keep partial successes and cancel stale callbacks on ticket/audience change.
+- State: shared drop/group UI and scoped serial upload queue implemented in requester/support. 32 focused unit tests and 11 desktop/mobile browser scenarios passed; build/workspace checks passed. Independent review has no remaining blockers.
+- Next: commit the reviewed candidate, make a verified staging backup, deploy the frozen SHA canonically and verify grouped sending in own synthetic ticket. Preserve real ticket messages and leave staging running.
+- Evidence: tmp/chat-drop-20261105; unrelated local changes, production and Endpoint preserved.

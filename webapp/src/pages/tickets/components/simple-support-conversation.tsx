@@ -3,6 +3,7 @@ import { ArrowDown, LoaderCircle, LockKeyhole, Paperclip, Send } from "lucide-re
 import type { SupportTicketAttachmentUpload } from "../../../features/queues/api";
 import type { SupportWorkspaceTimelineItem } from "../../../features/queues/support-workspace-model";
 import { ChatAttachment } from "../../../components/chat-attachment";
+import { ChatAttachmentDrafts, ChatFileDropFeedback, ChatFileDropOverlay, useChatFileDrop } from "../../../components/chat-file-draft";
 
 export type SimpleSupportConversationProps = {
   items: SupportWorkspaceTimelineItem[]; mode: "public" | "internal"; text: string;
@@ -12,6 +13,7 @@ export type SimpleSupportConversationProps = {
   onTabChange?: (filter: "messages" | "internal" | "all") => void;
   attachments: SupportTicketAttachmentUpload[]; onRemoveAttachment: (id: string) => void;
   inputRef?: RefObject<HTMLInputElement | null>; onUpload?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onFiles?: (files: File[]) => void; uploading?: boolean;
 };
 type ConversationTab = "dialog" | "internal" | "history";
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -47,10 +49,13 @@ export function SimpleSupportConversation(props: SimpleSupportConversationProps)
   function latest() { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; pinnedRef.current = true; setHasNew(false); }
   const isInternal = tab === "internal";
   const allowed = isInternal ? props.canNote : props.canReply;
-  const canSend = allowed && !props.pending && Boolean(props.text.trim() || props.attachments.length);
-  return <section className="simple-conversation" aria-label="Переписка обращения">
+  const canSend = allowed && !props.pending && !props.uploading && Boolean(props.text.trim() || props.attachments.length);
+  const fileDrop = useChatFileDrop(!allowed || props.pending || tab === "history" || (!isInternal && props.publicReadOnly === true), props.onFiles);
+  return <section className="simple-conversation chat-file-drop-target" aria-label="Переписка обращения" {...fileDrop.handlers}>
+    <ChatFileDropOverlay active={fileDrop.dragging} />
+    <ChatFileDropFeedback message={fileDrop.feedback} />
     <div className="simple-tabs simple-conversation__tabs" role="tablist" aria-label="Лента обращения">
-      {([["dialog", "Диалог"], ["internal", "Внутренние заметки"], ["history", "История"]] as const).map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} disabled={props.pending} key={id} onClick={() => selectTab(id)}>{label}</button>)}
+      {([["dialog", "Диалог"], ["internal", "Внутренние заметки"], ["history", "История"]] as const).map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} disabled={props.pending || props.uploading} key={id} onClick={() => selectTab(id)}>{label}</button>)}
     </div>
     {props.loading ? <p className="simple-feed-status" role="status"><LoaderCircle size={14} aria-hidden /> Обновляем ленту…</p> : null}
     {props.error ? <p className="simple-feed-status simple-risk" role="alert">Не удалось обновить ленту. Показаны последние загруженные сообщения.</p> : null}
@@ -86,11 +91,11 @@ export function SimpleSupportConversation(props: SimpleSupportConversationProps)
       {hasNew ? <button className="simple-latest simple-button" type="button" onClick={latest}><ArrowDown size={16} aria-hidden />К новым сообщениям</button> : null}
     </div>
     {tab !== "history" && (isInternal || !props.publicReadOnly) ? <form className="simple-composer" data-internal={isInternal} data-blocked={!allowed} onSubmit={(event) => { event.preventDefault(); if (canSend) { pinnedRef.current = true; props.onSend(); } }}>
-      <div className="simple-composer__heading"><label><span className="sr-only">Режим ответа</span><select aria-label="Режим ответа" disabled={props.pending} value={isInternal ? "internal" : "public"} onChange={(event) => selectTab(event.target.value === "internal" ? "internal" : "dialog")}><option value="public">Ответ сотруднику</option><option value="internal">Внутренняя заметка</option></select></label><span className="simple-muted">{isInternal ? <><LockKeyhole size={13} aria-hidden /> Видит только поддержка</> : "Сообщение увидит сотрудник"}</span></div>
+      <div className="simple-composer__heading"><label><span className="sr-only">Режим ответа</span><select aria-label="Режим ответа" disabled={props.pending || props.uploading} value={isInternal ? "internal" : "public"} onChange={(event) => selectTab(event.target.value === "internal" ? "internal" : "dialog")}><option value="public">Ответ сотруднику</option><option value="internal">Внутренняя заметка</option></select></label><span className="simple-muted">{isInternal ? <><LockKeyhole size={13} aria-hidden /> Видит только поддержка</> : "Сообщение увидит сотрудник"}</span></div>
       {!allowed ? <p className="simple-reply-blocked">{isInternal ? "Внутренние заметки недоступны для вашей роли." : props.replyBlockedReason || "Ответ доступен исполнителю после начала работы."}</p> : null}
       <textarea aria-label={isInternal ? "Внутренняя заметка" : "Сообщение сотруднику"} placeholder={isInternal ? "Написать заметку для поддержки…" : "Написать сообщение сотруднику…"} disabled={!allowed || props.pending} value={props.text} onChange={(event) => props.onTextChange(event.target.value)} rows={2}
         onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) { event.preventDefault(); if (canSend) { pinnedRef.current = true; props.onSend(); } } }} />
-      {props.attachments.length ? <div className="simple-draft-attachments">{props.attachments.map((attachment) => <div className="simple-inline" key={attachment.artifact_id}><Paperclip size={14} aria-hidden /><span>{attachment.name}</span><button className="simple-link" type="button" aria-label={`Убрать вложение ${attachment.name}`} disabled={props.pending} onClick={() => props.onRemoveAttachment(attachment.artifact_id)}>×</button></div>)}</div> : null}
+      <ChatAttachmentDrafts attachments={props.attachments} onRemove={props.onRemoveAttachment} disabled={props.pending} uploading={props.uploading} />
       {props.uploadError ? <p role="alert" className="simple-risk">{props.uploadError}</p> : null}
       <div className="simple-composer__actions">{props.onUpload ? <><input ref={props.inputRef} type="file" multiple hidden onChange={props.onUpload} /><button className="simple-button simple-attach" type="button" disabled={!allowed || props.pending} onClick={() => props.inputRef?.current?.click()}><Paperclip size={16} aria-hidden />Прикрепить файл</button></> : null}
         <span className="simple-keyboard-hint">Ctrl+Enter — отправить</span><button className="simple-button simple-button--primary" type="submit" disabled={!canSend}>{props.pending ? <LoaderCircle size={15} aria-hidden /> : <Send size={15} aria-hidden />}{props.pending ? "Отправляем…" : "Отправить"}</button></div>

@@ -1,6 +1,20 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { TicketResolutionPanel } from "./tickets-panels";
+import { createRef } from "react";
+import { TicketReplyComposer, TicketResolutionPanel } from "./tickets-panels";
+
+it("groups draft images and files with the reply and lets the requester remove one", () => {
+  const remove = vi.fn();
+  render(<TicketReplyComposer attachmentInputRef={createRef<HTMLInputElement>()} attachmentUploading={false} canAttachFiles handleAttachmentUpload={vi.fn()} handleSendMessage={vi.fn()} messageSending={false} messageText="Описание проблемы" setMessageText={vi.fn()} removePendingAttachment={remove} pendingAttachments={[
+    {artifact_id: "shot", name: "Ошибка.png", url: "/api/artifacts/shot/download"},
+    {artifact_id: "log", name: "Журнал.txt", url: "/api/artifacts/log/download"},
+  ]} />);
+  expect(screen.getByRole("region", {name: "Вложения к сообщению"})).toBeVisible();
+  expect(screen.getByRole("button", {name: "Открыть изображение Ошибка.png"})).toBeVisible();
+  fireEvent.click(screen.getByRole("button", {name: "Убрать вложение Журнал.txt"}));
+  expect(remove).toHaveBeenCalledWith("log");
+  expect(screen.getByRole("textbox", {name: "Ответ заявителя"})).toHaveValue("Описание проблемы");
+});
 
 function panelProps() {
   return { actionSubmitting: false, canClose: false, canRate: false, canReopen: false,

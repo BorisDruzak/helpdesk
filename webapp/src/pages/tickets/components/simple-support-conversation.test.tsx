@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { SupportTicketDetailPayload } from "../../../features/queues/api";
 import { mapSupportTimelineEntries } from "../../../features/queues/support-workspace-mappers";
@@ -7,6 +7,42 @@ import { SimpleSupportConversation } from "./simple-support-conversation";
 const raw = (extra: Record<string, unknown>) => ({ event_type: "chat_message", visibility: "public", text: "Здравствуйте", attachments: [], from_role: "support", message_id: null, event_id: null, ts: null, direction: "to_agent", reply_to: null, ...extra }) as SupportTicketDetailPayload["timeline"][number];
 
 describe("clean support conversation", () => {
+  it("accepts a dropped screenshot and document into the same reply draft", () => {
+    const onFiles = vi.fn();
+    render(<SimpleSupportConversation items={[]} text="Описание ошибки" onTextChange={vi.fn()} onModeChange={vi.fn()} mode="public" canReply canNote onSend={vi.fn()} pending={false} attachments={[]} onRemoveAttachment={vi.fn()} onFiles={onFiles} />);
+    const files = [new File(["image"], "Ошибка.png", {type: "image/png"}), new File(["log"], "Журнал.txt", {type: "text/plain"})];
+    const dataTransfer = {files, types: ["Files"]};
+    const chat = screen.getByRole("region", {name: "Переписка обращения"});
+    fireEvent.dragEnter(chat, {dataTransfer});
+    expect(screen.getByText("Отпустите файлы, чтобы прикрепить к сообщению")).toBeVisible();
+    fireEvent.drop(chat, {dataTransfer});
+    expect(onFiles).toHaveBeenCalledWith(files);
+    expect(screen.getByRole("textbox")).toHaveValue("Описание ошибки");
+  });
+  it("prevents file navigation without uploading when the operator cannot reply", () => {
+    const onFiles = vi.fn();
+    render(<SimpleSupportConversation items={[]} text="" onTextChange={vi.fn()} onModeChange={vi.fn()} mode="public" canReply={false} canNote onSend={vi.fn()} pending={false} attachments={[]} onRemoveAttachment={vi.fn()} onFiles={onFiles} />);
+    const event = createEvent.drop(screen.getByRole("region", {name: "Переписка обращения"}), {dataTransfer: {files: [new File(["image"], "Ошибка.png")], types: ["Files"]}});
+    fireEvent(screen.getByRole("region", {name: "Переписка обращения"}), event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onFiles).not.toHaveBeenCalled();
+  });
+  it("blocks URL navigation while preserving a draft and ignores directories in mixed drops", () => {
+    const onFiles = vi.fn();
+    render(<SimpleSupportConversation items={[]} text="Несохранённый ответ" onTextChange={vi.fn()} onModeChange={vi.fn()} mode="public" canReply canNote onSend={vi.fn()} pending={false} attachments={[]} onRemoveAttachment={vi.fn()} onFiles={onFiles} />);
+    const chat = screen.getByRole("region", {name: "Переписка обращения"});
+    const urlDrop = createEvent.drop(chat, {dataTransfer: {types: ["text/uri-list"], files: []}});
+    fireEvent(chat, urlDrop); expect(urlDrop.defaultPrevented).toBe(true);
+    expect(onFiles).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveValue("Несохранённый ответ");
+    const folder = new File([], "folder"); const image = new File(["png"], "shot.png");
+    fireEvent.drop(chat, {dataTransfer: {types: ["Files"], files: [folder, image], items: [
+      {kind: "file", webkitGetAsEntry: () => ({isDirectory: true}), getAsFile: () => folder},
+      {kind: "file", webkitGetAsEntry: () => ({isDirectory: false}), getAsFile: () => image},
+    ]}});
+    expect(onFiles).toHaveBeenCalledWith([image]);
+    expect(screen.getByText(/Папки не прикрепляются/)).toBeVisible();
+  });
   const imageProps = (attachment: Record<string, unknown>) => ({items: mapSupportTimelineEntries([raw({event_id: 55, attachments: [attachment]})]), text: "", onTextChange: vi.fn(), onModeChange: vi.fn(), mode: "public" as const, canReply: true, canNote: true, onSend: vi.fn(), pending: false, attachments: [], onRemoveAttachment: vi.fn()});
   it("opens a screenshot in the current page and keeps download as an explicit action", () => {
     render(<SimpleSupportConversation {...imageProps({artifact_id: "image-1", name: "Ошибка.png", mime_type: "image/png", url: "/api/artifacts/image-1/download"})} />);
