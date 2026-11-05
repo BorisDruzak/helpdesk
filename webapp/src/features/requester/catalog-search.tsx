@@ -51,7 +51,10 @@ export function CatalogSearch({ availableOfferings, fallbackOffering, fallbackEn
     <div id="requester-search-status" role="status" aria-live="polite" className="mt-2 text-sm text-slate-600">
       {!query.trim() ? "Нажмите на поле, чтобы открыть все категории, или опишите проблему своими словами." : updating ? "Ищем услуги и проблемы…" : null}
       {query.trim() && !updating && !search.isError && search.data && !results.length
-        ? "Услуга или проблема не найдена. Выберите «Не знаю» — поддержка поможет определить нужную услугу." : null}
+        ? fallbackOffering
+          ? "Услуга или проблема не найдена. Выберите «Не знаю» — поддержка поможет определить нужную услугу."
+          : "Услуга или проблема не найдена. Попробуйте другое название или выберите доступную форму помощи."
+        : null}
     </div>
     <div id="requester-catalog-choices">
     {browsing && !query.trim() && categories.length ? <CatalogCategories key={browseKey ?? selectedKey} categories={categories} selectedKey={browseKey ?? selectedKey}
