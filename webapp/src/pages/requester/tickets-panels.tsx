@@ -136,6 +136,7 @@ export function TicketResultSummary({ ticket }: { ticket: AuthenticatedRequester
 }
 
 export function TicketResolutionPanel({
+  compact = false,
   actionSubmitting,
   canClose,
   canRate,
@@ -156,6 +157,7 @@ export function TicketResolutionPanel({
   setReopenReason,
   submitFeedback,
 }: {
+  compact?: boolean;
   actionSubmitting: boolean;
   canClose: boolean;
   canRate: boolean;
@@ -184,15 +186,15 @@ export function TicketResolutionPanel({
     return null;
   }
   return (
-    <section className="rounded-panel border border-slate-200 bg-white p-4">
-      <h3 className="text-lg font-semibold text-slate-950">Решение обращения</h3>
+    <section className={`rounded-panel border border-slate-200 bg-white ${compact ? "flex flex-wrap items-center gap-2 p-3" : "p-4"}`}>
+      <h3 className={`${compact ? "w-full text-sm" : "text-lg"} font-semibold text-slate-950`}>Решение обращения</h3>
       {canClose ? (
-        <div><p className="mt-2 text-sm text-slate-600">Проверьте результат. Обращение закроется после вашего подтверждения.</p><Button className="mt-3" disabled={actionSubmitting} onClick={closeTicket} type="button">
+        <div className={compact ? "contents" : undefined}><p className={compact ? "sr-only" : "mt-2 text-sm text-slate-600"}>Проверьте результат. Обращение закроется после вашего подтверждения.</p><Button className={compact ? undefined : "mt-3"} disabled={actionSubmitting} onClick={closeTicket} type="button">
           Подтвердить решение
         </Button></div>
       ) : null}
       {canRate ? (
-        <div className="mt-3">
+        <div className={compact ? ratingOpen ? "w-full" : undefined : "mt-3"}>
           <Button aria-expanded={ratingOpen} aria-controls={ratingId} onClick={() => setRatingOpen(open => !open)} type="button" variant="outline">Оценить решение</Button>
           {ratingOpen ? <div id={ratingId} className="mt-3 grid gap-3">
           <FieldShell label="Оценка обращения">
@@ -231,7 +233,7 @@ export function TicketResolutionPanel({
         </div>
       ) : null}
       {canReopen ? (
-        <div className="mt-3">
+        <div className={compact ? reopenOpen ? "w-full" : undefined : "mt-3"}>
           <Button aria-expanded={reopenOpen} aria-controls={reopenId} onClick={() => setReopenOpen(open => !open)} type="button" variant="outline">Проблема не решена</Button>
           {reopenOpen ? <div id={reopenId} className="mt-3 grid gap-3">
           <FieldShell label="Причина возврата">

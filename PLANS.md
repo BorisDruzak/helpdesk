@@ -2929,3 +2929,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - State: implementation and independent review complete; incorrect Linux intent fixed through failing regression and browser click-through. 64 component checks, build/workspace checks, 11 initial browser cases and final5 home cases at1366/1440/1488/1920/390 pass. No unexpected browser errors/requests or horizontal overflow.
 - Complete: exact881cf704f3b28cd41c9a42c71fd452e4a051c058 deployed canonically after verified154 backup;15source hashes/schema154/strictTLS200/3active services match. Live home/list/profile and Windows/Linux guide checked with console0 and HTTP200; no submission or business-count change. Staging remains available; no required task work remains.
 - Handoff: docs/superpowers/plans/2026-11-05-requester-home-redesign.md; docs/REQUESTER_HOME_DESIGN_QA_2026-11-05.md; private evidence tmp/requester-home-20261105. Production/Endpoint unchanged; full CI not requested.
+
+
+## Requester confirmation controls (2026-11-05)
+
+- Goal: employee always sees solution decisions after scrolling to the end of chat.
+- Cause: real T-000075 is resolved/pending; controls were before messages inside the transcript scroller while the footer showed a read-only notice.
+- Fix: compact bounded footer outside history, also available in description view; existing action flags/access denial preserved. No real ticket decision submitted.
+- Verification:25component cases, build/workspace checks,3browser viewport cases passed; confirmation/reopen dispatch, rating expansion, cached401/403/404, long-history scroll and no overflow covered. Independent review has no blockers.
+- Next: verified154 staging backup, canonical exact-SHA install and remote/browser acceptance; preserve unrelated work and leave staging available.
+- Evidence: docs/REQUESTER_CONFIRM_CONTROLS_2026-11-05.md and tmp/requester-confirm-controls-20261105. Task is frozen with a private index and its own branch to avoid shared Studio staging.
