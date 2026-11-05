@@ -23,7 +23,7 @@
 - [x] Implement scoped requester shell, home actions/list/readiness and Windows/Linux guide without new dependencies or APIs.
 - [x] Run focused tests, build, workspace verification and read-only review; update canonical docs/CODEMAP.
 - [x] Validate built-browser fixtures at 1366/1920/mobile: actions, states, no overflow, instructions and console/network.
-- [ ] Freeze only task files in a conventional commit; back up staging, use canonical installer and verify exact source hashes/TLS/runtime/read-only browser.
+- [x] Freeze only task files in a conventional commit; back up staging, use canonical installer and verify exact source hashes/TLS/runtime/read-only browser.
 
 ## Verification / handoff
 
@@ -33,5 +33,10 @@ final Linux unbound fixture rerun passed at all five widths. Review found an inc
 fixed through a failing regression and click-through coverage. Visual comparison
 identified undersized type; corrected and recaptured, design QA passed.
 Baseline branch `codex/ui-support-001`, HEAD `ff8db7ec972745fe0b0731a93380942b5eda157b`;
-unrelated Studio/clipboard/doc work remains untouched. Staging snapshot matches that
-SHA, schema154, all three services active. Evidence: `tmp/requester-home-20261105`.
+unrelated Studio/clipboard/doc work remains untouched. Runtime now matches
+`881cf704f3b28cd41c9a42c71fd452e4a051c058`, schema154, all three services active.
+Verified backup, 15 source hashes, strict-TLS health200 and read-only live browser
+home/list/profile/Windows/Linux acceptance pass. Business counts unchanged; no
+profile/ticket/binding submitted. No required task work remains.
+Evidence: `tmp/requester-home-20261105` and
+`docs/REQUESTER_HOME_STAGING_ACCEPTANCE_2026-11-05.md`.
