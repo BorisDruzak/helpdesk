@@ -2860,7 +2860,7 @@ Goal: Show status, specialist, response/resolution SLA, device and public progre
 Scope: Owner-safe detail projection and usable responsive requester chat; existing polling and actions.
 Constraints: Staging only, no business/identity/grant changes, preserve unrelated dirty state and drafts.
 Decisions: Shared canonical timer projection; safe handling sibling after ownership check; public events in conversation, no raw diagnostics or internal notes.
-Current State: Implementation and independent review complete;29 pure backend,2 disposable PostgreSQL/API and27 frontend tests pass; built desktop/mobile, polling/draft and503/404 cases verified.
-Next Steps: Freeze task-only commit, canonical staging release, source/TLS/live-browser readback and acceptance record. No schema or grant changes.
-Verification: Build/workspace/diff checks pass. Owner404 and private-event flood regressions pass. Fresh verified staging backup at schema153; shared support timer contract retained.
-Handoff: docs/superpowers/specs/2026-11-05-requester-chat-context-design.md and matching plan. Return-link0554e70b0d4c679173d502af6000cc53ac17f27f already deployed; binding diagnosis403 and production-origin local agent remain separate with no permission/config writes.
+Current State: Complete. Frozen1ba7c8166e1d0317479a965dcf63b1b7d2accd3a deployed canonically; live own-ticket browser accepted.29 pure backend,2 isolated PostgreSQL/API,27 frontend, build/workspace/browser and independent review pass.
+Next Steps: No required chat implementation remains. Staging stays running. Binding remains separately diagnosed configuration/environment mismatch; production acceptance is not claimed.
+Verification: Fresh verified backup; nine source hashes match frozen Git, schema153 unchanged, strict TLShealth200, three services active and five business-table seals unchanged. Live console0; mobile/polling/draft/error fixtures pass; preview stopped.
+Handoff: docs/REQUESTER_CHAT_ACCEPTANCE_2026-11-05.md, matching spec/plan, private tmp/requester-chat-context-20261105. Return-link0554e70b0d4c679173d502af6000cc53ac17f27f accepted; login bdryzhak confirmed. Production/agent/grants unchanged; unrelated dirty work preserved.

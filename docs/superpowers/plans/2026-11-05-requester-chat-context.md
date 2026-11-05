@@ -23,10 +23,10 @@ TanStack Query5.99.2, current Tailwind/design system. No dependency/schema chang
    events, role classification and no duplicate/access-code message. Update
    requester types and focused chat/context/timeline components, retain resolution,
    composer/drafts, refresh and actions. Cover missing/paused/completed/late SLA.
-3. [ ] Browser desktop/mobile evidence on the built bundle and real authorized
+3. [x] Browser desktop/mobile evidence on the built bundle and real authorized
    requester-owned ticket where available; no business mutations on user tickets.
    Check overflow, sticky composer, change refresh, errors and safe labels.
-4. [ ] Update requester contract/CODEMAP, own PLANS section, focused tests/build/
+4. [x] Update requester contract/CODEMAP, own PLANS section, focused tests/build/
    workspace/diff checks; independent review, exact committed canonical staging
    release and private backup. Record accepted SHA and service/data preservation.
 
@@ -45,4 +45,8 @@ context, zero page exceptions and no horizontal overflow.503 retains chat/draft;
 404 hides cached content. The initial hidden-target TypeError and inverse
 private-event flood were reproduced RED and covered by passing regressions.
 Independent final review found no remaining code blocker; API/CODEMAP updated.
-Deployment and real-session acceptance remain pending at the frozen-code commit.
+Frozen1ba7c8166e1d0317479a965dcf63b1b7d2accd3a deployed canonically to staging;
+source nine-file hash, schema153, strict TLShealth200, three active services and
+five business table seals verified. Live own-ticket requester page accepted,
+console error/warning list empty. No business mutation. Acceptance:
+docs/REQUESTER_CHAT_ACCEPTANCE_2026-11-05.md. Staging remains running; preview stops.
