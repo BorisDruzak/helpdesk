@@ -238,7 +238,7 @@ async def test_policy_health_ok_does_not_hide_processing_blocker(monkeypatch, mi
         "resolved_policies": {key: {"configured": True} for key in ("closure", "visibility") if key != missing}},
         "policies": {}, "queues": [{"id": 1, "is_active": True}] + ([{"id": 2, "is_active": False}] if missing == "routing_inactive" else []), "service": {"lifecycle_status": "published", "visibility": "public"},
         "offering": {"lifecycle_status": "published", "visibility": "public", "request_template_key": "printer"}, "taxonomy": []}
-    row = SimpleNamespace(archived=False, category_id=None, offering_full_code="workplace.printer")
+    row = SimpleNamespace(id="scenario", archived=False, category_id=None, offering_full_code="workplace.printer")
     draft = SimpleNamespace(definition=definition().model_dump(mode="json"))
     if missing == "selected_sla":
         from tickets import request_scenario_processing

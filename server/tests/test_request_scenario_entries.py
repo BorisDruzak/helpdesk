@@ -168,7 +168,7 @@ async def test_required_canonical_data_bypass_blocks_publication(monkeypatch):
         'offering': {'visibility': 'public', 'lifecycle_status': 'published', 'request_template_key': 'printer'}, 'taxonomy': []}
     source['effective_template']['resolved_policies'] = {'closure': {'configured': True}, 'visibility': {'configured': True}}
     result = await module.ScenarioPublicationService(SimpleNamespace(session=None))._assess(
-        SimpleNamespace(archived=False, category_id=None), SimpleNamespace(definition=raw), source)
+        SimpleNamespace(id="scenario", archived=False, category_id=None), SimpleNamespace(definition=raw), source)
     assert any(item['reported_context'] for item in seen)
     assert any(item['reported_context'] is None for item in seen)
     assert result['readiness']['can_publish'] is False

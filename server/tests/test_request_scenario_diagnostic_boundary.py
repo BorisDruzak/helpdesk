@@ -69,6 +69,6 @@ async def test_imported_file_field_has_explicit_publication_blocker():
     raw["blocks"][0]["fields"][0]["type"] = "file"
     source = {"effective_template": {}, "policies": {}, "queues": [], "taxonomy": [], "service": {}, "offering": {}}
     result = await ScenarioPublicationService(SimpleNamespace(session=None))._assess(
-        SimpleNamespace(archived=False, category_id=None), SimpleNamespace(definition=raw), source)
+        SimpleNamespace(id="scenario", archived=False, category_id=None), SimpleNamespace(definition=raw), source)
     assert result["readiness"]["can_publish"] is False
     assert "attachments_unsupported" in {issue["code"] for issue in result["readiness"]["issues"]}
