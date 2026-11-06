@@ -3,6 +3,37 @@ import tarfile
 import textwrap
 
 import scripts.deploy_helpdesk_release as deploy_release
+
+
+def test_expected_current_release_is_checked_before_stopping_staging_services():
+    from scripts.helpdesk_remote_profile import RemoteProfile
+    from scripts.deploy_helpdesk_release import remote_install_command
+    profile = RemoteProfile.from_environment({"HELPDESK_REMOTE_ROOT": "/opt/helpdesk-staging/current", "HELPDESK_SERVER_SERVICE": "helpdesk-staging.service", "HELPDESK_CONTROL_SERVICE": ""})
+    previous = "1" * 40
+    command = remote_install_command(profile, "2" * 40, "/tmp/candidate.tar", expected_current_sha=previous)
+    guard = "test \"$(sudo readlink -f /opt/helpdesk-staging/current)\" = /opt/helpdesk-staging/releases/helpdesk-" + previous
+    assert command.count(guard) == 3
+    assert command.index(guard) < command.index("sudo systemctl stop helpdesk-staging.service")
+    assert command.rindex(guard) < command.index("sudo ln -sfn")
+    assert command.startswith("set -eu ; sudo flock --exclusive --timeout 300 /run/lock/helpdesk-staging.service.deploy.lock bash -c ")
+
+
+def test_remote_install_lock_serializes_competing_selector_changes(tmp_path):
+    import shutil
+    import subprocess
+    import shlex
+    import pytest
+    from scripts.deploy_helpdesk_release import locked_install_command
+    if not shutil.which("flock") or not shutil.which("bash"):
+        pytest.skip("Linux flock proof runs during staging acceptance")
+    selector = tmp_path / "selector"; selector.write_text("old")
+    body = f'test "$(cat {shlex.quote(str(selector))})" = old; sleep 0.2; printf new > {shlex.quote(str(selector))}'
+    command = locked_install_command("set -eu; " + body, str(tmp_path / "install.lock"))
+    first = subprocess.Popen(command, shell=True)
+    second = subprocess.Popen(command, shell=True)
+    statuses = sorted([first.wait(timeout=5), second.wait(timeout=5)])
+    assert statuses == [0, 1]
+    assert selector.read_text() == "new"
 from scripts.deploy_helpdesk_release import (
     WORKSPACE,
     _ssh_base,

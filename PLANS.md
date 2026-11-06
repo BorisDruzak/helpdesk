@@ -3026,3 +3026,11 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verified:147focusedPython/6browser cases, workspace/diff/build and independent review pass. Fresh actual32active/47historical exact patterns accepted; different retired radio pattern guarded with no sessions. Broader legacy noDB fixture failures documented separately.
 - Next: exact immutable staging install with backup, realPG batch rollback, canonical32map publication/idempotence, preserved session/assets/tickets receipts and live browser acceptance.
 - Evidence: docs/OPTIONAL_SCREENSHOTS_2026-11-06.md and tmp/optional-screenshots-20261106. Private index preserves shared HEAD/index and prior accepted fixes.
+
+## Bell and Web Push notifications (2026-11-06)
+
+- Goal/scope: chat messages and status changes in the shared bell and browser, including a closed tab.
+- Implemented: transactional event-to-notification fanout, actor-scoped SQL reads/counts, durable payload-free VAPID queue, browser opt-in/out and notification-only worker with deduplication/session checks. No new dependencies or Endpoint contracts.
+- Verified: 48 focused backend, 28 frontend and 7 full-Chromium fixture cases; build, workspace, diff, one Alembic head 156, inventory and cleanup-profile audits. Requester/support desktop/mobile screenshots inspected; independent review findings fixed.
+- Pending: isolated PostgreSQL migration/rollback/concurrency acceptance (test tunnel defaults to example.test), real external-provider delivery and reviewed staging/release activation with a private VAPID key. Production unchanged by this task.
+- Handoff/evidence: docs/BROWSER_NOTIFICATIONS.md and docs/superpowers/plans/2026-11-06-browser-notifications.md. Preserve concurrent/unrelated dirty changes; no commit/push.

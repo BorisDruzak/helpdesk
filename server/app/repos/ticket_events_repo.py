@@ -274,6 +274,10 @@ class TicketEventsRepo:
                 f"event_type={event_type} agent_seq={agent_seq} created_at={created_at_result}"
             )
             
+            # Same transaction as the deduplicated event: no phantom or lost alerts.
+            if event_type in {"chat_message", "status_changed"}:
+                from tickets.browser_notifications import enqueue_event_notifications
+                await enqueue_event_notifications(self, ticket_id, event_id_result, event_type, payload)
             return (event_id_result, created_at_result)
         
         except IntegrityError as e:

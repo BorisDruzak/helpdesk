@@ -34,6 +34,8 @@ tables = [
   "ticket_feedback",
   "ticket_kb_links",
   "ticket_links",
+  "web_push_deliveries",
+  "web_push_subscriptions",
   "ticket_notification_prefs",
   "ticket_notifications",
   "ticket_public_sessions",

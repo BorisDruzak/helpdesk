@@ -3,6 +3,11 @@
 """
 
 from aiohttp import web
+from web_api.push_handlers import (
+    handle_push_config, handle_push_subscribe, handle_push_status,
+    handle_push_unsubscribe, handle_push_messages, handle_push_acknowledge,
+)
+from static_pages.webapp_assets import handle_webapp_notification_worker
 from web_api.admin_endpoint_handlers import (
     handle_admin_endpoint_devices, handle_admin_endpoint_device, handle_admin_endpoint_context_refresh,
     handle_admin_endpoint_collection, handle_admin_endpoint_history, handle_admin_endpoint_compare,
@@ -546,6 +551,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/', handle_index),
         web.get('/favicon.ico', handle_favicon),
         web.get('/favicon.svg', handle_webapp_public_asset),
+        web.get('/helpdesk-notifications-sw.js', handle_webapp_notification_worker),
         web.get('/assets/{asset_path:.*}', handle_webapp_asset),
         web.get('/app', handle_webapp_page),
         web.get('/app/{tail:.*}', handle_webapp_page),
@@ -949,6 +955,12 @@ def setup_routes(app: web.Application) -> None:
         web.put('/api/web/settings/workflow_profiles', handle_web_settings_workflow_profiles_put),
         web.get('/api/web/notifications', handle_notifications_list),
         web.get('/api/web/notifications/unread_count', handle_notifications_unread_count),
+        web.get('/api/web/notifications/push/config', handle_push_config),
+        web.post('/api/web/notifications/push/subscribe', handle_push_subscribe),
+        web.post('/api/web/notifications/push/status', handle_push_status),
+        web.post('/api/web/notifications/push/unsubscribe', handle_push_unsubscribe),
+        web.post('/api/web/notifications/push/messages', handle_push_messages),
+        web.post('/api/web/notifications/push/acknowledge', handle_push_acknowledge),
         web.post('/api/web/notifications/read_all', handle_notifications_read_all),
         web.get('/api/web/notifications/preferences', handle_notification_preferences_get),
         web.post('/api/web/notifications/preferences', handle_notification_preferences_post),

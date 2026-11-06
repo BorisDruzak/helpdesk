@@ -1311,6 +1311,7 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
         payload: dict[str, Any] = {
             "message_id": message_id,
             "sender_role": "user",
+            "sender_actor_id": auth_context.actor_id,
             "sender_display_name": auth_context.actor_id,
             "from": "user",
             "text": text,

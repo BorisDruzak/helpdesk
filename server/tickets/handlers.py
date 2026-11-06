@@ -1695,6 +1695,7 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
         payload = {
             "message_id": message_id,
             "sender_role": sender_role,
+            "sender_actor_id": auth_context.actor_id,
             "from": sender_role,
             "text": text,
             "visibility": visibility,
@@ -2804,15 +2805,16 @@ async def handle_notifications_list(request: web.Request) -> web.Response:
     unread_only = request.query.get("unread_only") == "true"
     async with get_session() as session:
         repo = NotificationRepo(session)
-        rows = await repo.list_by_actor(auth_context.actor_id, limit=limit, offset=offset, unread_only=unread_only)
-        return _json_ok(notifications=serialize_datetime_recursive(rows))
+        rows = await repo.list_by_actor(auth_context.actor_id, limit=limit, offset=offset, unread_only=unread_only, auth_context=auth_context)
+        from tickets.browser_notifications import notification_to_dict
+        return _json_ok(notifications=[notification_to_dict(row, requester=auth_context.actor_role == "user") for row in rows])
 
 
 async def handle_notifications_unread_count(request: web.Request) -> web.Response:
     auth_context = _auth(request)
     async with get_session() as session:
         repo = NotificationRepo(session)
-        return _json_ok(unread_count=await repo.unread_count(auth_context.actor_id))
+        return _json_ok(unread_count=await repo.unread_count(auth_context.actor_id, auth_context=auth_context))
 
 
 async def handle_notifications_read_all(request: web.Request) -> web.Response:

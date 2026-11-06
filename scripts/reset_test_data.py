@@ -287,6 +287,7 @@ def build_clear_tables(actual_tables: Iterable[str]) -> set[str]:
     clear.update(table for table in actual if table.startswith("device_"))
     clear.update(table for table in actual if table.startswith("observer_"))
     clear.update(table for table in actual if table.startswith("ticket_") and table not in TICKET_KEEP_TABLES)
+    clear.update(table for table in actual if table.startswith("web_push_"))
     clear.update(table for table in actual if table.startswith("problem_") and table not in PROBLEM_KEEP_TABLES)
     clear.update(table for table in actual if table.startswith("change_") and table not in CHANGE_KEEP_TABLES)
     clear.update(EXPLICIT_CLEAR_TABLES & actual)

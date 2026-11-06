@@ -231,6 +231,7 @@ async def notify_ticket_event(
     initiator_id: Optional[str] = None,
     prefs_repo: Optional["NotificationPrefsRepo"] = None,
     channel_provider: Optional[ExternalNotificationProvider] = None,
+    raise_on_error: bool = False,
 ) -> None:
     """
     Create notification rows for resolved recipients.
@@ -269,6 +270,8 @@ async def notify_ticket_event(
                 payload=payload,
             )
         except Exception as exc:
+            if raise_on_error:
+                raise
             logger.warning(
                 f"[NotificationService] create failed actor_id={actor_id} ticket_id={ticket_id}: {exc}"
             )

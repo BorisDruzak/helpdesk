@@ -1367,6 +1367,8 @@ FULL_CLEANUP_TABLES = (
     "ticket_links",
     "ticket_kb_links",
     "ticket_worklogs",
+    "web_push_deliveries",
+    "web_push_subscriptions",
     "ticket_notifications",
     "ticket_notification_prefs",
     "ticket_public_sessions",

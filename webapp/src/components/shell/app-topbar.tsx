@@ -1,8 +1,7 @@
-import { Bell, ChevronDown, CircleUserRound, LogOut } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, CircleUserRound, LogOut } from "lucide-react";
 import type { ChangeEvent } from "react";
-import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { NotificationBell } from "../../features/notifications/notification-bell";
 
 import { SearchField } from "../ui/search-field";
 import { Button } from "../ui/button";
@@ -23,20 +22,6 @@ type AppTopbarProps = {
   workspaceValue: string;
 };
 
-async function fetchUnreadNotificationCount(): Promise<number> {
-  const response = await fetch("/api/web/notifications/unread_count", {
-    credentials: "same-origin"
-  });
-  if (!response.ok) {
-    return 0;
-  }
-  const payload = (await response.json()) as { status?: string; unread_count?: number };
-  if (payload.status !== "ok") {
-    return 0;
-  }
-  return Number(payload.unread_count ?? 0);
-}
-
 export function AppTopbar({
   onLogout,
   onWorkspaceChange,
@@ -46,34 +31,13 @@ export function AppTopbar({
   workspaceOptions,
   workspaceValue
 }: AppTopbarProps) {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const isAdminWorkspace = location.pathname.startsWith("/app/admin");
-
-  const unreadNotificationsQuery = useQuery({
-    queryKey: ["shell-notifications-unread"],
-    queryFn: fetchUnreadNotificationCount,
-    retry: false,
-    refetchInterval: 15_000
-  });
-
-  const unreadCount = unreadNotificationsQuery.data ?? 0;
-  const notificationCount = unreadCount;
-
   if (workspaceValue === "requester") return (
     <header className="requester-topbar">
       {workspaceOptions.length > 1 ? <Select aria-label="Рабочая зона" className="h-10 max-w-full bg-transparent text-sm text-slate-600" onChange={onWorkspaceChange} value={workspaceValue}>
         {workspaceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </Select> : <span className="text-sm text-slate-500">Кабинет сотрудника</span>}
       <div className="requester-topbar__account">
-        <div className="relative">
-          <button aria-label="Уведомления" aria-expanded={notificationsOpen} className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-brand-50" type="button" onClick={() => setNotificationsOpen((value) => !value)}>
-            <Bell aria-hidden="true" className="h-4 w-4" />
-            {notificationCount > 0 ? <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-brand-600"><span className="sr-only">Новых событий: {notificationCount}</span></span> : null}
-          </button>
-          {notificationsOpen ? <div className="requester-topbar__menu"><p className="mb-3 font-semibold">{notificationCount ? `Новых событий: ${notificationCount}` : "Новых событий нет"}</p><Link className="text-brand-700 underline" onClick={() => setNotificationsOpen(false)} to="/app/requester/tickets">Мои обращения</Link></div> : null}
-        </div>
+        <NotificationBell requester userLogin={userLogin} />
         <details className="relative">
           <summary aria-label="Меню профиля" className="flex cursor-pointer list-none items-center gap-2"><span className="requester-topbar__avatar">{userLogin.slice(0, 2).toUpperCase()}</span><span className="hidden sm:inline">{userLogin}</span></summary>
           <div className="requester-topbar__menu"><Link className="block rounded px-3 py-2 hover:bg-brand-50" to="/app/requester/profile">Мой профиль</Link><button className="w-full rounded px-3 py-2 text-left hover:bg-brand-50" type="button" onClick={onLogout}>Выйти</button></div>
@@ -111,45 +75,7 @@ export function AppTopbar({
               <SearchField placeholder={searchPlaceholder} />
             </div>
 
-            <div className="relative">
-              <button
-                aria-label="Уведомления"
-                className="relative flex h-11 w-11 items-center justify-center rounded-pill border border-border bg-white text-slate-500 transition-colors hover:border-brand-200 hover:text-brand-700"
-                onClick={() => setNotificationsOpen((value) => !value)}
-                type="button"
-              >
-                <Bell className="h-4 w-4" />
-                {notificationCount > 0 ? (
-                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                    {notificationCount > 99 ? "99+" : notificationCount}
-                  </span>
-                ) : null}
-              </button>
-
-              {notificationsOpen ? (
-                <div className="absolute right-0 top-12 z-30 w-[min(340px,calc(100vw-2rem))] overflow-hidden rounded-panel border border-border bg-white shadow-soft">
-                  <div className="border-b border-border px-4 py-3">
-                    <p className="text-sm font-semibold text-slate-950">Уведомления</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {notificationCount > 0 ? `Новых событий: ${notificationCount}` : "Новых событий нет"}
-                    </p>
-                  </div>
-
-                  <div className="px-4 py-3">
-                    <button
-                      className="w-full rounded-xl border border-border px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
-                      onClick={() => {
-                        setNotificationsOpen(false);
-                        navigate(isAdminWorkspace ? "/app/admin/settings" : "/app/settings");
-                      }}
-                      type="button"
-                    >
-                      Тикетные уведомления: {unreadCount}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <NotificationBell requester={false} userLogin={userLogin} />
 
             <div className="hidden items-center gap-3 rounded-panel border border-border bg-white px-3 py-2 md:flex">
               <div className="flex h-9 w-9 items-center justify-center rounded-panel bg-brand-100 text-brand-800">

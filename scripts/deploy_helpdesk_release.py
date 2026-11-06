@@ -30,6 +30,11 @@ def release_path(profile: RemoteProfile, commit: str, *, release_id: str | None 
     return f"{deployment_root}/releases/helpdesk-{identifier}"
 
 
+def locked_install_command(command: str, lock_path: str) -> str:
+    """Hold one host lock for checks, migration, selector switch and restart."""
+    return f"flock --exclusive --timeout 300 {shlex.quote(lock_path)} bash -c {shlex.quote(command)}"
+
+
 def remote_install_command(
     profile: RemoteProfile,
     commit: str,
@@ -37,6 +42,7 @@ def remote_install_command(
     *,
     release_id: str | None = None,
     archive_sha256: str | None = None,
+    expected_current_sha: str | None = None,
 ) -> str:
     release = release_path(profile, commit, release_id=release_id)
     deployment_root = Path(profile.root).parent.as_posix()
@@ -57,14 +63,22 @@ def remote_install_command(
         service for service in (profile.server_service, profile.control_service) if service
     )
     digest_check = []
+    current_check = []
+    if expected_current_sha is not None:
+        if not re.fullmatch(r"[0-9a-f]{40}", expected_current_sha):
+            raise ValueError("expected current release must be an exact SHA")
+        current_check = [f'test "$(sudo readlink -f {profile.root})" = {release_path(profile, expected_current_sha)}']
     if archive_sha256 is not None:
         if not re.fullmatch(r"[0-9a-f]{64}", archive_sha256):
             raise ValueError("release archive digest must be SHA-256")
         digest_check = [f"test \"$(sha256sum {remote_archive} | cut -d ' ' -f 1)\" = {archive_sha256}"]
-    return " ; ".join(
+    if not re.fullmatch(r"[A-Za-z0-9_.@-]+", profile.server_service):
+        raise ValueError("Invalid runtime service lock name")
+    command = " ; ".join(
         [
             "set -eu",
             f"test -f {profile.environment_file}",
+            *current_check,
             f"test ! -e {release}",
             *digest_check,
             f"sudo install -d -o root -g root -m 0755 {deployment_root}/releases",
@@ -78,6 +92,7 @@ def remote_install_command(
             f"sudo chown -R root:root {release}",
             f"sudo chmod -R a-w {release}",
             f"test ! -e {override_file}",
+            *current_check,
             f"previous_release=$(sudo readlink -f {profile.root} 2>/dev/null || true)",
             f"if [ -n \"$previous_release\" ]; then printf '%s\\n' \"$previous_release\" | sudo install -o root -g root -m 0644 /dev/stdin {previous_release_file}; fi",
             f"sudo systemctl stop {runtime_services}",
@@ -89,11 +104,13 @@ def remote_install_command(
             f"sudo systemctl start {profile.migrate_service}",
             cleanup,
             "trap - EXIT",
+            *current_check,
             f"sudo ln -sfn {release} {profile.root}",
             f"sudo systemctl restart {runtime_services}",
             f"sudo systemctl is-active {runtime_services}",
         ]
     )
+    return "set -eu ; sudo " + locked_install_command(command, f"/run/lock/{profile.server_service}.deploy.lock")
 
 
 def append_webapp_bundle_to_release_archive(
@@ -167,6 +184,7 @@ def build_webapp_bundle_into_release_archive(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", help="Committed Git revision to deploy (defaults to HEAD).")
+    parser.add_argument("--expected-current-sha", help="Refuse activation if another release replaced this exact current SHA.")
     parser.add_argument("--remote", help="SSH destination override.")
     parser.add_argument("--environment-file", type=Path, help="Reviewed local production config, never archived")
     parser.add_argument("--risk-audit", type=Path)
@@ -260,7 +278,8 @@ def main() -> None:
         [
             *_ssh_base(profile),
             remote,
-            remote_install_command(profile, commit, remote_archive, release_id=release_id, archive_sha256=archive_sha256),
+            remote_install_command(profile, commit, remote_archive, release_id=release_id, archive_sha256=archive_sha256,
+                **({"expected_current_sha": args.expected_current_sha} if getattr(args, "expected_current_sha", None) else {})),
         ],
         cwd=WORKSPACE,
         check=True,

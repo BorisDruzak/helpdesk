@@ -5487,6 +5487,7 @@ async def handle_web_support_send_message(request: web.Request):
             payload = {
                 "message_id": message_id,
                 "sender_role": sender_role,
+                "sender_actor_id": auth_context.actor_id,
                 "sender_display_name": auth_context.actor_id,
                 "from": sender_role,
                 "text": text,

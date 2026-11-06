@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createAppQueryClient, QueryProvider } from "../../app/providers/query-provider";
 import { clearPendingDeviceCode } from "../requester/device-link-state";
+import { disableBrowserPush } from "../notifications/browser-push";
 
 import {
   fetchCurrentSession,
@@ -76,6 +77,7 @@ export function SessionProvider({ children }: SessionProviderProps) {
   }
 
   async function login(credentials: { login: string; password: string }) {
+    await disableBrowserPush().catch(() => {});
     const requestVersion = sessionRequestVersion.current + 1;
     sessionRequestVersion.current = requestVersion;
     const nextSession = await loginWebSession(credentials);
@@ -87,6 +89,8 @@ export function SessionProvider({ children }: SessionProviderProps) {
   }
 
   async function logout() {
+    // Revoke this browser before discarding the authenticated session.
+    await disableBrowserPush().catch(() => {});
     clearPendingDeviceCode();
     const requestVersion = sessionRequestVersion.current + 1;
     sessionRequestVersion.current = requestVersion;

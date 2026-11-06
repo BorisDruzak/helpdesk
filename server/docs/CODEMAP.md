@@ -934,3 +934,20 @@ and paths from the existing admin handler without altering backend contracts.
 - Migration153: ephemeral code/lease tables and OIDC return_path. Browser entry
   `/app/worktime/connect` is public/self-gated; session flag wires WorktimeLink.
 - Exact protocol/rollback: `SSO_IDENTITY.md`; no new Endpoint agent contract.
+
+## Browser notifications
+
+- `tickets/browser_notifications.py` projects safe bell/browser messages and
+  creates notifications from deduplicated chat/status events in the event transaction.
+- `tickets/notification_scope.py` applies current ticket read scope in SQL before
+  notification pagination/counting, including membership aliases/unified queues.
+- `app/repos/web_push_repo.py`, `app/db/web_push_models.py` and migration `156`
+  own actor/browser subscriptions and transactional push deliveries.
+- `tickets/web_push.py` validates provider endpoints and signs payload-free VAPID
+  wakeups; `app/services/web_push_dispatcher.py` owns bounded delivery/retry and
+  startup/cleanup through `server.py`.
+- `web_api/push_handlers.py` exposes `/api/web/notifications/push/*`; the
+  notification-only worker is served at `/helpdesk-notifications-sw.js`.
+- `webapp/src/features/notifications/` owns the shared bell and opt-in controls;
+  `webapp/public/helpdesk-notifications-sw.js` owns closed-tab browser handling.
+- Activation, API, privacy and acceptance boundaries: `docs/BROWSER_NOTIFICATIONS.md`.
