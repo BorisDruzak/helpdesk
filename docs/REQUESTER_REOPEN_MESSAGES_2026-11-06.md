@@ -40,9 +40,33 @@ chat messages, so the reason/comment is absent from that surface.
   transaction. GitNexus MCP is unavailable; narrow source/callers were checked.
   SQLAlchemy 2.0 transaction semantics were consulted through Context7.
 
-Canonical exact-SHA staging installation, verified backup, real PostgreSQL
-rollback/idempotence, recovery receipts and support-browser evidence follow before
-acceptance. Full CI and production are outside this targeted staging scope.
+## Staging acceptance
+
+Installed immutable release `99f7428692d9627160eac77e2316c42397716462` using
+`scripts/deploy_helpdesk_release.py` on the approved isolated staging host.
+Commit: `fix(requester): publish reopen reasons in ticket conversations`.
+The eight changed source/test files match the frozen Git objects. Schema remains
+155; Helpdesk and Endpoint HTTPS health checks return 200 with CA and hostname
+verification, and all three staging services remain active for user acceptance.
+
+Verified backup before code deployment: SHA256
+`ef34d26df90ba27f5be80da7f624097d9273d027fb86d75bbf7d08f4888ac116`.
+Fresh verified backup before data recovery: SHA256
+`eb4f4c0fc05412e98329c671fc61ae061b8f1901ac522106eae16ab5acbea46a`.
+The recovery helper was first exercised against real PostgreSQL with an injected
+missing-audit failure: both flushed message inserts rolled back and all seals
+remained unchanged. Apply then appended two messages and one internal audit.
+All T77 columns, both reopen records, five feedback records, 27 existing T77
+events and the other 76 tickets were unchanged; a repeat apply was a no-op.
+Counts after recovery: 77 tickets, 18489 events, six artifacts, 160 users and
+44 registry people.
+
+The actual support browser conversation displays both restored reasons/comments,
+including “Непонятная инструкция”; no warning/error console entries were captured.
+Evidence: `tmp/reopen-message-fix-20261106/live-t77-comments.jpg`,
+`recover-rollback.json`, `recover-apply.json` and `installed.json`.
+Only the temporary verification tab was closed; the user's tab was preserved.
+Full CI and production are outside this targeted staging scope.
 
 Source is frozen with a private index on top of
 `d4720f76f5d5154d72adcd745b2a4370c33cbed2` to preserve accepted SLA/typing/catalog

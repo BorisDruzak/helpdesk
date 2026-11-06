@@ -2988,5 +2988,5 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Cause: reason persisted only in status/quality facts; normal conversation reads chat_message events.
 - Fix: one stable canonical public requester message in reopen transaction, postcommit WS publication on3routes, explicit requester rollback/conflict. Operator quality notes stay private.
 - Verification:50focusedPython and3browser viewports pass; build/workspace/diff and independent review pass. Recovery source-owner guard tightened with regressions.
-- Next: verified backup, exact immutable staging install, guarded2message recovery, realPG rollback/idempotence and support UI evidence. Screenshot-step investigation continues independently.
+- Complete: runtime99f7428692d9627160eac77e2316c42397716462 installed; verified code/data backups, realPG rollback and idempotent2message recovery pass. All originalT77data/76other tickets preserved. Actual support UI shows both reasons/comments with no console warnings/errors; schema155 and strictHTTPShealth200,3services active. Screenshot-step repair continues independently.
 - Evidence: docs/REQUESTER_REOPEN_MESSAGES_2026-11-06.md and tmp/reopen-message-fix-20261106. Private index/branch preserve shared work and prior accepted fixes.
