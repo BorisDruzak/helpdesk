@@ -1,3 +1,16 @@
+# 2026-11-06 Requester catalog unification
+
+Goal: execute approved catalog/search recommendations and deploy immediately to staging.
+Scope: requester catalog/search/forms, bounded ranking and safe publication cleanup.
+Constraints: preserve mixed checkout/index, production and Endpoint; no new dependencies/schema.
+Decisions: group by published offering; retain legacy templates/history and canonical submission.
+Current State: fresh staging baseline2573425f1b85f0e5dd83450e357f0e4d36b5e061/schema156,
+Helpdesk and Endpoint active. GitNexus unavailable; bounded source/test review.
+Next Steps: inventory public catalog/forms, implement regressions/UI/ranking, freeze only task
+paths over fresh staging baseline, backup, canonical guarded install and browser acceptance.
+Verification: previous turn40frontend/46search/3browser passed; new delta pending.
+Handoff: docs/superpowers/plans/2026-11-06-requester-catalog-unification.md.
+
 # 2026-11-06 Unified user administration
 
 Goal: separate Users (profile/account/role/queues) from reference Registries.

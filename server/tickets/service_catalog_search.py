@@ -176,16 +176,23 @@ def search_public_catalog(catalog: dict[str, Any], query: str, *, limit: int = 2
         if not matches:
             continue
         rank, layout = min(matches, key=lambda match: (match[0] + (6 if match[1] else 0), match[1]))
+        if entry.get("result_kind") == "service" and any(
+            not intents and (title_rank := _field_rank(value, _normalize(offering.get("title")), "title")) is not None
+            and title_rank <= 3 for value, _, intents, _ in semantic
+        ):
+            # A service-name query should choose the service before specialist symptoms.
+            rank = -1
         row = {"title": entry.get("title") or offering.get("title"),
                "description": entry.get("description") or "", "category": entry.get("category_title") or service.get("title"),
                "service_code": service.get("service_code"), "offering_full_code": offering.get("full_code"),
                "offering_title": offering.get("title") or "",
                "entry_point_key": entry.get("entry_point_key"), "help_mode": entry.get("help_mode") or "guided",
                "result_kind": entry.get("result_kind") or "problem",
-               "match_reason": "Исправлена раскладка клавиатуры" if layout else _REASONS[rank]}
+               "match_reason": "Исправлена раскладка клавиатуры" if layout else _REASONS[max(0, rank)]}
         ranked.append((rank + (6 if layout else 0), _normalize(row["title"]), str(row["offering_full_code"]),
                        str(row["entry_point_key"] or ""), row, layout))
-    ranked.sort(key=lambda item: item[:4])
+    ranked.sort(key=lambda item: (item[0], len(_tokens(_normalize(item[4]['offering_title'])))
+                                 if item[0] == -1 + (6 if item[5] else 0) else 0, *item[1:4]))
     if any(intents and not anchors for _, _, intents, anchors in semantic):
         # First show one useful entrance per service; only then repeat a service.
         occurrences: dict[str, int] = {}

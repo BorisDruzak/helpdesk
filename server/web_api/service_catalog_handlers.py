@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from time import perf_counter
+
 from aiohttp import web
 from loguru import logger
 
@@ -204,11 +206,17 @@ async def handle_web_admin_service_catalog_simulate(request: web.Request) -> web
 
 
 async def handle_service_catalog_current(request: web.Request) -> web.Response:
+    started = perf_counter()
     async with get_session() as session:
         payload = await ServiceCatalogRuntimeResolver(session).current_catalog_for_requester()
     if "q" in request.query:
         from tickets.service_catalog_search import search_public_catalog
         payload["search"] = search_public_catalog(payload, request.query.get("q", ""))
+        rows = payload["search"]["results"]
+        # Only aggregate quality counters: never log query text, identity or form answers.
+        logger.info("[catalog_search] results={} services={} empty={} elapsed_ms={}",
+                    len(rows), len({row['offering_full_code'] for row in rows}),
+                    int(not rows), round((perf_counter() - started) * 1000))
     return web.json_response({"status": "ok", **payload})
 
 

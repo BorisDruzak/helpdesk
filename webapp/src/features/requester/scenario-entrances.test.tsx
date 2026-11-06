@@ -12,6 +12,19 @@ it("preserves the legacy single entrance", () => {
   render(<ScenarioEntrances offering={{ offering_code: "printer", full_code: "it.printer", title: "Printing" }} owner="user" deviceId="" />);
   expect(screen.getByText("Entrance:legacy")).toBeVisible();
 });
+it("shows published problems for a direct service link instead of an empty panel", () => {
+  cleanup();
+  render(<ScenarioEntrances offering={{ offering_code: "printer", full_code: "it.printer", title: "Printing", catalog_items: [{ key: "paper", title: "Бумага застряла", synonyms: [], entry_point_key: "paper", scenario_key: "print", version_id: "v1", target_block_id: "paper" }] }} owner="direct-user" deviceId="" onBrowse={() => {}} />);
+  expect(screen.getByRole("button", { name: "Бумага застряла" })).toBeVisible();
+  expect(screen.queryByText("Entrance:legacy")).not.toBeInTheDocument();
+});
+it("offers catalog navigation for a scenario without named entrances", () => {
+  cleanup();
+  const browse = vi.fn();
+  render(<ScenarioEntrances offering={{ offering_code: "printer", full_code: "it.printer", title: "Printing" }} owner="user" deviceId="" onBrowse={browse} />);
+  fireEvent.click(screen.getByRole("button", { name: "Другой пункт каталога" }));
+  expect(browse).toHaveBeenCalledOnce();
+});
 it("does not restore a cached problem while browsing service categories", () => {
   sessionStorage.setItem("pc_client.scenario.selection:browsing-user:it.printer", "paper");
   render(<ScenarioEntrances offering={{ offering_code: "printer", full_code: "it.printer", title: "Printing", catalog_items: [{ key: "paper", title: "Бумага застряла", synonyms: [], entry_point_key: "paper", scenario_key: "print", version_id: "v1", target_block_id: "paper" }] }} owner="browsing-user" deviceId="" onBrowse={() => {}} />);

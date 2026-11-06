@@ -862,6 +862,25 @@ search rows expand categories; the configured published fallback identifies an
 explicit entrance. `scripts/helpdesk_catalog_service_search.py` publishes the two
 additional information-system maps through canonical audited services. Ordinary
 categories delegate to the existing form panel; drafts and direct links remain.
+Named requester entrances use `?offering=<public-code>&entry=<public-entry>`;
+Back/Forward and reload restore that explicit entrance without a default-entry
+fallback. A bare offering link renders its published problem choices. Switching
+from a linked service clears its entry; standalone forms use `?form=<public-key>`.
+An explicit link takes precedence over a mismatched saved form draft. Catalog
+browsing hides (without unmounting) the current form/session, with Escape and an
+explicit close action to resume it. The selected device follows catalog navigation.
+`catalog-search-results.tsx` groups hits by offering and limits each visible group
+to three problems plus full-service navigation; `catalog-display.ts` removes
+duplicate descriptions. `catalog-categories.tsx` retains standalone forms under
+an explicit compatibility disclosure. New ordinary form choices also own URL
+history/draft keys; reselecting a restored base-URL draft keeps its answers.
+`service_catalog_search` prioritizes service-name matches without changing
+symptom ranking; current-catalog logs record only aggregate counts/latency.
+`form_pack_handlers` honors explicit template discovery config, independent of
+submission authorization. `scripts/helpdesk_requester_catalog_cleanup.py` owns
+the fingerprinted staging-only audited test-template unlisting;
+`benchmark_requester_catalog.py` evaluates a fixed public-query corpus. See
+[requester catalog](../../docs/REQUESTER_CATALOG_UNIFICATION.md).
 `tickets/request_scenario_submission.py` revalidates visited pages and maps typed
 facts/roles into the existing form submission, retaining a support snapshot.
 `tickets/request_scenario_optional_evidence.py` supplies a copied effective

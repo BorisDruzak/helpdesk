@@ -87,7 +87,7 @@ it("opens the problems of a matching service without starting a remembered scena
   } }), { headers: { "Content-Type": "application/json" } })));
   const select = mount();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "печать" } });
-  fireEvent.click(await screen.findByRole("button", { name: /^Печать/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Все проблемы услуги" }));
   expect(select).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Принтер не печатает" })).toBeVisible();
 });
@@ -103,4 +103,48 @@ it("does not turn a network failure into no matches and can retry", async () => 
   expect(screen.queryByText(/Подходящих проблем не найдено/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Повторить поиск" }));
   await waitFor(() => expect(screen.getByText(result.title)).toBeInTheDocument());
+});
+it("closes search results with Escape and reopens the same query on focus", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", search: {
+    results: [result], suggestions: [], corrected_query: null,
+  } }), { headers: { "Content-Type": "application/json" } })));
+  mount();
+  const input = screen.getByRole("searchbox");
+  fireEvent.change(input, { target: { value: "принтер" } });
+  await screen.findByRole("button", { name: /Принтер не печатает/ });
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(input).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("button", { name: /Принтер не печатает/ })).not.toBeInTheDocument();
+  fireEvent.focus(input);
+  expect(screen.getByRole("button", { name: /Принтер не печатает/ })).toBeVisible();
+});
+it("allows pointer users to close the catalog without selecting a different service", () => {
+  vi.stubGlobal("fetch", vi.fn());
+  const select = mount();
+  const input = screen.getByRole("searchbox");
+  fireEvent.focus(input);
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть каталог" }));
+  expect(input).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("button", { name: "Печать" })).not.toBeInTheDocument();
+  expect(select).not.toHaveBeenCalled();
+});
+
+it("offers a visible all-services action before focusing the search field", () => {
+  vi.stubGlobal("fetch", vi.fn());
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "Все услуги" }));
+  expect(screen.getByRole("button", { name: "Печать" })).toBeVisible();
+});
+
+it("groups matching problems under their service and removes repetitive descriptions and match diagnostics", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", search: {
+    results: [{ ...result, description: result.title, offering_title: "Печать" },
+      { ...result, title: "Бумага застряла", offering_title: "Печать", entry_point_key: "paper" }], suggestions: [], corrected_query: null,
+  } }), { headers: { "Content-Type": "application/json" } })));
+  mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "принтер" } });
+  const group = await screen.findByRole("region", { name: "Печать" });
+  expect(group).toHaveTextContent("Бумага застряла");
+  expect(screen.getAllByText(result.title)).toHaveLength(1);
+  expect(screen.queryByText(result.match_reason)).not.toBeInTheDocument();
 });

@@ -21,6 +21,8 @@ function LocationProbe() {
   const location = useLocation();
   const navigate = useNavigate();
   return <><span data-testid="location">{`${location.pathname}${location.search}`}</span>
+    <button onClick={() => navigate(-1)}>Test browser back</button>
+    <button onClick={() => navigate(1)}>Test browser forward</button>
     <button onClick={() => navigate("/app/requester/new?offering=workplace.printer_issue")}>Test printer link</button>
     <button onClick={() => navigate("/app/requester/new?offering=workplace.laptop_broken")}>Test laptop link</button>
     <button onClick={() => navigate("/app/requester/new")}>Test normal link</button></>;
@@ -48,6 +50,10 @@ function renderPage(initialEntry = "/app/requester/new") {
 async function chooseCategory(label: string) {
   const search=await screen.findByRole("searchbox",{name:"Найти проблему во всём каталоге"});
   fireEvent.focus(search);
+  if (!screen.queryByRole("button",{name:label})) {
+    const supplemental = screen.queryByText(/^Дополнительные формы \(/);
+    if (supplemental) fireEvent.click(supplemental);
+  }
   fireEvent.click(screen.getByRole("button",{name:label}));
 }
 
@@ -58,14 +64,34 @@ afterEach(() => {
 });
 
 describe("RequesterNewRequestPage", () => {
-  it("opens the exact catalog search entrance after explicit selection", async () => {
+  it("does not discard a pre-release base draft when reselecting the same form", async () => {
+    installNewRequestMock();
+    sessionStorage.setItem("pc_client.requester.new_request.draft.v1:person-1:default", JSON.stringify({
+      status:"draft",intent:"",selectedCategoryKey:"offering:workplace.laptop_broken:breakage",fieldValues:{summary:"Ответ из старого черновика"},
+    }));
+    renderPage();
+    await screen.findByDisplayValue("Ответ из старого черновика");
+    await chooseCategory("Сломался ноутбук");
+    expect(screen.getByLabelText("Кратко")).toHaveValue("Ответ из старого черновика");
+  });
+  it("preserves an ordinary form draft through browser Back and Forward", async () => {
+    installNewRequestMock();
+    renderPage();
+    await fillLaptopForm("Вернуться к этому ответу");
+    expect(screen.getByTestId("location")).toHaveTextContent("offering=workplace.laptop_broken");
+    fireEvent.click(screen.getByRole("button", {name:"Test browser back"}));
+    await waitFor(() => expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", {name:"Test browser forward"}));
+    await waitFor(() => expect(screen.getByLabelText("Кратко")).toHaveValue("Вернуться к этому ответу"));
+  });
+  it.each(["no_print", "service"])("opens the exact catalog search entrance after explicit selection: %s", async (entryKey) => {
     const fetchMock = installNewRequestMock({ withPrinterOffering: true });
     const original = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.startsWith("/api/service-catalog/current?q=")) return jsonResponse({ status: "ok", search: {
         results: [{ title: "Не печатает принтер", category: "Оборудование", description: "Проверим печать",
-          help_mode: "guided", offering_full_code: "workplace.printer_issue", entry_point_key: "no_print", match_reason: "Совпали слова запроса" }],
+          help_mode: "guided", offering_full_code: "workplace.printer_issue", entry_point_key: entryKey, match_reason: "Совпали слова запроса" }],
         suggestions: [], corrected_query: null,
       } });
       if (url === "/api/service-catalog/current") {
@@ -73,7 +99,7 @@ describe("RequesterNewRequestPage", () => {
         const payload = await response.json();
         const offering = payload.services[0].offerings.find((item: { full_code: string }) => item.full_code === "workplace.printer_issue");
         offering.guided_scenario_enabled = true;
-        offering.catalog_items = [{ key: "no_print", title: "Не печатает принтер", entry_point_key: "no_print", synonyms: [] }];
+        offering.catalog_items = [{ key: entryKey, title: "Не печатает принтер", entry_point_key: entryKey, synonyms: [] }];
         return jsonResponse(payload);
       }
       if (url === "/api/web/requester/request-scenarios/sessions" || url === "/api/web/requester/request-scenarios/sessions/print-session") return jsonResponse({ status: "success", data: {
@@ -85,20 +111,56 @@ describe("RequesterNewRequestPage", () => {
     renderPage();
     const input = await screen.findByRole("searchbox", { name: "Найти проблему во всём каталоге" });
     fireEvent.change(input, { target: { value: "принтер не печатает" } });
+    fireEvent.change(screen.getByLabelText("Компьютер для обращения"), { target: { value: "device-1" } });
     const entry = await screen.findByRole("button", { name: /Не печатает принтер/ });
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("request-scenarios/sessions"))).toHaveLength(0);
     fireEvent.click(entry);
     await screen.findByRole("heading", { name: "Проверьте подключение принтера" });
     const sessionCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("request-scenarios/sessions"));
-    expect(JSON.parse(String(sessionCall?.[1]?.body))).toEqual({ offering_full_code: "workplace.printer_issue", entry_point_key: "no_print" });
+    expect(JSON.parse(String(sessionCall?.[1]?.body))).toEqual({ offering_full_code: "workplace.printer_issue", entry_point_key: entryKey });
+    expect(screen.getByTestId("location")).toHaveTextContent(`offering=workplace.printer_issue&entry=${entryKey}`);
+    expect(screen.getByLabelText("Компьютер для обращения")).toHaveValue("device-1");
+    fireEvent.change(screen.getByRole("searchbox"), {target:{value:"принтер"}});
+    fireEvent.click(await screen.findByRole("button", {name:"Все проблемы услуги"}));
+    fireEvent.click(screen.getByRole("button", {name:"Test browser back"}));
+    await waitFor(() => expect(screen.getByRole("heading",{name:"Проверьте подключение принтера"})).toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: "Test browser back" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Проверьте подключение принтера" })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Test browser forward" }));
+    await screen.findByRole("heading", { name: "Проверьте подключение принтера" });
     expect(screen.getAllByRole("searchbox")).toHaveLength(1);
     expect(screen.queryByLabelText("Категория обращения")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Найти проблему",{exact:true})).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button",{name:"Другой пункт каталога"}));
     expect(screen.queryByRole("heading",{name:"Проверьте подключение принтера"})).not.toBeInTheDocument();
-    fireEvent.focus(input);
+    fireEvent.focus(screen.getByRole("searchbox"));
     fireEvent.click(screen.getByRole("button",{name:"Не печатает принтер"}));
     expect(await screen.findByRole("heading",{name:"Проверьте подключение принтера"})).toBeInTheDocument();
+    await chooseCategory("Сломался ноутбук");
+    expect(await screen.findByLabelText("Кратко")).toBeVisible();
+    expect(screen.getByTestId("location")).toHaveTextContent("offering=workplace.laptop_broken");
+    expect(screen.getByTestId("location")).not.toHaveTextContent("entry=");
+  });
+
+  it("does not let a stale per-offering draft replace an explicit service link", async () => {
+    installNewRequestMock({ withPrinterOffering: true });
+    sessionStorage.setItem("pc_client.requester.new_request.draft.v1:person-1::offering:workplace.printer_issue", JSON.stringify({
+      status: "draft", intent: "", selectedCategoryKey: "offering:workplace.laptop_broken:breakage", fieldValues: { summary: "Старый ноутбук" },
+    }));
+    renderPage("/app/requester/new?offering=workplace.printer_issue");
+    await screen.findByLabelText("Кратко");
+    expect(screen.getByText(/Выбрано:/)).toHaveTextContent("Проблема с принтером");
+    expect(screen.getByLabelText("Кратко")).not.toHaveValue("Старый ноутбук");
+  });
+  it("returns to the same answers when catalog browsing is cancelled with a pointer", async () => {
+    installNewRequestMock();
+    renderPage();
+    await fillLaptopForm("Не потерять этот ответ");
+    fireEvent.click(screen.getByRole("button", { name: "Другой пункт каталога" }));
+    await waitFor(() => expect(screen.getByLabelText("Кратко")).not.toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: "Закрыть каталог" }));
+    expect(screen.getByLabelText("Кратко")).toBeVisible();
+    expect(screen.getByLabelText("Кратко")).toHaveValue("Не потерять этот ответ");
   });
 
   it("shows an initial context failure instead of fake profile restrictions and keeps it visible while retrying", async () => {
@@ -157,7 +219,7 @@ describe("RequesterNewRequestPage", () => {
     await waitFor(() => expect(screen.getByText(/Выбрано:/).textContent).toContain("Сломался ноутбук"));
     fireEvent.change(screen.getByLabelText("Кратко"), { target: { value: "Ссылочный ноутбук" } });
     fireEvent.click(screen.getByRole("button", { name: "Test normal link" }));
-    await waitFor(() => expect(screen.getByLabelText("Кратко")).toHaveValue("Обычный черновик"));
+    await waitFor(() => expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Test printer link" }));
     await waitFor(() => expect(screen.getByLabelText("Кратко")).toHaveValue("Черновик принтера"));
     fireEvent.click(screen.getByRole("button", { name: "Test laptop link" }));
@@ -268,8 +330,9 @@ describe("RequesterNewRequestPage", () => {
       });
     });
 
+    const reloadUrl = screen.getByTestId("location").textContent!;
     view.unmount();
-    renderPage();
+    renderPage(reloadUrl);
 
     expect(await screen.findByRole("heading", { name: "Категория и форма" })).toBeInTheDocument();
     expect(await screen.findByLabelText("Кратко")).toHaveValue("Черновик: ноутбук шумит");
@@ -376,8 +439,9 @@ describe("RequesterNewRequestPage", () => {
     });
     const firstKey = new Headers(requests()[0][1]?.headers).get("Idempotency-Key");
     expect(firstKey).toBeTruthy();
+    const reloadUrl = screen.getByTestId("location").textContent!;
     view.unmount();
-    renderPage();
+    renderPage(reloadUrl);
     await screen.findByDisplayValue("Ноутбук не включается");
     fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
     await waitFor(() => expect(requests()).toHaveLength(2));

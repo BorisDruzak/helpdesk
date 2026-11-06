@@ -3,9 +3,11 @@ import { test, expect } from "playwright/test";
 for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:390,height:844}]) {
   test(`one catalog search and device instructions ${viewport.width}`,async({page},info)=>{
     await page.setViewportSize(viewport);
-    const errors:string[]=[];const unexpected:string[]=[];let starts=0;let writes=0;
+    const errors:string[]=[];const unexpected:string[]=[];const failures:string[]=[];const selections:unknown[]=[];let starts=0;let writes=0;
     page.on('pageerror',error=>errors.push(error.message));
     page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
+    page.on('response',response=>{if(response.status()>=400)failures.push(`${response.status()} ${new URL(response.url()).pathname}`);});
+    page.on('requestfailed',request=>{if(request.failure()?.errorText!=='net::ERR_ABORTED')failures.push(new URL(request.url()).pathname);});
     const profile={person_id:'synthetic-usability',display_name:'Синтетический Сотрудник',full_name:'Синтетический Сотрудник',department_id:'it',phone:'0000'};
     const completion={complete:true,required_fields:[],missing_fields:[],blocks:{}};
     const print={offering_code:'print',full_code:'workplace.print',title:'Печать',request_template_key:'help',guided_scenario_enabled:true,
@@ -22,13 +24,14 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:3
       else if(path==='/api/web/requester/devices')data={devices:[],active_bindings:[]};
       else if(path==='/api/web/requester/consents')data=[];
       else if(path==='/api/web/notifications/unread_count')return route.fulfill({json:{status:'ok',unread_count:0}});
+      else if(path==='/api/web/notifications/push/config')data={enabled:false,public_key:null};
       else if(path==='/api/service-catalog/current')return route.fulfill({json:url.searchParams.has('q') ? {status:'ok',search:{results:[{title:'Принтер не печатает',description:'Проверка печати',category:'Печать',offering_full_code:'workplace.print',entry_point_key:'no_print',help_mode:'guided',match_reason:'По описанию'}],suggestions:[],corrected_query:null}} : {status:'ok',catalog_version:'synthetic',services:[{service_code:'workplace',title:'Рабочее место',offerings:[print,scan]}]}});
-      else if(path==='/api/web/requester/request-scenarios/sessions'){starts++;data=step;}
+      else if(path==='/api/web/requester/request-scenarios/sessions'){starts++;selections.push(request.postDataJSON());data=step;}
       else if(path==='/api/web/requester/request-scenarios/sessions/synthetic-session')data=step;
       else {unexpected.push(path);return route.fulfill({status:404,json:{status:'error'}});}
       return route.fulfill({json:{status:'success',data}});
     });
-    await page.route('**/public_api/ticket_forms/current**',route=>route.fulfill({json:{status:'ok',pack:{key:'request_forms',version:'synthetic',forms:[{key:'help',title:'Помощь',availability_policy:{available_without_agent_binding:true},fields:[{key:'summary',label:'Описание',type:'textarea'}]}]}}}));
+    await page.route('**/public_api/ticket_forms/current**',route=>route.fulfill({json:{status:'ok',pack:{key:'request_forms',version:'synthetic',forms:[{key:'help',title:'Помощь',availability_policy:{available_without_agent_binding:true},fields:[{key:'summary',label:'Описание',type:'textarea'}]}, {key:'legacy_print',title:'Прежняя форма печати',availability_policy:{available_without_agent_binding:true},fields:[{key:'comment',label:'Комментарий',type:'text'}]}]}}}));
     await page.goto('/app/requester/new');
     const search=page.getByRole('searchbox',{name:'Найти проблему во всём каталоге'});
     await search.click();
@@ -40,16 +43,65 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:3
     await page.getByRole('button',{name:/^Принтер не печатает/}).click();
     await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
     expect(starts).toBe(1);
+    await expect(page).toHaveURL(/offering=workplace.print&entry=no_print$/);
+    await page.goBack();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toHaveCount(0);
+    await page.goForward();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
+    expect(starts).toBe(1);
     await expect(page.getByLabel('Найти проблему',{exact:true})).toHaveCount(0);
     await expect(page.getByLabel('Категория обращения',{exact:true})).toHaveCount(0);
+    await search.click();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeHidden();
+    await page.getByRole('button',{name:'Закрыть каталог',exact:true}).click();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
+    expect(starts).toBe(1);
     await page.getByRole('button',{name:'Другой пункт каталога'}).click();
+    await page.reload();
+    await expect(page.getByRole('button',{name:'Принтер не печатает Проверка печати',exact:true})).toBeVisible();
+    expect(starts).toBe(1);
     await page.getByRole('button',{name:/^Принтер не печатает/}).click();
     await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
     await search.fill('принтер');
+    await expect(page.getByRole('button',{name:/Принтер не печатает.*Проверка печати/})).toBeVisible();
+    await search.press('Escape');
+    await expect(search).toHaveValue('принтер');
+    await expect(search).toHaveAttribute('aria-expanded','false');
+    await expect(page.getByRole('button',{name:/Принтер не печатает.*Проверка печати/})).toHaveCount(0);
+    await search.click();
     await page.getByRole('button',{name:/Принтер не печатает.*Проверка печати/}).click();
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
+    await search.fill('принтер');
+    await page.getByRole('region',{name:'Печать',exact:true}).getByRole('button',{name:'Все проблемы услуги',exact:true}).click();
+    await expect(page).toHaveURL(/offering=workplace.print$/);
+    await page.goBack();
     await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
     expect(writes).toBe(0);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.getByRole('button',{name:'Другой пункт каталога'}).click();
+    await search.click();
+    await page.getByRole('button',{name:'Сканирование',exact:true}).click();
+    await page.getByRole('button',{name:'Сканер не сканирует',exact:true}).click();
+    await expect(page).toHaveURL(/offering=workplace.scan&entry=no_scan$/);
+    await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
+    expect(selections.at(-1)).toEqual({offering_full_code:'workplace.scan',entry_point_key:'no_scan'});
+    await page.screenshot({path:info.outputPath('catalog-navigation.png'),fullPage:true});
+    await page.getByRole('button',{name:'Все услуги',exact:true}).click();
+    const legacy = page.getByRole('button',{name:'Прежняя форма печати',exact:true});
+    await expect(legacy).toBeHidden();
+    await page.getByText('Дополнительные формы (1)',{exact:true}).click();
+    await legacy.click();
+    await expect(page).toHaveURL(/form=legacy_print$/);
+    await page.getByRole('textbox',{name:'Комментарий',exact:true}).fill('Сохранить прежние поля');
+    await page.goBack();
+    await expect(page.getByRole('textbox',{name:'Комментарий',exact:true})).toHaveCount(0);
+    await page.goForward();
+    await expect(page.getByRole('textbox',{name:'Комментарий',exact:true})).toHaveValue('Сохранить прежние поля');
+    await page.reload();
+    await expect(page.getByRole('textbox',{name:'Комментарий',exact:true})).toHaveValue('Сохранить прежние поля');
+    await page.screenshot({path:info.outputPath('compatibility-form.png'),fullPage:true});
     await page.goto('/app/requester/devices/link');
     await expect(page.getByRole('heading',{name:'Где взять код'})).toBeVisible();
     await expect(page.getByText(/правой кнопкой мыши/)).toBeVisible();
@@ -60,6 +112,6 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:3
     await expect(page.getByRole('img',{name:/Скрытые значки Windows/})).toBeVisible();
     await expect.poll(()=>page.getByRole('img').evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0))).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-    expect(errors).toEqual([]);expect(unexpected).toEqual([]);expect(writes).toBe(0);
+    expect(errors).toEqual([]);expect(unexpected).toEqual([]);expect(failures).toEqual([]);expect(writes).toBe(0);
   });
 }

@@ -322,7 +322,7 @@ export function RequesterNewRequestPage() {
   const location = useLocation();
   const parameters = new URLSearchParams(location.search);
   // Each URL selection owns its restoration lifecycle and persistence key.
-  return <RequesterNewRequestContent key={JSON.stringify([parameters.get("intent") || "", parameters.get("offering") || ""])} />;
+  return <RequesterNewRequestContent key={JSON.stringify([parameters.get("intent") || "", parameters.get("offering") || "", parameters.get("form") || ""])} />;
 }
 
 function RequesterNewRequestContent() {
@@ -333,6 +333,7 @@ function RequesterNewRequestContent() {
   const queryClient = useQueryClient();
   const requestIntent = useMemo(() => new URLSearchParams(location.search).get("intent") || "", [location.search]);
   const linkedOffering = useMemo(() => new URLSearchParams(location.search).get("offering") || "", [location.search]);
+  const linkedForm = new URLSearchParams(location.search).get("form") || "";
   const bootstrapQuery = useRequesterBootstrapQuery();
   const formPackQuery = useRequesterFormPackQuery();
   const catalogQuery = useRequesterServiceCatalogQuery();
@@ -344,13 +345,16 @@ function RequesterNewRequestContent() {
     ? !bootstrap.profile_completion.blocks.ticket_create
     : profileComplete;
   const devices = bootstrap?.devices ?? [];
-  const [deviceChoice, setSelectedDeviceId] = useState<string | null>(null);
+  const [deviceChoice, setSelectedDeviceId] = useState<string | null>(() => {
+    const deviceId = (location.state as { requestDeviceId?: unknown } | null)?.requestDeviceId;
+    return typeof deviceId === "string" ? deviceId : null;
+  });
   const defaultDeviceId = isResolvedPrimaryDeviceStatus(String(bootstrap?.primary_device_resolution?.status ?? ""))
     ? bootstrap?.primary_device?.device_id ?? "" : "";
   const selectedDeviceId = deviceChoice ?? defaultDeviceId;
   const primaryDevice = devices.find((device) => device.device_id === selectedDeviceId) ?? null;
   const hasAgentContext = Boolean(primaryDevice);
-  const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, linkedOffering ? `${requestIntent}:offering:${linkedOffering}` : requestIntent) : null;
+  const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, linkedOffering ? `${requestIntent}:offering:${linkedOffering}` : linkedForm ? `${requestIntent}:form:${linkedForm}` : requestIntent) : null;
   const [requestSeed, setRequestSeed] = useState(() => (requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : ""));
   const [fieldValues, setFieldValues] = useState<DynamicFormValues>({});
   const [fieldServerErrors, setFieldServerErrors] = useState<Record<string, string>>({});
@@ -369,7 +373,8 @@ function RequesterNewRequestContent() {
   const [validationAttempted, setValidationAttempted] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
-  const [selectedSearchEntry, setSelectedSearchEntry] = useState<string | undefined>();
+  const selectedSearchEntry = linkedOffering ? new URLSearchParams(location.search).get("entry") || undefined : undefined;
+  const [catalogBrowsing, setCatalogBrowsing] = useState(false);
   const restoredDraftRef = useRef(false);
 
   const categoryOptions = useMemo(
@@ -388,6 +393,7 @@ function RequesterNewRequestContent() {
   const shouldAutoSelectRecommendedCategory = Boolean(recommendedCategoryKey && recommendation?.confident);
   const autoSelectCategoryKey =
     categoryOptions.find(option => linkedOffering && option.offering?.full_code === linkedOffering)?.key ??
+    categoryOptions.find(option => !linkedOffering && linkedForm && !option.offering && option.form.key === linkedForm)?.key ??
     (requestIntent === OWNER_CHANGE_INTENT ? recommendedCategoryKey : shouldAutoSelectRecommendedCategory ? recommendedCategoryKey : null);
   const selectedCategory = useMemo(
     () => categoryOptions.find((option) => option.key === selectedCategoryKey) ?? null,
@@ -511,6 +517,8 @@ function RequesterNewRequestContent() {
       removeNewRequestDraft(requestDraftStorageKey);
       return;
     }
+    // A stale draft must never redirect an explicit public catalog link.
+    if ((linkedOffering || linkedForm) && draft.selectedCategoryKey !== autoSelectCategoryKey) return;
     setSelectedCategoryKey(draft.selectedCategoryKey ?? "");
     setFieldValues(draft.fieldValues ?? {});
     setOnBehalfEnabled(Boolean(draft.onBehalfEnabled));
@@ -521,7 +529,7 @@ function RequesterNewRequestContent() {
     setFieldServerErrors({});
     setCategoryError(null);
     setError(null);
-  }, [categoryOptions, formPackQuery.data, catalogQuery.isLoading, requestDraftStorageKey, requestIntent]);
+  }, [categoryOptions, formPackQuery.data, catalogQuery.isLoading, requestDraftStorageKey, requestIntent, linkedOffering, linkedForm, autoSelectCategoryKey]);
 
   useEffect(() => {
     if (!requestDraftStorageKey || !formPackQuery.data || !restoredDraftRef.current) {
@@ -657,24 +665,35 @@ function RequesterNewRequestContent() {
     }
   }
 
-  function resetOnBehalfState() {
-    setOnBehalfEnabled(false);
-    setOnBehalfQuery("");
-    setOnBehalfPeople([]);
-    setSelectedOnBehalfPerson(null);
-    setOnBehalfReason("");
+  function selectCategoryKey(key: string) {
+    // Reselecting the current form must retain even a pre-release base-URL draft.
+    if (key === selectedCategoryKey && !selectedSearchEntry) return;
+    const option = categoryOptions.find(item => item.key === key);
+    if (option) {
+      const parameters = new URLSearchParams(location.search);
+      parameters.delete("entry");
+      parameters.delete("offering");
+      parameters.delete("form");
+      if (option?.offering) parameters.set("offering", option.offering.full_code);
+      else if (option) parameters.set("form", option.form.key);
+      navigate({ pathname: location.pathname, search: parameters.toString() }, { state: { requestDeviceId: selectedDeviceId } });
+      return;
+    }
   }
 
-  function selectCategoryKey(key: string) {
-    setSelectedSearchEntry(undefined);
-    if (key !== selectedCategoryKey) {
-      resetOnBehalfState();
-      setFieldServerErrors({});
-      setPreviewResult(null);
+  function openCatalogEntrance(offeringCode: string, entry?: string) {
+    const option = categoryOptions.find(item => item.offering?.full_code === offeringCode);
+    if (!option) return;
+    if (!option.offering?.guided_scenario_enabled) {
+      selectCategoryKey(option.key);
+      return;
     }
-    setCategoryError(null);
-    setError(null);
-    setSelectedCategoryKey(key);
+    const parameters = new URLSearchParams(location.search);
+    parameters.delete("form");
+    parameters.set("offering", offeringCode);
+    if (entry) parameters.set("entry", entry);
+    else parameters.delete("entry");
+    navigate({ pathname: location.pathname, search: parameters.toString() }, { state: { requestDeviceId: selectedDeviceId } });
   }
 
   async function createTicket() {
@@ -812,20 +831,23 @@ function RequesterNewRequestContent() {
             }}>Начать отдельное обращение</button>
           </div>
         ) : null}
-        <CatalogSearch categories={categoryOptions.map(option=>({key:option.key,title:option.label,
+        <CatalogSearch key={JSON.stringify([selectedSearchEntry ?? null])} categories={categoryOptions.map(option=>({key:option.key,title:option.label,supplemental:!option.offering,
           offeringFullCode:option.offering?.full_code,items:option.offering?.guided_scenario_enabled ? option.offering.catalog_items ?? [] : []}))}
-          selectedKey={selectedCategoryKey} selectedTitle={selectedCategory?.label} onCategorySelect={selectCategoryKey}
+          selectedKey={selectedCategoryKey} selectedTitle={selectedCategory?.label} onCategorySelect={selectCategoryKey} onBrowsingChange={setCatalogBrowsing}
           error={categoryError} inputRef={element=>{categorySelectRef.current=element;}}
           availableOfferings={categoryOptions.flatMap(option => option.offering ? [option.offering.full_code] : [])}
           fallbackOffering={categoryOptions.find(option => option.offering?.full_code === catalogQuery.data?.fallback?.full_code)?.offering?.full_code}
           fallbackEntryPointKey={catalogQuery.data?.fallback?.entry_point_key ?? undefined}
-          onSelect={(offeringCode, entry) => {
-            const option = categoryOptions.find(item => item.offering?.full_code === offeringCode);
-            if (option) { selectCategoryKey(option.key); setSelectedSearchEntry(entry); }
-          }} />
+          onSelect={openCatalogEntrance} />
+        <div hidden={catalogBrowsing}>
+        {selectedCategory && !selectedOffering?.guided_scenario_enabled ? <button type="button" className="mb-3 text-left underline" onClick={()=>categorySelectRef.current?.focus()}>Другой пункт каталога</button> : null}
         {selectedOffering?.guided_scenario_enabled ? <>
           <ScenarioEntrances key={`${selectedOffering.full_code}:${selectedSearchEntry ?? "default"}`} initialEntryPointKey={selectedSearchEntry}
-            onBrowse={()=>{setSelectedSearchEntry(undefined);categorySelectRef.current?.focus();}} offering={selectedOffering} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
+            onSelectEntry={entry=>openCatalogEntrance(selectedOffering.full_code, entry)}
+            onBrowse={()=>{
+              if (selectedSearchEntry) openCatalogEntrance(selectedOffering.full_code);
+              else categorySelectRef.current?.focus();
+            }} offering={selectedOffering} owner={session?.user_login || ""} deviceId={primaryDevice?.device_id || ""} />
         </> : <DetailsStepPanel
           clearFieldServerError={clearFieldServerError}
           contextualFields={contextualFields}
@@ -859,6 +881,7 @@ function RequesterNewRequestContent() {
           validationAttempted={validationAttempted}
           valueValidation={valueValidation}
         />}
+        </div>
       </RequestWizardShell>
       <RequestSummaryAside
         bootstrap={bootstrap}

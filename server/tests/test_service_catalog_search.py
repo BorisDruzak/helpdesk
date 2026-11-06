@@ -87,6 +87,21 @@ def test_offering_name_is_searchable_even_when_none_of_its_problem_names_match()
     assert result[0]['result_kind'] == 'service'
     assert result[0]['entry_point_key'] is None
 
+@pytest.mark.parametrize('query', ['принтер', 'ghbynth'])
+def test_service_name_query_prioritizes_the_general_service_before_setup_problems(query):
+    payload = symptom_catalog()
+    payload['services'][0]['offerings'].append({
+        'full_code': 'public.print_setup', 'title': 'Подключение и настройка принтеров',
+        'guided_scenario_enabled': True,
+        'catalog_items': [{'entry_point_key': 'pin', 'title': 'Принтер: настроить выдачу по PIN', 'synonyms': [], 'description': ''}],
+    })
+    rows = search(payload, query)['results']
+    assert rows[0]['result_kind'] == 'service'
+    assert rows[0]['offering_full_code'] == 'public.print'
+    assert rows[1]['offering_full_code'] == 'public.print_setup'
+    symptom = search(payload, 'принтер не печатает')['results'][0]
+    assert symptom['result_kind'] == 'problem' and symptom['offering_full_code'] == 'public.print'
+
 
 def test_service_section_names_find_only_the_public_offering_rows():
     result = search(catalog(("Не печатает документ", [], "")), 'рабочее место')['results']

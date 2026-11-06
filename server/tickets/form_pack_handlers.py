@@ -57,6 +57,9 @@ async def _merge_registry_requester_forms(session, pack: dict[str, Any]) -> dict
     schemas = await policy_repo.list_form_schemas(include_inactive=False)
     added = 0
     for template in await policy_repo.list_request_templates(include_inactive=False):
+        discovery = (template.get("config") or {}).get("requester_catalog")
+        if isinstance(discovery, dict) and discovery.get("visible") is False:
+            continue
         template_code = str(template.get("template_code") or "").strip()
         if not template_code or template_code in seen_templates or template_code in seen_keys:
             continue
