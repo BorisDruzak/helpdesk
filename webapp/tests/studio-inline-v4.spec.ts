@@ -1,0 +1,64 @@
+import { expect, test } from "playwright/test";
+import { installStudioV3Fixture } from "./fixtures/studio-v3";
+for (const width of [1366, 1920]) {
+  test(`inline map editor, visible insertion and session recovery ${width}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: width === 1366 ? 768 : 1080 });
+    const state = await installStudioV3Fixture(page);
+    state.definition().schema_version = 4;
+    state.definition().execution_semantics = 3;
+    await page.route("**/api/web/notifications/push/config", route => route.fulfill({ json: { status: "ok", enabled: false, public_key: null } }));
+    await page.route("**/request-studio/fragments", route => route.fulfill({ json: { status: "success", data: { items: [], total: 0 } } }));
+    let refuse = false;
+    await page.route("**/scenarios/v3/draft", route => refuse ? route.fulfill({ status: 401, json: { status: "error", error_code: "AUTH_REQUIRED" } }) : route.fallback());
+    await page.goto("/app/admin/request-template-studio");
+    const service = page.getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true });
+    await service.click();
+    await expect(page.locator("aside.catalog-inspector")).toHaveCount(0);
+    await service.dblclick();
+    await expect(page.getByLabel("Название услуги", { exact: true })).toBeVisible();
+    await expect(page.locator("aside.studio-map-inspector")).toHaveCount(0);
+    await page.getByRole("button", { name: "Редактировать выбранный блок", exact: true }).click();
+    const map = page.getByLabel("Визуальная карта сценария", { exact: true });
+    const bounds = (await map.boundingBox())!;
+    // Pan from an empty edge of the pane before adding a block.
+    await page.mouse.move(bounds.x + bounds.width - 28, bounds.y + bounds.height - 28);
+    await page.mouse.down(); await page.mouse.move(bounds.x + bounds.width - 220, bounds.y + bounds.height - 120, { steps: 8 }); await page.mouse.up();
+    await page.getByRole("button", { name: "+ Инструкция", exact: true }).click();
+    const text = page.getByRole("textbox", { name: "Текст инструкции", exact: true });
+    await expect(text).toBeVisible();
+    const node = page.locator(".studio-map-node.is-expanded");
+    const nodeBox = (await node.boundingBox())!;
+    expect(nodeBox.x).toBeGreaterThanOrEqual(bounds.x - 8);
+    expect(nodeBox.x + nodeBox.width).toBeLessThanOrEqual(bounds.x + bounds.width + 8);
+    await page.getByRole("button", { name: "Включить визуальное оформление", exact: true }).click();
+    const rich = page.getByRole("textbox", { name: "Текст инструкции", exact: true });
+    await rich.fill("Откройте настройки приложения и проверьте подключение.");
+    await page.getByRole("button", { name: "Развернуть редактор", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Полный редактор блока" })).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`full-block-editor-${width}.png`), fullPage: true });
+    await page.getByRole("button", { name: "Вернуться к карте", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Текст инструкции", exact: true })).toHaveText(/Откройте настройки/);
+    await expect.poll(() => state.writes.filter(value => value === "draft").length).toBeGreaterThan(0);
+    refuse = true;
+    await page.getByRole("textbox", { name: "Текст инструкции", exact: true }).fill("Локальная правка после завершения сессии");
+    await expect(page.getByRole("alert")).toContainText("Сессия входа завершилась");
+    await expect(page.getByRole("link", { name: "Войти в отдельной вкладке" })).toHaveAttribute("target", "_blank");
+    refuse = false;
+    await page.getByRole("button", { name: "Проверить вход и сохранить", exact: true }).click();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("textbox", { name: "Текст инструкции", exact: true })).toHaveText("Локальная правка после завершения сессии");
+    // Context menu and reusable fragments are available without a third panel.
+    await page.mouse.click(bounds.x + bounds.width - 25, bounds.y + 100, { button: "right" });
+    await expect(page.getByRole("menu", { name: "Действия на карте" })).toBeVisible();
+    await page.getByRole("menuitem", { name: "Закрыть меню", exact: true }).click();
+    await page.getByRole("tab", { name: "Фрагменты", exact: true }).click();
+    await page.getByRole("button", { name: "Меню без сохранения ответа", exact: true }).click();
+    await page.getByRole("button", { name: "Добавить шаблон", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Шаблон добавлен" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`inline-studio-${width}.png`), fullPage: true });
+    const unexpectedErrors = state.errors.filter(error => !error.includes("401") && !error.includes("status of 401"));
+    expect(unexpectedErrors).toEqual([]);
+    expect(state.unexpected).toEqual([]);
+  });
+}

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
-import { RequestFormFieldControl, type DynamicFormValues } from "../requester/dynamic-form";
+import { type DynamicFormValues } from "../requester/dynamic-form";
 import { simulateScenario, ScenarioApiError, type ScenarioSimulation } from "./scenario-api";
 import { scenarioIssueDestination, type ScenarioIssueDestination } from "./scenario-issue-navigation";
 import type { ScenarioAnswerRequest, ScenarioDraftDefinition } from "./scenario-contract";
 import { diagnosticFailureLabels, type DiagnosticFailureStatus } from "./scenario-diagnostics";
 import { ScenarioProcessingResult } from "./scenario-processing-result";
-import { ScenarioFields } from "../requester/scenario-fields";
+import { ScenarioStepContent } from "../requester/scenario-step-content";
 import { ScenarioSimulationComparison, ScenarioSimulationTrace } from "./scenario-simulation-trace";
 import { scenarioIssueText, type ScenarioApiIssue } from "./scenario-issues";
 
@@ -23,16 +23,19 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
   const [diagnosticOutcomes, setDiagnosticOutcomes] = useState<Record<string, DiagnosticFailureStatus>>({});
   const diagnostics = (definition?.blocks || []).filter(item => item.kind === "diagnostic");
   const sequence = useRef(0);
+  const previewTimer = useRef<number | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const block = result?.current_step;
   useEffect(() => {
     sequence.current++; setResult(null); setSteps([]); setValues({}); setError(""); setIssues([]); setBusy(false); setDiagnosticOutcomes({});
-    return () => { sequence.current++; };
+    return () => { sequence.current++; if (previewTimer.current !== null) window.clearTimeout(previewTimer.current); };
   }, [id, revision, dirty, disabled, entryPointKey]);
   useEffect(() => { heading.current?.focus(); }, [block?.id]);
   useEffect(() => { setComparison(null); }, [id, revision, dirty]);
   async function run(next: ScenarioAnswerRequest[], preview?: ScenarioAnswerRequest) {
     if (dirty || disabled) return;
+    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+    previewTimer.current = null;
     const current = ++sequence.current;
     setBusy(true); setError(""); setIssues([]);
     try {
@@ -42,22 +45,25 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       setResult(response);
       onState?.(response.state.current_block_id, response.state.history ?? []);
       if (!preview) { setSteps(next); setAcknowledged(false); setValues(Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, field.value])) as DynamicFormValues); }
-      else setValues(previous => Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, previous[field.key]])));
+      else setValues(previous => {
+        const nextValues = Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, previous[field.key]]));
+        return Object.keys(previous).length === Object.keys(nextValues).length && Object.keys(nextValues).every(key => Object.is(previous[key], nextValues[key])) ? previous : nextValues;
+      });
     } catch (failure) { if (current === sequence.current) {
       setIssues(failure instanceof ScenarioApiError ? failure.issues : []);
       setError(failure instanceof ScenarioApiError && failure.errorCode === "SCENARIO_INVALID" ? "Сценарий пока не готов к проверке. Исправьте указанные шаги и сохраните черновик." : failure instanceof ScenarioApiError && failure.errorCode === "REVISION_CONFLICT" ? "Сохранённая версия изменилась. Загрузите текущую версию сценария и повторите проверку." : "Проверьте ответы и сохранённый сценарий, затем повторите проверку.");
     } }
     finally { if (current === sequence.current) setBusy(false); }
   }
-  function answer(currentResult?: ScenarioAnswerRequest["current_result"]) {
+  function answer(currentResult?: ScenarioAnswerRequest["current_result"], actionKey?: string) {
     if (!block || !result) return;
     const answers = Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined)) as ScenarioAnswerRequest["answers"];
     void run([...steps, { expected_block_id: block.id, revision: result.state.revision,
-      ...(block.kind === "form_page" ? { answers } : {}), ...(currentResult ? { current_result: currentResult } : {}) }]);
+      ...(block.kind === "form_page" ? { answers } : {}), ...(currentResult ? { current_result: currentResult } : {}), ...(actionKey ? { action_key: actionKey } : {}) }]);
   }
-  function preview() {
+  function preview(previewValues = values) {
     if (!block?.has_dynamic_fields || !result || busy) return;
-    const answers = Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined)) as ScenarioAnswerRequest["answers"];
+    const answers = Object.fromEntries(Object.entries(previewValues).filter(([, value]) => value !== undefined)) as ScenarioAnswerRequest["answers"];
     void run(steps, { expected_block_id: block.id, revision: result.state.revision, answers });
   }
   return <div className="min-w-0 space-y-4" aria-busy={busy}>
@@ -93,18 +99,16 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       if (event.target.matches("input, textarea, select")) preview();
     }}>
       <h3 tabIndex={-1} ref={heading} className="font-semibold">{block.title}</h3>
-      <ScenarioFields fields={block.fields || []} layout={block.layout} renderField={field => <><RequestFormFieldControl field={field} value={values[field.key]} onChange={value => {
-        sequence.current++; setValues(previous => ({ ...previous, [field.key]: value })); setError("");
-      }} />{field.allow_unknown && <label className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={values[field.key] === null} onChange={event => {
-        const value = event.currentTarget.checked ? null : undefined;
-        sequence.current++; setError(""); setValues(previous => ({ ...previous, [field.key]: value }));
-      }} />Не знаю</label>}</>} />
-      {block.content && <p className="whitespace-pre-wrap">{block.content.body}</p>}
-      {block.kind === "instruction" && <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />Инструкция выполнена</label>}
-      {block.kind === "instruction" && block.can_request_ticket ? <Button variant="outline" onClick={() => answer("request_ticket")}>Нужна помощь поддержки</Button> : null}
-      {block.answers && <dl className="space-y-2">{block.answers.map(item => <div key={item.key}><dt className="font-medium">{item.label}</dt><dd>{item.display_value}</dd></div>)}</dl>}
-      {block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{(["yes", "no", "unknown"] as const).map(value => <Button key={value} onClick={() => answer(value)}>{value === "yes" ? "Да, решено" : value === "no" ? "Нет, нужна помощь" : "Не знаю"}</Button>)}</div> : null}
-      {["form_page", "instruction", "review"].includes(block.kind) && <Button disabled={block.acknowledgment_required && !acknowledged} onClick={() => answer(block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить проверку</Button>}
+      <ScenarioStepContent block={block} values={values} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onValue={(key, value) => {
+        sequence.current++;
+        const next = { ...values, [key]: value };
+        setValues(next); setError("");
+        if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+        if (block.has_dynamic_fields) previewTimer.current = window.setTimeout(() => { previewTimer.current = null; preview(next); }, 300);
+      }} onRequestTicket={() => answer("request_ticket")} />
+      {block.actions !== undefined && <div className="flex flex-wrap gap-2">{block.actions.map(action => <Button key={action.key} disabled={block.acknowledgment_required && !acknowledged} onClick={() => answer(block.kind === "instruction" ? "acknowledged" : undefined, action.key)}>{action.label}</Button>)}{!block.actions.length && <p role="status">Заполните вопросы, чтобы увидеть доступные действия.</p>}</div>}
+      {block.actions === undefined && block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{(["yes", "no", "unknown"] as const).map(value => <Button key={value} onClick={() => answer(value)}>{value === "yes" ? "Да, решено" : value === "no" ? "Нет, нужна помощь" : "Не знаю"}</Button>)}</div> : null}
+      {block.actions === undefined && ["form_page", "instruction", "review"].includes(block.kind) && <Button disabled={block.acknowledgment_required && !acknowledged} onClick={() => answer(block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить проверку</Button>}
       {block.kind === "finish" && <p role="status">{block.message || "Решено без обращения"}</p>}
       {result?.processing && <ScenarioProcessingResult result={result} definition={definition} />}
       {result?.map_processing && !result.processing && <ScenarioSimulationTrace result={result} definition={definition} />}

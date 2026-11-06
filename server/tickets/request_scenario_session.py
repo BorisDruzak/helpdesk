@@ -1,8 +1,8 @@
 """Safe requester projection; graph execution stays in ScenarioRuntime."""
-from tickets.request_scenario_conditions import evaluate_condition, can_request_ticket
+from tickets.request_scenario_conditions import evaluate_condition, can_request_ticket, leaves
 
 
-INTERACTIVE = {"form_page", "instruction", "resolution_check", "review"}
+INTERACTIVE = {"form_page", "instruction", "resolution_check", "review", "navigation"}
 
 
 def review_display_value(item, value, options=None):
@@ -21,9 +21,12 @@ def project_step(definition, state):
     blocks = {block.id: block for block in definition.blocks}
     block = blocks[state.current_block_id]
     payload = {"id": block.id, "kind": block.kind, "title": block.title}
+    if block.transition_mode == "buttons":
+        payload["actions"] = [edge.button.model_dump(mode="json") for edge in block.transitions
+                              if edge.button and evaluate_condition(edge.when, state.answers, "acknowledged" if block.kind == "instruction" else None)]
     if block.kind == "form_page":
         payload["layout"] = block.layout
-        payload["has_dynamic_fields"] = any(item.visible_when is not None or item.required_when is not None for item in block.fields)
+        payload["has_dynamic_fields"] = any(item.visible_when is not None or item.required_when is not None for item in block.fields) or any(leaf.source == "answer" and leaf.field in {item.key for item in block.fields} for edge in block.transitions for leaf in leaves(edge.when))
         payload["fields"] = []
         for item in block.fields:
             if not evaluate_condition(item.visible_when, state.answers):

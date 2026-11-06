@@ -25,6 +25,20 @@ it("starts the selected entrance instead of resuming another entrance", async ()
 });
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); });
+it("uses navigation actions without fabricating question answers", async () => {
+  const step = { id: "menu-session", revision: 1, state: "active", back_targets: [], block: { id: "menu", kind: "navigation", title: "Куда дальше?", actions: [{ key: "support", label: "Нужна помощь" }] } };
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/advance")) {
+      expect(JSON.parse(String(init?.body))).toEqual({ expected_block_id: "menu", revision: 1, action_key: "support" });
+      return response({ ...step, revision: 2, block: { id: "finish", kind: "finish", title: "Готово" } });
+    }
+    return response(step);
+  });
+  vi.stubGlobal("fetch", fetcher); render(<ScenarioSession offering="it.menu" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Нужна помощь" }));
+  await screen.findByRole("heading", { name: "Готово" });
+  expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/advance"))).toHaveLength(1);
+});
 
 it("automatically previews processing and opens the ticket after one explicit submission", async () => {
   const step = { id: "session", revision: 3, state: "active", back_targets: [], block: { id: "submit", kind: "submit_ticket", title: "Отправка" } };

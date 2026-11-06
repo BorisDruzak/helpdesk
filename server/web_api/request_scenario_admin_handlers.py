@@ -12,6 +12,7 @@ from app.db import get_session
 from app.repos.request_scenario_repo import RequestScenarioRepo, ScenarioAdminError, serialize
 from auth.middleware import require_auth
 from tickets.request_scenario_runtime import ScenarioConflict, ScenarioInputError
+from tickets.request_scenario_fragments import FragmentDependencyError
 from tickets.request_scenario_validation import ScenarioValidationError, ScenarioIssue
 from web_api.dto.request_scenario import CatalogCode, StrictModel
 from web_api.dto.request_scenario_admin import CategoryInput, Identifier, RevisionInput, ScenarioCreate, ScenarioSave, SimulationInput, ScenarioPublish, ScenarioRollback
@@ -105,6 +106,8 @@ async def _run(request, operation, *, write=False):
         return web.json_response({"status": "error", "error_code": "SCENARIO_INVALID", "issues": [asdict(issue) for issue in exc.issues]}, status=400)
     except ScenarioConflict:
         return web.json_response({"status": "error", "error_code": "REVISION_CONFLICT"}, status=409)
+    except FragmentDependencyError as exc:
+        return web.json_response({"status": "error", "error_code": "FRAGMENT_DEPENDENCIES", "dependencies": exc.dependencies}, status=409, headers={"Cache-Control": "no-store"})
     except ScenarioInputError as exc:
         return web.json_response({"status": "error", "error_code": "INVALID_ANSWERS", "errors": exc.errors}, status=400)
     except ValidationError as exc:
@@ -291,4 +294,12 @@ async def handle_scenario_publish(request):
 async def handle_scenario_rollback_draft(request):
     async def operation(repo):
         return await ScenarioPublicationService(repo).rollback_draft(_id(request), await _payload(request, ScenarioRollback))
+    return await _run(request, operation, write=True)
+
+
+@require_auth("admin")
+async def handle_scenario_upgrade_v4(request):
+    async def operation(repo):
+        payload = await _payload(request, RevisionInput)
+        return await repo.upgrade_v4(_id(request), payload.revision)
     return await _run(request, operation, write=True)

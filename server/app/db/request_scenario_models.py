@@ -84,7 +84,7 @@ class RequestStudioScenarioVersion(Base):
         sa.UniqueConstraint("scenario_id", "id", name="uq_studio_version_scenario_id"),
         sa.Index("uq_studio_version_active_offering", "offering_full_code", unique=True, postgresql_where=sa.text("state = 'published'")),
         sa.CheckConstraint("state IN ('published','retired','revoked')", name="ck_studio_version_state"),
-        sa.CheckConstraint("version > 0 AND schema_version IN (1,2,3)", name="ck_studio_version_schema"),
+        sa.CheckConstraint("version > 0 AND schema_version IN (1,2,3,4)", name="ck_studio_version_schema"),
         sa.CheckConstraint("content_hash ~ '^[a-f0-9]{64}$'", name="ck_studio_version_hash"),
     )
 
@@ -148,3 +148,23 @@ class RequestStudioAsset(Base):
         sa.CheckConstraint("size_bytes >= 0 AND size_bytes <= 209715200", name="ck_studio_asset_size"),
         sa.CheckConstraint("sha256 ~ '^[a-f0-9]{64}$'", name="ck_studio_asset_hash"),
     )
+
+class RequestStudioFragment(Timestamps, Base):
+    __tablename__ = "request_studio_fragments"
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title: Mapped[str] = mapped_column(sa.String(300), nullable=False)
+    source_scenario_id: Mapped[str] = mapped_column(sa.String(36), sa.ForeignKey("request_studio_scenarios.id", ondelete="RESTRICT"), nullable=False)
+    source_title: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source_revision: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    revision: Mapped[int] = mapped_column(sa.Integer, server_default="1", nullable=False)
+    definition: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    external_dependencies: Mapped[list] = mapped_column(JSONB, nullable=False)
+    archived: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.false(), nullable=False)
+    created_by: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    __table_args__ = (sa.CheckConstraint("revision > 0 AND source_revision > 0", name="ck_studio_fragment_revision"),)
+
+
+class RequestStudioFragmentAsset(Base):
+    __tablename__ = "request_studio_fragment_assets"
+    fragment_id: Mapped[str] = mapped_column(sa.String(36), sa.ForeignKey("request_studio_fragments.id", ondelete="RESTRICT"), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(sa.String(36), sa.ForeignKey("request_studio_assets.id", ondelete="RESTRICT"), primary_key=True)

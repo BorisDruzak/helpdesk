@@ -1,5 +1,5 @@
 import { conditionFields, fieldLabels } from "./scenario-builder-model";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Background, Controls, Handle, MarkerType, Position, ReactFlow, useNodesState, useUpdateNodeInternals, type Edge, type Node, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { ScenarioCondition, ScenarioDraftDefinition } from "./scenario-contract";
@@ -11,20 +11,22 @@ import { answerBranchChoices, defaultAnswerBranchField, findAnswerBranch } from 
 import { conditionSummary } from "./scenario-condition-summary";
 
 type AnswerRow = { key: string; label: string; transitionIndex: number; targetTitle?: string; add?: () => void };
-type MapData = { title: string; subtitle: string; entries: string[]; transitions: number; terminal: boolean; system: boolean; issue: boolean; current: boolean; visited: boolean; entrance?: boolean; hint?: string; add?: () => void; answerFieldLabel?: string; answerBranches?: AnswerRow[]; moreAnswerBranches?: boolean };
+type MapData = { auxiliary?: boolean; editor?: ReactNode; edit?: () => void; expanded?: boolean; title: string; subtitle: string; entries: string[]; transitions: number; terminal: boolean; system: boolean; issue: boolean; current: boolean; visited: boolean; entrance?: boolean; hint?: string; add?: () => void; answerFieldLabel?: string; answerBranches?: AnswerRow[]; moreAnswerBranches?: boolean };
 export type MapNode = Node<MapData, "scenario">;
 export const metadataNodeId = "studio:metadata";
 export const entranceEdgeId = (key: string | null) => key === null ? "studio:primary" : `studio:entry-point:${encodeURIComponent(key)}`;
 function MapBlock({ id, data, selected }: NodeProps<MapNode>) {
   const updateNodeInternals = useUpdateNodeInternals();
-  useEffect(() => { updateNodeInternals(id); }, [id, data.transitions, data.terminal, data.answerBranches, updateNodeInternals]);
+  useEffect(() => { updateNodeInternals(id); }, [id, data.transitions, data.terminal, data.answerBranches, data.expanded, data.editor, updateNodeInternals]);
   const answerRoutes = new Set(data.answerBranches?.map(row => row.transitionIndex).filter(index => index >= 0));
   const otherRoutes = Array.from({ length: data.transitions }, (_, index) => index).filter(index => !answerRoutes.has(index));
-  return <div className={`studio-map-node ${selected ? "is-selected" : ""} ${data.system ? "is-system" : ""} ${data.issue ? "has-issue" : ""} ${data.current ? "is-current" : ""} ${data.visited ? "is-visited" : ""}`}>
-    {!data.system && !data.entrance && <Handle type="target" position={Position.Left} aria-label={`Вход блока «${data.title}»`} title="Перетащите сюда связь другого блока" />}
+  return <div onDoubleClick={event => { event.stopPropagation(); data.edit?.(); }} className={`studio-map-node ${data.expanded ? "is-expanded" : ""} ${selected ? "is-selected" : ""} ${data.system ? "is-system" : ""} ${data.issue ? "has-issue" : ""} ${data.current ? "is-current" : ""} ${data.visited ? "is-visited" : ""}`}>
+    {!data.system && !data.entrance && <Handle type="target" isConnectable={!data.auxiliary} position={Position.Left} aria-label={`Вход блока «${data.title}»`} title="Перетащите сюда связь другого блока" />}
     {data.entrance && <Handle type="source" position={Position.Bottom} aria-label={`Начало «${data.title}»: соединить с первым шагом`} />}
     {data.system && <Handle id="entrance" type="source" position={Position.Right} aria-label="Начало: создать связь с точкой входа" />}
     <div className="studio-map-node__kind">{data.subtitle}</div><strong>{data.title}</strong>
+    {data.edit && <button type="button" className="studio-node-edit nodrag nopan" onClick={event => { event.stopPropagation(); data.edit?.(); }}>{data.expanded ? "Свернуть редактор" : "Редактировать"}</button>}
+    {data.editor && <div className="studio-inline-editor nodrag nopan nowheel" onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>{data.editor}</div>}
     {data.entries.map((title, index) => <span key={index} className="studio-map-node__entry">↳ {title}</span>)}
     {data.hint && <span className="studio-map-node__hint">{data.hint}</span>}
     {!!data.answerBranches?.length && <div className="studio-node-answers">
@@ -43,8 +45,10 @@ function MapBlock({ id, data, selected }: NodeProps<MapNode>) {
 const nodeTypes = { scenario: MapBlock };
 const edgeTypes = { scenario: ScenarioMapEdge };
 const emptyPath: string[] = [];
+const emptyAuxiliary: Record<string, ReactNode> = {};
 export const transitionId = (source: string, index: number) => `${source}:${index}`;
-export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled, issueBlockId, path = emptyPath, current, onSelect, onEdge, onMove, onConnect, onReconnect, onDropBlock, onReady, onEntrance, onEntranceReconnect, onEntranceTitle, onAdd, answerSources, onAnswerAdd }: {
+export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled, issueBlockId, path = emptyPath, current, onSelect, onEdge, onMove, onConnect, onReconnect, onDropBlock, onReady, onEntrance, onEntranceReconnect, onEntranceTitle, onAdd, answerSources, onAnswerAdd, auxiliaryEditors = emptyAuxiliary, expandedId, inlineEditor, onEdit, onContext }: {
+  auxiliaryEditors?: Record<string, ReactNode>; expandedId?: string | null; inlineEditor?: ReactNode; onEdit?: (id: string) => void; onContext?: (point: { x: number; y: number }, nodeId?: string, edgeId?: string) => void;
   definition: ScenarioDraftDefinition; selected: string; selectedEdge: string | null; disabled: boolean; issueBlockId?: string; path?: string[]; current?: string;
   onSelect: (id: string) => void; onEdge: (source: string, index: number) => void;
   onMove: (id: string, position: { x: number; y: number }) => void;
@@ -62,7 +66,7 @@ export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled
   const hints = scenarioMapHints(definition);
   const positions = stableMapPositions(definition);
   const entrances = [...(definition.entry_points ?? []).map(entry => ({ key: entry.key as string | null, title: entry.title, target: entry.target_block_id, enabled: entry.enabled !== false })), ...(!definition.entry_points?.some(entry => entry.target_block_id === definition.entry_block_id) ? [{ key: null, title: "Начало маршрута", target: definition.entry_block_id ?? "", enabled: true }] : [])];
-  const initial = useMemo<MapNode[]>(() => [{ id: metadataNodeId, type: "scenario", position: definition.editor_layout?.positions?.system_start ?? { x: -320, y: 0 }, selected: selected === metadataNodeId, data: { title: "Начало", subtitle: "Входы из каталога", entries: [], transitions: 0, terminal: true, system: true, issue: false, current: false, visited: false } }, ...(definition.blocks ?? []).map((block): MapNode => {
+  const baseInitial = useMemo<MapNode[]>(() => [{ id: metadataNodeId, type: "scenario", position: definition.editor_layout?.positions?.system_start ?? { x: -320, y: 0 }, selected: selected === metadataNodeId, data: { expanded: expandedId === metadataNodeId, editor: expandedId === metadataNodeId ? inlineEditor : undefined, edit: onEdit ? () => onEdit(metadataNodeId) : undefined, title: "Начало", subtitle: "Входы из каталога", entries: [], transitions: 0, terminal: true, system: true, issue: false, current: false, visited: false } }, ...(definition.blocks ?? []).map((block): MapNode => {
     const field = block.kind === "decision" ? defaultAnswerBranchField(definition, block.id, answerSources?.[block.id]) : undefined;
     const choices = field ? answerBranchChoices(field) : [];
     const answerBranches: AnswerRow[] = choices.slice(0, 6).map(choice => {
@@ -71,16 +75,24 @@ export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled
     });
     return {
     id: block.id, type: "scenario", position: positions[block.id], selected: selected === block.id,
-    data: { title: block.kind === "form_page" && block.fields.length === 1 ? block.fields[0].label : block.title, subtitle: block.kind === "form_page" && block.fields.length === 1 ? `Вопрос · ${fieldLabels[block.fields[0].type]}` : mapKindLabel(block.kind), entries: [], transitions: block.transitions?.length ?? 0, terminal: terminal(block.kind), system: false, issue: issueBlockId === block.id || hints.some(hint => hint.blockId === block.id && hint.level === "required"), hint: hints.find(hint => hint.blockId === block.id)?.text, current: current === block.id, visited: path.includes(block.id), add: !disabled && !terminal(block.kind) && onAdd ? () => onAdd(block.id) : undefined, answerFieldLabel: field?.label, answerBranches, moreAnswerBranches: choices.length > 6 },
-  }; })], [definition, selected, selectedEdge, issueBlockId, path, current, disabled, onAdd, answerSources, onAnswerAdd]);
+    data: { expanded: expandedId === block.id, editor: expandedId === block.id ? inlineEditor : undefined, edit: onEdit ? () => onEdit(block.id) : undefined, title: block.kind === "form_page" && block.fields.length === 1 ? block.fields[0].label : block.title, subtitle: block.kind === "form_page" && block.fields.length === 1 ? `Вопрос · ${fieldLabels[block.fields[0].type]}` : mapKindLabel(block.kind), entries: [], transitions: block.transitions?.length ?? 0, terminal: terminal(block.kind), system: false, issue: issueBlockId === block.id || hints.some(hint => hint.blockId === block.id && hint.level === "required"), hint: hints.find(hint => hint.blockId === block.id)?.text, current: current === block.id, visited: path.includes(block.id), add: !disabled && !terminal(block.kind) && onAdd ? () => onAdd(block.id) : undefined, answerFieldLabel: field?.label, answerBranches, moreAnswerBranches: choices.length > 6 },
+  }; })], [definition, selected, selectedEdge, issueBlockId, path, current, disabled, onAdd, answerSources, onAnswerAdd, auxiliaryEditors, expandedId, inlineEditor, onEdit]);
+  const auxiliaryNodes = useMemo<MapNode[]>(() => Object.entries(auxiliaryEditors).map(([source, content]) => ({ id: `studio:legacy-sla:${source}`, type: "scenario", position: { x: (positions[source]?.x ?? 0) + 320, y: (positions[source]?.y ?? 0) + 70 }, draggable: false, selected: selected === `studio:legacy-sla:${source}`, data: { auxiliary: true, title: "SLA по ответам и ветвям", subtitle: "Действующие правила", entries: [], transitions: 0, terminal: true, system: false, issue: false, current: false, visited: false, expanded: expandedId === `studio:legacy-sla:${source}`, editor: expandedId === `studio:legacy-sla:${source}` ? content : undefined, edit: onEdit ? () => onEdit(`studio:legacy-sla:${source}`) : undefined } })), [auxiliaryEditors, definition, selected, expandedId, onEdit]);
+  const initial = useMemo(() => [...baseInitial, ...auxiliaryNodes], [baseInitial, auxiliaryNodes]);
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>(initial);
   const dragging = useRef(false);
   const flow = useRef<ReactFlowInstance<MapNode> | null>(null);
+  useEffect(() => {
+    if (!expandedId) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => void flow.current?.fitView({ nodes: [{ id: expandedId }], minZoom: 1, maxZoom: 1, padding: .12, duration: 150 })); });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [expandedId]);
   const previousCount = useRef(definition.blocks?.length ?? 0);
   useEffect(() => { const count = definition.blocks?.length ?? 0; const firstStep = previousCount.current === 0 && count > 0; previousCount.current = count; if (firstStep) { const frame = requestAnimationFrame(() => void flow.current?.fitView({ padding: 0.18, maxZoom: 1 })); return () => cancelAnimationFrame(frame); } }, [definition.blocks?.length]);
   useEffect(() => setNodes(previous => initial.map(node => { const old = previous.find(item => item.id === node.id); return { ...node, measured: old?.measured, ...(dragging.current && old ? { position: old.position, dragging: old.dragging } : {}) }; })), [initial, setNodes]);
   const routeEdges = useMemo<Edge[]>(() => (definition.blocks ?? []).flatMap(block => (block.transitions ?? []).map((edge, index) => ({
-    id: transitionId(block.id, index), source: block.id, target: edge.to, sourceHandle: `route-${index}`, type: "scenario", reconnectable: "target", selected: selectedEdge === transitionId(block.id, index), markerEnd: { type: MarkerType.ArrowClosed }, label: edge.when && "source" in edge.when && edge.when.source === "current_result" && "value" in edge.when ? ({ yes: "Да", no: "Нет", unknown: "Не знаю" }[String(edge.when.value)] ?? `Условие ${index + 1}`) : edge.when ? conditionSummary(edge.when, conditionFields(definition, block.id)) : block.kind === "resolution_check" ? "Не знаю / иначе" : block.kind === "decision" ? "Иначе" : "Продолжить", data: { labelOffset: (index - ((block.transitions?.length ?? 1) - 1) / 2) * 46, select: () => onEdge(block.id, index), add: !disabled && onAdd ? () => onAdd(block.id, index) : undefined, addLabel: `Добавить шаг между «${block.title}» и «${definition.blocks?.find(target => target.id === edge.to)?.title ?? "следующим блоком"}»` }, style: { stroke: selectedEdge === transitionId(block.id, index) ? "#087443" : "#94a3b8", strokeWidth: 2 },
+    id: transitionId(block.id, index), source: block.id, target: edge.to, sourceHandle: `route-${index}`, type: "scenario", reconnectable: "target", selected: selectedEdge === transitionId(block.id, index), markerEnd: { type: MarkerType.ArrowClosed }, label: edge.button?.label || (edge.when && "source" in edge.when && edge.when.source === "current_result" && "value" in edge.when ? ({ yes: "Да", no: "Нет", unknown: "Не знаю" }[String(edge.when.value)] ?? `Условие ${index + 1}`) : edge.when ? conditionSummary(edge.when, conditionFields(definition, block.id)) : block.kind === "resolution_check" ? "Не знаю / иначе" : block.kind === "decision" ? "Иначе" : "Продолжить"), data: { labelOffset: (index - ((block.transitions?.length ?? 1) - 1) / 2) * 46, select: () => onEdge(block.id, index), add: !disabled && onAdd ? () => onAdd(block.id, index) : undefined, addLabel: `Добавить шаг между «${block.title}» и «${definition.blocks?.find(target => target.id === edge.to)?.title ?? "следующим блоком"}»` }, style: { stroke: selectedEdge === transitionId(block.id, index) ? "#087443" : "#94a3b8", strokeWidth: 2 },
   }))), [definition, selectedEdge, disabled, onAdd, onEdge]);
   const entranceEdges: Edge[] = (definition.entry_points ?? []).filter(entry => nodes.some(node => node.id === entry.target_block_id)).map(entry => ({
     id: entranceEdgeId(entry.key), source: metadataNodeId, sourceHandle: "entrance", target: entry.target_block_id, type: "scenario", reconnectable: "target",
@@ -91,17 +103,17 @@ export function ScenarioMapCanvas({ definition, selected, selectedEdge, disabled
     id: entranceEdgeId(null), source: metadataNodeId, sourceHandle: "entrance", target: definition.entry_block_id, type: "smoothstep", reconnectable: "target",
     data: { entrance: true, key: null }, selected: selectedEdge === entranceEdgeId(null), label: "Основной вход", style: { stroke: "#0d9488", strokeDasharray: "6 4" },
   });
-  const edges = [...routeEdges, ...entranceEdges];
-  return <div className="studio-map-canvas" aria-label="Визуальная карта сценария" onDragOver={event => { if (!disabled) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={event => {
+  const edges: Edge[] = [...routeEdges, ...entranceEdges, ...Object.keys(auxiliaryEditors).map(source => ({ id: `studio:sla-link:${source}`, source, target: `studio:legacy-sla:${source}`, sourceHandle: "new", type: "smoothstep", data: { auxiliary: true }, style: { stroke: "#c3984f", strokeDasharray: "3 5" }, selectable: false, reconnectable: false }))];
+  return <div className="studio-map-canvas" aria-label="Визуальная карта сценария" onContextMenu={event => { if (onContext) { event.preventDefault(); onContext({ x: event.clientX, y: event.clientY }, (event.target as Element).closest(".react-flow__node")?.getAttribute("data-id") ?? undefined, (event.target as Element).closest("[data-scenario-edge], .react-flow__edge")?.getAttribute("data-scenario-edge") ?? (event.target as Element).closest(".react-flow__edge")?.getAttribute("data-id") ?? undefined); } }} onDragOver={event => { if (!disabled) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={event => {
     if (disabled) return; event.preventDefault(); const kind = event.dataTransfer.getData("application/x-scenario-kind");
     if (kind) onDropBlock(kind, { x: event.clientX, y: event.clientY }, (event.target as Element).closest(".react-flow__edge")?.getAttribute("data-id") ?? undefined);
   }}>
-    <button type="button" className="studio-map-settings" onClick={() => onSelect(metadataNodeId)}>Настройки карты</button>
+    <button type="button" className="studio-map-settings" onClick={() => onEdit ? onEdit(metadataNodeId) : onSelect(metadataNodeId)}>Настройки карты</button>
     {!definition.blocks?.length && <div className="studio-map-empty"><strong>Начните с первого шага</strong><p>Добавьте вопрос или инструкцию. Затем продолжайте маршрут через +.</p>{!disabled && <button type="button" onClick={() => onAdd?.(null)}>+ Добавить первый шаг</button>}</div>}
-    <ReactFlow<MapNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes => { onNodesChange(changes.filter(change=>change.type!=="select")); if (!disabled && !dragging.current) for (const change of changes) if (change.type === "position" && change.position && change.dragging === false && !change.id.startsWith("studio:entry") && change.id !== `${entranceEdgeId(null)}:node`) onMove(change.id, change.position); }} onInit={instance=>{flow.current=instance;onReady(instance);}} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.15} maxZoom={2} nodesDraggable={!disabled} nodesConnectable={!disabled} edgesReconnectable={!disabled} deleteKeyCode={null} multiSelectionKeyCode={null} selectionKeyCode={null} selectNodesOnDrag={false}
-      onNodeClick={(_, node) => { const entry = entrances.find(item => `${entranceEdgeId(item.key)}:node` === node.id); if (entry) onEntrance(entry.key, entry.target); else onSelect(node.id); }} onPaneClick={() => onSelect(metadataNodeId)} onEdgeClick={(_, edge) => { if (edge.data?.entrance) { onEntrance(edge.data.key as string | null, edge.target); return; } const [source, index] = edge.id.split(":"); onEdge(source, Number(index)); }}
-      onNodeDragStart={() => { dragging.current = true; }} onNodeDragStop={(_, node) => { dragging.current = false; onMove(node.id, node.position); }}
-      onConnect={connection => { if (!connection.source || !connection.target) return; const entry = entrances.find(item => `${entranceEdgeId(item.key)}:node` === connection.source); if (entry) onEntranceReconnect(entry.key, connection.target); else onConnect(connection.source, connection.target, connection.sourceHandle ?? null); }}
+    <ReactFlow<MapNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes => { onNodesChange(changes.filter(change=>change.type!=="select")); if (!disabled && !dragging.current) for (const change of changes) if (change.type === "position" && change.position && change.dragging === false && !change.id.startsWith("studio:entry") && !change.id.startsWith("studio:legacy-sla:") && change.id !== `${entranceEdgeId(null)}:node`) onMove(change.id, change.position); }} zoomOnDoubleClick={false} onInit={instance=>{flow.current=instance;onReady(instance);}} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.15} maxZoom={2} nodesDraggable={!disabled} nodesConnectable={!disabled} edgesReconnectable={!disabled} deleteKeyCode={null} multiSelectionKeyCode={null} selectionKeyCode={null} selectNodesOnDrag={false}
+      onNodeClick={(_, node) => { const entry = entrances.find(item => `${entranceEdgeId(item.key)}:node` === node.id); if (entry) onEntrance(entry.key, entry.target); else onSelect(node.id); }} onPaneClick={() => onSelect(metadataNodeId)} onEdgeClick={(_, edge) => { if (edge.data?.auxiliary) return; if (edge.data?.entrance) { onEntrance(edge.data.key as string | null, edge.target); return; } const [source, index] = edge.id.split(":"); onEdge(source, Number(index)); }}
+      onNodeDragStart={() => { dragging.current = true; }} onNodeDragStop={(_, node) => { dragging.current = false; if (!node.data.auxiliary) onMove(node.id, node.position); }}
+      onConnect={connection => { if (!connection.source || !connection.target || connection.source.startsWith("studio:legacy-sla:") || connection.target.startsWith("studio:legacy-sla:")) return; const entry = entrances.find(item => `${entranceEdgeId(item.key)}:node` === connection.source); if (entry) onEntranceReconnect(entry.key, connection.target); else onConnect(connection.source, connection.target, connection.sourceHandle ?? null); }}
       onReconnect={(edge, connection) => { if (!connection.target) return; if (edge.data?.entrance) onEntranceReconnect(edge.data.key as string | null, connection.target); else onReconnect(edge.source, Number(edge.id.split(":")[1]), connection.target); }}>
       <Background gap={22} color="#dbe4ef" /><Controls showInteractive={false} />
     </ReactFlow>

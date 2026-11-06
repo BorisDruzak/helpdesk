@@ -55,8 +55,13 @@ class ScenarioRuntime:
             state.results["_entry_point"] = entry.model_dump(mode="json")
         return self._settle(state)
 
-    def _next(self, block, answers, result=None):
-        edge = selected_transition(block, answers, result)
+    def _next(self, block, answers, result=None, action_key=None):
+        if block.transition_mode == "buttons":
+            edge = next((edge for edge in block.transitions if edge.button and edge.button.key == action_key and evaluate_condition(edge.when, answers, result)), None)
+        else:
+            if action_key is not None:
+                raise ScenarioInputError({"action_key": "This block has no actions"})
+            edge = selected_transition(block, answers, result)
         if edge is None:
             raise ScenarioInputError({"transition": "No valid transition for this result"})
         return edge.to
@@ -70,7 +75,7 @@ class ScenarioRuntime:
             if block.kind == "finish":
                 state.state = "completed_self_service"
                 return state
-            if block.kind not in {"decision", "diagnostic"}:
+            if block.kind not in {"decision", "diagnostic", "sla"}:
                 return state
             result = None
             if block.kind == "diagnostic":
@@ -130,19 +135,19 @@ class ScenarioRuntime:
             if item.validation.optional_when_legacy_missing and key not in supplied:
                 return
             required = item.required or item.required_when is not None and evaluate_condition(item.required_when, normalized)
-            if self.definition.schema_version == 3 and item.type == "checkbox" and key not in supplied:
+            if (self.definition.execution_semantics if self.definition.schema_version == 4 else self.definition.schema_version) == 3 and item.type == "checkbox" and key not in supplied:
                 if enforce_required and required:
                     errors[key] = "Field is required"
                 return  # An omitted answer has no authority to mean "No".
             try:
-                if self.definition.schema_version == 3 and item.type == "checkbox" and supplied.get(key) is None and not item.allow_unknown:
+                if (self.definition.execution_semantics if self.definition.schema_version == 4 else self.definition.schema_version) == 3 and item.type == "checkbox" and supplied.get(key) is None and not item.allow_unknown:
                     raise ValueError("Unknown checkbox value is not supported")
                 value = self._normalize(item, supplied.get(key))
             except (ValueError, TypeError):
                 errors[key] = "Invalid value or field constraint"
                 return
             unknown = key in supplied and supplied[key] is None and item.allow_unknown
-            empty = value is None or value == "" or value == [] or self.definition.schema_version < 3 and item.type == "checkbox" and value is False
+            empty = value is None or value == "" or value == [] or (self.definition.execution_semantics if self.definition.schema_version == 4 else self.definition.schema_version) < 3 and item.type == "checkbox" and value is False
             if enforce_required and required and empty and not unknown:
                 errors[key] = "Field is required"
                 return
@@ -171,7 +176,7 @@ class ScenarioRuntime:
         if state.state != "active":
             raise ScenarioConflict("Session is terminal")
         block = self.blocks[state.current_block_id]
-        if block.kind not in {"form_page", "instruction", "resolution_check", "review"}:
+        if block.kind not in {"form_page", "instruction", "resolution_check", "review", "navigation"}:
             raise ScenarioInputError({"block": "This block cannot be advanced with answers"})
         next_state = deepcopy(state)
         result = request.current_result
@@ -190,25 +195,30 @@ class ScenarioRuntime:
                         raise ScenarioInputError({"current_result": "No explicit ticket request transition is available"})
                 elif result not in {None, "acknowledged"} or block.acknowledgment_required and result != "acknowledged":
                     raise ScenarioInputError({"current_result": "Instruction acknowledgment is required"})
-            if block.kind == "review" and result is not None:
+            if block.kind in {"review", "navigation"} and result is not None:
                 raise ScenarioInputError({"current_result": "Review has no result confirmation"})
             if result is not None:
                 next_state.results[block.id] = result
+        destination = self._next(block, next_state.answers, result, request.action_key)
+        if block.transition_mode == "buttons":
+            next_state.results.setdefault("_actions", {})[block.id] = request.action_key
         next_state.history.append(block.id)
-        next_state.current_block_id = self._next(block, next_state.answers, result)
+        next_state.current_block_id = destination
         next_state.revision += 1
         return self._settle(next_state)
 
     def back(self, state, target_block_id, *, expected_revision):
         if state.revision != expected_revision or state.state != "active":
             raise ScenarioConflict("Scenario revision or lifecycle changed")
-        if target_block_id not in state.history or self.blocks[target_block_id].kind not in {"form_page", "instruction", "resolution_check", "review"}:
+        if target_block_id not in state.history or self.blocks[target_block_id].kind not in {"form_page", "instruction", "resolution_check", "review", "navigation"}:
             raise ScenarioInputError({"target": "Return is limited to a visited interactive block"})
         result = deepcopy(state)
         index = state.history.index(target_block_id)
         result.history = state.history[:index]
         retained = set(result.history)
         result.results = {key: deepcopy(value) for key, value in state.results.items() if key in retained or key == "_entry_point"}
+        if "_actions" in state.results:
+            result.results["_actions"] = {key: value for key, value in state.results["_actions"].items() if key in retained}
         retained.add(target_block_id)
         retained_fields = {item.key for key in retained for item in getattr(self.blocks[key], "fields", ())}
         result.answers = {key: value for key, value in state.answers.items() if key in retained_fields}

@@ -304,7 +304,7 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   cannot supply facts. Validation/readiness cover all entrances under one bounded
   coverage budget. No new migration or external Endpoint contract is introduced.
 - Unified service Studio: `webapp/src/pages/admin/request-template-studio-page.tsx`
-  opens the catalog and creates an empty v3 map directly. Five palette kinds and a
+  opens the catalog and creates an empty v3 map directly. The palette and a
   unique Start node use `scenario-map-*`; dashed Start edges create named catalog
   entrances, never executable transitions. `scenario-purpose` owns placement;
   `scenario-processing-facts` sends typed facts to existing server policies.
@@ -348,7 +348,7 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   from editing status using the shared public-ancestor guard. Admin catalog query
   adds bounded `service_code` and exact `offering_code` selectors. `offering-card`
   and `catalog-services-workbench`/`catalog-offering-inspector` render the
-  full-width tree/list/inspector. `catalog-service-model` projects named entrances
+  tree/list with inline selected-service settings. `catalog-service-model` projects named entrances
   separately from their canonical Offering, preserving active published labels
   and draft differences. `catalog-geometry` owns pointer/keyboard resizing.
   `catalog-structure-data` assembles unfiltered catalog pages for service leaves
@@ -365,6 +365,27 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   links the immutable publication result to `/app/requester/new?offering=...`.
   Requester selection is validated against its existing public catalog; keyed
   request-page content keeps draft restoration isolated per intent/offering.
+- Local Studio v4 implementation (not deployed): explicit CAS POST
+  `/api/web/admin/request-studio/scenarios/{identifier}/upgrade-v4` preserves the
+  prior `execution_semantics` and checks normalized source equivalence; ordinary
+  saves cannot silently upgrade a persisted draft. Immutable versions and pinned
+  legacy sessions remain unchanged. `request_scenario_runtime` and session/processing
+  replay server-validated `action_key` history; form step-preview projects conditional
+  actions. `request_scenario_conversion`, DTO, readiness and canonical schema own
+  the v4 rules. Navigation and SLA nodes are separate; legacy SLA settings remain
+  represented. Rich documents and scoped author assets use `scenario-rich-*` and
+  `request_scenario_assets`, with asset rebinding on copy.
+  `request_scenario_fragment_handlers`, `request_scenario_fragment_library` and
+  `request_scenario_fragments` provide list/create/detail/archive and CAS insert;
+  explicit dependency and fact mappings, copied asset claims and destination v4
+  checks protect reuse. `scenario-fragments` owns the author UI. Migration 157
+  follows 156 and permits v4; 158 follows 157 and adds retained fragment tables.
+  Downgrades refuse persisted v4 drafts/versions or saved fragments respectively.
+  `scenario-map-workbench`/canvas now render the selected editor within a node,
+  with viewport-relative insertion and context actions; contextual controls are
+  temporary. `scenario-save-recovery` rechecks the same admin identity after login
+  in a separate tab without remounting the draft. See
+  `docs/STUDIO_INLINE_V4_IMPLEMENTATION_2026_11_06.md` for verification and limits.
 - Studio v3 `scenario-wizard` composes map/testing/publication/version panels.
   Processing readiness remediation opens the separate `scenario-processing`
   inspector with the requested policy first and focused; `Обработка услуги`

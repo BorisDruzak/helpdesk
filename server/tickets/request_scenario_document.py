@@ -66,7 +66,7 @@ def document_issues(definition):
 
 async def document_reference_issues(session, definition):
     """Read-only import checks share the publication reference validator."""
-    if definition.schema_version != 3 or definition.processing is None:
+    if definition.schema_version not in (3, 4) or definition.processing is None:
         return []
     from sqlalchemy import select
     from app.db.models import TicketQueue, TicketBusinessCalendar

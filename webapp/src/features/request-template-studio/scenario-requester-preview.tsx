@@ -12,16 +12,18 @@ export function ScenarioRequesterPreview({ definition, block }: { definition:Sce
  if(block.kind==="form_page"){projected.layout=block.layout;projected.fields=block.fields.map(({visible_when: _visible,required_when: _required,...field})=>field);}
  if(block.kind==="instruction"){projected.content={...block.content,format:block.content.format??"plain"};projected.acknowledgment_required=block.acknowledgment_required;}
  if(block.kind==="finish")projected.message=block.message;
+ if(block.transition_mode==="buttons")projected.actions=block.transitions?.flatMap(edge=>edge.button?[edge.button]:[])??[];
 
  if(block.kind==="review") projected.answers=definition.blocks?.flatMap(item=>item.kind==="form_page"?item.fields.map(field=>({key:field.key,label:field.label,type:field.type,value:null,display_value:"Ответ сотрудника"})):[]);
  return <section className="grid min-w-0 gap-4 rounded-panel border border-slate-200 bg-white p-5" aria-label="Блок глазами сотрудника">
   <h2 className="text-xl font-semibold text-slate-950">{block.title}</h2>
   <div className="grid min-w-0 gap-4"><ScenarioStepContent block={projected} values={values} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onValue={(key,value)=>setValues(old=>({...old,[key]:value}))} /></div>
-  {block.kind==="decision" && <p>Условие автоматически выбирает следующий шаг. Отдельный экран сотруднику не показывается.</p>}
+  {(block.kind==="decision"||block.kind==="sla") && <p>Условие автоматически выбирает следующий шаг. Отдельный экран сотруднику не показывается.</p>}
   {block.kind==="diagnostic" && <p>Здесь отображается состояние проверки. В предпросмотре диагностика не запускается.</p>}
   <div className="grid gap-3 border-t border-slate-200 py-3" aria-label="Действия шага в предпросмотре">
    {block.kind==="resolution_check" && <div className="flex flex-wrap gap-2">{["Да, решено","Нет, нужна помощь","Не знаю"].map(label=><RequesterButton key={label} disabled>{label}</RequesterButton>)}</div>}
-   {["form_page","instruction","review"].includes(block.kind) && <RequesterButton disabled>Продолжить</RequesterButton>}
+   {projected.actions?.map(action=><RequesterButton key={action.key} disabled>{action.label}</RequesterButton>)}
+   {projected.actions===undefined&&["form_page","instruction","review"].includes(block.kind) && <RequesterButton disabled>Продолжить</RequesterButton>}
    {block.kind==="finish" && <RequesterButton disabled>Завершить</RequesterButton>}
    {block.kind==="submit_ticket" && <RequesterButton disabled>Проверить обработку</RequesterButton>}
   </div>

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator, model_serializer
 
 Key = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_]*$")]
 CatalogCode = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_-]*$")]
@@ -130,7 +130,13 @@ class ScenarioProcessing(StrictModel):
     assignment_mode: Literal["last_matching_branch"] = "last_matching_branch"
 
 
+class TransitionButton(StrictModel):
+    key: Key
+    label: Annotated[str, Field(min_length=1, max_length=300)]
+
+
 class Transition(StrictModel):
+    button: TransitionButton | None = None
     to: Key
     when: Condition | None = None
     priority: int | None = Field(default=None, ge=1, le=10000)
@@ -178,7 +184,56 @@ class ScenarioAttachment(StrictModel):
         return self
 
 
+class RichDocument(StrictModel):
+    type: Literal["doc"]
+    content: list[dict] = Field(default_factory=list, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_tree(self):
+        from urllib.parse import urlsplit
+        allowed = {"paragraph", "heading", "text", "bulletList", "orderedList", "listItem", "blockquote", "hardBreak", "image"}
+        stack = [(node, 1) for node in self.content]
+        count = 0
+        while stack:
+            node, depth = stack.pop()
+            count += 1
+            if not isinstance(node, dict) or depth > 16 or count > 1000 or set(node) - {"type", "text", "attrs", "content", "marks"}:
+                raise ValueError("invalid rich document structure")
+            kind = node.get("type")
+            if kind not in allowed:
+                raise ValueError("unsupported rich document node")
+            attrs = node.get("attrs") or {}
+            if not isinstance(attrs, dict):
+                raise ValueError("invalid node attributes")
+            permitted = {"heading": {"level"}, "orderedList": {"start"}, "image": {"asset_id", "alt"}}.get(kind, set())
+            if set(attrs) - permitted:
+                raise ValueError("unsupported node attributes")
+            if kind == "heading" and attrs.get("level") not in (1, 2, 3):
+                raise ValueError("invalid heading")
+            if kind == "image":
+                import re
+                if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", str(attrs.get("asset_id", ""))) or not isinstance(attrs.get("alt", ""), str) or len(attrs.get("alt", "")) > 500:
+                    raise ValueError("invalid image asset")
+            if kind == "text" and (not isinstance(node.get("text"), str) or len(node["text"]) > 10000):
+                raise ValueError("invalid text")
+            marks = node.get("marks", [])
+            if not isinstance(marks, list) or len(marks) > 5:
+                raise ValueError("invalid marks")
+            for mark in marks:
+                if not isinstance(mark, dict) or set(mark) - {"type", "attrs"} or mark.get("type") not in {"bold", "italic", "strike", "code", "link"}:
+                    raise ValueError("unsupported mark")
+                ma = mark.get("attrs") or {}
+                if not isinstance(ma, dict) or (mark["type"] != "link" and ma) or (mark["type"] == "link" and (set(ma) != {"href"} or not isinstance(ma["href"], str) or len(ma["href"]) > 2048 or urlsplit(ma["href"]).scheme not in {"https", "http", "mailto"})):
+                    raise ValueError("unsafe link")
+            children = node.get("content", [])
+            if not isinstance(children, list) or kind in {"text", "image", "hardBreak"} and children:
+                raise ValueError("invalid child nodes")
+            stack.extend((child, depth + 1) for child in children)
+        return self
+
+
 class ScenarioField(StrictModel):
+    help_document: RichDocument | None = None
     key: Key
     type: FieldType
     label: Annotated[str, Field(min_length=1, max_length=300)]
@@ -208,6 +263,7 @@ class ScenarioField(StrictModel):
 
 
 class BlockBase(StrictModel):
+    transition_mode: Literal["automatic", "buttons"] | None = None
     id: Key
     title: Annotated[str, Field(min_length=1, max_length=300)]
     transitions: Annotated[list[Transition], Field(max_length=30)] = Field(default_factory=list)
@@ -220,6 +276,7 @@ class FormPage(BlockBase):
 
 
 class InstructionContent(StrictModel):
+    rich_document: RichDocument | None = None
     format: Literal["markdown", "plain"] = "markdown"
     body: Annotated[str, Field(min_length=1, max_length=10000)]
     attachments: Annotated[list[ScenarioAttachment], Field(max_length=10)] = Field(default_factory=list)
@@ -229,6 +286,17 @@ class Instruction(BlockBase):
     kind: Literal["instruction"]
     content: InstructionContent
     acknowledgment_required: bool = True
+
+
+class Navigation(BlockBase):
+    kind: Literal["navigation"]
+
+
+class Sla(BlockBase):
+    kind: Literal["sla"]
+    processing_facts: ProcessingFacts = Field(default_factory=ProcessingFacts)
+    sla_profile: Key | None = None
+    policy_ref: CatalogCode | None = None
 
 
 class Decision(BlockBase):
@@ -260,7 +328,7 @@ class Finish(BlockBase):
     message: str = Field(default="Проблема решена без обращения", max_length=2000)
 
 
-Block = Annotated[FormPage | Instruction | Decision | ResolutionCheck | Diagnostic | Review | SubmitTicket | Finish, Field(discriminator="kind")]
+Block = Annotated[FormPage | Instruction | Navigation | Sla | Decision | ResolutionCheck | Diagnostic | Review | SubmitTicket | Finish, Field(discriminator="kind")]
 
 
 class ProcessBinding(StrictModel):
@@ -291,7 +359,8 @@ class ScenarioEditorLayout(StrictModel):
 
 
 class ScenarioDraftDefinition(StrictModel):
-    schema_version: Literal[1, 2, 3] = 1
+    schema_version: Literal[1, 2, 3, 4] = 1
+    execution_semantics: Literal[1, 2, 3] | None = None
     scenario_key: Key
     service_code: CatalogCode
     offering_full_code: Annotated[str, Field(max_length=220, pattern=r"^[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9_-]*$")]
@@ -306,6 +375,21 @@ class ScenarioDraftDefinition(StrictModel):
     processing: ScenarioProcessing | None = None
     publish_offering: StrictBool = False
 
+    @model_serializer(mode="wrap")
+    def preserve_legacy_wire_format(self, handler):
+        raw = handler(self)
+        if self.schema_version < 4:
+            raw.pop("execution_semantics", None)
+            for block in raw.get("blocks", []):
+                block.pop("transition_mode", None)
+                for edge in block.get("transitions", []):
+                    edge.pop("button", None)
+                if block.get("content"):
+                    block["content"].pop("rich_document", None)
+                for field in block.get("fields", []):
+                    field.pop("help_document", None)
+        return raw
+
     @model_validator(mode="before")
     @classmethod
     def check_input_limits(cls, raw):
@@ -317,6 +401,13 @@ class ScenarioDraftDefinition(StrictModel):
             raise ValueError("offering must belong to the selected service")
         if type(self.schema_version) is not int:
             raise ValueError("schema_version must be an integer")
+        if self.schema_version == 4 and self.execution_semantics is None:
+            self.execution_semantics = 3
+        if self.schema_version < 4 and (self.execution_semantics is not None or any(
+            b.kind in {"navigation", "sla"} or b.transition_mode is not None or any(e.button is not None for e in b.transitions)
+            or (b.kind == "instruction" and b.content.rich_document is not None)
+            or any(f.help_document is not None for f in getattr(b, "fields", ())) for b in self.blocks)):
+            raise ValueError("v4 features require schema_version 4")
         if self.schema_version < 3 and (self.processing is not None or any(
             edge.processing is not None for block in self.blocks for edge in block.transitions
         )):
@@ -335,6 +426,7 @@ class ScenarioDefinition(ScenarioDraftDefinition):
 
 
 class ScenarioAnswerRequest(StrictModel):
+    action_key: Key | None = None
     expected_block_id: Key
     revision: int = Field(ge=1)
     answers: dict[Key, Answer] = Field(default_factory=dict)

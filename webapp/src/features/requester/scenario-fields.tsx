@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import type { RequestFormField } from "./types";
-import type { ScenarioAttachment } from "../request-template-studio/scenario-contract";
+import type { ScenarioAttachment, ScenarioRichDocument } from "../request-template-studio/scenario-contract";
 
-export type ScenarioProjectedField = RequestFormField & { group?: string | null; group_title?: string | null; help_attachments?: ScenarioAttachment[]; answer_attachments?: ScenarioAttachment[] };
+export type ScenarioProjectedField = RequestFormField & { help_document?: ScenarioRichDocument | null; group?: string | null; group_title?: string | null; help_attachments?: ScenarioAttachment[]; answer_attachments?: ScenarioAttachment[] };
 /** Display only: conditions and field validation remain server authoritative. */
 export function ScenarioFields<T extends ScenarioProjectedField>({ fields, layout, renderField }: {
   fields: T[]; layout?: "single" | "group" | "section"; renderField: (field: T) => ReactNode;

@@ -219,10 +219,11 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
     }
   }
 
-  const answer = (result?: string) => command(step?.block.kind === "form_page" ? "answer" : "advance", {
+  const answer = (result?: string, actionKey?: string) => command(step?.block.kind === "form_page" ? "answer" : "advance", {
     expected_block_id: step?.block.id, revision: step?.revision,
     ...(step?.block.kind === "form_page" ? { answers: values } : {}),
     ...(result ? { current_result: result } : {}),
+    ...(actionKey ? { action_key: actionKey } : {}),
   });
   const expired = ["SESSION_EXPIRED", "SESSION_REVOKED", "SESSION_NOT_FOUND"].includes(error?.code || "");
   const deviceContext = deviceId === undefined ? {} : deviceId ? { device_id: deviceId } : { device_scope: "none" };
@@ -242,8 +243,9 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
         <ScenarioStepContent block={step.block} values={values} errors={error?.fields} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onValue={changeValue} onRequestTicket={()=>void answer("request_ticket")} attachmentScope={`${offering}:${owner}:${deviceId}:${entryPointKey}:${reload}:${step.id}:${step.revision}`} attachmentsDisabled={busy || attachmentsBusy} onAttachmentBusy={attachmentBusy} onUpload={(key, file, signal) => attachment(key, signal, file)} onRemove={(key, id, signal) => attachment(key, signal, undefined, id)} />
       </fieldset>
       <fieldset disabled={busy || attachmentsBusy} className="grid min-w-0 gap-3 border-t border-slate-200 bg-white py-3" aria-label="Действия шага">
-        {step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}
-        {["form_page", "instruction", "review"].includes(step.block.kind) ? <Button type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить</Button> : null}
+        {step.block.actions !== undefined && <div className="flex flex-wrap gap-2">{step.block.actions.map(action => <Button key={action.key} type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" ? "acknowledged" : undefined, action.key)}>{action.label}</Button>)}{!step.block.actions.length && <p role="status" className="text-sm text-slate-500">Заполните вопросы, чтобы увидеть доступные действия.</p>}</div>}
+        {step.block.actions === undefined && step.block.kind === "resolution_check" ? <div className="flex flex-wrap gap-2">{[["yes", "Да, решено"], ["no", "Нет, нужна помощь"], ["unknown", "Не знаю"]].map(([value, label]) => <Button key={value} type="button" onClick={() => void answer(value)}>{label}</Button>)}</div> : null}
+        {step.block.actions === undefined && ["form_page", "instruction", "review"].includes(step.block.kind) ? <Button type="button" disabled={step.block.acknowledgment_required && !acknowledged} onClick={() => void answer(step.block.kind === "instruction" && acknowledged ? "acknowledged" : undefined)}>Продолжить</Button> : null}
         {step.block.kind === "finish" ? <Button type="button" onClick={() => void command("finish", { revision: step.revision })}>Завершить</Button> : null}
         {step.state === "ticket_created" && step.linked_ticket_id ? <p role="status">Открываем обращение...</p> : step.block.kind === "submit_ticket" ? <div className="grid gap-3">
           {busy ? <p role="status">{ticketPreview ? "Создаём обращение..." : "Проверяем обработку обращения..."}</p> : null}

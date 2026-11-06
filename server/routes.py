@@ -372,8 +372,11 @@ from web_api.request_studio_handlers import (
     handle_web_admin_request_studio_publish_preview,
     handle_web_admin_request_studio_validate_draft,
 )
+from web_api.request_scenario_fragment_handlers import (
+    handle_fragment_list, handle_fragment_create, handle_fragment_detail, handle_fragment_archive, handle_fragment_insert,
+)
 from web_api.request_scenario_admin_handlers import (
-    handle_scenario_catalog, handle_scenario_category_create, handle_scenario_category_update,
+    handle_scenario_upgrade_v4, handle_scenario_catalog, handle_scenario_category_create, handle_scenario_category_update,
     handle_scenario_category_archive, handle_scenario_create, handle_scenario_detail,
     handle_scenario_service_create, handle_scenario_convert_forms, handle_scenario_document_validate, handle_scenario_document_export,
     handle_scenario_draft_save, handle_scenario_archive, handle_scenario_versions, handle_scenario_simulate,
@@ -762,6 +765,11 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/request-studio/categories', handle_scenario_category_create),
         web.put('/api/web/admin/request-studio/categories/{identifier}', handle_scenario_category_update),
         web.delete('/api/web/admin/request-studio/categories/{identifier}', handle_scenario_category_archive),
+        web.get('/api/web/admin/request-studio/fragments', handle_fragment_list),
+        web.post('/api/web/admin/request-studio/fragments', handle_fragment_create),
+        web.get('/api/web/admin/request-studio/fragments/{fragment_id}', handle_fragment_detail),
+        web.post('/api/web/admin/request-studio/fragments/{fragment_id}/archive', handle_fragment_archive),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/fragments/{fragment_id}/insert', handle_fragment_insert),
         web.post('/api/web/admin/request-studio/scenarios', handle_scenario_create),
         web.post('/api/web/admin/request-studio/services', handle_scenario_service_create),
         web.post('/api/web/admin/request-studio/convert-forms', handle_scenario_convert_forms),
@@ -769,6 +777,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/request-studio/scenarios/{identifier}/document', handle_scenario_document_export),
         web.get('/api/web/admin/request-studio/scenarios/{identifier}', handle_scenario_detail),
         web.put('/api/web/admin/request-studio/scenarios/{identifier}/draft', handle_scenario_draft_save),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/upgrade-v4', handle_scenario_upgrade_v4),
         web.post('/api/web/admin/request-studio/scenarios/{identifier}/archive', handle_scenario_archive),
         web.get('/api/web/admin/request-studio/scenarios/{identifier}/versions', handle_scenario_versions),
         web.post('/api/web/admin/request-studio/scenarios/{identifier}/simulate', handle_scenario_simulate),

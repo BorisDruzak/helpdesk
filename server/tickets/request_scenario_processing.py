@@ -54,7 +54,7 @@ def validated_scenario_calendar(calendar):
 
 def validate_map_processing_references(definition, queues, calendars):
     """Validate every named target, including assignments not reached by a sample."""
-    if definition.schema_version != 3 or definition.processing is None:
+    if definition.schema_version not in (3, 4) or definition.processing is None:
         return []
     active = {item["code"] for item in queues if item.get("is_active") is True}
     by_id = {item["id"]: item for item in calendars}

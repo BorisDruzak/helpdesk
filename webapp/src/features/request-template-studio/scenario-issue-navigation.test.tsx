@@ -6,6 +6,12 @@ import { ScenarioWizard } from "./scenario-wizard";
 import type { ScenarioCatalog, ScenarioDetail } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
+// React Flow hides unmeasured nodes in JSDOM; model its inline editor contract here.
+vi.mock("./scenario-map-canvas", () => ({
+  metadataNodeId: "studio:metadata", transitionId: (source: string, index: number) => `${source}:${index}`, entranceEdgeId: (key: string | null) => `entry:${key}`,
+  ScenarioMapCanvas: ({ expandedId, inlineEditor }: { expandedId?: string | null; inlineEditor?: React.ReactNode }) => <div aria-label="Визуальная карта сценария">{expandedId && inlineEditor}</div>,
+}));
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const definition: ScenarioDraftDefinition = { scenario_key: "print", service_code: "it", offering_full_code: "it.printer", title: "Печать", process_binding: { request_template_key: "print" }, entry_block_id: "first", blocks: [
   { id: "first", kind: "instruction", title: "Первый шаг", content: { body: "Проверьте бумагу" }, transitions: [{ to: "broken", when: null }] },

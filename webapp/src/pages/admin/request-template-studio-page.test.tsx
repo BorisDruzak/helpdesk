@@ -3,6 +3,12 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminRequestTemplateStudioPage } from "./request-template-studio-page";
+
+// React Flow hides unmeasured nodes in JSDOM; model its inline editor contract here.
+vi.mock("../../features/request-template-studio/scenario-map-canvas", () => ({
+  metadataNodeId: "studio:metadata", transitionId: (source: string, index: number) => `${source}:${index}`, entranceEdgeId: (key: string | null) => `entry:${key}`,
+  ScenarioMapCanvas: ({ expandedId, inlineEditor }: { expandedId?: string | null; inlineEditor?: React.ReactNode }) => <div aria-label="Визуальная карта сценария">{expandedId && inlineEditor}</div>,
+}));
 vi.mock("../../features/auth/session-provider", () => ({ useSession: () => ({ session: { actor_role: "admin" } }) }));
 const category = { id: "c1", parent_id: null, service_code: "it", title: "Оборудование", slug: "hardware", description: "", sort_order: 0, revision: 1, visibility: "internal", lifecycle_status: "draft" };
 const catalog = { categories: [category], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [], total: 0, offset: 0, limit: 100 };

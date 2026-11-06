@@ -29,7 +29,7 @@ def validate_scenario(definition):
     issues = []
     def add(code, path, message):
         issues.append(ScenarioIssue(code, path, message))
-    if definition.schema_version == 3:
+    if definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None:
         config = definition.processing
         if config is None:
             add("processing_missing", "processing", "Настройте направления и сроки обработки карты.")
@@ -42,6 +42,9 @@ def validate_scenario(definition):
                         value = getattr(edge.processing, kind, None)
                         if value is not None and value not in choices:
                             add("processing_reference_unknown", f"blocks.{block.id}.transitions.{index}.processing.{kind}", "Результат ветки ссылается на отсутствующую настройку карты.")
+            for block in definition.blocks:
+                if block.kind == "sla" and block.sla_profile is not None and block.sla_profile not in config.sla_profiles:
+                    add("processing_reference_unknown", f"blocks.{block.id}.sla_profile", "Unknown SLA profile")
             for key, profile in config.sla_profiles.items():
                 for duration in ("first_response_minutes", "resolution_minutes"):
                     if getattr(profile, duration) < 1:
@@ -51,6 +54,10 @@ def validate_scenario(definition):
             for key, route in config.routes.items():
                 if not route.queue_code.strip():
                     add("processing_queue_missing", f"processing.routes.{key}.queue_code", "Выберите действующую очередь.")
+    from tickets.request_scenario_assets import rich_asset_nodes
+    for attrs, allowed in rich_asset_nodes(definition):
+        if attrs["asset_id"] not in allowed:
+            add("rich_asset_missing", "blocks", "Rich images must reference an attached authorized asset")
     blocks = {}
     fields = {}
     locations = {}
@@ -116,7 +123,7 @@ def validate_scenario(definition):
 
     if definition.entry_block_id not in blocks:
         add("unknown_entry", "entry_block_id", "Entry block does not exist")
-    if definition.schema_version == 2 and (not definition.entry_points or not any(
+    if (definition.execution_semantics if definition.schema_version == 4 else definition.schema_version) == 2 and (not definition.entry_points or not any(
         entry.enabled and entry.target_block_id == definition.entry_block_id for entry in definition.entry_points
     )):
         add("catalog_entry_required", "entry_points", "Соедините «Начало» с первым шагом: услуге нужен вход из каталога.")
@@ -140,15 +147,39 @@ def validate_scenario(definition):
         terminal = block.kind in {"finish", "submit_ticket"}
         if terminal and block.transitions:
             add("terminal_outgoing", path, "A terminal cannot execute another block")
+        buttons = definition.schema_version == 4 and block.transition_mode == "buttons"
+        if definition.schema_version == 4:
+            interactive = block.kind in {"form_page", "instruction", "review", "navigation"}
+            if block.kind == "navigation" and not buttons or buttons and not interactive:
+                add("invalid_transition_mode", path, "Button mode requires an interactive block")
+            if buttons and block.kind == "instruction":
+                for edge in block.transitions:
+                    for leaf in leaves(edge.when):
+                        values = getattr(leaf, "value", [])
+                        values = values if isinstance(values, list) else [values]
+                        if leaf.source == "current_result" and any(value != "acknowledged" for value in values):
+                            add("invalid_button_result", path, "Instruction buttons support acknowledgment only")
+            if buttons:
+                keys = [edge.button.key for edge in block.transitions if edge.button]
+                if not 1 <= len(block.transitions) <= 10 or len(keys) != len(block.transitions) or len(keys) != len(set(keys)):
+                    add("invalid_buttons", path, "Provide 1–10 uniquely keyed buttons")
+            elif any(edge.button is not None for edge in block.transitions):
+                add("invalid_buttons", path, "Automatic transitions cannot have buttons")
+            if block.kind == "sla" and (len(block.transitions) != 1 or block.transitions[0].when is not None or block.sla_profile and block.policy_ref):
+                add("invalid_sla", path, "SLA requires one unconditional continuation and at most one profile or policy")
+            if block.kind == "sla" and block.policy_ref and definition.processing is not None:
+                add("invalid_sla", path, "A map-owned SLA cannot select a registry policy")
+            if block.kind == "sla" and block.sla_profile and definition.processing is None:
+                add("processing_reference_unknown", path, "SLA profile requires map processing")
         conditional = [edge for edge in block.transitions if edge.when is not None]
         fallback = [edge for edge in block.transitions if edge.when is None]
         # An empty answer set cannot prove coverage for real user answers.
         result_only = [edge for edge in conditional if all(leaf.source == "current_result" for leaf in leaves(edge.when))]
         exhaustive = block.kind == "resolution_check" and all(
             any(evaluate_condition(edge.when, {}, result) for edge in result_only) for result in ("yes", "no", "unknown"))
-        if not terminal and (len(fallback) != 1 and not (len(fallback) == 0 and exhaustive)):
+        if not terminal and not buttons and (len(fallback) != 1 and not (len(fallback) == 0 and exhaustive)):
             add("missing_fallback", path, "Every possible result needs an exit and explicit fallback")
-        if fallback and block.transitions[-1].when is not None:
+        if not buttons and fallback and block.transitions[-1].when is not None:
             add("invalid_fallback_order", path, "Fallback must follow conditional branches")
         def exclusive(a, b):
             # Disjoint expected membership sets may both match a multi-select answer.
@@ -157,7 +188,7 @@ def validate_scenario(definition):
             return mutually_exclusive(a.when, b.when)
         overlap = any(not exclusive(a, b) for i, a in enumerate(conditional) for b in conditional[i + 1:])
         priorities = [edge.priority for edge in conditional]
-        if (overlap and any(value is None for value in priorities)) or len([p for p in priorities if p is not None]) != len({p for p in priorities if p is not None}):
+        if not buttons and ((overlap and any(value is None for value in priorities)) or len([p for p in priorities if p is not None]) != len({p for p in priorities if p is not None})):
             add("ambiguous_precedence", path, "Overlapping branches require distinct explicit priorities")
         for edge in block.transitions:
             ticket_result = False

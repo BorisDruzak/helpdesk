@@ -13,7 +13,7 @@ pytestmark = [pytest.mark.db_cleanup("full"), pytest.mark.light_app]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("schema_version", [2, 3])
+@pytest.mark.parametrize("schema_version", [2, 3, 4])
 async def test_direct_service_creation_is_atomic_idempotent_and_admin_only(test_client_light, test_engine, schema_version):
     _, existing = await ready(test_engine)
     source = {"schema_version": schema_version, "scenario_key": "new_" + uuid.uuid4().hex, "service_code": existing["service_code"],

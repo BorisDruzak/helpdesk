@@ -17,3 +17,8 @@
 @media(max-width:650px) { .catalog-services-grid { grid-template-columns:minmax(0,1fr); gap:12px; }.catalog-structure { max-height:280px; }.catalog-search { width:100%; }.catalog-list-panel { padding:16px 10px; }.catalog-service-meta { margin-left:0; }.catalog-panel-heading { flex-wrap:wrap; } }
 
 .catalog-tree-leaf { width:100%; text-align:left; align-items:flex-start; color:#40536c; }.catalog-tree-leaf svg { flex:none; margin-top:2px; }.catalog-tree-leaf>span { min-width:0; overflow-wrap:anywhere; }.catalog-tree-leaf small { display:block; font-size:10px; color:#718198; margin-top:3px; }.catalog-tree-leaf:hover { background:#f0f7f3; }.catalog-tree-leaf:focus-visible { outline:2px solid #087443; }.catalog-map-actions { display:grid; gap:8px; margin-top:14px; }.catalog-map-actions button { white-space:normal; text-align:left; }
+
+.catalog-services-grid.is-inline-catalog { grid-template-columns:var(--catalog-left,250px) 8px minmax(0,1fr); }
+.catalog-inline-details { flex:none; margin-top:14px; border:1px solid #cfe2d6; border-radius:14px; padding:18px; background:#f8fcf9; }
+.catalog-inline-details .catalog-inspector-content { max-width:900px; margin:0 auto; }
+@media(max-width:800px) { .catalog-services-grid.is-inline-catalog { grid-template-columns:minmax(0,1fr); } }

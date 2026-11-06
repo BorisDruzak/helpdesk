@@ -57,10 +57,10 @@ def test_invalid_sla_profiles_are_rejected(patch):
         ScenarioDraftDefinition.model_validate(raw)
 
 
-def test_database_constraint_preserves_all_three_immutable_versions():
+def test_database_constraint_preserves_all_immutable_versions():
     from app.db.request_scenario_models import RequestStudioScenarioVersion
     constraint = next(item for item in RequestStudioScenarioVersion.__table__.constraints if item.name == "ck_studio_version_schema")
-    assert "schema_version IN (1,2,3)" in str(constraint.sqltext)
+    assert "schema_version IN (1,2,3,4)" in str(constraint.sqltext)
 
 
 def test_complete_equipment_example_roundtrip_and_all_readiness_routes():
@@ -118,5 +118,5 @@ def test_documented_machine_schema_matches_the_strict_dto():
     schema = scenario_json_schema()
     path = Path(__file__).resolve().parents[2] / "docs/contracts/request-scenario.schema.json"
     assert json.loads(path.read_text(encoding="utf-8")) == schema
-    assert schema["properties"]["schema_version"]["enum"] == [1, 2, 3]
+    assert schema["properties"]["schema_version"]["enum"] == [1, 2, 3, 4]
     assert schema["additionalProperties"] is False

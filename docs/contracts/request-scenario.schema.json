@@ -164,6 +164,22 @@
     "Decision": {
       "additionalProperties": false,
       "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
         "id": {
           "maxLength": 100,
           "minLength": 1,
@@ -202,6 +218,22 @@
     "Diagnostic": {
       "additionalProperties": false,
       "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
         "id": {
           "maxLength": 100,
           "minLength": 1,
@@ -433,6 +465,22 @@
     "Finish": {
       "additionalProperties": false,
       "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
         "id": {
           "maxLength": 100,
           "minLength": 1,
@@ -477,6 +525,22 @@
     "FormPage": {
       "additionalProperties": false,
       "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
         "id": {
           "maxLength": 100,
           "minLength": 1,
@@ -535,6 +599,22 @@
     "Instruction": {
       "additionalProperties": false,
       "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
         "id": {
           "maxLength": 100,
           "minLength": 1,
@@ -582,6 +662,17 @@
     "InstructionContent": {
       "additionalProperties": false,
       "properties": {
+        "rich_document": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RichDocument"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "format": {
           "default": "markdown",
           "enum": [
@@ -675,6 +766,60 @@
         "value"
       ],
       "title": "Membership",
+      "type": "object"
+    },
+    "Navigation": {
+      "additionalProperties": false,
+      "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "navigation",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "Navigation",
       "type": "object"
     },
     "Negation": {
@@ -887,6 +1032,22 @@
     "ResolutionCheck": {
       "additionalProperties": false,
       "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
         "id": {
           "maxLength": 100,
           "minLength": 1,
@@ -925,6 +1086,22 @@
     "Review": {
       "additionalProperties": false,
       "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
         "id": {
           "maxLength": 100,
           "minLength": 1,
@@ -958,6 +1135,30 @@
         "kind"
       ],
       "title": "Review",
+      "type": "object"
+    },
+    "RichDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "doc",
+          "title": "Type",
+          "type": "string"
+        },
+        "content": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 1000,
+          "title": "Content",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "RichDocument",
       "type": "object"
     },
     "ScenarioAttachment": {
@@ -1157,6 +1358,17 @@
     "ScenarioField": {
       "additionalProperties": false,
       "properties": {
+        "help_document": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RichDocument"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "key": {
           "maxLength": 100,
           "minLength": 1,
@@ -1536,9 +1748,112 @@
       "title": "ScenarioSlaProfile",
       "type": "object"
     },
+    "Sla": {
+      "additionalProperties": false,
+      "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "maxItems": 30,
+          "title": "Transitions",
+          "type": "array"
+        },
+        "kind": {
+          "const": "sla",
+          "title": "Kind",
+          "type": "string"
+        },
+        "processing_facts": {
+          "$ref": "#/$defs/ProcessingFacts"
+        },
+        "sla_profile": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sla Profile"
+        },
+        "policy_ref": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy Ref"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "Sla",
+      "type": "object"
+    },
     "SubmitTicket": {
       "additionalProperties": false,
       "properties": {
+        "transition_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "buttons"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Mode"
+        },
         "id": {
           "maxLength": 100,
           "minLength": 1,
@@ -1577,6 +1892,17 @@
     "Transition": {
       "additionalProperties": false,
       "properties": {
+        "button": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransitionButton"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "to": {
           "maxLength": 100,
           "minLength": 1,
@@ -1670,6 +1996,30 @@
       ],
       "title": "Transition",
       "type": "object"
+    },
+    "TransitionButton": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label"
+      ],
+      "title": "TransitionButton",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1679,10 +2029,28 @@
       "enum": [
         1,
         2,
-        3
+        3,
+        4
       ],
       "title": "Schema Version",
       "type": "integer"
+    },
+    "execution_semantics": {
+      "anyOf": [
+        {
+          "enum": [
+            1,
+            2,
+            3
+          ],
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Execution Semantics"
     },
     "scenario_key": {
       "maxLength": 100,
@@ -1764,8 +2132,10 @@
             "finish": "#/$defs/Finish",
             "form_page": "#/$defs/FormPage",
             "instruction": "#/$defs/Instruction",
+            "navigation": "#/$defs/Navigation",
             "resolution_check": "#/$defs/ResolutionCheck",
             "review": "#/$defs/Review",
+            "sla": "#/$defs/Sla",
             "submit_ticket": "#/$defs/SubmitTicket"
           },
           "propertyName": "kind"
@@ -1776,6 +2146,12 @@
           },
           {
             "$ref": "#/$defs/Instruction"
+          },
+          {
+            "$ref": "#/$defs/Navigation"
+          },
+          {
+            "$ref": "#/$defs/Sla"
           },
           {
             "$ref": "#/$defs/Decision"

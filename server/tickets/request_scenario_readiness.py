@@ -161,12 +161,23 @@ def _submission_variants(definition, *, limit, process_fields, diagnostic_outcom
                 variants.append(({}, "request_ticket"))
         advanced = []
         for answers, result in variants:
-            try:
-                next_state = runtime.advance(state, ScenarioAnswerRequest(expected_block_id=block.id, revision=state.revision, answers=answers, current_result=result))
-            except ScenarioInputError:
-                continue  # Invalid/hidden/required combinations are not executable paths.
-            if next_state not in advanced:
-                advanced.append(next_state)
+            if block.kind == "form_page":
+                try:
+                    runtime._page_answers(block, state.answers, answers)
+                except ScenarioInputError:
+                    continue
+            successes = 0
+            action_keys = [edge.button.key for edge in block.transitions if edge.button] if block.transition_mode == "buttons" else [None]
+            for action_key in action_keys:
+                try:
+                    next_state = runtime.advance(state, ScenarioAnswerRequest(expected_block_id=block.id, revision=state.revision, answers=answers, current_result=result, action_key=action_key))
+                except ScenarioInputError:
+                    continue
+                successes += 1
+                if next_state not in advanced:
+                    advanced.append(next_state)
+            if block.transition_mode == "buttons" and not successes:
+                raise ReadinessCoverageError(f"Шаг «{block.title}»: для допустимого ответа нет доступной кнопки.")
         if not advanced:
             raise ReadinessCoverageError(f"Шаг «{block.title}»: нет проверяемого допустимого ответа.")
         pending.extend(advanced)

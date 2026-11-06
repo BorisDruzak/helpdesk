@@ -162,3 +162,43 @@ it("sends typed answers through the server and shows actual dry-run processing",
   expect(screen.getByText("Срок выполнения: 60 мин.")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Создать обращение" })).not.toBeInTheDocument();
 });
+
+it("refreshes conditional actions after an answer changes without waiting for blur", async () => {
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    const ready = body.preview?.answers?.summary === "ready";
+    return new Response(JSON.stringify({ status: "success", data: {
+      state: { revision: 1, results: {}, answers: {}, history: [] },
+      current_step: { id: "question", kind: "form_page", title: "Вопрос", has_dynamic_fields: true,
+        fields: [{ key: "summary", type: "text", label: "Ответ" }],
+        actions: ready ? [{ key: "proceed", label: "Дальше" }] : [] },
+    } }), { headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSimulationPanel id="scenario" revision={1} dirty={false} disabled={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
+  const input = await screen.findByRole("textbox", { name: "Ответ" });
+  fireEvent.change(input, { target: { value: "ready" } });
+  expect(await screen.findByRole("button", { name: "Дальше" })).toBeEnabled();
+  expect(input).toHaveValue("ready");
+  await new Promise(resolve => setTimeout(resolve, 650));
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it("sends acknowledged for an optional instruction action", async () => {
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ status: "success", data: {
+      state: { revision: 1, results: {}, answers: {}, history: [] },
+      current_step: body.steps.length ? { id: "done", kind: "finish", title: "Готово" } :
+        { id: "instruction", kind: "instruction", title: "Инструкция", acknowledgment_required: false,
+          actions: [{ key: "proceed", label: "Дальше" }], content: { body: "Выполните" } },
+    } }), { headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ScenarioSimulationPanel id="scenario" revision={1} dirty={false} disabled={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Дальше" }));
+  await screen.findByRole("heading", { name: "Готово" });
+  expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body)).steps[0]).toMatchObject({ action_key: "proceed", current_result: "acknowledged" });
+});

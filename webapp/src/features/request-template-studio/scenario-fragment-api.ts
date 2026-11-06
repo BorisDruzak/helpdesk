@@ -1,0 +1,13 @@
+import { scenarioRequest, type ScenarioDetail } from "./scenario-api";
+import type { ScenarioDraftDefinition } from "./scenario-contract";
+export type FragmentDependency = { kind: string; key: string; label: string };
+export type FragmentSummary = { id: string; title: string; revision: number; block_count: number; source_title: string; archived: boolean };
+export type FragmentDetail = { fragment: FragmentSummary; definition: ScenarioDraftDefinition; external_dependencies: FragmentDependency[] };
+export type FragmentMappings = { fields: Record<string,string>; routes: Record<string,string>; sla_profiles: Record<string,string>; policy_refs: Record<string,string>; calendars: Record<string,number>; facts: Record<string,string> };
+export const emptyFragmentMappings = (): FragmentMappings => ({ fields:{}, routes:{}, sla_profiles:{}, policy_refs:{}, calendars:{}, facts:{} });
+const path = (id: string) => `/fragments/${encodeURIComponent(id)}`;
+export const fetchScenarioFragments = () => scenarioRequest<{items:FragmentSummary[];total:number}>("/fragments");
+export const fetchScenarioFragment = (id: string) => scenarioRequest<FragmentDetail>(path(id));
+export const createScenarioFragment = (title: string, source_scenario_id: string, block_ids: string[], source_revision: number) => scenarioRequest<FragmentDetail>("/fragments", "POST", {title,source_scenario_id,block_ids,source_revision});
+export const archiveScenarioFragment = (id: string, revision: number) => scenarioRequest<FragmentDetail>(`${path(id)}/archive`, "POST", {revision});
+export const insertSavedScenarioFragment = (id: string, fragmentId: string, revision: number, fragment_revision: number, position: {x:number;y:number}, mappings: FragmentMappings) => scenarioRequest<ScenarioDetail & {inserted_block_ids?:string[]}>(`/scenarios/${encodeURIComponent(id)}${path(fragmentId)}/insert`, "POST", {revision,fragment_revision,position,mappings});

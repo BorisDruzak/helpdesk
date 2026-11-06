@@ -1,0 +1,28 @@
+import { expect, test } from "playwright/test";
+import { installStudioV3Fixture } from "./fixtures/studio-v3";
+test("uploads a screenshot, places it in visual content and removes its references together", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const state = await installStudioV3Fixture(page);
+  state.definition().schema_version = 4; state.definition().execution_semantics = 3;
+  const assetId = "c63b57d6-1b86-4ad9-9ae5-665ae8803570";
+  const body = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
+  const asset = { asset_id: assetId, name: "sample.png", mime_type: "image/png", size_bytes: body.length, url: `/api/web/request-scenario-assets/${assetId}/download` };
+  await page.route("**/api/web/notifications/push/config", route => route.fulfill({ json: { status: "ok", enabled: false, public_key: null } }));
+  await page.route("**/scenarios/v3/attachments", route => route.fulfill({ json: { status: "success", data: asset } }));
+  await page.route(`**/request-scenario-assets/${assetId}/download`, route => route.fulfill({ contentType: "image/png", body }));
+  await page.goto("/app/admin/request-template-studio");
+  await page.getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true }).dblclick();
+  await page.getByRole("button", { name: "+ Инструкция", exact: true }).click();
+  await page.getByRole("button", { name: "Развернуть редактор", exact: true }).click();
+  await page.getByRole("button", { name: "Включить визуальное оформление", exact: true }).click();
+  await page.getByLabel("Прикрепить скриншоты или файлы", { exact: true }).setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: body });
+  await page.getByText("Изображение в тексте", { exact: true }).click();
+  await page.getByLabel("Изображение для вставки", { exact: true }).selectOption(assetId);
+  await page.getByLabel("Описание изображения", { exact: true }).fill("Пример сообщения об ошибке");
+  await page.getByRole("button", { name: "Вставить изображение", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Текст инструкции", exact: true }).getByRole("img", { name: "Пример сообщения об ошибке", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Убрать вложение sample.png", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Текст инструкции", exact: true }).getByRole("img")).toHaveCount(0);
+  await expect.poll(() => JSON.stringify(state.definition())).not.toContain(assetId);
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});

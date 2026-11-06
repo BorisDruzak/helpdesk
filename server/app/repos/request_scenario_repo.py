@@ -45,7 +45,7 @@ class RequestScenarioRepo:
         from pydantic import TypeAdapter
         _bounded_input(raw)
         version = raw.get("schema_version", 2)
-        if type(version) is not int or version not in {1, 2, 3}:
+        if type(version) is not int or version not in {1, 2, 3, 4}:
             raise ScenarioAdminError("VALIDATION_ERROR")
         code = TypeAdapter(CatalogCode).validate_python(raw.get("service_code"))
         service = await self._service_lock(code)
@@ -282,7 +282,7 @@ class RequestScenarioRepo:
             raise ScenarioAdminError("TEMPLATE_NOT_FOUND", 404)
         from tickets.request_scenario_processing import apply_scenario_policy_refs
         references = {kind: code for kind, code in definition.process_binding.policy_refs.items()
-                      if definition.schema_version != 3 or kind not in {"routing", "sla"}}
+                      if not (definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None) or kind not in {"routing", "sla"}}
         await apply_scenario_policy_refs(self.session, {"template_context": {}}, references)
         await self._category(definition.category_id, definition.service_code)
         for entry in definition.entry_points:
@@ -301,7 +301,9 @@ class RequestScenarioRepo:
 
     @staticmethod
     def _draft_audit(row, draft):
-        return {"scenario": serialize(row), "revision": draft.revision, "definition_hash": definition_hash(draft.definition)}
+        return {"scenario": serialize(row), "revision": draft.revision, "definition_hash": definition_hash(draft.definition),
+                "schema_version": draft.definition.get("schema_version", 1),
+                "execution_semantics": draft.definition.get("execution_semantics") or draft.definition.get("schema_version", 1)}
 
     async def create(self, definition, *, copy_source_id=None):
         from tickets.request_scenario_assets import validate_material_references, copy_material_sources, clone_material_assets
@@ -331,6 +333,13 @@ class RequestScenarioRepo:
         if row.archived or draft.revision != payload.revision:
             raise ScenarioAdminError("REVISION_CONFLICT", 409)
         definition = payload.definition
+        if draft.definition.get("schema_version", 1) < 4 and definition.schema_version == 4:
+            raise ScenarioAdminError("UPGRADE_REQUIRED", 409)
+        from tickets.request_scenario_conversion import validate_scenario_upgrade
+        try:
+            validate_scenario_upgrade(draft.definition, definition)
+        except ValueError as exc:
+            raise ScenarioAdminError("SCENARIO_SEMANTICS_IMMUTABLE", 409) from exc
         if (definition.scenario_key, definition.service_code, definition.offering_full_code) != (row.scenario_key, row.service_code, row.offering_full_code):
             raise ScenarioAdminError("CATALOG_BINDING_IMMUTABLE")
         await self._binding(definition)
@@ -347,6 +356,28 @@ class RequestScenarioRepo:
         await self.session.refresh(row, attribute_names=["updated_at"])
         await self.session.refresh(draft, attribute_names=["updated_at"])
         await self._audit("scenario", row.id, "save_draft", before, self._draft_audit(row, draft))
+        return {"scenario": serialize(row), "draft": serialize(draft)}
+
+    async def upgrade_v4(self, identifier, revision):
+        from tickets.request_scenario_conversion import upgrade_scenario_to_v4, assert_upgrade_equivalent
+        current, _ = await self.detail(identifier)
+        await self._service_lock(current.service_code)
+        row, draft = await self.detail(identifier, lock=True)
+        if row.archived or draft.revision != revision:
+            raise ScenarioAdminError("REVISION_CONFLICT", 409)
+        if draft.definition.get("schema_version", 1) == 4:
+            raise ScenarioAdminError("ALREADY_UPGRADED", 409)
+        definition = upgrade_scenario_to_v4(draft.definition)
+        assert_upgrade_equivalent(draft.definition, definition)
+        await self._binding(definition)
+        before = self._draft_audit(row, draft)
+        draft.definition = definition.model_dump(mode="json")
+        draft.revision += 1
+        row.updated_by = draft.updated_by = self.auth.actor_id
+        await self.session.flush()
+        await self.session.refresh(row, attribute_names=["updated_at"])
+        await self.session.refresh(draft, attribute_names=["updated_at"])
+        await self._audit("scenario", row.id, "upgrade_v4", before, self._draft_audit(row, draft))
         return {"scenario": serialize(row), "draft": serialize(draft)}
 
     async def archive(self, identifier, revision):
@@ -400,7 +431,7 @@ class RequestScenarioRepo:
                 # still blocked; disclose it separately without echoing raw inputs.
                 processing_error = {"code": "PROCESSING_INPUT_INVALID"}
         terminal_trace = {}
-        if engine.definition.schema_version == 3 and state.state == "completed_self_service":
+        if (engine.definition.schema_version == 3 or engine.definition.schema_version == 4 and engine.definition.processing is not None) and state.state == "completed_self_service":
             from tickets.request_scenario_submission import map_processing
             terminal_trace = {"map_processing": map_processing(engine.definition, state)}
         return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"),

@@ -1,3 +1,5 @@
+import { ScenarioRichContent } from "../request-template-studio/scenario-rich-content";
+import type { ScenarioRichDocument } from "../request-template-studio/scenario-contract";
 import { RequestFormFieldControl, type DynamicFormValues } from "./dynamic-form";
 import { ScenarioFields, type ScenarioProjectedField } from "./scenario-fields";
 import { Button } from "./ui/form-controls";
@@ -6,8 +8,8 @@ import type { ScenarioAttachment } from "../request-template-studio/scenario-con
 export type ScenarioStepDisplay = {
  id: string; kind: string; title: string;
  fields?: (ScenarioProjectedField & { value?: DynamicFormValues[string]; allow_unknown?: boolean })[];
- layout?: "single" | "group" | "section"; has_dynamic_fields?: boolean;
- content?: { body: string; format: string; attachments?: ScenarioAttachment[] }; acknowledgment_required?: boolean; can_request_ticket?: boolean; message?: string;
+ layout?: "single" | "group" | "section"; actions?: {key:string;label:string}[]; has_dynamic_fields?: boolean;
+ content?: { body: string; format: string; attachments?: ScenarioAttachment[]; rich_document?: ScenarioRichDocument | null }; acknowledgment_required?: boolean; can_request_ticket?: boolean; message?: string;
  answers?: { key: string; label: string; type: string; value: unknown; display_value: string; answer_attachments?: ScenarioAttachment[] }[];
 };
 /** Shared employee step content. Effects and lifecycle commands belong to the caller. */
@@ -18,11 +20,12 @@ export function ScenarioStepContent({ block, values, errors, acknowledged, onVal
 }) {
  return <>
   <ScenarioFields fields={block.fields || []} layout={block.layout} renderField={field => <ScenarioAttachmentEditor scope={`${attachmentScope}:${block.id}:${field.key}`} attachments={field.answer_attachments} disabled={attachmentsDisabled} onBusy={busy => onAttachmentBusy?.(field.key, busy)} onUpload={onUpload && ["text", "textarea"].includes(field.type) ? (file, signal) => onUpload(field.key, file, signal) : undefined} onRemove={onRemove ? (id, signal) => onRemove(field.key, id, signal) : undefined}>
-   <RequestFormFieldControl field={field} value={values[field.key]} error={errors?.[field.key]} onChange={value=>onValue(field.key,value)} />
+   <RequestFormFieldControl field={field.help_document ? { ...field, help_text: undefined } : field} value={values[field.key]} error={errors?.[field.key]} onChange={value=>onValue(field.key,value)} />
+   {field.help_document && <ScenarioRichContent document={field.help_document} attachments={field.help_attachments} />}
    <ScenarioAttachments attachments={field.help_attachments} />
    {field.allow_unknown && <label className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={values[field.key]===null} onChange={event=>onValue(field.key,event.currentTarget.checked?null:undefined)} />Не знаю</label>}
   </ScenarioAttachmentEditor>} />
-  {block.content && <p className="whitespace-pre-wrap break-words">{block.content.body}</p>}
+  {block.content && (block.content.rich_document ? <ScenarioRichContent document={block.content.rich_document} attachments={block.content.attachments} /> : <p className="whitespace-pre-wrap break-words">{block.content.body}</p>)}
   <ScenarioAttachments attachments={block.content?.attachments} />
   {block.kind==="instruction" && <label className="flex gap-2"><input type="checkbox" checked={acknowledged} onChange={event=>onAcknowledged(event.target.checked)} />Инструкция выполнена</label>}
   {block.kind==="instruction" && block.can_request_ticket && <Button type="button" variant="outline" disabled={!onRequestTicket} onClick={onRequestTicket}>Нужна помощь поддержки</Button>}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
-import { connectStart, reconnectStart, connectBlocks, insertOnTransition, positionBlock, reconnectTransition, deleteMapBlock, freeMapPosition } from "./scenario-map-model";
+import { connectStart, reconnectStart, connectBlocks, insertOnTransition, positionBlock, reconnectTransition, deleteMapBlock, freeMapPosition, nearMapPosition } from "./scenario-map-model";
 
 const draft = (): ScenarioDraftDefinition => ({ scenario_key: "test", title: "Карта", service_code: "it", offering_full_code: "it.print", entry_block_id: "q", process_binding: { request_template_key: "print" },
   entry_points: [{ key: "jam", title: "Замятие", target_block_id: "q" }], blocks: [
@@ -8,6 +8,11 @@ const draft = (): ScenarioDraftDefinition => ({ scenario_key: "test", title: "К
     { id: "done", kind: "finish", title: "Готово" }, { id: "review", kind: "review", title: "Сводка", transitions: [{ to: "ticket" }] }, { id: "ticket", kind: "submit_ticket", title: "Обращение" },
   ] });
 describe("atomic map edits", () => {
+  it("adds near the visible viewport rather than the graph origin without changing legacy geometry", () => {
+    const d = draft(), before = structuredClone(d);
+    expect(nearMapPosition(d, { x: 5000, y: -4000 })).toEqual({ x: 4885, y: -4045 });
+    expect(d).toEqual(before);
+  });
   it("places palette additions clear of a route assembled with the step plus buttons", () => {
     const d = draft();
     d.blocks = d.blocks!.slice(0, 3);
@@ -52,4 +57,11 @@ describe("start connections", () => {
  it("adds an entrance atomically without adding a runtime block or changing the main entrance",()=>{const d=draft();const next=connectStart(d,"review");expect(next.entry_points).toHaveLength(2);expect(next.entry_points?.[1]).toMatchObject({title:"Сводка",target_block_id:"review",enabled:true});expect(next.blocks).toEqual(d.blocks);expect(next.entry_block_id).toBe("q");expect(connectStart(next,"review")).toBe(next);});
  it("preserves entrance metadata during reconnect and validates targets and limits",()=>{const d=draft();d.entry_points![0].synonyms=["бумага"];expect(reconnectStart(d,"jam","review").entry_points?.[0]).toMatchObject({key:"jam",synonyms:["бумага"],target_block_id:"review"});expect(reconnectStart(d,null,"review").entry_block_id).toBe("review");expect(()=>connectStart(d,"missing")).toThrow();d.entry_points=Array.from({length:64},(_,i)=>({key:`e${i}`,title:"Вход",target_block_id:"q"}));expect(()=>connectStart(d,"review")).toThrow(/64/);});
  it("chooses the first start only when no main entrance exists",()=>{const d=draft();d.entry_block_id=null;expect(connectStart(d,"review").entry_block_id).toBe("review");});
+});
+it("rejects v4-only insertions in legacy graphs while allowing ordinary steps", () => {
+  for (const version of [2, 3] as const) {
+    const d = {...draft(), schema_version: version};
+    for (const kind of ["sla", "navigation"] as const) expect(() => insertOnTransition(d, "q", 0, kind)).toThrow(/новые возможности/);
+    expect(insertOnTransition(d, "q", 0, "instruction").blocks).toHaveLength(5);
+  }
 });

@@ -219,6 +219,8 @@ classification = "persistent_reference_fixture"
 patterns = ["form_*"]
 tables = [
   "request_studio_categories",
+  "request_studio_fragments",
+  "request_studio_fragment_assets",
   "request_studio_scenarios",
   "request_studio_scenario_versions",
   "request_studio_drafts",

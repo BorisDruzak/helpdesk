@@ -79,3 +79,47 @@ def convert_form(offering, form):
         raise
     except ValueError as exc:
         raise ConversionBlocked([{"code": "unsupported_schema", "path": "fields", "message": "Форма содержит неподдерживаемые поля, роли или условия. Исходная форма сохранена."}]) from exc
+
+
+def upgrade_scenario_to_v4(raw):
+    """Return a separate v4 draft; execution semantics remain pinned to its source."""
+    from web_api.dto.request_scenario import ScenarioDraftDefinition
+    original = ScenarioDraftDefinition.model_validate(deepcopy(raw))
+    if original.schema_version not in (1, 2, 3):
+        raise ConversionBlocked([{"code": "unsupported_schema", "path": "schema_version", "message": "Only legacy drafts can be upgraded."}])
+    result = original.model_dump(mode="json")
+    result.update(schema_version=4, execution_semantics=original.schema_version)
+    return ScenarioDraftDefinition.model_validate(result)
+
+
+def validate_scenario_upgrade(previous, definition):
+    """A draft upgrade cannot silently replace the source execution policy."""
+    prior_version = previous.get("schema_version", 1)
+    if prior_version == 4:
+        if definition.schema_version != 4 or definition.execution_semantics != previous.get("execution_semantics", 3):
+            raise ValueError("Scenario execution semantics cannot be changed")
+        if (previous.get("processing") is None) != (definition.processing is None):
+            raise ValueError("Legacy processing mode cannot be changed by upgrade")
+    elif definition.schema_version == 4:
+        if definition.execution_semantics != prior_version or (previous.get("processing") is None) != (definition.processing is None):
+            raise ValueError("Scenario upgrade must preserve execution semantics and processing mode")
+
+
+def assert_upgrade_equivalent(original, upgraded):
+    """Compare effective legacy business data with the v4 interpretation."""
+    from tickets.request_scenario_optional_evidence import effective_definition
+    from web_api.dto.request_scenario import ScenarioDraftDefinition
+    old = ScenarioDraftDefinition.model_validate(deepcopy(original))
+    new = ScenarioDraftDefinition.model_validate(upgraded.model_dump(mode="json") if hasattr(upgraded, "model_dump") else deepcopy(upgraded))
+    if old.schema_version not in (1, 2, 3) or new.schema_version != 4 or new.execution_semantics != old.schema_version:
+        raise ValueError("Upgrade semantics do not match the source")
+    old_effective = effective_definition(old).model_dump(mode="json")
+    new_raw = effective_definition(new).model_dump(mode="json")
+    new_raw["schema_version"] = old.schema_version
+    new_raw["execution_semantics"] = None
+    try:
+        normalized = ScenarioDraftDefinition.model_validate(new_raw).model_dump(mode="json")
+    except ValueError as exc:
+        raise ValueError("Upgrade introduced unsupported semantics") from exc
+    if old_effective != normalized:
+        raise ValueError("Upgrade changes effective business definition")

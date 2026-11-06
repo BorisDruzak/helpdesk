@@ -1,0 +1,32 @@
+import { expect, test } from "playwright/test";
+import { installStudioV3Fixture } from "./fixtures/studio-v3";
+
+test("legacy SLA projection edits original rules without upgrading schema", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const state = await installStudioV3Fixture(page);
+  const q2 = state.definition().blocks!.find(block => block.id === "q2")!;
+  if (q2.kind !== "form_page") throw new Error("fixture q2 must be a form");
+  q2.fields[0].process_mapping = { effects: [{ value: "department", facts: { impact: "department" } }] };
+  await page.route("**/api/web/notifications/push/config", route => route.fulfill({ json: { status: "ok", enabled: false, public_key: null } }));
+  await page.goto("/app/admin/request-template-studio");
+  await page.getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true }).dblclick();
+  await page.getByRole("button", { name: "Вся карта", exact: true }).click();
+  const node = page.locator('[data-id="studio:legacy-sla:q2"]');
+  await node.getByRole("button", { name: "Редактировать", exact: true }).click();
+  await expect(node.getByText("Действующие влияния «Масштаб проблемы».", { exact: false })).toBeVisible();
+  await node.getByText("Влияние ответов на обработку").click();
+  const department = node.locator("section.rounded.border.p-3").filter({ has: page.getByRole("heading", { name: "Весь отдел" }) });
+  const impact = department.getByLabel("Масштаб воздействия");
+  await expect(impact).toHaveValue("department");
+  await impact.selectOption("multiple_users");
+  await expect.poll(() => state.writes.filter(value => value === "draft").length).toBeGreaterThan(0);
+  expect(state.definition().schema_version).toBe(3);
+  const updated = state.definition().blocks!.find(block => block.id === "q2")!;
+  expect(updated.kind === "form_page" && updated.fields[0].process_mapping?.effects?.[0].facts.impact).toBe("multiple_users");
+  await page.locator('.react-flow__edge[data-id="q2:0"]').click({ button: "right", force: true });
+  const menu = page.getByRole("menu", { name: "Действия на карте" });
+  await expect(menu.getByRole("menuitem", { name: "SLA", exact: true })).toBeDisabled();
+  await expect(menu.getByRole("menuitem", { name: "Переходы · кнопки", exact: true })).toBeDisabled();
+  expect(state.errors).toEqual([]);
+  expect(state.unexpected).toEqual([]);
+});

@@ -37,7 +37,7 @@ def _remove_stage_position(raw):
 
 
 def _known_stage(raw):
-    if raw.get("schema_version") != 3:
+    if not (raw.get("schema_version") == 3 or raw.get("schema_version") == 4 and raw.get("execution_semantics", 3) == 3):
         return False
     candidates = [block for block in raw.get("blocks", []) if block.get("id") == EVIDENCE_BLOCK]
     if len(candidates) != 1:

@@ -26,7 +26,7 @@ it("keeps services together and opens settings in place, map action directly in 
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ScenarioCatalogExplorer data={data} query="" status="all" category={null} canEdit onCategory={vi.fn()} onQuery={vi.fn()} onStatus={vi.fn()} onOpen={onOpen} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()} /></MemoryRouter></QueryClientProvider>);
   expect(screen.queryByRole("region", { name: "Карты сценариев" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Настроить услугу Диагностика VPN" }));
-  expect(screen.getByRole("complementary", { name: "Настройки услуги" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Настройки услуги" })).toBeVisible();
   expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
   expect(screen.getByRole("button",{name:"Услуга Диагностика VPN · Сценарий"})).toBeVisible();
   expect(screen.queryByRole("tab", { name: "Карты сценариев" })).not.toBeInTheDocument();

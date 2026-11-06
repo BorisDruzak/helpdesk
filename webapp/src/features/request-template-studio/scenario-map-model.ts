@@ -5,6 +5,7 @@ export const mapPalette: { kind: ScenarioBlock["kind"]; label: string }[] = [
   { kind: "form_page", label: "Вопрос" }, { kind: "instruction", label: "Инструкция" },
   { kind: "decision", label: "Условие" }, { kind: "resolution_check", label: "Проверка результата" },
   { kind: "submit_ticket", label: "Результат" },
+  { kind: "navigation", label: "Переходы · кнопки" }, { kind: "sla", label: "SLA" },
 ];
 export const mapKindLabel = (kind: ScenarioBlock["kind"]) => kind === "finish" ? "Результат" : mapPalette.find(item => item.kind === kind)?.label ?? kind;
 export const terminal = (kind: ScenarioBlock["kind"]) => kind === "finish" || kind === "submit_ticket";
@@ -44,6 +45,19 @@ export function freeMapPosition(definition: ScenarioDraftDefinition) {
   }
   return point;
 }
+/** Place around the visible flow-space center; never search from the graph origin. */
+export function nearMapPosition(definition: ScenarioDraftDefinition, center: { x: number; y: number }) {
+  const occupied = Object.values(stableMapPositions(definition));
+  const origin = { x: center.x - 115, y: center.y - 45 };
+  for (let ring = 0; ring <= 8; ring++) {
+    for (let dx = -ring; dx <= ring; dx++) for (let dy = -ring; dy <= ring; dy++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+      const point = { x: origin.x + dx * 280, y: origin.y + dy * 190 };
+      if (occupied.every(old => Math.abs(old.x - point.x) >= 260 || Math.abs(old.y - point.y) >= 170)) return point;
+    }
+  }
+  return origin;
+}
 export function requireAcyclic(definition: ScenarioDraftDefinition) {
   const blocks = new Map((definition.blocks ?? []).map(block => [block.id, block]));
   const active = new Set<string>(), visited = new Set<string>();
@@ -68,8 +82,10 @@ export function reconnectTransition(definition: ScenarioDraftDefinition, source:
 export function connectBlocks(definition: ScenarioDraftDefinition, source: string, target: string) {
   const block = definition.blocks?.find(item => item.id === source);
   if (!block || terminal(block.kind) || !definition.blocks?.some(item => item.id === target)) throw new Error("Этот блок нельзя соединить с выбранной целью");
-  if ((block.transitions?.length ?? 0) >= 30) throw new Error("Достигнут лимит переходов");
+  if ((block.transitions?.length ?? 0) >= (block.transition_mode === "buttons" ? 10 : 30)) throw new Error("Достигнут лимит переходов");
+  if (block.kind === "sla" && block.transitions?.length) throw new Error("У блока SLA может быть только один следующий шаг");
   let edge:ScenarioTransition={to:target};
+  if (block.transition_mode === "buttons") edge.button = { key: newKey("action"), label: definition.blocks?.find(item => item.id === target)?.title ?? "Продолжить" };
   if((definition.schema_version??1)>=2&&block.kind==="resolution_check"){
     const used=(block.transitions??[]).map(item=>item.when&&"value" in item.when?item.when.value:null);
     const value=["yes","no","unknown"].find(item=>!used.includes(item));
@@ -78,12 +94,13 @@ export function connectBlocks(definition: ScenarioDraftDefinition, source: strin
   return replaceTransitions(definition, source, [...block.transitions ?? [], edge]);
 }
 export function insertOnTransition(definition: ScenarioDraftDefinition, source: string, index: number, kind: ScenarioBlock["kind"], position?: { x: number; y: number }) {
+  if (["sla", "navigation"].includes(kind) && definition.schema_version !== 4) throw new Error("Сначала включите новые возможности карты. Существующие услуги сохраняют прежние правила.");
   if (terminal(kind) || kind === "resolution_check") throw new Error("Этот шаг завершает маршрут или требует отдельных ветвей. Добавьте его из библиотеки и явно настройте переходы.");
   const from = definition.blocks?.find(item => item.id === source);
   const edge = from?.transitions?.[index];
   if (!edge || (definition.blocks?.length ?? 0) >= 256) throw new Error("Переход не найден или достигнут лимит блоков");
   const block = newBlock(kind);
-  block.transitions = [{ to: edge.to }];
+  block.transitions = [{ to: edge.to, ...(block.kind === "navigation" ? { button: { key: newKey("action"), label: "Продолжить" } } : {}) }];
   let next: ScenarioDraftDefinition = { ...definition, blocks: [...definition.blocks ?? [], block].map(old => old.id === source ? { ...old, transitions: old.transitions?.map((item, i) => i === index ? { ...item, to: block.id } : item) } : old) };
   const fromIndex = definition.blocks!.findIndex(item => item.id === source);
   const origin = definition.editor_layout?.positions?.[source] ?? { x: (fromIndex % 3) * 310, y: Math.floor(fromIndex / 3) * 200 };
@@ -93,6 +110,7 @@ export function insertOnTransition(definition: ScenarioDraftDefinition, source: 
   return requireAcyclic(next);
 }
 export function addMapBlock(definition: ScenarioDraftDefinition, kind: ScenarioBlock["kind"], position: { x: number; y: number }) {
+  if (["sla", "navigation"].includes(kind) && definition.schema_version !== 4) throw new Error("Сначала включите новые возможности карты. Существующие услуги сохраняют прежние правила.");
   if ((definition.blocks?.length ?? 0) >= 256) throw new Error("Достигнут лимит 256 шагов карты");
   const next = addBlock(definition, kind, null);
   return positionBlock(next, next.blocks![next.blocks!.length - 1].id, position);

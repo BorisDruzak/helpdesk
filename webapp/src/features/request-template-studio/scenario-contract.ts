@@ -2,6 +2,8 @@
 export type ScenarioScalar = string | boolean | number | null;
 export type ScenarioAnswer = ScenarioScalar | string[];
 export type ScenarioAttachment = { asset_id: string; name: string; mime_type: string; size_bytes: number; url: string };
+export type ScenarioRichNode = { type: string; text?: string; attrs?: Record<string, unknown>; marks?: { type: string; attrs?: Record<string, unknown> }[]; content?: ScenarioRichNode[] };
+export type ScenarioRichDocument = { type: "doc"; content: ScenarioRichNode[] };
 export type ScenarioSource =
   | { source: "answer"; field: string }
   | { source: "current_result"; field?: null };
@@ -20,6 +22,7 @@ export type ScenarioField = {
   required?: boolean;
   placeholder?: string;
   help_text?: string;
+  help_document?: ScenarioRichDocument | null;
   help_attachments?: ScenarioAttachment[];
   options?: { value: string; label: string }[];
   visible_when?: ScenarioCondition | null;
@@ -36,11 +39,13 @@ export type ScenarioBranchProcessing = {route?:string|null;sla_profile?:string|n
 export type ScenarioSlaProfile = {title:string;first_response_minutes:number;resolution_minutes:number;time_basis?:"calendar"|"business";calendar_id?:number|null};
 export type ScenarioRoute = {title:string;queue_code:string};
 export type ScenarioProcessing = {sla_profiles:Record<string,ScenarioSlaProfile>;routes:Record<string,ScenarioRoute>;defaults:{route:string;sla_profile:string};assignment_mode?:"last_matching_branch"};
-export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null; processing_facts?:ScenarioProcessingFacts|null;processing?:ScenarioBranchProcessing|null };
-type BlockBase = { id: string; title: string; transitions?: ScenarioTransition[] };
+export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null; processing_facts?:ScenarioProcessingFacts|null;processing?:ScenarioBranchProcessing|null; button?: { key: string; label: string } | null };
+type BlockBase = { id: string; title: string; transitions?: ScenarioTransition[]; transition_mode?: "automatic" | "buttons" };
 export type ScenarioBlock = BlockBase & (
   | { kind: "form_page"; layout?: "single" | "group" | "section"; fields: ScenarioField[] }
-  | { kind: "instruction"; content: { format?: "markdown" | "plain"; body: string; attachments?: ScenarioAttachment[] }; acknowledgment_required?: boolean }
+  | { kind: "instruction"; content: { format?: "markdown" | "plain"; body: string; attachments?: ScenarioAttachment[]; rich_document?: ScenarioRichDocument | null }; acknowledgment_required?: boolean }
+  | { kind: "navigation" }
+  | { kind: "sla"; processing_facts?: ScenarioProcessingFacts | null; sla_profile?: string | null; policy_ref?: string | null }
   | { kind: "decision" }
   | { kind: "resolution_check" }
   | { kind: "diagnostic"; capability?: string; require_consent?: boolean; timeout_seconds?: number; execution_mode?: "unavailable" }
@@ -56,7 +61,8 @@ export type ScenarioEntryPoint = {
 };
 export type ScenarioEditorLayout = { positions?: Record<string, { x: number; y: number }> };
 export type ScenarioDraftDefinition = {
-  schema_version?: 1 | 2 | 3;
+  schema_version?: 1 | 2 | 3 | 4;
+  execution_semantics?: 1 | 2 | 3;
   scenario_key: string;
   service_code: string;
   offering_full_code: string;
@@ -80,4 +86,5 @@ export type ScenarioAnswerRequest = {
   revision: number;
   answers?: Record<string, ScenarioAnswer>;
   current_result?: "yes" | "no" | "unknown" | "acknowledged" | "request_ticket" | null;
+  action_key?: string | null;
 };

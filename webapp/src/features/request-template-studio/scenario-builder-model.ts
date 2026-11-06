@@ -4,6 +4,7 @@ export const blockLabels: Record<ScenarioBlock["kind"], string> = {
   form_page: "Страница вопросов", instruction: "Инструкция", decision: "Условие",
   resolution_check: "Проверка результата", diagnostic: "Диагностика",
   review: "Просмотр ответов", submit_ticket: "Создание обращения", finish: "Завершение без обращения",
+  navigation: "Переходы", sla: "SLA",
 };
 export const fieldLabels: Record<ScenarioFieldType, string> = {
   text: "Короткий текст", textarea: "Длинный текст", select: "Список", multi_select: "Несколько вариантов",
@@ -41,6 +42,7 @@ export function editFieldOption(field: ScenarioField, index: number, value: stri
 export function newBlock(kind: ScenarioBlock["kind"]): ScenarioBlock {
   const base = { id: newKey("block"), title: blockLabels[kind], transitions: [] };
   switch (kind) {
+    case "navigation": return { ...base, kind, transition_mode: "buttons" };
     case "form_page": return { ...base, kind, layout: "group", fields: [newField()] };
     case "instruction": return { ...base, kind, content: { format: "plain", body: "Опишите шаги решения" }, acknowledgment_required: true };
     case "diagnostic": return { ...base, kind, capability: "endpoint.context.diagnostic.collect", require_consent: true, execution_mode: "unavailable", timeout_seconds: 30 };

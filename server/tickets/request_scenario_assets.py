@@ -29,8 +29,26 @@ def material_references(definition):
             yield from field.get("help_attachments", [])
 
 
+def rich_asset_nodes(definition):
+    raw = definition.model_dump(mode="json") if hasattr(definition, "model_dump") else definition
+    for block in raw.get("blocks", []):
+        pairs = [((block.get("content") or {}).get("rich_document"), (block.get("content") or {}).get("attachments", []))]
+        pairs.extend((field.get("help_document"), field.get("help_attachments", [])) for field in block.get("fields", []))
+        for document, attachments in pairs:
+            allowed = {item["asset_id"] for item in attachments}
+            stack = list((document or {}).get("content", []))
+            while stack:
+                node = stack.pop()
+                if node.get("type") == "image":
+                    yield node["attrs"], allowed
+                stack.extend(node.get("content", []))
+
+
 async def validate_material_references(session, scenario_id, definition):
     from app.repos.request_scenario_repo import ScenarioAdminError
+    for attrs, allowed in rich_asset_nodes(definition):
+        if attrs["asset_id"] not in allowed:
+            raise ScenarioAdminError("ATTACHMENT_REFERENCE_INVALID")
     for ref in material_references(definition):
         row = await session.get(RequestStudioAsset, ref["asset_id"])
         if not row or not scenario_id or row.scenario_id != scenario_id or row.removed_at or asset_metadata(row) != ref:
@@ -61,6 +79,7 @@ async def material_content_definition(session, scenario_id, definition):
     """Compare immutable contents and placement, independent of copied ids."""
     await validate_material_references(session, scenario_id, definition)
     raw = deepcopy(definition)
+    image_nodes = list(rich_asset_nodes(raw))
     indices = {}
     for ref in material_references(raw):
         asset_id = ref["asset_id"]
@@ -68,6 +87,8 @@ async def material_content_definition(session, scenario_id, definition):
         row = await session.get(RequestStudioAsset, asset_id)
         ref.clear()
         ref.update(name=row.name, mime_type=row.mime_type, size_bytes=row.size_bytes, sha256=row.sha256, material_index=index)
+    for attrs, _ in image_nodes:
+        attrs["asset_id"] = f"material:{indices[attrs['asset_id']]}"
     return raw
 
 
@@ -85,6 +106,8 @@ async def clone_material_assets(session, target_id, definition, sources, owner):
             rebindings[source_id] = asset_metadata(clone)
         ref.clear()
         ref.update(rebindings[source_id])
+    for attrs, _ in rich_asset_nodes(raw):
+        attrs["asset_id"] = rebindings[attrs["asset_id"]]["asset_id"]
     return raw, rebindings
 
 

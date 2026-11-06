@@ -23,6 +23,11 @@ from web_api.dto.request_scenario import ScenarioDefinition
 SCOPE = "request_scenario.publish"
 
 
+def offering_issue_blocks(definition, issue):
+    map_owned = definition.get("schema_version") == 3 or definition.get("schema_version") == 4 and definition.get("processing") is not None
+    return issue["severity"] in {"critical", "error"} and not (map_owned and issue["kind"] == "runtime_simulation_failed")
+
+
 def scenario_diff(before, after, path=""):
     """Expose nested edits; unchanged block titles cannot conceal changed fields."""
     if before == after:
@@ -102,7 +107,7 @@ class ScenarioPublicationService:
         template = deepcopy(effective.get("request_template") or {})
         policies = deepcopy(effective.get("resolved_policies") or {})
         references = draft.definition.get("process_binding", {}).get("policy_refs", {})
-        if draft.definition.get("schema_version") == 3:
+        if draft.definition.get("schema_version") == 3 or draft.definition.get("schema_version") == 4 and draft.definition.get("processing") is not None:
             references = {kind: code for kind, code in references.items() if kind not in {"routing", "sla"}}
         if references:
             from tickets.request_scenario_processing import apply_scenario_policy_refs
@@ -133,8 +138,7 @@ class ScenarioPublicationService:
             validation = await ServiceCatalogPublicationService(self.session).validate_offering(row.offering_full_code)
             # v3 proves routing with its own map context below. A standalone
             # template simulation has no selected branch and cannot prove it.
-            blocking = [issue for issue in validation["issues"] if issue["severity"] in {"critical", "error"}
-                        and not (draft.definition.get("schema_version") == 3 and issue["kind"] == "runtime_simulation_failed")]
+            blocking = [issue for issue in validation["issues"] if offering_issue_blocks(draft.definition, issue)]
             if blocking:
                 add("offering_not_ready", "Новая услуга не прошла действующую проверку Service Catalog. Исправьте шаблон, маршрут или политики.", "offering_full_code")
         if (source.get("offering") or {}).get("request_template_key") != draft.definition["process_binding"]["request_template_key"]:
@@ -152,7 +156,7 @@ class ScenarioPublicationService:
         try:
             definition = ScenarioDefinition.model_validate(draft.definition)
             from tickets.request_scenario_processing import validate_map_processing_references
-            if definition.schema_version == 3:
+            if (definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None):
                 issues.extend(validate_map_processing_references(definition, source["queues"], source["business_calendars"]))
             from tickets.request_scenario_catalog import category_path_is_public
             categories = {item["id"]: item for item in source["taxonomy"]}
@@ -190,7 +194,7 @@ class ScenarioPublicationService:
                 routing, sla, approval = result["routing"], result["sla"], result["approval"]
                 if routing.get("queue_id") not in active_queue_ids:
                     add("routing_unavailable", "Одна из ветвей не попадает в действующую очередь.")
-                if (definition.schema_version == 3 or "sla" in references or not (template.get("config") or {}).get("no_sla")) and not sla.get("resolution_min"):
+                if ((definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None) or "sla" in references or not (template.get("config") or {}).get("no_sla")) and not sla.get("resolution_min"):
                     add("sla_unavailable", "Одна из ветвей не имеет срока выполнения по действующей политике.")
                 if approval.get("required") and not approval.get("approvers"):
                     add("approval_unavailable", "Согласование требуется, но действующий источник не определил согласующих.")
