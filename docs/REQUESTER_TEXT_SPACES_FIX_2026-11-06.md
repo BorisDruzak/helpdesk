@@ -41,10 +41,32 @@ scenario caller were verified directly against the current source and accepted
 Git baseline. React 19.2.5 controlled-input behavior was checked against official
 React documentation through Context7. CODEMAP records raw editing vs normalization.
 
-Exact immutable staging install, backup, source hashes, health and business-count
-acceptance are appended after deployment. Full CI and production are outside this
-targeted staging task. Existing unrelated shared checkout/index work is preserved
-using a private index based on `2ed60576070064c5d468778e0c26aa9a8486676b`, retaining
-the accepted SLA repair and prior requester/catalog improvements.
+## Staging acceptance
+
+Installed `587bc6dc3c4bca4b508ece7a5f95514c78f4a49a` —
+`fix(requester): preserve spaces while editing form fields`, 7 files listed above
+plus CODEMAP, this report and PLANS. Branch `codex/requester-spaces-fix`; canonical
+immutable installer rebuilt the exact Git archive with frozen-lockfile frontend.
+All 4 source/test hashes match committed files; schema remains 155.
+
+Verified pre-install backup SHA256:
+`1dd1222ca062902691061a5cabfc068b8e98bd2b01c8ef4471cc96562a29136e`.
+Strict hostname/CA HTTPS health returns 200 for Helpdesk and Endpoint, all 3
+staging services active. The requester page shell and its entry/form-controls/
+new-request-page JS assets return 200 and exactly match installed bytes; new
+request chunk is `/assets/new-request-page-DH5Fp2AE.js`.
+
+Business counts are unchanged: 76 tickets, 18442 events, 6 artifacts, 160 users,
+44 people. T-000075 remains closed with original resolution stop
+`2026-11-05T12:42:15.591013Z`, no breach marker and confirmation pending=false.
+No data migration, ticket command or employee profile/account edit was performed.
+Live acceptance is strict HTTP/asset/state verification; the keyboard/preview/
+answer behavior is verified through real browser fixtures, not impersonation of
+an employee's requester session. Three viewport screenshots are under `browser/`.
+
+Full CI and production are outside this targeted staging task. Staging remains
+available. Existing unrelated shared checkout/index work is preserved using a
+private index based on `2ed60576070064c5d468778e0c26aa9a8486676b`, retaining the
+accepted SLA repair and prior requester/catalog improvements.
 
 Private evidence: `tmp/requester-spaces-fix-20261106` and matching test/build logs.
