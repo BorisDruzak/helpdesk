@@ -17,7 +17,7 @@ export function catalogServices(data: ScenarioCatalog): CatalogService[] {
       description:scenario?.description??card.offering.short_description??"",categoryId:scenario?.category_id??metadata?.category_id??card.category_ids[0]??null,
       synonyms:[...(metadata?.synonyms??[]),...(scenario?.entry_points??[]).flatMap(entry=>[entry.title,...(entry.synonyms??[])])],
       available:card.requester_available!==false,mode:scenario?"scenario" as const:"form" as const,
-      scenario,draft:!!scenario&&(scenario.status!=="published"||!!scenario.issues?.length||JSON.stringify((scenario.entry_points??[]).map(entrySettings))!==JSON.stringify((scenario.published_entry_points??[]).map(entrySettings)))};
+      scenario,draft:!!scenario&&(scenario.has_draft_changes??(scenario.status!=="published"||!!scenario.issues?.length||JSON.stringify((scenario.entry_points??[]).map(entrySettings))!==JSON.stringify((scenario.published_entry_points??[]).map(entrySettings))))};
   });
 }
 

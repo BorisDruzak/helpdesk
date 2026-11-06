@@ -4,7 +4,16 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioCatalogExplorer } from "./scenario-catalog";
 import type { ScenarioCatalog } from "./scenario-api";
+import { catalogServices } from "./catalog-service-model";
 afterEach(()=>vi.unstubAllGlobals());
+
+it("provides a one-click draft filter and marks non-entry published edits",()=>{
+ const offering={full_code:"it.a",service_code:"it",public_title:"Печать"},map={id:"s",title:"Печать",offering_full_code:"it.a",archived:false,status:"published",has_draft_changes:true,published_version_id:"v",entry_points:[],published_entry_points:[]};
+ const data={services:[{code:"it",public_title:"ИТ"}],categories:[],offerings:[offering],scenarios:[map],entries:[{offering,scenarios:[map],active_mode:"form",category_ids:[]}],total:1,offset:0,limit:100} as unknown as ScenarioCatalog;
+ expect(catalogServices(data)[0].draft).toBe(true);
+ const status=vi.fn();render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ScenarioCatalogExplorer data={data} query="" status="all" category={null} canEdit onCategory={vi.fn()} onQuery={vi.fn()} onStatus={status} onOpen={vi.fn()} onCreateForOffering={vi.fn()} onEditCategory={vi.fn()} onPage={vi.fn()}/></MemoryRouter></QueryClientProvider>);
+ fireEvent.click(screen.getByRole("button",{name:"Черновики"}));expect(status).toHaveBeenCalledWith("draft");
+});
 
 it("lets a read-only user open an archived map without edit permission",()=>{
  const offering={full_code:"it.a",service_code:"it",public_title:"Печать"},map={id:"s",title:"Архив печати",offering_full_code:"it.a",archived:true};

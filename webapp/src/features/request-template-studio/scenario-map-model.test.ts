@@ -8,6 +8,13 @@ const draft = (): ScenarioDraftDefinition => ({ scenario_key: "test", title: "К
     { id: "done", kind: "finish", title: "Готово" }, { id: "review", kind: "review", title: "Сводка", transitions: [{ to: "ticket" }] }, { id: "ticket", kind: "submit_ticket", title: "Обращение" },
   ] });
 describe("atomic map edits", () => {
+  it("makes a newly authored second unconditional v4 route independently selectable without converting existing saved routes",()=>{
+    const d=draft();d.schema_version=4;d.blocks![0]={id:"q",kind:"form_page",title:"Вопрос",fields:[],transitions:[{to:"done"}]};
+    const next=connectBlocks(d,"q","review");expect(next.blocks![0].transition_mode).toBe("buttons");expect(next.blocks![0].transitions?.map(edge=>edge.button?.label)).toEqual(["Готово","Сводка"]);
+    expect(d.blocks![0].transition_mode).toBeUndefined();expect(d.blocks![0].transitions).toEqual([{to:"done"}]);
+    const conditional={...d,blocks:d.blocks!.map((block,i)=>i?block:{...block,transitions:[{to:"done",when:{op:"eq" as const,source:"answer" as const,field:"x",value:"a"}}]})};expect(connectBlocks(conditional,"q","review").blocks![0].transition_mode).toBeUndefined();
+    expect(connectBlocks({...d,schema_version:3},"q","review").blocks![0].transition_mode).toBeUndefined();
+  });
   it("names newly connected buttons independently when targets share the same title", () => {
     const d = draft(); d.schema_version = 4;
     d.blocks![0] = { id: "q", kind: "navigation", title: "Выбор", transition_mode: "buttons", transitions: [{ to: "done", button: { key: "first", label: "Готово" } }] };

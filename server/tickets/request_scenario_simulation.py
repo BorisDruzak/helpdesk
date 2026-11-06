@@ -11,9 +11,12 @@ from tickets.request_scenario_validation import ScenarioIssue, ScenarioValidatio
 from web_api.dto.request_scenario import ScenarioDefinition, ScenarioDraftDefinition
 
 
-def simulation_definition(raw, entry_point_key=None):
+def simulation_definition(raw, entry_point_key=None, *, author_preview=False):
     draft = ScenarioDraftDefinition.model_validate(raw)
     issues = validate_scenario(draft)
+    if author_preview:
+        from tickets.request_scenario_author_preview import require_author_preview_definition
+        require_author_preview_definition(draft)
     if not issues:
         return ScenarioDefinition.model_validate(raw), {"limited_scope": False, "excluded_block_ids": [], "issues": []}
     entries = [entry for entry in draft.entry_points if entry.key == entry_point_key]
@@ -40,7 +43,10 @@ def simulation_definition(raw, entry_point_key=None):
         entry_points=[entry.model_dump(mode="json") for entry in entries],
         editor_layout={"positions": {key: point.model_dump(mode="json") for key, point in draft.editor_layout.positions.items() if key in reached or key == "system_start"}})
     definition = ScenarioDefinition.model_validate(selected)
-    require_valid_scenario(definition)
+    if author_preview:
+        require_author_preview_definition(definition)
+    else:
+        require_valid_scenario(definition)
     return definition, {"limited_scope": True,
         "excluded_block_ids": [block.id for block in draft.blocks if block.id not in reached],
         "issues": [asdict(issue) for issue in issues]}

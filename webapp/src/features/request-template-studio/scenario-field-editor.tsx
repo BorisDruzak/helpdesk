@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { RequestFormFieldControl, type DynamicFormValues } from "../requester/dynamic-form";
+import { RequestFormFieldControl } from "../requester/dynamic-form";
 import { ScenarioRichEditor } from "./scenario-rich-editor";
 import { plainRichDocument, richPlainText } from "./scenario-rich-content";
 import { Button } from "../../components/ui/button";
@@ -15,7 +14,6 @@ import { ScenarioAuthorAttachments } from "./scenario-author-attachments";
 
 type Props = { field: ScenarioField; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (field: ScenarioField) => void };
 export function ScenarioFieldEditor({ field, definition, disabled, onChange }: Props) {
-  const [trialAnswer, setTrialAnswer] = useState<DynamicFormValues[string]>(undefined);
   const currentPage = definition.blocks?.find(block => block.kind === "form_page" && block.fields.some(item => item.key === field.key));
   const fields = conditionFields(definition, currentPage?.id ?? "", field.key);
   const roles = field.process_mapping?.roles ?? [];
@@ -29,7 +27,7 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
       <div className="studio-question-help-heading"><strong className="text-sm">Подсказка сотруднику (необязательно)</strong><p className="text-xs text-slate-500">Сотрудник увидит этот текст под вопросом. Добавьте пояснение, пример или инструкцию.</p></div>
       {(field.help_document || definition.schema_version === 4) ? <ScenarioRichEditor label="Подсказка к вопросу" placeholder="Например: где найти имя компьютера или как описать проблему…" value={field.help_document ?? plainRichDocument(field.help_text ?? "")} attachments={field.help_attachments} disabled={disabled} onChange={help_document => onChange({ ...field, help_document, help_text: richPlainText(help_document).slice(0, 2000) })} /> : <><label className="block">Подсказка<Input maxLength={2000} placeholder="Например: где найти имя компьютера или как описать проблему…" value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label></>}
     </ScenarioAuthorAttachments>
-    {!["radio", "multi_select"].includes(field.type) && <div className="studio-question-answer" aria-label="Поле ответа сотрудника"><RequestFormFieldControl field={{ key: field.key, type: field.type, label: field.label, required: field.required, placeholder: field.placeholder, options: field.options }} value={trialAnswer} onChange={setTrialAnswer} /></div>}
+    {!["radio", "multi_select"].includes(field.type) && <fieldset disabled className="studio-question-answer" aria-label="Поле ответа сотрудника"><legend className="text-sm text-slate-600">Так выглядит поле ответа сотрудника</legend><RequestFormFieldControl field={{ key: field.key, type: field.type, label: field.label, required: field.required, placeholder: field.placeholder || "Здесь сотрудник введёт ответ", options: field.options }} value={undefined} onChange={() => {}} /></fieldset>}
     <details><summary className="font-semibold">Настройки вопроса</summary><div className="mt-3 space-y-3">
     <label className="block">Тип ответа<Select value={field.type} onChange={event => onChange(changeFieldType(field, event.target.value as ScenarioFieldType))}>
       {Object.entries(fieldLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}

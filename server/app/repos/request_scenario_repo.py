@@ -410,20 +410,29 @@ class RequestScenarioRepo:
         if row.archived or draft.revision != payload.revision:
             raise ScenarioAdminError("REVISION_CONFLICT", 409)
         from tickets.request_scenario_simulation import simulation_definition
-        definition, scope = simulation_definition(draft.definition, payload.entry_point_key)
+        definition, scope = simulation_definition(draft.definition, payload.entry_point_key, author_preview=payload.author_preview)
         available_diagnostics = {block.get("id") for block in draft.definition.get("blocks", []) if block.get("kind") == "diagnostic"}
         if payload.diagnostic_outcomes.keys() - available_diagnostics:
             raise ScenarioAdminError("DIAGNOSTIC_OUTCOME_INVALID")
         selected_ids = {block.id for block in definition.blocks}
-        engine = ScenarioRuntime(definition, diagnostic_outcomes={key: value for key, value in payload.diagnostic_outcomes.items() if key in selected_ids})
+        runtime = ScenarioRuntime
+        if payload.author_preview:
+            from tickets.request_scenario_author_preview import AuthorPreviewRuntime
+            runtime = AuthorPreviewRuntime
+        engine = runtime(definition, diagnostic_outcomes={key: value for key, value in payload.diagnostic_outcomes.items() if key in selected_ids})
         state = engine.initial_state(payload.entry_point_key)
         for step in payload.steps:
+            if payload.author_preview and engine.stop_for(state):
+                raise ScenarioInputError({'steps': 'The draft has no configured continuation'})
             state = engine.advance(state, step)
         from tickets.request_scenario_session import project_step
         projected = engine.preview_answers(state, payload.preview) if payload.preview else state
         processing = None
         processing_error = None
-        if engine.blocks[state.current_block_id].kind == "submit_ticket":
+        complete = not validate_scenario(engine.definition)
+        if engine.blocks[state.current_block_id].kind == "submit_ticket" and payload.author_preview and not complete:
+            processing_error = {"code": "AUTHOR_PREVIEW_INCOMPLETE"}
+        elif engine.blocks[state.current_block_id].kind == "submit_ticket":
             from tickets.request_scenario_submission import build_scenario_submission
             from tickets.service_catalog_preview import ServiceCatalogPreviewError, simulate_service_catalog_processing
             data, snapshot = build_scenario_submission(engine.definition, state, session_id="simulation", version_id="draft")
@@ -435,12 +444,13 @@ class RequestScenarioRepo:
                 # still blocked; disclose it separately without echoing raw inputs.
                 processing_error = {"code": "PROCESSING_INPUT_INVALID"}
         terminal_trace = {}
-        if (engine.definition.schema_version == 3 or engine.definition.schema_version == 4 and engine.definition.processing is not None) and state.state == "completed_self_service":
+        if complete and (engine.definition.schema_version == 3 or engine.definition.schema_version == 4 and engine.definition.processing is not None) and state.state == "completed_self_service":
             from tickets.request_scenario_submission import map_processing
             terminal_trace = {"map_processing": map_processing(engine.definition, state)}
         return {"state": asdict(state), "current_block": engine.blocks[state.current_block_id].model_dump(mode="json"),
                 "current_step": project_step(engine.definition, projected)["block"], "processing": processing, "revision": draft.revision,
-                "simulation_scope": scope, "processing_error": processing_error, **terminal_trace}
+                "simulation_scope": scope, "processing_error": processing_error,
+                **({"preview_stop": engine.stop_for(state)} if payload.author_preview else {}), **terminal_trace}
 
     async def catalog_view(self, *, query="", status="all", offset=0, limit=100, category_id=None, service_code=None, offering_code=None):
         categories = await self.categories()
@@ -462,6 +472,8 @@ class RequestScenarioRepo:
             row, draft, published_version, published_entry_count = record[:4]
             published_definition = record[4] if len(record) > 4 else None
             item = serialize(row)
+            from tickets.request_studio_catalog_projection import draft_definition_changed
+            item['has_draft_changes'] = not row.archived and (not row.published_version_id or draft_definition_changed(draft.definition, published_definition))
             item["updated_at"] = max(row.updated_at, draft.updated_at).isoformat()
             issues = []
             try:

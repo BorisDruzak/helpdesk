@@ -21,13 +21,15 @@ it("edits every question and option immediately without selecting a question", (
   fireEvent.change(screen.getByDisplayValue("ИТ"), { target: { value: "Поддержка" } });
   expect(change.mock.lastCall?.[0].fields[1].options).toEqual([{ value: "it", label: "Поддержка" }]);
 });
-it("shows real employee text, long-text and select controls immediately and keeps trial answers local", () => {
+it("shows clearly labelled employee answer examples without accepting author answers", () => {
   const change = vi.fn();
   render(<Harness initial={{ ...page, fields: [...page.fields, { key: "c", type: "textarea", label: "Описание" }] }} onChange={change} />);
-  fireEvent.change(screen.getByRole("textbox", { name: "Компьютер" }), { target: { value: "PC-1" } });
+  expect(screen.getAllByText("Так выглядит поле ответа сотрудника")).toHaveLength(3);
   expect(screen.getByRole("textbox", { name: "Описание" }).tagName).toBe("TEXTAREA");
   expect(screen.getByRole("combobox", { name: "Отдел" })).toBeVisible();
-  expect(screen.getByRole("textbox", { name: "Компьютер" })).toHaveValue("PC-1");
+  expect(screen.getByRole("textbox", { name: "Компьютер" })).toBeDisabled();
+  expect(screen.getByRole("textbox", { name: "Описание" })).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "Отдел" })).toBeDisabled();
   expect(change).not.toHaveBeenCalled();
 });
 it("reorders with keyboard and preserves IDs and referenced-field guards on count reduction", () => {

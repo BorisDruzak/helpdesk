@@ -2,6 +2,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ScenarioResizableEditor } from "./scenario-editor-size";
 beforeEach(() => localStorage.clear());
+it("keeps edge and corner hit areas usable in screen pixels at map zoom",()=>{
+ render(<ScenarioResizableEditor preferenceKey="hit-zones" label="Размер" getZoom={()=>.25}><span>Редактор</span></ScenarioResizableEditor>);
+ const editor=screen.getByText("Редактор").closest(".studio-resizable-editor") as HTMLElement;
+ expect(parseFloat(editor.style.getPropertyValue("--studio-resize-hit"))*.25).toBe(20);
+ expect(parseFloat(editor.style.getPropertyValue("--studio-resize-corner"))*.25).toBe(28);
+ expect(screen.getAllByRole("button").filter(button=>button.hasAttribute("data-resize-direction"))).toHaveLength(8);
+});
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function mockWindowEditorGeometry(context: "full" | "popover") {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {

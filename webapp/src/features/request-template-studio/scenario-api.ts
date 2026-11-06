@@ -14,6 +14,7 @@ export type ScenarioCategory = {
 };
 export type CategoryInput = Omit<ScenarioCategory, "id" | "effective_visibility" | "revision"> & { revision?: number | null };
 export type ScenarioItem = {
+  has_draft_changes?: boolean;
   schema_version?:1|2|3|4;
   id: string; scenario_key: string; service_code: string; offering_full_code: string;
   category_id: string | null; title: string; description: string; archived: boolean; enabled: boolean;
@@ -47,7 +48,8 @@ export type ScenarioMapProcessingResult = {
 };
 export type ScenarioSimulation = { revision: number; current_block: ScenarioBlock; state: SimulationState;
   map_processing?: ScenarioMapProcessingResult;
-  processing_error?: { code: "PROCESSING_INPUT_INVALID" } | null;
+    processing_error?: { code: "PROCESSING_INPUT_INVALID" | "AUTHOR_PREVIEW_INCOMPLETE" } | null;
+    preview_stop?: { code: "missing_continuation"; block_id: string } | null;
   simulation_scope?: { limited_scope: boolean; excluded_block_ids: string[]; issues: { code: string; path: string; message: string }[] };
   current_step?: ScenarioStepDisplay;
   processing?: { priority: { priority_class: string; reason?: string | null }; routing: { queue_title?: string | null; queue_code?: string; queue_id?: number; source?: ProcessingSource; selection?: { kind: "policy" | "route"; key: string; source: ProcessingSource } };
@@ -71,7 +73,7 @@ export async function uploadScenarioAttachment(id: string, file: File, blockId: 
   return payload.data;
 }
 export class ScenarioApiError extends RequestStudioApiError {
-  constructor(status: number, code?: string, public issues: ScenarioApiIssue[] = [], public dependencies: {kind:string;key:string;label:string}[] = []) {
+  constructor(status: number, code?: string, public issues: ScenarioApiIssue[] = [], public dependencies: {kind:string;key:string;label:string}[] = [], public errors: Record<string,string> = {}) {
     super("Не удалось выполнить действие в Студии", status, code);
   }
 }
@@ -82,7 +84,9 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
   if (!response.ok || payload?.status !== "success") {
     const issues = Array.isArray(payload?.issues) ? payload.issues.filter((item: unknown): item is ScenarioApiIssue => !!item && typeof item === "object" && "code" in item && typeof item.code === "string" && "path" in item && typeof item.path === "string").slice(0, 100).map((item: ScenarioApiIssue) => ({ code: item.code, path: item.path, ...(typeof item.message === "string" ? { message: item.message.slice(0, 1000) } : {}) })) : [];
     const dependencies = Array.isArray(payload?.dependencies) ? payload.dependencies.filter((item: unknown): item is {kind:string;key:string;label:string} => !!item && typeof item === "object" && "kind" in item && typeof item.kind === "string" && "key" in item && typeof item.key === "string" && "label" in item && typeof item.label === "string").slice(0, 256).map((item: {kind:string;key:string;label:string}) => ({kind:item.kind.slice(0, 64), key:item.key.slice(0, 300), label:item.label.slice(0, 300)})) : [];
-    throw new ScenarioApiError(response.status, payload?.error_code, issues, dependencies);
+    const errors = payload?.errors && typeof payload.errors === "object" && !Array.isArray(payload.errors)
+      ? Object.fromEntries(Object.entries(payload.errors).filter(([key,value])=>key.length>0&&key.length<=100&&typeof value==="string").slice(0,100).map(([key,value])=>[key,(value as string).slice(0,1000)])) : {};
+    throw new ScenarioApiError(response.status, payload?.error_code, issues, dependencies, errors);
   }
   return payload.data as T;
 }
@@ -104,8 +108,8 @@ export function upgradeScenarioV4(id: string, revision: number) { return request
 export function archiveScenario(id: string, revision: number) { return request<ScenarioDetail>(`/scenarios/${encodeURIComponent(id)}/archive`, "POST", { revision }); }
 export function saveCategory(input: CategoryInput, id?: string) { return request<ScenarioCategory>(id ? `/categories/${encodeURIComponent(id)}` : "/categories", id ? "PUT" : "POST", input); }
 export function archiveCategory(id: string, revision: number) { return request<ScenarioCategory>(`/categories/${encodeURIComponent(id)}?revision=${revision}`, "DELETE"); }
-export function simulateScenario(id: string, revision: number, steps: ScenarioAnswerRequest[] = [], preview?: ScenarioAnswerRequest, diagnosticOutcomes?: Record<string, DiagnosticFailureStatus>, entryPointKey?: string) {
-  return request<ScenarioSimulation>(`/scenarios/${encodeURIComponent(id)}/simulate`, "POST", { revision, steps, ...(entryPointKey ? { entry_point_key: entryPointKey } : {}), ...(preview ? { preview } : {}), ...(diagnosticOutcomes && Object.keys(diagnosticOutcomes).length ? { diagnostic_outcomes: diagnosticOutcomes } : {}) });
+export function simulateScenario(id: string, revision: number, steps: ScenarioAnswerRequest[] = [], preview?: ScenarioAnswerRequest, diagnosticOutcomes?: Record<string, DiagnosticFailureStatus>, entryPointKey?: string, authorPreview = false) {
+  return request<ScenarioSimulation>(`/scenarios/${encodeURIComponent(id)}/simulate`, "POST", { revision, steps, ...(authorPreview ? { author_preview: true } : {}), ...(entryPointKey ? { entry_point_key: entryPointKey } : {}), ...(preview ? { preview } : {}), ...(diagnosticOutcomes && Object.keys(diagnosticOutcomes).length ? { diagnostic_outcomes: diagnosticOutcomes } : {}) });
 }
 export function previewScenarioPublication(id: string, revision: number) {
   return request<ScenarioPublicationPreview>(`/scenarios/${encodeURIComponent(id)}/publish-preview`, "POST", { revision });

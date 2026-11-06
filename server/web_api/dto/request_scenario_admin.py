@@ -33,6 +33,7 @@ class RevisionInput(StrictModel):
 
 
 class SimulationInput(RevisionInput):
+    author_preview: bool = False
     entry_point_key: Key | None = None
     steps: Annotated[list[ScenarioAnswerRequest], Field(max_length=256)] = Field(default_factory=list)
     preview: ScenarioAnswerRequest | None = None

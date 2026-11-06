@@ -1,4 +1,4 @@
-import { uniqueButtonLabel } from "./scenario-v4-model";
+import { setNavigationMode, uniqueButtonLabel } from "./scenario-v4-model";
 import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioTransition } from "./scenario-contract";
 import { addBlock, newBlock, newKey, removeBlock } from "./scenario-builder-model";
 import { isPolicyAttachment, reassignPolicyAttachments } from "./scenario-policy-attachments-model";
@@ -97,7 +97,14 @@ export function connectBlocks(definition: ScenarioDraftDefinition, source: strin
     const value=["yes","no","unknown"].find(item=>!used.includes(item));
     if(value)edge={to:target,when:{source:"current_result",op:"eq",value}};
   }
-  return replaceTransitions(definition, source, [...block.transitions ?? [], edge]);
+  const transitions = [...block.transitions ?? [], edge];
+  const next = replaceTransitions(definition, source, transitions);
+  // Only an explicit new edit creates a choice; loading old graphs never changes their semantics.
+  if (definition.schema_version === 4 && ["form_page", "instruction", "review", "navigation"].includes(block.kind)
+    && transitions.length > 1 && !transitions.some(item => item.when) && block.transition_mode !== "buttons") {
+    return { ...next, blocks: next.blocks?.map(item => item.id === source ? setNavigationMode(item, "buttons", id => definition.blocks?.find(target => target.id === id)?.title ?? "Продолжить") : item) };
+  }
+  return next;
 }
 export function insertOnTransition(definition: ScenarioDraftDefinition, source: string, index: number, kind: ScenarioBlock["kind"], position?: { x: number; y: number }) {
   if (isPolicyAttachment(kind)) throw new Error("Добавьте настройку из библиотеки и прикрепите её к блоку. Настройки не вставляются в переходы.");

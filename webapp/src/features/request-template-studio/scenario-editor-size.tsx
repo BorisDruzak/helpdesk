@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 type Size = { width: number; height: number };
 export type ScenarioEditorOffset = { x: number; y: number };
@@ -131,7 +131,7 @@ export function ScenarioResizableEditor({ preferenceKey, label, children, getZoo
       }
     }
   }
-  return <div ref={root} className={`studio-resizable-editor is-${context} ${dragMode === "node" ? "" : "nodrag"} nopan nowheel${dragMode !== "none" ? " is-grabbable" : ""}${grabbing ? " is-grabbing" : ""}`} style={{ width: size.width, height: size.height, ...(dragMode === "offset" ? { transform: `translate(${displayOffset.x}px, ${displayOffset.y}px)` } : {}) }} onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
+  return <div ref={root} className={`studio-resizable-editor is-${context} ${dragMode === "node" ? "" : "nodrag"} nopan nowheel${dragMode !== "none" ? " is-grabbable" : ""}${grabbing ? " is-grabbing" : ""}`} style={{ width: size.width, height: size.height, "--studio-resize-hit": `${20 / zoom()}px`, "--studio-resize-corner": `${28 / zoom()}px`, "--studio-resize-grip": `${10 / zoom()}px`, "--studio-resize-stroke": `${2 / zoom()}px`, ...(dragMode === "offset" ? { transform: `translate(${displayOffset.x}px, ${displayOffset.y}px)` } : {}) } as CSSProperties} onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
     onMouseDownCapture={event => { control(event.target)?.classList.add("nodrag"); }}
     onMouseDown={event => { if (control(event.target)) event.stopPropagation(); }}
     onPointerDown={event => {

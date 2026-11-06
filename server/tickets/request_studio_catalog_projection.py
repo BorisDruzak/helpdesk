@@ -4,6 +4,17 @@ from tickets.request_scenario_catalog import category_path_is_public
 from tickets.service_catalog_contract import REQUEST_TYPE_LABELS_RU
 from datetime import datetime
 
+def draft_definition_changed(draft, published):
+    """Compare normalized authoring content, including edits outside entrances."""
+    if published is None:
+        return True
+    from web_api.dto.request_scenario import ScenarioDraftDefinition
+    try:
+        return (ScenarioDraftDefinition.model_validate(draft).model_dump(mode='json')
+                != ScenarioDraftDefinition.model_validate(published).model_dump(mode='json'))
+    except ValueError:
+        return True
+
 
 def offering_type_search_text(offering):
     metadata = offering.get("metadata") or {}
@@ -48,7 +59,7 @@ def offering_cards(offerings, scenarios, categories, services, *, query="", stat
             for item in (service, offering)) and bool(offering.get("request_template_key"))
         matches = status == "all" or status == "available" and available or status == "hidden" and not available or status == "form_only" and available and active is None or status == "guided" and available and active is not None or any(
             item["status"] == status or status == "errors" and item["issues"] and not item["archived"]
-            or status == "draft" and not item["archived"] and not item["published_version_id"] for item in history)
+            or status == "draft" and not item["archived"] and (not item["published_version_id"] or item.get("has_draft_changes", False)) for item in history)
         if not matches:
             continue
         # Search only public catalog fields and the existing canonical type labels.

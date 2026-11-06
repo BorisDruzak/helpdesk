@@ -461,6 +461,18 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   and returning a visible limited-scope disclosure. Publication and sessions still
   validate the full definition. Category archive guards include entrance-bound
   drafts/current versions and usable pinned sessions; archived maps release guards.
+  Admin simulation's explicit `author_preview` mode uses
+  `request_scenario_author_preview.py` to walk unfinished draft prefixes with the
+  same canonical answer/condition engine. Only missing continuations, unset
+  processing defaults and disconnected draft blocks may remain unfinished;
+  unknown targets, ambiguous fallbacks, cycles and unsafe inputs still fail.
+  It returns `preview_stop` at unfinished routes and guarded incomplete-processing
+  results, never synthetic ticket success/SLA. Normal sessions, publication and
+  the default simulation path remain strict. The employee full-page preview
+  prepares the current draft automatically and uses this read-only replay API.
+    Admin catalogue rows expose `has_draft_changes` from normalized complete draft
+    versus published definitions; `request_studio_catalog_projection.py` includes
+    both unpublished maps and edited published maps in the draft filter.
   `web_api/request_scenario_admin_handlers.py` exposes authenticated admin CRUD,
   catalog/search/version reads and simulation; `dto/request_scenario_admin.py`
   defines strict bodies and bounded inputs. `app/repos/request_scenario_repo.py`

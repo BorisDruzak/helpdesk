@@ -5,6 +5,12 @@ import type { ScenarioDraftDefinition, ScenarioField } from "./scenario-contract
 
 const field: ScenarioField = { key: "q", label: "Описание", type: "text" };
 const definition = { schema_version: 4, scenario_key: "test", blocks: [{ id: "page", kind: "form_page", fields: [field] }] } as ScenarioDraftDefinition;
+it("clearly identifies the answer placeholder as an employee control rather than author data",()=>{
+ const change=vi.fn();render(<ScenarioFieldEditor field={field} definition={definition} disabled={false} onChange={change}/>);
+ expect(screen.getByText("Так выглядит поле ответа сотрудника")).toBeVisible();
+ expect(screen.getByRole("textbox",{name:"Описание"})).toBeDisabled();
+ expect(change).not.toHaveBeenCalled();
+});
 it("explains employee-facing help and shows an empty placeholder without changing the document", () => {
   const change = vi.fn();
   render(<ScenarioFieldEditor field={field} definition={definition} disabled={false} onChange={change} />);

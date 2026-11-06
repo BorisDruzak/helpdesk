@@ -1,7 +1,7 @@
 import { createElement, useState, type ComponentType } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ScenarioMapCanvas, type MapNode } from "./scenario-map-canvas";
+import { ScenarioMapCanvas, entranceCardId, transitionCardId, type MapNode } from "./scenario-map-canvas";
 it("opens a Start subsection without serializing a definition change", () => {
   const section = vi.fn();
   render(<ScenarioMapCanvas {...props} definition={definition} onStartSection={section} />);
@@ -9,13 +9,14 @@ it("opens a Start subsection without serializing a definition change", () => {
   expect(section).toHaveBeenCalledWith("catalog");
 });
 import type { ScenarioDraftDefinition } from "./scenario-contract";
+const { fitProjectedCard }=vi.hoisted(()=>({fitProjectedCard:vi.fn()}));
 
 vi.mock("@xyflow/react", () => ({
   Background: () => null, Controls: () => null, MarkerType: { ArrowClosed: "arrow" }, Position: { Left: "left", Right: "right", Bottom: "bottom" },
   useUpdateNodeInternals: () => vi.fn(),
   useNodesState: (initial: MapNode[]) => { const [nodes, setNodes] = useState(initial); return [nodes, setNodes, vi.fn()]; },
   Handle: ({ id, "aria-label": label, isConnectable }: { id?: string; "aria-label"?: string; isConnectable?: boolean }) => <span data-testid={`handle-${id ?? "target"}`} aria-label={label} data-connectable={String(isConnectable ?? true)} />,
-  ReactFlow: ({ nodes, edges, nodeTypes, onNodesChange }: { onNodesChange: (changes: unknown[]) => void; nodes: MapNode[]; edges: { id: string; label: string; data?: { editor?: React.ReactNode; attachment?: boolean } }[]; nodeTypes: { scenario: ComponentType<{ id: string; data: MapNode["data"]; selected?: boolean }> } }) => <><button onClick={() => onNodesChange([{type: "position", id: "studio:legacy-sla:q", position: {x: 1, y: 2}, dragging: false}])}>simulate auxiliary move</button>{nodes.map(node => <div key={node.id} data-testid={`node-${node.id}`}>{createElement(nodeTypes.scenario, { id: node.id, data: node.data, selected: node.selected })}</div>)}{edges.map(edge => <span key={edge.id} data-testid={`edge-${edge.id}`} data-attachment={String(!!edge.data?.attachment)}>{edge.label}{edge.data?.editor}</span>)}</>,
+  ReactFlow: ({ nodes, edges, nodeTypes, onNodesChange,onConnect,onInit }: { onInit:(instance:unknown)=>void;onConnect:(connection:{source:string;target:string})=>void;onNodesChange: (changes: unknown[]) => void; nodes: MapNode[]; edges: { id: string; label: string; data?: { editor?: React.ReactNode; attachment?: boolean } }[]; nodeTypes: { scenario: ComponentType<{ id: string; data: MapNode["data"]; selected?: boolean }> } }) => <><button onClick={()=>onInit({fitView:fitProjectedCard,getZoom:()=>1})}>initialize map</button><button onClick={()=>onNodesChange([{type:"position",id:transitionCardId("q",0),position:{x:700,y:400},dragging:false}])}>move transition card</button><button onClick={()=>onConnect({source:transitionCardId("q",0),target:"end"})}>connect transition card</button><button onClick={() => onNodesChange([{type: "position", id: "studio:legacy-sla:q", position: {x: 1, y: 2}, dragging: false}])}>simulate auxiliary move</button>{nodes.map(node => <div key={node.id} data-testid={`node-${node.id}`}>{createElement(nodeTypes.scenario, { id: node.id, data: node.data, selected: node.selected })}</div>)}{edges.map(edge => <span key={edge.id} data-testid={`edge-${edge.id}`} data-attachment={String(!!edge.data?.attachment)}>{edge.label}{edge.data?.editor}</span>)}</>,
 }));
 const definition: ScenarioDraftDefinition = { schema_version: 3, scenario_key: "test", service_code: "it", offering_full_code: "it.test", title: "Test", process_binding: { request_template_key: "test" }, entry_block_id: "q", blocks: [
   { id: "q", kind: "form_page", title: "Вопрос", fields: [{ key: "answer", type: "checkbox", label: "123" }], transitions: [{ to: "d" }] },
@@ -78,9 +79,27 @@ it("shows legacy SLA editor in its expanded auxiliary node without bubbling clic
   fireEvent.click(screen.getByText("simulate auxiliary move")); expect(props.onMove).not.toHaveBeenCalledWith("studio:legacy-sla:q", expect.anything());
 });
 
-it("opens the selected transition editor at its edge rather than in a side inspector",()=>{
+it("opens the selected transition editor inside a draggable transition card rather than in a side inspector",()=>{
  render(<ScenarioMapCanvas {...props} definition={definition} selectedEdge="q:0" edgeEditor={<textarea aria-label="Переход на карте"/>}/>);
- expect(screen.getByTestId("edge-q:0")).toContainElement(screen.getByRole("textbox",{name:"Переход на карте"}));
+ const card=screen.getByTestId(`node-${transitionCardId("q",0)}`);
+ expect(card).toContainElement(screen.getByRole("textbox",{name:"Переход на карте"}));
+ expect(card.querySelector('[data-testid="handle-in"]')).not.toBeNull();expect(card.querySelector('[data-testid="handle-out"]')).not.toBeNull();
+ expect(screen.getByTestId("edge-q:0:input")).toBeInTheDocument();expect(screen.getByTestId("edge-q:0")).toBeInTheDocument();
+});
+it("puts the catalog entrance editor into its own map card",()=>{
+ render(<ScenarioMapCanvas {...props} definition={{...definition,entry_points:[{key:"entry",title:"Название входа",target_block_id:"q"}]}} selectedEdge="studio:entry-point:entry" entranceEditor={<textarea aria-label="Пункт на карте"/>}/>);
+ expect(screen.getByTestId(`node-${entranceCardId("entry")}`)).toContainElement(screen.getByRole("textbox",{name:"Пункт на карте"}));
+});
+it("keeps implicit primary and a named primary entrance as distinct selectable cards and connector pairs",()=>{
+ const onEntrance=vi.fn();
+ const next={...definition,schema_version:4 as const,execution_semantics:3 as const,entry_points:[{key:"primary",title:"Другой вход",target_block_id:"end"}]};
+ render(<ScenarioMapCanvas {...props} definition={next} onEntrance={onEntrance}/>);
+ expect(entranceCardId(null)).not.toBe(entranceCardId("primary"));
+ const implicit=screen.getByTestId(`node-${entranceCardId(null)}`),named=screen.getByTestId(`node-${entranceCardId("primary")}`);
+ expect(implicit).not.toBe(named);
+ fireEvent.click(within(implicit).getByRole("button",{name:"Редактировать переход"}));expect(onEntrance).toHaveBeenLastCalledWith(null,"q");
+ fireEvent.click(within(named).getByRole("button",{name:"Редактировать переход"}));expect(onEntrance).toHaveBeenLastCalledWith("primary","end");
+ for(const edgeId of ["studio:primary","studio:entry-point:primary"]){expect(screen.getByTestId(`edge-${edgeId}:input`)).toBeInTheDocument();expect(screen.getByTestId(`edge-${edgeId}`)).toBeInTheDocument();}
 });
 it("renders an attached SLA card with a setting link and no flow ports or next-step action",()=>{
  const next={...definition,schema_version:4 as const,execution_semantics:3 as const,blocks:[...definition.blocks!,{id:"policy",kind:"sla_attachment" as const,title:"Политика SLA",attached_to:"q"}]};
@@ -90,4 +109,24 @@ it("renders an attached SLA card with a setting link and no flow ports or next-s
  expect(card.querySelector('[data-testid="handle-policy"]')).not.toBeNull();
  expect(screen.queryByRole("button",{name:"Добавить следующий шаг после «Политика SLA»"})).not.toBeInTheDocument();
  expect(screen.getByTestId("edge-studio:attachment:policy")).toHaveAttribute("data-attachment","true");
+});
+
+it("moves projected cards as local layout and reconnects their original transition",()=>{
+ localStorage.clear();const move=vi.fn(),reconnect=vi.fn();render(<ScenarioMapCanvas {...props} definition={definition} onMove={move} onReconnect={reconnect}/>);
+ fireEvent.click(screen.getByText("move transition card"));expect(move).not.toHaveBeenCalled();
+ expect(Object.values(JSON.parse(localStorage.getItem("studio-map-link-positions:v1:test")!))).toContainEqual({x:700,y:400});
+ fireEvent.click(screen.getByText("connect transition card"));expect(reconnect).toHaveBeenCalledWith("q",0,"end");
+});
+
+it.each(["route","entry"] as const)("fits an expanded projected %s card after layout once, without moving the camera on edits",kind=>{
+ const frames:FrameRequestCallback[]=[];vi.stubGlobal("requestAnimationFrame",(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});vi.stubGlobal("cancelAnimationFrame",vi.fn());fitProjectedCard.mockClear();
+ const next={...definition,entry_points:[{key:"named",title:"Пункт",target_block_id:"q"}]};
+ const view=render(<ScenarioMapCanvas {...props} definition={next}/>);fireEvent.click(screen.getByText("initialize map"));
+ const editor=<input aria-label="Редактор карточки"/>;
+ const expanded=kind==="route"?{selectedEdge:"q:0",edgeEditor:editor}:{selectedEdge:"studio:entry-point:named",entranceEditor:editor};
+ view.rerender(<ScenarioMapCanvas {...props} definition={next} {...expanded}/>);
+ act(()=>{frames.shift()?.(0);});act(()=>{frames.shift()?.(0);});
+ expect(fitProjectedCard).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({nodes:[{id:kind==="route"?transitionCardId("q",0):entranceCardId("named")}]}));
+ view.rerender(<ScenarioMapCanvas {...props} definition={{...next,title:"Правка текста"}} {...expanded}/>);
+ expect(frames).toHaveLength(0);expect(fitProjectedCard).toHaveBeenCalledOnce();view.unmount();vi.unstubAllGlobals();
 });

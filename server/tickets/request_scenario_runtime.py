@@ -35,8 +35,12 @@ class RuntimeState:
 
 
 class ScenarioRuntime:
-    def __init__(self, definition, *, diagnostic_outcomes=None):
+    @staticmethod
+    def _validate_definition(definition):
         require_valid_scenario(definition)
+
+    def __init__(self, definition, *, diagnostic_outcomes=None):
+        self._validate_definition(definition)
         # The caller cannot mutate a graph after the safety check.
         self.definition = effective_definition(definition)
         self.blocks = {block.id: block for block in self.definition.blocks}

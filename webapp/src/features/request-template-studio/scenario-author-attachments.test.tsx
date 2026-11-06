@@ -31,3 +31,29 @@ it("ignores an upload completing after changing scenario scope", async () => {
  resolve(assets[0]); await waitFor(() => expect(screen.queryByText("Сохраняем вложения…")).not.toBeInTheDocument());
  expect(oldChange).not.toHaveBeenCalled(); expect(newChange).not.toHaveBeenCalled();
 });
+it("prepares a new draft automatically and keeps the upload alive when its id arrives", async () => {
+ const { uploadScenarioAttachment } = await import("./scenario-api");
+ vi.mocked(uploadScenarioAttachment).mockResolvedValueOnce(assets[0]);
+ const definition = {scenario_key:"fresh",title:"New",blocks:[{id:"q",kind:"form_page",title:"Q",fields:[{key:"f",type:"text",label:"F",help_attachments:[]}]}]} as unknown as ScenarioDraftDefinition;
+ let resolve!:(value:unknown)=>void;const ensureSaved=vi.fn(()=>new Promise(done=>{resolve=done;}));const onChange=vi.fn();
+ const view=render(<ScenarioAuthorAttachmentProvider definition={definition} onChange={onChange} ensureSaved={ensureSaved as never}><ScenarioAuthorAttachments blockId="q" fieldKey="f" attachments={[]}/></ScenarioAuthorAttachmentProvider>);
+ expect(screen.queryByText("Сохраните сценарий, чтобы прикрепить скриншоты и файлы.")).not.toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText("Прикрепить скриншоты или файлы"),{target:{files:[new File(["a"],"a.png",{type:"image/png"})]}});
+ expect(ensureSaved).toHaveBeenCalledTimes(1);
+ view.rerender(<ScenarioAuthorAttachmentProvider id="created" definition={{...definition,title:"Newer local edit"}} onChange={onChange} ensureSaved={ensureSaved as never}><ScenarioAuthorAttachments blockId="q" fieldKey="f" attachments={[]}/></ScenarioAuthorAttachmentProvider>);
+ resolve({scenario:{id:"created"},draft:{definition,revision:1}});
+ await waitFor(()=>expect(onChange).toHaveBeenCalled());
+ expect(uploadScenarioAttachment).toHaveBeenLastCalledWith("created",expect.any(File),"q","f",expect.any(AbortSignal));
+ expect(onChange.mock.lastCall![0]).toMatchObject({title:"Newer local edit",blocks:[{fields:[{help_attachments:[assets[0]]}]}]});
+});
+it("does not upload to a different card if identity preparation completes after switching",async()=>{
+ const { uploadScenarioAttachment }=await import("./scenario-api");vi.mocked(uploadScenarioAttachment).mockClear();
+ const definition={scenario_key:"first",title:"First",blocks:[{id:"q",kind:"instruction",title:"Q",content:{body:"",attachments:[]}}]} as unknown as ScenarioDraftDefinition;
+ let resolve!:(value:unknown)=>void;const ensureSaved=vi.fn(()=>new Promise(done=>{resolve=done;}));const onChange=vi.fn();
+ const view=render(<ScenarioAuthorAttachmentProvider definition={definition} onChange={onChange} ensureSaved={ensureSaved as never}><ScenarioAuthorAttachments blockId="q" attachments={[]}/></ScenarioAuthorAttachmentProvider>);
+ fireEvent.change(screen.getByLabelText("Прикрепить скриншоты или файлы"),{target:{files:[new File(["a"],"a.png",{type:"image/png"})]}});
+ view.rerender(<ScenarioAuthorAttachmentProvider id="other" definition={{...definition,scenario_key:"second"}} onChange={onChange} ensureSaved={ensureSaved as never}><ScenarioAuthorAttachments blockId="q" attachments={[]}/></ScenarioAuthorAttachmentProvider>);
+ resolve({scenario:{id:"first"},draft:{definition,revision:1}});
+ await waitFor(()=>expect(screen.queryByText("Сохраняем вложения…")).not.toBeInTheDocument());
+ expect(uploadScenarioAttachment).not.toHaveBeenCalled();expect(onChange).not.toHaveBeenCalled();
+});

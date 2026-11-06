@@ -25,3 +25,27 @@ def test_availability_filters_do_not_use_draft_publication_status():
     offerings[0]["visibility"]="internal"
     assert offering_cards(offerings,scenarios,categories,services,status="available")==[]
     assert len(offering_cards(offerings,scenarios,categories,services,status="hidden"))==1
+
+def test_draft_filter_includes_modified_published_map_but_excludes_clean_and_archived_maps():
+    offerings, scenarios, categories, services = data()
+    scenarios[0]['has_draft_changes'] = True
+    assert len(offering_cards(offerings,scenarios,categories,services,status='draft')) == 1
+    scenarios[0]['has_draft_changes'] = False
+    assert offering_cards(offerings,scenarios,categories,services,status='draft') == []
+    scenarios[0].update(archived=True, has_draft_changes=True)
+    assert offering_cards(offerings,scenarios,categories,services,status='draft') == []
+
+def test_draft_filter_keeps_incomplete_unpublished_maps():
+    offerings, scenarios, categories, services = data()
+    scenarios[0].update(published_version_id=None,published_version=None,status='errors',issues=[{'code':'missing_fallback'}])
+    assert len(offering_cards(offerings,scenarios,categories,services,status='draft')) == 1
+
+def test_draft_comparison_normalizes_defaults_and_detects_question_edits():
+    from copy import deepcopy
+    from tickets.request_studio_catalog_projection import draft_definition_changed
+    from web_api.dto.request_scenario import ScenarioDraftDefinition
+    raw={'schema_version':4,'execution_semantics':3,'scenario_key':'catalog','title':'Catalog','service_code':'network','offering_full_code':'network.vpn','entry_block_id':'done','blocks':[{'kind':'submit_ticket','id':'done','title':'Done','transitions':[]}],'process_binding':{'request_template_key':'network'}}
+    published=ScenarioDraftDefinition.model_validate(raw).model_dump(mode='json')
+    assert not draft_definition_changed(raw,published)
+    edited=deepcopy(raw);edited['blocks'][0]['title']='New result title'
+    assert draft_definition_changed(edited,published)
