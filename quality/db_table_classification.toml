@@ -52,7 +52,7 @@ reason = "Ticket records, lifecycle logs, public sessions, and quality artifacts
 [[rules]]
 name = "confirmed identity and OIDC runtime rows"
 classification = "ephemeral_test_data"
-tables = ["confirmed_identity_bindings", "identity_migration_candidates", "oidc_flows", "oidc_sessions"]
+tables = ["confirmed_identity_bindings", "identity_migration_candidates", "oidc_flows", "oidc_sessions", "web_requester_registrations", "worktime_authorization_codes", "worktime_session_leases"]
 reason = "Pilot identity confirmations and bounded authentication flows/sessions are independent test data."
 
 [[rules]]
