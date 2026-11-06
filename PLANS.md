@@ -2968,5 +2968,5 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Cause: closing replaced already stopped resolution_at with closed_at; actual05Nov17:42 solution was before18:47 due, confirmed06Nov09:56.
 - Change: preserve stopped SLA, retain close-only fallback and reopen reset. Admin/staging/exact-ticket fingerprinted repair with canonical update and internal audit; no bulk/schema/auth changes.
 - Verification:51focusedPython and3browser viewport cases pass; workspace and independent review pass. RealPG rollback/durable audit/idempotence acceptance remains.
-- Next: verified backup, immutable exact-SHA staging install, guarded repair and browser/API/count acceptance; keep staging active for requested testing.
+- Complete: runtimeb765fd6362686a28209e2aa92839363f961f21bd installed with verified155backups/5source hashes/health200. RealPG flushed-update rollback, audited T75repair and repeat-idempotence pass. Original17:42stop now within18:47target; closed/confirmation/5feedback/75other tickets/21old events preserved;1audit added.3browser viewports and live support UI pass. Staging active; production unchanged.
 - Evidence: docs/SLA_CONFIRMATION_FIX_2026-11-06.md and tmp/sla-confirmation-fix-20261106. Private branch/index preserve shared work and prior requester/catalog improvements.
