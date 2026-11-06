@@ -11,6 +11,7 @@ import json
 from tickets.form_field_values import _field_constraint_error, _normalize_field_value
 from tickets.request_scenario_conditions import evaluate_condition, finite_number, leaves, selected_transition, can_request_ticket
 from tickets.request_scenario_validation import DIAGNOSTIC_FAILURE_STATUSES, require_valid_scenario
+from tickets.request_scenario_optional_evidence import effective_definition
 
 
 class ScenarioInputError(ValueError):
@@ -37,7 +38,7 @@ class ScenarioRuntime:
     def __init__(self, definition, *, diagnostic_outcomes=None):
         require_valid_scenario(definition)
         # The caller cannot mutate a graph after the safety check.
-        self.definition = definition.model_copy(deep=True)
+        self.definition = effective_definition(definition)
         self.blocks = {block.id: block for block in self.definition.blocks}
         self.diagnostic_outcomes = deepcopy(diagnostic_outcomes)
         for key, status in (self.diagnostic_outcomes or {}).items():

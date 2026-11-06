@@ -2990,3 +2990,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verification:50focusedPython and3browser viewports pass; build/workspace/diff and independent review pass. Recovery source-owner guard tightened with regressions.
 - Complete: runtime99f7428692d9627160eac77e2316c42397716462 installed; verified code/data backups, realPG rollback and idempotent2message recovery pass. All originalT77data/76other tickets preserved. Actual support UI shows both reasons/comments with no console warnings/errors; schema155 and strictHTTPShealth200,3services active. Screenshot-step repair continues independently.
 - Evidence: docs/REQUESTER_REOPEN_MESSAGES_2026-11-06.md and tmp/reopen-message-fix-20261106. Private index/branch preserve shared work and prior accepted fixes.
+
+
+## Optional requester screenshots (2026-11-06)
+
+- Goal: remove mandatory screenshot stage from all active maps; preserve pinned sessions and uploads.
+- Cause: uploads persist separately but evidence_note required scalar blocks32maps.
+- Fix: reviewed legacy effective-definition exception; new canonical publications remove only display stage/coordinate and rewire92edges preserving processing. Batch admin/staging/fingerprint/draft CAS guards; no session retarget or immutable rewrite.
+- Verified:147focusedPython/6browser cases, workspace/diff/build and independent review pass. Fresh actual32active/47historical exact patterns accepted; different retired radio pattern guarded with no sessions. Broader legacy noDB fixture failures documented separately.
+- Next: exact immutable staging install with backup, realPG batch rollback, canonical32map publication/idempotence, preserved session/assets/tickets receipts and live browser acceptance.
+- Evidence: docs/OPTIONAL_SCREENSHOTS_2026-11-06.md and tmp/optional-screenshots-20261106. Private index preserves shared HEAD/index and prior accepted fixes.

@@ -842,6 +842,15 @@ additional information-system maps through canonical audited services. Ordinary
 categories delegate to the existing form panel; drafts and direct links remain.
 `tickets/request_scenario_submission.py` revalidates visited pages and maps typed
 facts/roles into the existing form submission, retaining a support snapshot.
+`tickets/request_scenario_optional_evidence.py` supplies a copied effective
+definition for the exact reviewed legacy `q_evidence` screenshot stage. Pinned
+sessions keep block/field IDs and assets while the two text questions are optional;
+submission derives its final form from the same effective definition. Unrelated
+required fields and semantic references are unchanged. The bounded staging helper
+`scripts/helpdesk_optional_screenshot_stage.py` uses canonical draft CAS,
+preview/token and publication to remove that display-only stage in new versions.
+It preserves incoming transition conditions/processing, rejects draft drift, and
+never retargets existing sessions or rewrites immutable definitions.
 `web_api/requester_handlers.py` exposes caller-transaction create/preview helpers:
 the same profile/device/form checks and policy runtime serve legacy and guided
 requests. Scenario submit locks the owner session, rechecks processing preview,

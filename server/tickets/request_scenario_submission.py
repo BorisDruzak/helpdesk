@@ -102,6 +102,7 @@ def map_processing(definition, state):
 
 def build_scenario_submission(definition, state, *, session_id, version_id, source_snapshot=None):
     runtime = ScenarioRuntime(definition)
+    definition = runtime.definition
     if state.state != "active" or runtime.blocks[state.current_block_id].kind != "submit_ticket":
         raise ScenarioInputError({"block": "Only the active submit step can create a ticket"})
     # Revalidate retained pages in their traversal order. Unknown/unvisited and
