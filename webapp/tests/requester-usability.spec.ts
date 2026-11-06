@@ -3,7 +3,7 @@ import { test, expect } from "playwright/test";
 for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:390,height:844}]) {
   test(`one catalog search and device instructions ${viewport.width}`,async({page},info)=>{
     await page.setViewportSize(viewport);
-    const errors:string[]=[];const unexpected:string[]=[];const failures:string[]=[];const selections:unknown[]=[];let starts=0;let writes=0;
+    const errors:string[]=[];const unexpected:string[]=[];const failures:string[]=[];const selections:unknown[]=[];const metrics:Array<Record<string,unknown>>=[];let starts=0;let writes=0;
     page.on('pageerror',error=>errors.push(error.message));
     page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
     page.on('response',response=>{if(response.status()>=400)failures.push(`${response.status()} ${new URL(response.url()).pathname}`);});
@@ -25,6 +25,7 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:3
       else if(path==='/api/web/requester/consents')data=[];
       else if(path==='/api/web/notifications/unread_count')return route.fulfill({json:{status:'ok',unread_count:0}});
       else if(path==='/api/web/notifications/push/config')data={enabled:false,public_key:null};
+      else if(path==='/api/web/requester/catalog-events'){metrics.push(request.postDataJSON());return route.fulfill({status:204,body:''});}
       else if(path==='/api/service-catalog/current')return route.fulfill({json:url.searchParams.has('q') ? {status:'ok',search:{results:[{title:'Принтер не печатает',description:'Проверка печати',category:'Печать',offering_full_code:'workplace.print',entry_point_key:'no_print',help_mode:'guided',match_reason:'По описанию'}],suggestions:[],corrected_query:null}} : {status:'ok',catalog_version:'synthetic',services:[{service_code:'workplace',title:'Рабочее место',offerings:[print,scan]}]}});
       else if(path==='/api/web/requester/request-scenarios/sessions'){starts++;selections.push(request.postDataJSON());data=step;}
       else if(path==='/api/web/requester/request-scenarios/sessions/synthetic-session')data=step;
@@ -112,6 +113,13 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:3
     await expect(page.getByRole('img',{name:/Скрытые значки Windows/})).toBeVisible();
     await expect.poll(()=>page.getByRole('img').evaluateAll(images=>images.every(image=>(image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0))).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await expect.poll(()=>metrics.filter(event=>event.event==='abandoned').length).toBeGreaterThan(0);
+    expect(metrics.some(event=>event.event==='search_ready')).toBe(true);
+    expect(metrics.some(event=>event.event==='result_selected')).toBe(true);
+    expect(metrics.some(event=>event.event==='catalog_selected')).toBe(true);
+    expect(metrics.some(event=>event.event==='submitted')).toBe(false);
+    for(const event of metrics)expect(Object.keys(event).sort()).toEqual(['elapsed_ms','event','flow_id','rank','result_count','sequence']);
+    expect(JSON.stringify(metrics)).not.toContain('Сохранить прежние поля');
     expect(errors).toEqual([]);expect(unexpected).toEqual([]);expect(failures).toEqual([]);expect(writes).toBe(0);
   });
 }

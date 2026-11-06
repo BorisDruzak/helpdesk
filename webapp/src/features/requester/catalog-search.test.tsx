@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { CatalogSearch } from "./catalog-search";
+import { CatalogFunnel } from "./catalog-funnel";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -147,4 +148,18 @@ it("groups matching problems under their service and removes repetitive descript
   expect(group).toHaveTextContent("Бумага застряла");
   expect(screen.getAllByText(result.title)).toHaveLength(1);
   expect(screen.queryByText(result.match_reason)).not.toBeInTheDocument();
+});
+
+it("records an initial ordinary form selection without including its identity", () => {
+  const fetchMock=vi.fn().mockResolvedValue({ok:true});vi.stubGlobal("fetch",fetchMock);
+  const onCategorySelect=vi.fn();
+  const client=new QueryClient();
+  render(<QueryClientProvider client={client}><CatalogFunnel><CatalogSearch availableOfferings={[]} onSelect={()=>{}}
+    categories={[{key:"legacy-private-key",title:"Обычная форма",items:[]}]} onCategorySelect={onCategorySelect}/></CatalogFunnel></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button",{name:"Все услуги"}));
+  fireEvent.click(screen.getByRole("button",{name:"Обычная форма"}));
+  expect(onCategorySelect).toHaveBeenCalledWith("legacy-private-key");
+  const events=fetchMock.mock.calls.map(([,init])=>JSON.parse(init.body));
+  expect(events.map(event=>event.event)).toEqual(["opened","catalog_selected"]);
+  expect(JSON.stringify(events)).not.toContain("legacy-private-key");
 });

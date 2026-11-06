@@ -4,6 +4,7 @@ import { useSession } from "../../features/auth/session-provider";
 import { pendingCreateKey, clearCreateKey } from "../../features/requester/create-intent";
 import { ScenarioEntrances } from "../../features/requester/scenario-entrances";
 import { CatalogSearch } from "../../features/requester/catalog-search";
+import { CatalogFunnel,useCatalogEvent } from "../../features/requester/catalog-funnel";
 
 import { createRequesterTicket, previewRequesterTicket, RequesterApiError, searchRequesterOnBehalfPeople } from "../../features/requester/api";
 import {
@@ -322,10 +323,11 @@ export function RequesterNewRequestPage() {
   const location = useLocation();
   const parameters = new URLSearchParams(location.search);
   // Each URL selection owns its restoration lifecycle and persistence key.
-  return <RequesterNewRequestContent key={JSON.stringify([parameters.get("intent") || "", parameters.get("offering") || "", parameters.get("form") || ""])} />;
+  return <CatalogFunnel><RequesterNewRequestContent key={JSON.stringify([parameters.get("intent") || "", parameters.get("offering") || "", parameters.get("form") || ""])} /></CatalogFunnel>;
 }
 
 function RequesterNewRequestContent() {
+  const recordCatalogEvent=useCatalogEvent();
   const { session } = useSession();
   const [createConflict, setCreateConflict] = useState(false);
   const navigate = useNavigate();
@@ -670,6 +672,7 @@ function RequesterNewRequestContent() {
     if (key === selectedCategoryKey && !selectedSearchEntry) return;
     const option = categoryOptions.find(item => item.key === key);
     if (option) {
+      if(selectedCategoryKey&&key!==selectedCategoryKey)recordCatalogEvent('service_changed');
       const parameters = new URLSearchParams(location.search);
       parameters.delete("entry");
       parameters.delete("offering");
@@ -688,6 +691,7 @@ function RequesterNewRequestContent() {
       selectCategoryKey(option.key);
       return;
     }
+    if(selectedCategoryKey&&selectedOffering?.full_code!==offeringCode)recordCatalogEvent('service_changed');
     const parameters = new URLSearchParams(location.search);
     parameters.delete("form");
     parameters.set("offering", offeringCode);
@@ -727,6 +731,7 @@ function RequesterNewRequestContent() {
     try {
       const actor = session?.user_login || "";
       const result = await createRequesterTicket(buildCreatePayload(), pendingCreateKey(actor, requestIntent));
+      recordCatalogEvent('submitted');
       clearCreateKey(actor, requestIntent);
       setCreateConflict(false);
       removeNewRequestDraft(requestDraftStorageKey);

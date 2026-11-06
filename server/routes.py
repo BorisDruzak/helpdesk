@@ -409,6 +409,7 @@ from web_api.service_catalog_handlers import (
     handle_web_admin_service_catalog_validate_offering,
     handle_web_admin_service_catalog_validate_service,
 )
+from web_api.catalog_funnel_handlers import handle_catalog_funnel
 from web_api.registry_handlers import (
     handle_registry_options,
     handle_web_admin_registry_binding_revoke,
@@ -807,6 +808,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/playbooks/save', handle_web_admin_playbooks_save),
         web.get('/api/registry/options', handle_registry_options),
         web.get('/api/web/requester/bootstrap', handle_web_requester_bootstrap),
+        web.post('/api/web/requester/catalog-events', handle_catalog_funnel),
         web.post('/api/web/admin/request-studio/scenarios/{identifier}/attachments', handle_scenario_material_upload),
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/attachments', handle_scenario_answer_upload),
         web.delete('/api/web/requester/request-scenarios/sessions/{identifier}/attachments/{asset_id}', handle_scenario_answer_remove),

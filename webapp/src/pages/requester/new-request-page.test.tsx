@@ -64,6 +64,20 @@ afterEach(() => {
 });
 
 describe("RequesterNewRequestPage", () => {
+  it("counts one service change when a search result opens another ordinary form", async () => {
+    const fetchMock=installNewRequestMock({withPrinterOffering:true});
+    const original=fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input,init)=>String(input).startsWith('/api/service-catalog/current?q=')
+      ? Promise.resolve(jsonResponse({status:'ok',search:{results:[{title:'Поломка ноутбука',category:'Оборудование',description:'',offering_full_code:'workplace.laptop_broken',entry_point_key:null,help_mode:'request',match_reason:''}],suggestions:[],corrected_query:null}}))
+      : original(input,init));
+    renderPage();await chooseCategory('Проблема с принтером');
+    fireEvent.change(screen.getByRole('searchbox'),{target:{value:'ноутбук'}});
+    fireEvent.click(await screen.findByRole('button',{name:/Поломка ноутбука/}));
+    await screen.findByLabelText('Кратко');
+    const changes=fetchMock.mock.calls.filter(([url])=>String(url)==='/api/web/requester/catalog-events')
+      .map(([,init])=>JSON.parse(String(init?.body))).filter(event=>event.event==='service_changed');
+    expect(changes).toHaveLength(1);
+  });
   it("does not discard a pre-release base draft when reselecting the same form", async () => {
     installNewRequestMock();
     sessionStorage.setItem("pc_client.requester.new_request.draft.v1:person-1:default", JSON.stringify({

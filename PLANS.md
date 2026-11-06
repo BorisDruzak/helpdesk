@@ -1,3 +1,15 @@
+# 2026-11-06 Requester catalog funnel
+
+Goal: continue approved requester improvements and stage verified follow-up.
+Scope: bounded anonymous flow UUID metrics, report and complete catalog audit.
+Constraints: preserve shared checkout/index and existing staging changes; no real
+requests, new dependencies/schema, production changes or Endpoint actions.
+Current State: 199 entrances / 5738 terminal variants / 33600 Back checks pass
+read-only on ab672ef8. Auth/body/rate/privacy and lifecycle tests added.
+Next Steps: freeze task-only delta over current staging; verify, commit, backup,
+canonical guarded deploy and live acceptance. Staging remains available to user.
+Handoff: docs/REQUESTER_CATALOG_METRICS.md. GitNexus unavailable in tool inventory.
+
 # 2026-11-06 Requester catalog unification
 
 Goal: execute approved catalog/search recommendations and deploy immediately to staging.

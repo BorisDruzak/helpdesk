@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useCatalogEvent } from "./catalog-funnel";
 import { type DynamicFormValues } from "./dynamic-form";
 import { ScenarioStepContent, type ScenarioStepDisplay } from "./scenario-step-content";
 import { Button } from "./ui/form-controls";
@@ -35,6 +36,7 @@ async function request<T = Step>(path: string, body?: unknown, signal?: AbortSig
 }
 
 export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey }: { offering: string; owner?: string; deviceId?: string; entryPointKey?: string }) {
+  const recordCatalogEvent=useCatalogEvent();
   const navigate = useNavigate();
   const commandBusy = useRef(false);
   const [step, setStep] = useState<Step | null>(null);
@@ -160,7 +162,7 @@ export function ScenarioSession({ offering, owner = "", deviceId, entryPointKey 
         setStep(current => current ? { ...current, block: projected.block } : current);
       }
       const data = await request(`${base}/${step.id}/${kind}`, kind === "submit" ? { ...(body as object), ...deviceContext } : body, controller.signal);
-      if (current()) accept(data);
+      if (current()) { if(kind==='submit'&&data.state==='ticket_created')recordCatalogEvent('submitted'); accept(data); }
     }
     catch (cause) { if (current()) setError(cause as SessionError); }
     finally { commandControllers.current.delete(controller); if (current()) { commandBusy.current = false; setBusy(false); } }

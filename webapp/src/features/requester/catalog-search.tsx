@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { searchRequesterCatalog } from "./catalog-search-api";
 import { CatalogCategories, type CatalogCategory } from "./catalog-categories";
 import { CatalogSearchResults } from "./catalog-search-results";
+import { useCatalogEvent } from "./catalog-funnel";
 
 /** Requester job: describe a problem, then explicitly choose a published entrance. */
 export function CatalogSearch({ availableOfferings, fallbackOffering, fallbackEntryPointKey, onSelect, categories=[], selectedKey, selectedTitle, onCategorySelect, inputRef, error, onBrowsingChange }: {
@@ -19,6 +20,7 @@ export function CatalogSearch({ availableOfferings, fallbackOffering, fallbackEn
   onBrowsingChange?:(browsing:boolean)=>void;
 }) {
   const [query, setQuery] = useState("");
+  const recordCatalogEvent=useCatalogEvent();
   const [debounced, setDebounced] = useState("");
   const [browsing,setBrowsing]=useState(false);
   const [browseKey, setBrowseKey] = useState<string | undefined>();
@@ -34,7 +36,12 @@ export function CatalogSearch({ availableOfferings, fallbackOffering, fallbackEn
   });
   const results = (search.data?.results ?? []).filter(item => availableOfferings.includes(item.offering_full_code));
   const updating = query.trim() !== debounced || search.isFetching;
+  useEffect(()=>{
+    if(debounced&&!updating&&search.data&&!search.isError)recordCatalogEvent('search_ready',{resultCount:results.length});
+  },[debounced,search.dataUpdatedAt,updating,search.isError,recordCatalogEvent]);
   function choose(offering: string, entry?: string) {
+    const rank=results.findIndex(item=>item.offering_full_code===offering&&item.entry_point_key===(entry??null))+1;
+    recordCatalogEvent(offering===fallbackOffering&&entry===fallbackEntryPointKey?'fallback_selected':query.trim()?'result_selected':'catalog_selected',{rank});
     setQuery("");
     setDebounced("");
     setBrowsing(false);
@@ -63,13 +70,14 @@ export function CatalogSearch({ availableOfferings, fallbackOffering, fallbackEn
     </div>
     <div id="requester-catalog-choices" hidden={!browsing}>
     {browsing && !query.trim() && categories.length ? <CatalogCategories key={browseKey ?? selectedKey} categories={categories} selectedKey={browseKey ?? selectedKey}
-      onSelect={choose} onCategorySelect={key=>{setBrowsing(false);onCategorySelect?.(key);}}/> : null}
+      onSelect={choose} onCategorySelect={key=>{recordCatalogEvent('catalog_selected');setBrowsing(false);onCategorySelect?.(key);}}/> : null}
     {query.trim() && !updating && search.isError ? <div role="alert" className="mt-2 text-sm text-rose-700">
       Не удалось выполнить поиск. <button type="button" className="underline" onClick={() => { void search.refetch(); }}>Повторить поиск</button>
     </div> : null}
     {query.trim() && !updating && search.data ? <>
       {search.data.corrected_query ? <p className="mt-2 text-sm text-slate-600">Возможно, вы имели в виду: {search.data.corrected_query}</p> : null}
       <CatalogSearchResults results={results} categories={categories} onSelect={choose} onService={category => {
+        recordCatalogEvent('service_selected');
         setQuery(""); setDebounced(""); setBrowseKey(category.key); setBrowsing(true); onCategorySelect?.(category.key);
       }} />
     </> : null}

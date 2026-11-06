@@ -982,3 +982,11 @@ and paths from the existing admin handler without altering backend contracts.
   consuming an event without a popup. `notification-introduction.tsx` provides
   dismissible per-actor/browser help and explicit opt-in without automatic permission.
 - Activation, API, privacy and acceptance boundaries: `docs/BROWSER_NOTIFICATIONS.md`.
+
+## Requester funnel metrics
+
+`web_api/catalog_funnel_handlers.py` accepts bounded authenticated UX events at
+`POST /api/web/requester/catalog-events`; `features/requester/catalog-funnel.tsx`
+owns one anonymous flow across form/entrance remounts. The journal contains no
+queries, answers or actor references. `scripts/catalog_funnel_report.py` reports
+deduplicated, best-effort funnel metrics; see [metrics](../../docs/REQUESTER_CATALOG_METRICS.md).
