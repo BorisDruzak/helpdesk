@@ -16,7 +16,7 @@ vi.mock("@xyflow/react", () => ({
   useUpdateNodeInternals: () => vi.fn(),
   useNodesState: (initial: MapNode[]) => { const [nodes, setNodes] = useState(initial); return [nodes, setNodes, vi.fn()]; },
   Handle: ({ id, "aria-label": label, isConnectable }: { id?: string; "aria-label"?: string; isConnectable?: boolean }) => <span data-testid={`handle-${id ?? "target"}`} aria-label={label} data-connectable={String(isConnectable ?? true)} />,
-  ReactFlow: ({ nodes, edges, nodeTypes, onNodesChange,onConnect,onInit }: { onInit:(instance:unknown)=>void;onConnect:(connection:{source:string;target:string})=>void;onNodesChange: (changes: unknown[]) => void; nodes: MapNode[]; edges: { id: string; label: string; data?: { editor?: React.ReactNode; attachment?: boolean } }[]; nodeTypes: { scenario: ComponentType<{ id: string; data: MapNode["data"]; selected?: boolean }> } }) => <><button onClick={()=>onInit({fitView:fitProjectedCard,getZoom:()=>1})}>initialize map</button><button onClick={()=>onNodesChange([{type:"position",id:transitionCardId("q",0),position:{x:700,y:400},dragging:false}])}>move transition card</button><button onClick={()=>onConnect({source:transitionCardId("q",0),target:"end"})}>connect transition card</button><button onClick={() => onNodesChange([{type: "position", id: "studio:legacy-sla:q", position: {x: 1, y: 2}, dragging: false}])}>simulate auxiliary move</button>{nodes.map(node => <div key={node.id} data-testid={`node-${node.id}`}>{createElement(nodeTypes.scenario, { id: node.id, data: node.data, selected: node.selected })}</div>)}{edges.map(edge => <span key={edge.id} data-testid={`edge-${edge.id}`} data-attachment={String(!!edge.data?.attachment)}>{edge.label}{edge.data?.editor}</span>)}</>,
+  ReactFlow: ({ nodes, edges, nodeTypes, onNodesChange,onConnect,onReconnect,onInit }: { onInit:(instance:unknown)=>void;onConnect:(connection:{source:string;target:string})=>void;onReconnect:(edge:unknown,connection:{source:string;target:string})=>void;onNodesChange: (changes: unknown[]) => void; nodes: MapNode[]; edges: { id: string; label: string; data?: { editor?: React.ReactNode; attachment?: boolean } }[]; nodeTypes: { scenario: ComponentType<{ id: string; data: MapNode["data"]; selected?: boolean }> } }) => <><button onClick={()=>onInit({fitView:fitProjectedCard,getZoom:()=>1})}>initialize map</button><button onClick={()=>onNodesChange([{type:"position",id:transitionCardId("q",0),position:{x:700,y:400},dragging:false}])}>move transition card</button><button onClick={()=>onConnect({source:transitionCardId("q",0),target:"end"})}>connect transition card</button><button onClick={()=>onConnect({source:"q",target:entranceCardId(null)})}>try route into entrance</button><button onClick={()=>onConnect({source:transitionCardId("q",0),target:entranceCardId(null)})}>try card into entrance</button><button onClick={()=>onReconnect({data:{route:{source:"q",index:0}}},{source:transitionCardId("q",0),target:entranceCardId(null)})}>try reconnect into entrance</button><button onClick={() => onNodesChange([{type: "position", id: "studio:legacy-sla:q", position: {x: 1, y: 2}, dragging: false}])}>simulate auxiliary move</button>{nodes.map(node => <div key={node.id} data-testid={`node-${node.id}`}>{createElement(nodeTypes.scenario, { id: node.id, data: node.data, selected: node.selected })}</div>)}{edges.map(edge => <span key={edge.id} data-testid={`edge-${edge.id}`} data-attachment={String(!!edge.data?.attachment)}>{edge.label}{edge.data?.editor}</span>)}</>,
 }));
 const definition: ScenarioDraftDefinition = { schema_version: 3, scenario_key: "test", service_code: "it", offering_full_code: "it.test", title: "Test", process_binding: { request_template_key: "test" }, entry_block_id: "q", blocks: [
   { id: "q", kind: "form_page", title: "Вопрос", fields: [{ key: "answer", type: "checkbox", label: "123" }], transitions: [{ to: "d" }] },
@@ -97,8 +97,8 @@ it("keeps implicit primary and a named primary entrance as distinct selectable c
  expect(entranceCardId(null)).not.toBe(entranceCardId("primary"));
  const implicit=screen.getByTestId(`node-${entranceCardId(null)}`),named=screen.getByTestId(`node-${entranceCardId("primary")}`);
  expect(implicit).not.toBe(named);
- fireEvent.click(within(implicit).getByRole("button",{name:"Редактировать переход"}));expect(onEntrance).toHaveBeenLastCalledWith(null,"q");
- fireEvent.click(within(named).getByRole("button",{name:"Редактировать переход"}));expect(onEntrance).toHaveBeenLastCalledWith("primary","end");
+ fireEvent.click(within(implicit).getByRole("button",{name:"Редактировать вход"}));expect(onEntrance).toHaveBeenLastCalledWith(null,"q");
+ fireEvent.click(within(named).getByRole("button",{name:"Редактировать вход"}));expect(onEntrance).toHaveBeenLastCalledWith("primary","end");
  for(const edgeId of ["studio:primary","studio:entry-point:primary"]){expect(screen.getByTestId(`edge-${edgeId}:input`)).toBeInTheDocument();expect(screen.getByTestId(`edge-${edgeId}`)).toBeInTheDocument();}
 });
 it("renders an attached SLA card with a setting link and no flow ports or next-step action",()=>{
@@ -129,4 +129,11 @@ it.each(["route","entry"] as const)("fits an expanded projected %s card after la
  expect(fitProjectedCard).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({nodes:[{id:kind==="route"?transitionCardId("q",0):entranceCardId("named")}]}));
  view.rerender(<ScenarioMapCanvas {...props} definition={{...next,title:"Правка текста"}} {...expanded}/>);
  expect(frames).toHaveLength(0);expect(fitProjectedCard).toHaveBeenCalledOnce();view.unmount();vi.unstubAllGlobals();
+});
+
+it("rejects ordinary route, card and reconnect targets pointing into a catalog entrance",()=>{
+ const connect=vi.fn(),reconnect=vi.fn();render(<ScenarioMapCanvas {...props} definition={definition} onConnect={connect} onReconnect={reconnect}/>);
+ fireEvent.click(screen.getByRole("button",{name:"try route into entrance"}));fireEvent.click(screen.getByRole("button",{name:"try card into entrance"}));fireEvent.click(screen.getByRole("button",{name:"try reconnect into entrance"}));
+ expect(connect).not.toHaveBeenCalled();expect(reconnect).not.toHaveBeenCalled();
+ const entry=screen.getByTestId(`node-${entranceCardId(null)}`);expect(entry).toHaveTextContent("Вход из каталога");expect(entry).toHaveTextContent("Начало → вход из каталога");
 });

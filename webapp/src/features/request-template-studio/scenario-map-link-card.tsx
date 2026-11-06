@@ -17,11 +17,11 @@ export function ScenarioMapLinkCard({ link, selected, editor, preferenceKey, get
   return <div data-scenario-edge={link.edgeId} className={`studio-map-node studio-map-link-card${selected ? " is-selected" : ""}${editor ? " is-expanded" : ""}`} onDoubleClick={event=>{event.stopPropagation();if(!(event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable]")))link.select();}}>
     <Handle type="target" id="in" position={Position.Left} isConnectable={false}/>
     <Handle type="source" id="out" position={Position.Right} isConnectable={!link.disabled} aria-label={`Изменить назначение «${link.title}»`}/>
-    <div className="studio-map-node__kind">{link.entrance ? "Пункт каталога" : "Переход"}</div>
+    <div className="studio-map-node__kind">{link.entrance ? "Вход из каталога" : "Переход"}</div>
     <p className="studio-map-link-card__context">{link.context}</p>
     {link.rename ? <input className="studio-entry-name nodrag nopan" aria-label={`${link.entrance ? "Название входа" : "Текст кнопки"} «${link.title}»`} disabled={link.disabled} maxLength={300} value={title} onChange={event=>setTitle(event.target.value)} onClick={event=>event.stopPropagation()} onDoubleClick={event=>event.stopPropagation()} onBlur={()=>{if(title.trim())link.rename?.(title.trim());else setTitle(link.title);}} onKeyDown={event=>{event.stopPropagation();if(event.key==="Enter")event.currentTarget.blur();}}/> : <button type="button" className="studio-route-button nodrag nopan" onClick={event=>{event.stopPropagation();link.select();}}>{link.title}</button>}
-    <button type="button" className="studio-node-edit nodrag nopan" onClick={event=>{event.stopPropagation();link.select();}}>{editor ? "Свернуть редактор" : "Редактировать переход"}</button>
-    {editor && <ScenarioResizableEditor preferenceKey={preferenceKey} label="Размер редактора перехода" getZoom={getZoom} onOriginChange={onOriginChange} onResize={onResize} onMinimumFit={onMinimumFit}><div className="studio-inline-editor nopan nowheel">{editor}</div></ScenarioResizableEditor>}
+    <button type="button" className="studio-node-edit nodrag nopan" onClick={event=>{event.stopPropagation();link.select();}}>{editor ? "Свернуть редактор" : link.entrance ? "Редактировать вход" : "Редактировать переход"}</button>
+    {editor && <ScenarioResizableEditor preferenceKey={preferenceKey} label={link.entrance ? "Размер редактора входа" : "Размер редактора перехода"} getZoom={getZoom} onOriginChange={onOriginChange} onResize={onResize} onMinimumFit={onMinimumFit}><div className="studio-inline-editor nopan nowheel">{editor}</div></ScenarioResizableEditor>}
     <p className="studio-map-link-card__target">→ {link.targetTitle}</p>
     {link.add && <button type="button" className="studio-node-add nodrag nopan" aria-label={link.addLabel} onClick={event=>{event.stopPropagation();link.add?.();}}>+ Вставить шаг</button>}
   </div>;

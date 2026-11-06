@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach,expect,it,vi } from "vitest";
 import { ScenarioMapWorkbench } from "./scenario-map-workbench";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
-vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitionId:(source:string,index:number)=>`${source}:${index}`,entranceEdgeId:(key:string|null)=>`entry:${key}`,ScenarioMapCanvas:({onSelect,onEntrance,expandedId,inlineEditor,entranceEditor,onStartSection}:{onSelect:(id:string)=>void;onEntrance:(key:string,target:string)=>void;expandedId?:string|null;inlineEditor?:React.ReactNode;entranceEditor?:React.ReactNode;onStartSection?:(section:"catalog")=>void})=><div><button onClick={()=>onStartSection?.("catalog")}>Открыть раздел начала</button><button onClick={()=>onSelect("q")}>Выбрать вопрос</button><button onClick={()=>onSelect("branch")}>Выбрать второе условие</button><button onClick={()=>onEntrance("named","q")}>Выбрать связь входа</button>{expandedId && inlineEditor}{entranceEditor}</div>}));
+vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitionId:(source:string,index:number)=>`${source}:${index}`,entranceEdgeId:(key:string|null)=>`entry:${key}`,entranceCardId:(key:string|null)=>`card:${key}`,ScenarioMapCanvas:({onSelect,onEntrance,expandedId,inlineEditor,entranceEditor,onStartSection}:{onSelect:(id:string)=>void;onEntrance:(key:string,target:string)=>void;expandedId?:string|null;inlineEditor?:React.ReactNode;entranceEditor?:React.ReactNode;onStartSection?:(section:"catalog")=>void})=><div><button onClick={()=>onStartSection?.("catalog")}>Открыть раздел начала</button><button onClick={()=>onSelect("q")}>Выбрать вопрос</button><button onClick={()=>onSelect("branch")}>Выбрать второе условие</button><button onClick={()=>onEntrance("named","q")}>Выбрать связь входа</button>{expandedId && inlineEditor}{entranceEditor}</div>}));
 const definition:ScenarioDraftDefinition={scenario_key:"s",title:"Карта",service_code:"it",offering_full_code:"it.p",process_binding:{request_template_key:"p"},entry_block_id:"q",entry_points:[{key:"named",title:"Вход",target_block_id:"q"}],blocks:[{id:"q",kind:"instruction",title:"Проверка",content:{body:"Шаг"},transitions:[]},{id:"done",kind:"finish",title:"Готово"}]};
 const catalog={services:[],offerings:[],categories:[],scenarios:[],total:0,offset:0,limit:100};
 afterEach(()=>vi.unstubAllGlobals());
@@ -108,4 +108,20 @@ it("opens Start sections while a different inspector panel is active without cha
  expect(screen.queryByText("Проверка пути открыта")).not.toBeInTheDocument();
  expect(screen.getByRole("combobox",{name:"Раздел каталога"})).toBeVisible();
  expect(change).not.toHaveBeenCalled();
+});
+
+it("creates library entrance as one undoable Start connection with an editable destination",()=>{
+ const initial={...definition,schema_version:3 as const};const change=vi.fn();
+ function Harness(){const [d,setD]=useState(initial);return <MemoryRouter><ScenarioMapWorkbench definition={d} catalog={catalog} existing disabled={false} onChange={next=>{change(next);setD(next as typeof initial);}}/></MemoryRouter>;}
+ render(<Harness/>);
+ fireEvent.click(screen.getByRole("button",{name:"+ Вход из каталога"}));
+ expect(change).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByLabelText("Первый блок для сотрудника"),{target:{value:"done"}});
+ fireEvent.change(screen.getByLabelText("Название входа"),{target:{value:"В другой раздел сценария"}});
+ fireEvent.click(screen.getByRole("button",{name:"Создать вход от «Начала»"}));
+ const next=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition;
+ expect(next.entry_points).toHaveLength(2);expect(next.entry_points?.[1]).toMatchObject({title:"В другой раздел сценария",target_block_id:"done"});
+ expect(next.entry_block_id).toBe("q");expect(next.blocks).toEqual(initial.blocks);expect(next.schema_version).toBe(3);
+ expect(screen.queryByRole("dialog",{name:"Новый вход из каталога"})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button",{name:"Отменить изменение"}));expect(change.mock.calls.at(-1)![0]).toEqual(initial);
 });

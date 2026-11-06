@@ -443,7 +443,7 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   `RequestScenarioRepo.simulate` retains the reached route on form/policy preview
   failure, returning optional `processing_error` and null `processing`; this never
   changes requester creation or publication guards. Stable geometry keeps entrances
-  independent of their targets. `scenario-entry-inspector` edits catalog entrances on blocks;
+  independent of their targets. `scenario-catalog-entrance` adds named library entrances atomically from Start using existing entry_points; `scenario-entry-inspector` edits entrance names and destinations. Canvas connect/reconnect guards prevent route links into entrance cards;
   `scenario-edge-inspector` edits canonical transitions using the existing typed
   condition editor. Настройки карты is visual metadata, never a runtime node. Seven visual
   types reuse the eight existing runtime kinds. `scenario-approvals` reuses the

@@ -31,11 +31,11 @@ it("creates a catalog entrance only on a Start connection and inherits category"
  expect(linked.blocks![0].transitions).toEqual([]);
 });
 
-it("shows entrance naming without duplicate target and category controls",()=>{
+it("edits entrance naming and destination without duplicate category controls",()=>{
  const draft=addMapBlock({...definition,schema_version:2},"form_page",{x:0,y:0});
  const next=connectStart(draft,draft.blocks![0].id);
  render(<ScenarioEntryInspector definition={next} blockId={next.blocks![0].id} catalog={data} disabled={false} onChange={vi.fn()}/>);
- expect(screen.getByLabelText("Название пункта")).toBeVisible();
- expect(screen.queryByLabelText("Начальный блок")).not.toBeInTheDocument();
+ expect(screen.getByLabelText("Название входа")).toBeVisible();
+ expect(screen.getByRole("combobox",{name:"Первый блок для сотрудника"})).toBeVisible();
  expect(screen.queryByLabelText("Категория пункта")).not.toBeInTheDocument();
 });

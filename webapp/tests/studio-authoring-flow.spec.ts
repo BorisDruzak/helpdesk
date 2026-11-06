@@ -69,7 +69,7 @@ for (const width of [1366,1920]) test(`new draft autosave, early screenshot and 
   const canvas=page.locator('.studio-map-canvas'),c=(await canvas.boundingBox())!,node=(await card.boundingBox())!,kind=(await card.locator('.studio-map-node__kind').boundingBox())!;
   const dx=c.x+c.width-node.width-18-node.x,dy=c.y+c.height-node.height-18-node.y;
   await page.mouse.move(kind.x+5,kind.y+kind.height/2);await page.mouse.down();await page.mouse.move(kind.x+5+dx,kind.y+kind.height/2+dy,{steps:20});await page.mouse.up();
-  await card.getByRole("button",{name:"Редактировать переход",exact:true}).click();
+  await card.getByRole("button",{name:/^Редактировать (переход|вход)$/,exact:true}).click();
   await expect.poll(async()=>{const a=(await canvas.boundingBox())!,b=(await card.locator('.studio-resizable-editor').boundingBox())!;return b.x>=a.x+2&&b.y>=a.y+2&&b.x+b.width<=a.x+a.width-2&&b.y+b.height<=a.y+a.height-2;}).toBe(true);
   await expect(card.getByRole("button",{name:"Закрыть",exact:true})).toBeInViewport();
  }
@@ -78,7 +78,7 @@ for (const width of [1366,1920]) test(`new draft autosave, early screenshot and 
  const corner=link.locator('[data-resize-direction="se"]');expect((await corner.boundingBox())!.width).toBeGreaterThanOrEqual(24);
  await page.screenshot({path:info.outputPath(`transition-cards-${width}.png`),fullPage:true});
  await link.getByRole("button",{name:"Закрыть",exact:true}).click();
- const entrance=page.locator('.studio-map-link-card').filter({hasText:"Пункт каталога"}).first();await expandNearBoundary(entrance);
+ const entrance=page.locator('.studio-map-link-card').filter({hasText:"Вход из каталога"}).first();await expandNearBoundary(entrance);
  await expect(page.locator('.studio-map-popover')).toHaveCount(0);await entrance.getByRole("button",{name:"Закрыть",exact:true}).click();
  await page.getByRole("button",{name:"Как у сотрудника",exact:true}).click();const preview=page.getByRole("dialog",{name:"Предпросмотр полной страницы",exact:true});
  await expect(preview.getByRole("button",{name:"Первый путь",exact:true})).toBeEnabled();await expect(preview.getByRole("button",{name:"Второй путь",exact:true})).toBeEnabled();

@@ -11,6 +11,20 @@ export const mapPalette: { kind: ScenarioBlock["kind"]; label: string }[] = [
 ];
 export const mapKindLabel = (kind: ScenarioBlock["kind"]) => kind === "finish" ? "Результат" : kind === "sla" ? "SLA · последовательный блок" : mapPalette.find(item => item.kind === kind)?.label ?? kind;
 export const terminal = (kind: ScenarioBlock["kind"]) => kind === "finish" || kind === "submit_ticket";
+export const catalogEntranceSourceId = "studio:metadata";
+
+export function createCatalogEntrance(definition: ScenarioDraftDefinition, source: string, target: string, title: string) {
+  if (source !== catalogEntranceSourceId) throw new Error("Вход из каталога подключается только к блоку «Начало».");
+  const label = title.trim();
+  if (!label || label.length > 300) throw new Error("Укажите название входа до 300 символов.");
+  const block = definition.blocks?.find(item => item.id === target);
+  if (!block) throw new Error("Выберите существующий начальный блок");
+  if (isPolicyAttachment(block)) throw new Error("Настройка не может быть началом маршрута. Прикрепите её к шагу.");
+  if ((definition.entry_points?.length ?? 0) >= 64) throw new Error("Достигнут лимит 64 точек входа");
+  return { ...definition, entry_block_id: definition.entry_block_id ?? target, entry_points: [...definition.entry_points ?? [], {
+    key: newKey("entry"), title: label, target_block_id: target, category_id: definition.category_id ?? null, visibility: "public" as const, enabled: true,
+  }] };
+}
 
 export function connectStart(definition: ScenarioDraftDefinition, target: string) {
   const block = definition.blocks?.find(item => item.id === target);
@@ -28,8 +42,9 @@ export function reconnectStart(definition: ScenarioDraftDefinition, key: string 
   if (isPolicyAttachment(definition.blocks.find(item => item.id === target)!)) throw new Error("Настройка не может быть началом маршрута. Прикрепите её к шагу.");
   if (key === null) return { ...definition, entry_block_id: target };
   if (!definition.entry_points?.some(entry => entry.key === key)) throw new Error("Точка входа не найдена");
+  const movedPrimary = definition.entry_points.some(entry => entry.key === key && entry.enabled !== false && entry.target_block_id === definition.entry_block_id);
   const entry_points = definition.entry_points.map(entry => entry.key === key ? { ...entry, target_block_id: target } : entry);
-  return { ...definition, entry_points, entry_block_id: entry_points.some(entry => entry.enabled !== false && entry.target_block_id === definition.entry_block_id) ? definition.entry_block_id : target };
+  return { ...definition, entry_points, entry_block_id: movedPrimary && !entry_points.some(entry => entry.enabled !== false && entry.target_block_id === definition.entry_block_id) ? target : definition.entry_block_id };
 }
 
 export function positionBlock(definition: ScenarioDraftDefinition, id: string, position: { x: number; y: number }): ScenarioDraftDefinition {

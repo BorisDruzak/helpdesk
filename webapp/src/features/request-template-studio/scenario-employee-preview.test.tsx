@@ -74,7 +74,7 @@ it('selects a single enabled named entrance and can return to the primary entran
  vi.mocked(simulateScenario).mockImplementation(async(_id,_revision,_steps,_preview,_outcomes,entry)=>response(entry==='special'?'Особый шаг':'q'));
  render(<ScenarioEmployeePreview definition={alternate} ensureSaved={async()=>({...detail,draft:{...detail.draft,definition:alternate}})}/>);
  expect(await screen.findByRole('heading',{name:'Выбор'})).toBeVisible();
- const chooser=screen.getByRole('combobox',{name:'Пункт каталога'});
+ const chooser=screen.getByRole('combobox',{name:'Вход из каталога'});
  fireEvent.change(chooser,{target:{value:'special'}});
  expect(await screen.findByRole('heading',{name:'Особый шаг'})).toBeVisible();
  expect(vi.mocked(simulateScenario).mock.lastCall?.[5]).toBe('special');
