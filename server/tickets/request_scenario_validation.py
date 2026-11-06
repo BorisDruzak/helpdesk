@@ -30,6 +30,15 @@ def validate_scenario(definition):
     issues = []
     def add(code, path, message):
         issues.append(ScenarioIssue(code, path, message))
+    entrance_keys = {entry.key for entry in definition.entry_points}
+    if len(definition.entry_points) + len(definition.editor_layout.pending_entrances) > 64:
+        add("entry_limit", "editor_layout.pending_entrances", "Допускается не больше 64 входов из каталога.")
+    for index, entry in enumerate(definition.editor_layout.pending_entrances):
+        path = f"editor_layout.pending_entrances.{index}"
+        if entry.key in entrance_keys:
+            add("duplicate_entry", path, "Идентификатор входа повторяется.")
+        entrance_keys.add(entry.key)
+        add("unconnected_catalog_entry", path, f"Соедините вход «{entry.title}» с первым блоком или удалите его.")
     if definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None:
         config = definition.processing
         if config is None:

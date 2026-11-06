@@ -874,6 +874,34 @@
       "title": "Negation",
       "type": "object"
     },
+    "PendingCatalogEntrance": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/EditorPosition"
+        }
+      },
+      "required": [
+        "key",
+        "title",
+        "position"
+      ],
+      "title": "PendingCatalogEntrance",
+      "type": "object"
+    },
     "ProcessBinding": {
       "additionalProperties": false,
       "properties": {
@@ -1343,6 +1371,14 @@
           },
           "title": "Positions",
           "type": "object"
+        },
+        "pending_entrances": {
+          "items": {
+            "$ref": "#/$defs/PendingCatalogEntrance"
+          },
+          "maxItems": 64,
+          "title": "Pending Entrances",
+          "type": "array"
         }
       },
       "title": "ScenarioEditorLayout",

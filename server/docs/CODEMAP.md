@@ -443,7 +443,7 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   `RequestScenarioRepo.simulate` retains the reached route on form/policy preview
   failure, returning optional `processing_error` and null `processing`; this never
   changes requester creation or publication guards. Stable geometry keeps entrances
-  independent of their targets. `scenario-catalog-entrance` adds named library entrances atomically from Start using existing entry_points; `scenario-entry-inspector` edits entrance names and destinations. Canvas connect/reconnect guards prevent route links into entrance cards;
+  independent of their targets. `scenario-pending-entrances` persists unfinished Start-connected entry cards in bounded optional editor_layout.pending_entrances and atomically completes entry_points. `scenario-connection-menu`/`scenario-map-connections` add steps from dropped native handles, preserving typed branches/continuations; `scenario-catalog-entrance` edits pending card names without a target form; `scenario-entry-inspector` edits entrance names and destinations. Canvas connect/reconnect guards prevent route links into entrance cards;
   `scenario-edge-inspector` edits canonical transitions using the existing typed
   condition editor. Настройки карты is visual metadata, never a runtime node. Seven visual
   types reuse the eight existing runtime kinds. `scenario-approvals` reuses the
@@ -1052,3 +1052,5 @@ and paths from the existing admin handler without altering backend contracts.
 owns one anonymous flow across form/entrance remounts. The journal contains no
 queries, answers or actor references. `scripts/catalog_funnel_report.py` reports
 deduplicated, best-effort funnel metrics; see [metrics](../../docs/REQUESTER_CATALOG_METRICS.md).
+
+Studio authoring metadata: PendingCatalogEntrance/ScenarioEditorLayout in request_scenario DTO and exported JSONSchema retain pending entry key/title/position. validate_scenario blocks unconnected entries, duplicates and combined64 limit before publication/runtime; admin AuthorPreviewRuntime ignores only safe unconnected-entry issues. Empty pending metadata omitted for old wire shape. No DB migration or requester authority change.

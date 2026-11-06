@@ -17,7 +17,7 @@
 .studio-map-node.has-issue { border-color:#d97706; background:#fffbeb; }
 .studio-map-node.is-visited { box-shadow:0 0 0 3px #dbeafe; }
 .studio-map-node.is-current { box-shadow:0 0 0 4px #86efac; }
-.studio-map-node .react-flow__handle { width:9px; height:9px; background:#64748b; }
+.studio-map-node .react-flow__handle { width:9px; height:9px; background:#64748b; z-index:8; }
 .studio-map-inspector input,.studio-map-inspector select,.studio-map-inspector textarea { max-width:100%; min-width:0; }
 .studio-map-inspector .md\:grid-cols-2,.studio-map-inspector .lg\:grid-cols-2 { grid-template-columns:minmax(0,1fr); }
 .studio-map-panel { min-width:0; border:1px solid #e2e8f0; border-radius:16px; padding:20px; background:white; }
@@ -196,3 +196,5 @@
 
 /* The author edits the label above; keep the repeated control label accessible. */
 .studio-question-answer > label > span:first-child { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+.studio-map-start-hint { position:absolute; top:12px; right:12px; z-index:4; max-width:min(300px,calc(100% - 24px)); padding:8px 12px; border-radius:10px; color:#456052; background:#f1faf4dd; font-size:12px; pointer-events:none; }

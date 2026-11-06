@@ -1,4 +1,4 @@
-import { fireEvent,render,screen,waitFor } from "@testing-library/react";
+import { fireEvent,render,screen,waitFor,within } from "@testing-library/react";
 import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach,expect,it,vi } from "vitest";
@@ -110,18 +110,11 @@ it("opens Start sections while a different inspector panel is active without cha
  expect(change).not.toHaveBeenCalled();
 });
 
-it("creates library entrance as one undoable Start connection with an editable destination",()=>{
+it("creates a persistent pending library entrance with no step selection and undoes it atomically",()=>{
  const initial={...definition,schema_version:3 as const};const change=vi.fn();
  function Harness(){const [d,setD]=useState(initial);return <MemoryRouter><ScenarioMapWorkbench definition={d} catalog={catalog} existing disabled={false} onChange={next=>{change(next);setD(next as typeof initial);}}/></MemoryRouter>;}
- render(<Harness/>);
- fireEvent.click(screen.getByRole("button",{name:"+ Вход из каталога"}));
- expect(change).not.toHaveBeenCalled();
- fireEvent.change(screen.getByLabelText("Первый блок для сотрудника"),{target:{value:"done"}});
- fireEvent.change(screen.getByLabelText("Название входа"),{target:{value:"В другой раздел сценария"}});
- fireEvent.click(screen.getByRole("button",{name:"Создать вход от «Начала»"}));
- const next=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition;
- expect(next.entry_points).toHaveLength(2);expect(next.entry_points?.[1]).toMatchObject({title:"В другой раздел сценария",target_block_id:"done"});
- expect(next.entry_block_id).toBe("q");expect(next.blocks).toEqual(initial.blocks);expect(next.schema_version).toBe(3);
- expect(screen.queryByRole("dialog",{name:"Новый вход из каталога"})).not.toBeInTheDocument();
- fireEvent.click(screen.getByRole("button",{name:"Отменить изменение"}));expect(change.mock.calls.at(-1)![0]).toEqual(initial);
+ render(<Harness/>);fireEvent.click(within(screen.getByRole("complementary",{name:"Библиотека блоков"})).getByRole("button",{name:"+ Вход из каталога"}));
+ const next=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition;expect(next.entry_points).toEqual(initial.entry_points);expect(next.blocks).toEqual(initial.blocks);expect(next.entry_block_id).toBe("q");expect(next.schema_version).toBe(3);
+ expect(next.editor_layout?.pending_entrances).toHaveLength(1);expect(screen.queryByRole("combobox",{name:"Первый блок для сотрудника"})).not.toBeInTheDocument();
+ expect(screen.getByText(/Потяните связь из правой точки/)).toBeVisible();fireEvent.click(screen.getByRole("button",{name:"Отменить изменение"}));expect(change.mock.calls.at(-1)![0]).toEqual(initial);
 });

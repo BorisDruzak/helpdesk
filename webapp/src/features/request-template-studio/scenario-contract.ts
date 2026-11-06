@@ -62,7 +62,8 @@ export type ScenarioEntryPoint = {
   synonyms?: string[]; visibility?: "public" | "internal" | "restricted";
   enabled?: boolean; target_block_id: string; reported_symptom?: string;
 };
-export type ScenarioEditorLayout = { positions?: Record<string, { x: number; y: number }> };
+export type PendingCatalogEntrance = { key:string; title:string; position:{x:number;y:number} };
+export type ScenarioEditorLayout = { positions?: Record<string, { x: number; y: number }>; pending_entrances?: PendingCatalogEntrance[] };
 export type ScenarioDraftDefinition = {
   schema_version?: 1 | 2 | 3 | 4;
   execution_semantics?: 1 | 2 | 3;

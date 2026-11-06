@@ -13,7 +13,7 @@ def require_author_preview_definition(definition):
     blocks = {block.id: block for block in definition.blocks}
     rejected = []
     for issue in validate_scenario(definition):
-        if issue.code == 'unreachable_block':
+        if issue.code in {'unreachable_block', 'unconnected_catalog_entry'}:
             continue
         if issue.code == 'processing_default_missing' and not getattr(definition.processing.defaults, issue.path.rsplit('.', 1)[-1]):
             continue

@@ -394,8 +394,22 @@ class EditorPosition(StrictModel):
     y: float | int = Field(ge=-100000, le=100000)
 
 
+class PendingCatalogEntrance(StrictModel):
+    key: Key
+    title: Annotated[str, Field(min_length=1, max_length=300)]
+    position: EditorPosition
+
+
 class ScenarioEditorLayout(StrictModel):
     positions: Annotated[dict[Key, EditorPosition], Field(max_length=257)] = Field(default_factory=dict)
+    pending_entrances: Annotated[list[PendingCatalogEntrance], Field(max_length=64)] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def omit_empty_pending(self, handler):
+        raw = handler(self)
+        if not self.pending_entrances:
+            raw.pop("pending_entrances", None)
+        return raw
 
 
 class ScenarioDraftDefinition(StrictModel):

@@ -1,3 +1,5 @@
+import { pendingCatalogEntrances } from "./scenario-pending-entrances";
+import type { ConnectionDrop } from "./scenario-connection-menu";
 import { ScenarioMapLinkCard, type MapLinkCard } from "./scenario-map-link-card";
 import { entranceLayoutKey, routeLayoutKey, useMapLinkLayout } from "./scenario-map-link-layout";
 import { ScenarioResizableEditor } from "./scenario-editor-size";
@@ -61,7 +63,8 @@ const emptyAuxiliary: Record<string, ReactNode> = {};
 export const transitionCardId = (source: string, index: number) => `studio:link:route:${encodeURIComponent(source)}:${index}`;
 export const entranceCardId = (key: string | null) => key === null ? "studio:link:entry:implicit" : `studio:link:entry:named:${encodeURIComponent(key)}`;
 export const transitionId = (source: string, index: number) => `${source}:${index}`;
-export function ScenarioMapCanvas({ edgeEditor, entranceEditor, simulationResult, definition, selected, selectedEdge, disabled, issueBlockId, path = emptyPath, current, onSelect, onEdge, onMove, onConnect, onReconnect, onDropBlock, onReady, onEntrance, onEntranceReconnect, onEntranceTitle, onAdd, answerSources, onAnswerAdd, auxiliaryEditors = emptyAuxiliary, expandedId, inlineEditor, onEdit, onContext, onButtonTitle, onStartSection }: {
+export function ScenarioMapCanvas({ edgeEditor, entranceEditor, simulationResult, definition, selected, selectedEdge, disabled, issueBlockId, path = emptyPath, current, onSelect, onEdge, onMove, onConnect, onReconnect, onDropBlock, onReady, onEntrance, onEntranceReconnect, onEntranceTitle, onAdd, answerSources, onAnswerAdd, auxiliaryEditors = emptyAuxiliary, expandedId, inlineEditor, onEdit, onContext, onButtonTitle, onStartSection, onConnectionDrop }: {
+  onConnectionDrop?: (drop:ConnectionDrop)=>void;
   edgeEditor?: ReactNode; entranceEditor?: ReactNode;
   simulationResult?: ScenarioSimulation;
   onStartSection?: (section: "service" | "catalog" | "entries" | "processing") => void;
@@ -82,13 +85,14 @@ export function ScenarioMapCanvas({ edgeEditor, entranceEditor, simulationResult
   onAnswerAdd?: (source: string, when: ScenarioCondition) => void;
 }) {
   const [viewportZoom, setViewportZoom] = useState(1);
+  const canvasRef=useRef<HTMLDivElement>(null),lastConnectionDrop=useRef(0);
   const linkLayout = useMapLinkLayout(definition.scenario_key);
   function fitEditor(id: string) {
     requestAnimationFrame(() => requestAnimationFrame(() => void flow.current?.fitView({ nodes: [{ id }], minZoom: 0.15, maxZoom: 1, padding: .12, duration: 150 })));
   }
   const hints = scenarioMapHints(definition);
   const positions = stableMapPositions(definition);
-  const entrances = [...(definition.entry_points ?? []).map(entry => ({ key: entry.key as string | null, title: entry.title, target: entry.target_block_id, enabled: entry.enabled !== false })), ...(!definition.entry_points?.some(entry => entry.target_block_id === definition.entry_block_id) ? [{ key: null, title: "Начало маршрута", target: definition.entry_block_id ?? "", enabled: true }] : [])];
+  const entrances: {key:string|null;title:string;target:string;enabled:boolean;pending?:boolean;position?:{x:number;y:number}}[] = [...(definition.entry_points ?? []).map(entry => ({ key: entry.key as string | null, title: entry.title, target: entry.target_block_id, enabled: entry.enabled !== false })), ...(!definition.entry_points?.some(entry => entry.target_block_id === definition.entry_block_id) ? [{ key: null, title: "Начало маршрута", target: definition.entry_block_id ?? "", enabled: true }] : []), ...pendingCatalogEntrances(definition).map(entry=>({key:entry.key,title:entry.title,target:"",enabled:true,pending:true,position:entry.position}))];
   const baseInitial = useMemo<MapNode[]>(() => [{ id: metadataNodeId, type: "scenario", position: definition.editor_layout?.positions?.system_start ?? { x: -320, y: 0 }, selected: selected === metadataNodeId, data: { shiftOrigin: (delta,commit)=>shiftOrigin(metadataNodeId,delta,commit), fitEditor: () => fitEditor(metadataNodeId), preferenceKey: `${definition.scenario_key}:system_start:inline`, getZoom: () => flow.current?.getZoom() ?? 1, expanded: expandedId === metadataNodeId, editor: expandedId === metadataNodeId ? inlineEditor : undefined, edit: onEdit ? () => onEdit(metadataNodeId) : undefined, title: "Начало", subtitle: "Услуга и точки входа", startActions: onStartSection ? ([ ["service", "Услуга и описание"], ["catalog", "Раздел и категория"], ["entries", "Входы в каталог"], ["processing", "Обработка и SLA"] ] as const).map(([section,label]) => ({ label, run: () => onStartSection(section) })) : undefined, entries: [], transitions: 0, terminal: true, system: true, issue: false, current: false, visited: false } }, ...(definition.blocks ?? []).map((block): MapNode => {
     const field = block.kind === "decision" ? defaultAnswerBranchField(definition, block.id, answerSources?.[block.id]) : undefined;
     const choices = field ? answerBranchChoices(field) : [];
@@ -128,8 +132,9 @@ export function ScenarioMapCanvas({ edgeEditor, entranceEditor, simulationResult
         return node(transitionCardId(block.id,index),{edgeId:transitionId(block.id,index),positionKey:routeLayoutKey(block.id,edge,occurrence),title,targetTitle,context:`${block.title} → ${targetTitle}`,route:{source:block.id,index},disabled,select:()=>onEdge(block.id,index),rename:definition.schema_version===4&&edge.button&&!disabled&&onButtonTitle?title=>onButtonTitle(block.id,index,title):undefined,add:!disabled&&onAdd?()=>onAdd(block.id,index):undefined,addLabel:`Добавить шаг между «${block.title}» и «${targetTitle}»`});
       });
     });
-    return [...routes,...entrances.filter(entry=>entry.target&&definition.blocks?.some(block=>block.id===entry.target)).map(entry=>node(entranceCardId(entry.key),{edgeId:entranceEdgeId(entry.key),positionKey:entranceLayoutKey(entry.key),title:entry.title,targetTitle:definition.blocks?.find(block=>block.id===entry.target)?.title??"Шаг недоступен",context:"Начало → вход из каталога",entrance:{key:entry.key,target:entry.target},disabled,select:()=>onEntrance(entry.key,entry.target),rename:entry.key!==null&&!disabled&&onEntranceTitle?title=>onEntranceTitle(entry.key!,title):undefined}))];
+    return [...routes,...entrances.filter(entry=>entry.pending||entry.target&&definition.blocks?.some(block=>block.id===entry.target)).map(entry=>{const value=node(entranceCardId(entry.key),{edgeId:entranceEdgeId(entry.key),positionKey:entranceLayoutKey(entry.key),title:entry.title,targetTitle:definition.blocks?.find(block=>block.id===entry.target)?.title??"Шаг недоступен",context:"Начало → вход из каталога",entrance:{key:entry.key,target:entry.target,pending:entry.pending},disabled,select:()=>onEntrance(entry.key,entry.target),rename:entry.key!==null&&!disabled&&onEntranceTitle?title=>onEntranceTitle(entry.key!,title):undefined});if(entry.pending)value.position=entry.position!;return value;})];
   },[definition,baseInitial,auxiliaryNodes,selectedEdge,edgeEditor,entranceEditor,disabled,onEdge,onEntrance,onButtonTitle,onEntranceTitle,onAdd,linkLayout.positions,viewportZoom]);
+  useEffect(()=>{for(const entry of pendingCatalogEntrances(definition)){const key=entranceLayoutKey(entry.key),old=linkLayout.positions[key];if(!old||old.x!==entry.position.x||old.y!==entry.position.y)linkLayout.move(key,entry.position);}},[definition.editor_layout?.pending_entrances]);
   const initial = useMemo(() => [...baseInitial, ...auxiliaryNodes, ...linkNodes], [baseInitial, auxiliaryNodes, linkNodes]);
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>(initial);
   const dragging = useRef(false);
@@ -154,7 +159,7 @@ export function ScenarioMapCanvas({ edgeEditor, entranceEditor, simulationResult
   }
   function persistPosition(id:string,point:{x:number;y:number}){
     const link=nodes.find(node=>node.id===id)?.data.link;
-    if(link)linkLayout.move(link.positionKey,point);else onMove(id,point);
+    if(link){linkLayout.move(link.positionKey,point);if(link.entrance?.pending)onMove(id,point);}else onMove(id,point);
   }
   const previousCount = useRef(definition.blocks?.length ?? 0);
   useEffect(() => { const count = definition.blocks?.length ?? 0; const firstStep = previousCount.current === 0 && count > 0; previousCount.current = count; if (firstStep) { const frame = requestAnimationFrame(() => void flow.current?.fitView({ padding: 0.18, maxZoom: 1 })); return () => cancelAnimationFrame(frame); } }, [definition.blocks?.length]);
@@ -165,21 +170,34 @@ export function ScenarioMapCanvas({ edgeEditor, entranceEditor, simulationResult
     const data={route:{source:block.id,index}};
     return [{id:`${id}:input`,source:block.id,sourceHandle:`route-${index}`,target:card,targetHandle:"in",type:"smoothstep",reconnectable:false,selectable:false,data,style},{id,source:card,sourceHandle:"out",target:edge.to,type:"smoothstep",reconnectable:"target" as const,selected,data,markerEnd:{type:MarkerType.ArrowClosed},style}];
   }));
-  const entranceEdges: Edge[] = entrances.filter(entry=>entry.target&&nodes.some(node=>node.id===entry.target)).flatMap(entry=>{
+  const entranceEdges: Edge[] = entrances.filter(entry=>entry.pending||entry.target&&nodes.some(node=>node.id===entry.target)).flatMap(entry=>{
     const id=entranceEdgeId(entry.key),card=entranceCardId(entry.key),data={entrance:true,key:entry.key,target:entry.target},style={stroke:"#0d9488",strokeWidth:2,strokeDasharray:"6 4",opacity:entry.enabled?1:.45};
-    return [{id:`${id}:input`,source:metadataNodeId,sourceHandle:"entrance",target:card,targetHandle:"in",type:"smoothstep",reconnectable:false,selectable:false,data,style},{id,source:card,sourceHandle:"out",target:entry.target,type:"smoothstep",reconnectable:"target" as const,data,selected:selectedEdge===id,markerEnd:{type:MarkerType.ArrowClosed},style}];
+    const input:Edge={id:`${id}:input`,source:metadataNodeId,sourceHandle:"entrance",target:card,targetHandle:"in",type:"smoothstep",reconnectable:false,selectable:false,data,style};
+    return [input,...(entry.pending?[]:[{id,source:card,sourceHandle:"out",target:entry.target,type:"smoothstep",reconnectable:"target" as const,data,selected:selectedEdge===id,markerEnd:{type:MarkerType.ArrowClosed},style}])];
   });
   const attachmentEdges: Edge[] = (definition.blocks ?? []).filter(isPolicyAttachment).flatMap(block => block.attached_to && nodes.some(node=>node.id===block.attached_to) ? [{ id: `studio:attachment:${block.id}`, source: block.id, sourceHandle:"policy", target:block.attached_to, type:"smoothstep", reconnectable:"target" as const, data:{attachment:true}, label: block.kind==="sla_attachment"?"Настройка SLA":"Настройка маршрута", style:{stroke:"#7c3aed",strokeDasharray:"5 5",strokeWidth:2} }] : []);
   const edges: Edge[] = [...routeEdges, ...entranceEdges, ...attachmentEdges, ...Object.keys(auxiliaryEditors).map(source => ({ id: `studio:sla-link:${source}`, source, target: `studio:legacy-sla:${source}`, sourceHandle: "new", type: "smoothstep", data: { auxiliary: true }, style: { stroke: "#c3984f", strokeDasharray: "3 5" }, selectable: false, reconnectable: false }))];
-  return <div className="studio-map-canvas" aria-label="Визуальная карта сценария" onContextMenu={event => { if (onContext) { event.preventDefault(); onContext({ x: event.clientX, y: event.clientY }, (event.target as Element).closest("[data-scenario-edge]") ? undefined : (event.target as Element).closest(".react-flow__node")?.getAttribute("data-id") ?? undefined, (event.target as Element).closest("[data-scenario-edge], .react-flow__edge")?.getAttribute("data-scenario-edge") ?? (event.target as Element).closest(".react-flow__edge")?.getAttribute("data-id") ?? undefined); } }} onDragOver={event => { if (!disabled) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={event => {
+  return <div ref={canvasRef} className="studio-map-canvas" aria-label="Визуальная карта сценария" onContextMenu={event => { if (onContext) { event.preventDefault(); onContext({ x: event.clientX, y: event.clientY }, (event.target as Element).closest("[data-scenario-edge]") ? undefined : (event.target as Element).closest(".react-flow__node")?.getAttribute("data-id") ?? undefined, (event.target as Element).closest("[data-scenario-edge], .react-flow__edge")?.getAttribute("data-scenario-edge") ?? (event.target as Element).closest(".react-flow__edge")?.getAttribute("data-id") ?? undefined); } }} onDragOver={event => { if (!disabled) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={event => {
     if (disabled) return; event.preventDefault(); const kind = event.dataTransfer.getData("application/x-scenario-kind");
     if (kind) onDropBlock(kind, { x: event.clientX, y: event.clientY }, (event.target as Element).closest(".react-flow__edge")?.getAttribute("data-id") ?? undefined);
   }}>
     <button type="button" className="studio-map-settings" onClick={() => onEdit ? onEdit(metadataNodeId) : onSelect(metadataNodeId)}>Настройки карты</button>
-    {!definition.blocks?.length && <div className="studio-map-empty"><strong>Начните с первого шага</strong><p>Добавьте вопрос или инструкцию. Затем продолжайте маршрут через +.</p>{!disabled && <button type="button" onClick={() => onAdd?.(null)}>+ Добавить первый шаг</button>}</div>}
+    {!definition.blocks?.length && !pendingCatalogEntrances(definition).length && onConnectionDrop && <p className="studio-map-start-hint">Потяните связь от «Начала», чтобы добавить вход из каталога.</p>}
+    {!definition.blocks?.length && !pendingCatalogEntrances(definition).length && !onConnectionDrop && <div className="studio-map-empty"><strong>Начните с первого шага</strong><p>Добавьте вопрос или инструкцию. Затем продолжайте маршрут через +.</p>{!disabled && <button type="button" onClick={() => onAdd?.(null)}>+ Добавить первый шаг</button>}</div>}
     <ReactFlow<MapNode> onMoveEnd={(_, viewport) => setViewportZoom(viewport.zoom)} nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes => { onNodesChange(changes.filter(change=>change.type!=="select")); if (!disabled && !dragging.current) for (const change of changes) if (change.type === "position" && change.position && change.dragging === false && !change.id.startsWith("studio:legacy-sla:") && change.id !== `${entranceEdgeId(null)}:node`) persistPosition(change.id, change.position); }} zoomOnDoubleClick={false} onInit={instance=>{flow.current=instance;onReady(instance);}} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.15} maxZoom={2} nodesDraggable={!disabled} nodesConnectable={!disabled} edgesReconnectable={!disabled} deleteKeyCode={null} multiSelectionKeyCode={null} selectionKeyCode={null} selectNodesOnDrag={false}
-      onNodeClick={(_, node) => { if(node.data.link)node.data.link.select();else onSelect(node.id); }} onPaneClick={() => onSelect(metadataNodeId)} onEdgeClick={(_, edge) => { if (edge.data?.auxiliary) return; if(edge.data?.attachment){onSelect(edge.source);return;} if (edge.data?.entrance) { onEntrance(edge.data.key as string | null, String(edge.data.target)); return; } const route=edge.data?.route as {source:string;index:number}|undefined; if(route)onEdge(route.source,route.index); }}
+      onNodeClick={(_, node) => { if(node.data.link)node.data.link.select();else onSelect(node.id); }} onPaneClick={() => {if(Date.now()-lastConnectionDrop.current>200)onSelect(metadataNodeId);}} onEdgeClick={(_, edge) => { if (edge.data?.auxiliary) return; if(edge.data?.attachment){onSelect(edge.source);return;} if (edge.data?.entrance) { onEntrance(edge.data.key as string | null, String(edge.data.target)); return; } const route=edge.data?.route as {source:string;index:number}|undefined; if(route)onEdge(route.source,route.index); }}
       onNodeDragStart={() => { dragging.current = true; }} onNodeDragStop={(_, node) => { dragging.current = false; if (!node.data.auxiliary) persistPosition(node.id, node.position); }}
+      onConnectEnd={(event,state)=>{
+        if(disabled||state.isValid||state.toNode||!state.fromNode||state.fromHandle?.type!=="source"||!onConnectionDrop)return;
+        const e="changedTouches" in event?event.changedTouches[0]:event;if(!e)return;
+        const bounds=canvasRef.current?.getBoundingClientRect(),hit=document.elementFromPoint?.(e.clientX,e.clientY);
+        if(!bounds||e.clientX<bounds.left||e.clientX>bounds.right||e.clientY<bounds.top||e.clientY>bounds.bottom||hit?.closest(".react-flow__node,.react-flow__edge"))return;
+        lastConnectionDrop.current=Date.now();
+        const point={x:e.clientX,y:e.clientY},link=(state.fromNode.data as MapData).link;
+        if(link?.entrance)onConnectionDrop({type:"entrance",key:link.entrance.key,point});
+        else if(link?.route)onConnectionDrop({type:"route",...link.route,point});
+        else if(!state.fromNode.id.startsWith("studio:legacy-sla:"))onConnectionDrop({type:"source",source:state.fromNode.id,handle:state.fromHandle.id??null,point});
+      }}
       onConnect={connection => { if (!connection.source || !connection.target || !definition.blocks?.some(block=>block.id===connection.target) || connection.source.startsWith("studio:legacy-sla:") || connection.target.startsWith("studio:legacy-sla:")) return; const link=nodes.find(node=>node.id===connection.source)?.data.link; if(link?.entrance)onEntranceReconnect(link.entrance.key,connection.target);else if(link?.route)onReconnect(link.route.source,link.route.index,connection.target);else if(!nodes.find(node=>node.id===connection.target)?.data.link)onConnect(connection.source, connection.target, connection.sourceHandle ?? null); }}
       onReconnect={(edge, connection) => { if (!connection.target || !definition.blocks?.some(block=>block.id===connection.target)) return; if(edge.data?.attachment) onConnect(edge.source,connection.target,"policy"); else if (edge.data?.entrance) onEntranceReconnect(edge.data.key as string | null, connection.target); else {const route=edge.data?.route as {source:string;index:number}|undefined;if(route)onReconnect(route.source,route.index,connection.target);} }}>
       <Background gap={22} color="#dbe4ef" /><Controls showInteractive={false} />

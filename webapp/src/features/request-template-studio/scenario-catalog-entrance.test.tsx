@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { expect, it, vi } from "vitest";
 import { createCatalogEntrance, reconnectStart } from "./scenario-map-model";
 import { ScenarioCatalogEntrance } from "./scenario-catalog-entrance";
@@ -23,17 +24,19 @@ it("creates independent named entrances only from Start without modifying old bl
  expect(()=>createCatalogEntrance({...draft,schema_version:4,blocks:[...draft.blocks!,{id:"policy",kind:"sla_attachment",title:"SLA"}]},"studio:metadata","policy","Нельзя")).toThrow();
  expect(()=>createCatalogEntrance({...draft,entry_points:Array.from({length:64},(_,i)=>({key:`e${i}`,title:"Вход",target_block_id:"q"}))},"studio:metadata","end","Лимит")).toThrow(/64/);
 });
-it("requires an explicit destination and makes its Start connection clear before creation",()=>{
- const create=vi.fn(),close=vi.fn();render(<ScenarioCatalogEntrance definition={draft} disabled={false} onCreate={create} onClose={close}/>);
- expect(screen.getByText(/Всегда подключён к блоку «Начало»/)).toBeVisible();
- const button=screen.getByRole("button",{name:"Создать вход от «Начала»"});expect(button).toBeDisabled();
- fireEvent.change(screen.getByLabelText("Первый блок для сотрудника"),{target:{value:"end"}});
- fireEvent.change(screen.getByLabelText("Название входа"),{target:{value:"Мой вход"}});fireEvent.click(button);
- expect(create).toHaveBeenCalledWith("end","Мой вход");
+it("explains visual completion and renames without any target-selection form",()=>{
+ const title=vi.fn(),remove=vi.fn();const entry={key:"draft",title:"Новый вход",position:{x:0,y:0}};
+ render(<ScenarioCatalogEntrance entry={entry} disabled={false} onTitle={title} onRemove={remove}/>);
+ expect(screen.getByText(/Потяните связь из правой точки/)).toBeVisible();expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText("Название входа"),{target:{value:"Второй вход"}});fireEvent.blur(screen.getByLabelText("Название входа"));expect(title).toHaveBeenCalledWith("Второй вход");
+ fireEvent.click(screen.getByRole("button",{name:"Удалить незавершённый вход"}));expect(remove).toHaveBeenCalledOnce();
 });
-it("explains empty maps and prevents read-only entrance creation",()=>{
- const create=vi.fn();const view=render(<ScenarioCatalogEntrance definition={{...draft,blocks:[]}} disabled={false} onCreate={create} onClose={vi.fn()}/>);
- expect(screen.getByText(/Сначала добавьте вопрос или инструкцию/)).toBeVisible();expect(screen.getByRole("button",{name:"Создать вход от «Начала»"})).toBeDisabled();
- view.rerender(<ScenarioCatalogEntrance definition={draft} disabled onCreate={create} onClose={vi.fn()}/>);
- expect(screen.getByLabelText("Первый блок для сотрудника")).toBeDisabled();expect(create).not.toHaveBeenCalled();
+it("prevents edits on a read-only pending entrance",()=>{
+ render(<ScenarioCatalogEntrance entry={{key:"draft",title:"Новый вход",position:{x:0,y:0}}} disabled onTitle={vi.fn()} onRemove={vi.fn()}/>);
+ expect(screen.getByLabelText("Название входа")).toBeDisabled();expect(screen.getByRole("button",{name:"Удалить незавершённый вход"})).toBeDisabled();
+});
+it("allows natural multiword typing and replacement before committing the pending title",async()=>{
+ const commit=vi.fn();function Harness(){const [entry,setEntry]=useState({key:"draft",title:"Новый вход",position:{x:0,y:0}});return <ScenarioCatalogEntrance entry={entry} disabled={false} onTitle={title=>{commit(title);setEntry({...entry,title:title.trim()});}} onRemove={vi.fn()}/>;}
+ render(<Harness/>);const input=screen.getByLabelText("Название входа") as HTMLInputElement;
+ fireEvent.change(input,{target:{value:""}});for(const letter of "Вход в отдел поддержки")fireEvent.change(input,{target:{value:input.value+letter}});expect(input).toHaveValue("Вход в отдел поддержки");fireEvent.blur(input);expect(commit).toHaveBeenLastCalledWith("Вход в отдел поддержки");
 });

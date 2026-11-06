@@ -15,6 +15,7 @@ export function scenarioMapHints(definition: ScenarioDraftDefinition): MapHint[]
   const all = definition.blocks ?? [], blocks = all.filter(block=>!isPolicyAttachment(block));
   const hints: MapHint[] = [], ids = new Set(blocks.map(block => block.id));
   const add = (code: string, text: string, blockId?: string) => hints.push({ code, text, blockId, level: "required" });
+  for(const entry of definition.editor_layout?.pending_entrances??[])add("unconnected_catalog_entry",`«${entry.title}»: потяните связь от входа к первому блоку.`);
   const targets = new Set<string>();
   for(const item of all.filter(isPolicyAttachment)) {
     if(!item.attached_to || !ids.has(item.attached_to)) add("attachment_target_invalid",`«${item.title}»: подключите настройку к обычному блоку карты.`,item.id);

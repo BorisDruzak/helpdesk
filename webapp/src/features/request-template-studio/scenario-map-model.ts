@@ -20,7 +20,7 @@ export function createCatalogEntrance(definition: ScenarioDraftDefinition, sourc
   const block = definition.blocks?.find(item => item.id === target);
   if (!block) throw new Error("Выберите существующий начальный блок");
   if (isPolicyAttachment(block)) throw new Error("Настройка не может быть началом маршрута. Прикрепите её к шагу.");
-  if ((definition.entry_points?.length ?? 0) >= 64) throw new Error("Достигнут лимит 64 точек входа");
+  if ((definition.entry_points?.length ?? 0) + (definition.editor_layout?.pending_entrances?.length ?? 0) >= 64) throw new Error("Достигнут лимит 64 точек входа");
   return { ...definition, entry_block_id: definition.entry_block_id ?? target, entry_points: [...definition.entry_points ?? [], {
     key: newKey("entry"), title: label, target_block_id: target, category_id: definition.category_id ?? null, visibility: "public" as const, enabled: true,
   }] };
@@ -32,7 +32,7 @@ export function connectStart(definition: ScenarioDraftDefinition, target: string
   if (isPolicyAttachment(block)) throw new Error("Настройка не может быть началом маршрута. Прикрепите её к шагу.");
   const entries = definition.entry_points ?? [];
   if (entries.some(entry => entry.target_block_id === target)) return definition.entry_block_id ? definition : { ...definition, entry_block_id: target };
-  if (entries.length >= 64) throw new Error("Достигнут лимит 64 точек входа");
+  if (entries.length + (definition.editor_layout?.pending_entrances?.length ?? 0) >= 64) throw new Error("Достигнут лимит 64 точек входа");
   return { ...definition, entry_block_id: definition.entry_block_id ?? target, entry_points: [...entries, {
     key: newKey("entry"), title: block.title, target_block_id: target, category_id: definition.category_id ?? null, visibility: "public" as const, enabled: true,
   }] };
