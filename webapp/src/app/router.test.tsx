@@ -317,6 +317,19 @@ afterEach(() => {
 });
 
 describe("appRoutes", () => {
+  it("registers the Users workspace and redirects the legacy Access route", () => {
+    expect(collectRoutePaths(appRoutes)).toContain("admin/users");
+    const findRoute = (routes: RouteObject[]): RouteObject | undefined => {
+      for (const route of routes) {
+        if (route.path === "admin/access") return route;
+        const found = findRoute(route.children ?? []);
+        if (found) return found;
+      }
+    };
+    const access = findRoute(appRoutes)?.element as React.ReactElement<{ children: React.ReactElement<{ to: string; replace: boolean }> }>;
+    expect(access.props.children.props.to).toBe("/app/admin/users?tab=access");
+    expect(access.props.children.props.replace).toBe(true);
+  });
   it.each(["/app/admin/request-template-studio", "/app/admin/registry", "/app/tickets", "/app"])(
     "opens only the read-only Studio for an auditor without workspace grants (%s)", async initialPath => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

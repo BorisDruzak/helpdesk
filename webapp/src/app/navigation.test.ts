@@ -41,6 +41,14 @@ const fullSession = {
 };
 
 describe("navigation helpers", () => {
+  it("owns people and access in Users and reference records in Registries", () => {
+    const items = getVisibleNavigationItems("admin", fullAdminPermissions);
+    expect(items.find(item => item.to === "/app/admin/users")?.label).toBe("Пользователи");
+    expect(items.find(item => item.to === "/app/admin/registry")?.label).toBe("Реестры");
+    expect(items.some(item => item.to === "/app/admin/access")).toBe(false);
+    expect(getActiveNavItem("/app/admin/users?person=person-1")?.label).toBe("Пользователи");
+    expect(getActiveNavItem("/app/admin/access")?.label).toBe("Пользователи");
+  });
   it("makes the compact queue primary and keeps the old center as an advanced entry", () => {
     const items = getVisibleNavigationItems("support", ["ticket.queue.view"]);
     expect(items.find(item => item.isWorkspaceHome)?.label).toBe("Очередь обращений");
@@ -71,7 +79,7 @@ describe("navigation helpers", () => {
     const domains = getVisibleNavigationDomains("admin", ["admin.access.view"]);
 
     expect(domains.map((domain) => domain.label)).toEqual(["Система"]);
-    expect(domains[0]?.items.map((item) => item.label)).toEqual(["Доступ"]);
+    expect(domains[0]?.items.map((item) => item.label)).toEqual(["Пользователи"]);
   });
 
   it("returns the first available item inside a domain with permission filtering", () => {

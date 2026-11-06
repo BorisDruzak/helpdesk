@@ -105,7 +105,8 @@ Retired Helpdesk browser pairing and account-session issuance remain unavailable
 | `/app/requester/devices` | Read the requester's existing device bindings and open device binding. | Authenticated Helpdesk requester. | Redacted Registry device projection. |
 | `/app/requester/devices/link` | Enter an Endpoint one-time device code. | Authenticated requester with a complete RegistryPerson profile; Endpoint verifies possession, Registry decides ownership. | Registry binding/claim and bounded audit, never the code. |
 | `/app/requester/new` | Create a Helpdesk ticket. | Authenticated requester and Helpdesk ticket policy. | Ticket/audit record and Endpoint-backed diagnostic facade where applicable. |
-| `/app/admin/registry` | Administer people, bindings, registration claims, profiles and password-reset requests. | Helpdesk RBAC. | Registry audit event with a redacted before/after projection. |
+| `/app/admin/users` | Unified person profile, account, role, direct queues, access groups and password-reset administration. | Helpdesk admin RBAC. | Atomic account/access update and redacted audit; see [Users workflow](ADMIN_USERS_WORKSPACE.md). |
+| `/app/admin/registry` | Administer devices, bindings, registration claims, locations, departments, audiences and policies. | Helpdesk RBAC. | Registry audit event with a redacted before/after projection. |
 
 Endpoint Platform alone owns agent enrollment, agent connectivity and all
 device-control workflows. Helpdesk consumes only the documented Endpoint

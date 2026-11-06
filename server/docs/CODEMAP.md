@@ -716,6 +716,28 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - `server/web_api/registry_handlers.py` creates admin registry people with a
   server-generated UUID, so the identity and audit flows never accept a
   caller-supplied person identifier.
+- `server/web_api/user_account_handlers.py` provides admin-only GET/PUT
+  `/api/web/admin/users/{person_id}/account` for unified profile/account access
+  administration; `app/services/user_accounts.py` owns the transactional command
+  and `web_api/dto/user_account.py` validates bounded secret-safe inputs.
+  Role, verified login linkage, direct queues, groups and audit share one
+  transaction; passwords never enter response/audit projections.
+  `webapp/src/pages/admin/users-page.tsx` composes the Users workspace; the
+  registry page retains device/reference jobs and selected-person advanced tools.
+  Registry presentation, state/actions, dialogs and tab definitions are split
+  across `registry-workspace.tsx`, `use-registry-workspace.ts`,
+  `registry-workspace-dialogs.tsx` and `registry-workspace-tabs.ts` under
+  `webapp/src/features/admin/registry/`; `registry-person-tools.tsx` exposes
+  selected-person advanced operations without another people table. Successful
+  operations invalidate account/access caches; clean cards adopt new state and
+  dirty conflicting drafts require an explicit reload before saving.
+  See [the admin Users workflow](../../docs/ADMIN_USERS_WORKSPACE.md).
+- `app/repos/ui_actor_memberships.py` resolves only the stored/canonical forms
+  of one uniquely matched UI login for read-only membership checks. Access,
+  ticket visibility and saved-view queries use this helper; queue mutation
+  lookups stay exact. Tokens and ticket actor ownership are unchanged, and
+  memberships retain one stored-login row so approvers/operators are not
+  duplicated. Ambiguous UI identities fail closed; non-UI actors remain exact.
 - `server/observer/integrity_service.py` scans and resolves findings only for
   its active checks; retired protocol and local-runtime sources are excluded
   from new scans and leave existing events unchanged. Browser authentication

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, ArrowUpRight, Fingerprint, KeyRound, Link2, Monitor, ShieldCheck, UserCheck, Workflow } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Fingerprint, KeyRound, Link2, Monitor, Workflow } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -39,10 +39,6 @@ const pendingClaimStatuses = new Set(["pending_user_confirmation", "pending_admi
 
 function deviceLabel(device: AdminRegistryPayload["assets"][number]): string {
   return device.hostname ?? device.name ?? device.device_id ?? device.id;
-}
-
-function personLabel(person: AdminRegistryPayload["people"][number]): string {
-  return person.full_name ?? person.display_name ?? person.login ?? person.person_id;
 }
 
 function claimLabel(claim: AdminRegistryPayload["registration_claims"][number]): string {
@@ -112,9 +108,6 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
   const conflictIssues = registry.data_quality.filter((issue) => (
     issue.kind === "registration_conflict" && !conflictClaimIds.has(issue.claim_id ?? issue.object_id)
   ));
-  const usersWithoutPrimary = registry.people.filter((person) => (
-    person.status !== "archived" && (person.primary_device_count ?? 0) === 0
-  ));
   const devicesWithoutOwner = registry.assets.filter((device) => (
     Boolean(device.device_id)
     && !device.active_person_id
@@ -123,13 +116,7 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
     && !device.responsible_person_id
     && !device.active_binding_id
   ));
-  const incompleteProfiles = registry.people.filter((person) => (
-    Boolean(person.profile_completion) && !person.profile_completion?.complete
-  ));
   const duplicateIssues = registry.data_quality.filter((issue) => issue.kind === "duplicate_person");
-  const unlinkedUiUsers = (registry.ui_users ?? []).filter((user) => user.is_active && !user.linked_person_id);
-  const uiUserIssues = registry.data_quality.filter((issue) => issue.kind === "ui_user_unlinked_registry_person");
-
   const scenarioQueues: ScenarioQueue[] = [
     {
       key: "pending-device-links",
@@ -181,25 +168,6 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
       ],
     },
     {
-      key: "users-without-primary",
-      title: "Пользователи без основного компьютера",
-      description: "Активные люди без primary_user привязки к устройству.",
-      count: usersWithoutPrimary.length,
-      icon: <UserCheck className="h-4 w-4" />,
-      tone: usersWithoutPrimary.length ? "warning" : "success",
-      actions: ["Привязать устройство", "Связать UI-аккаунт", "Открыть пользователя"],
-      emptyText: "У всех активных пользователей есть основной агент.",
-      items: usersWithoutPrimary.map((person) => ({
-        id: person.person_id,
-        title: personLabel(person),
-        description: [person.login, person.department_name, person.location_name].filter(Boolean).join(" · ") || "Контекст не заполнен",
-        badge: `${person.primary_device_count ?? 0} ПК`,
-        tone: "warning",
-        openLabel: `Открыть пользователя ${person.person_id} из очереди Пользователи без основного компьютера`,
-        open: () => onSelect({ kind: "person", id: person.person_id }),
-      })),
-    },
-    {
       key: "devices-without-owner",
       title: "Устройства без владельца",
       description: "Активные ПК без основного пользователя, ответственного или подтвержденной привязки.",
@@ -217,28 +185,6 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
         openLabel: `Открыть устройство ${device.device_id} из очереди Устройства без владельца`,
         open: () => device.device_id && onSelect({ kind: "device", id: device.device_id }),
       })),
-    },
-    {
-      key: "incomplete-profiles",
-      title: "Профиль не заполнен",
-      description: "Пользователи с блокирующими или обязательными полями профиля.",
-      count: incompleteProfiles.length,
-      icon: <ShieldCheck className="h-4 w-4" />,
-      tone: incompleteProfiles.length ? "warning" : "success",
-      actions: ["Открыть профиль", "Проверить поля", "Связать UI-аккаунт"],
-      emptyText: "Незавершенных профилей нет.",
-      items: incompleteProfiles.map((person) => {
-        const missing = person.profile_completion?.missing_fields.map((field) => field.label).join(", ");
-        return {
-          id: person.person_id,
-          title: personLabel(person),
-          description: missing ? `Не хватает: ${missing}` : "Профиль требует проверки",
-          badge: person.profile_completion?.status ?? "required",
-          tone: "warning",
-          openLabel: `Открыть пользователя ${person.person_id} из очереди Профиль не заполнен`,
-          open: () => onSelect({ kind: "person", id: person.person_id }),
-        };
-      }),
     },
     {
       key: "duplicate-identities",
@@ -260,35 +206,6 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
       })),
     },
   ];
-
-  const uiAccountQueue: ScenarioQueue = {
-    key: "ui-account-link",
-    title: "UI-аккаунты без персоны",
-    description: "Активные логины без связи с персоной реестра или без проверенной identity.",
-    count: unlinkedUiUsers.length + uiUserIssues.length,
-    icon: <KeyRound className="h-4 w-4" />,
-    tone: unlinkedUiUsers.length || uiUserIssues.length ? "warning" : "success",
-    actions: ["Связать UI-аккаунт с персоной", "Сброс / смена UI-пароля", "Проверить роли"],
-    emptyText: "Все активные UI-аккаунты связаны с персонами.",
-    items: [
-      ...unlinkedUiUsers.map((user) => ({
-        id: user.user_login,
-        title: user.user_login,
-        description: `${registryStatusLabel(user.actor_role)} · роль ${user.actor_role}`,
-        badge: "UI",
-        tone: "warning" as const,
-      })),
-      ...uiUserIssues.map((issue) => ({
-        id: issue.issue_key,
-        title: qualityIssueTitle(issue),
-        description: qualityIssueDescription(issue),
-        badge: issue.severity,
-        tone: issue.severity,
-        openLabel: `Открыть проблему ${issue.issue_key} из очереди UI-аккаунты без персоны`,
-        open: () => onFixIssue(issue),
-      })),
-    ],
-  };
 
   const actionItems = [
     ...registry.registration_claims.filter((claim) => ["pending_user_confirmation", "pending_admin_review", "conflict", "user_confirmed", "self_reported"].includes(claim.status)).slice(0, 6).map((claim) => ({
@@ -315,17 +232,17 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
             <p className="text-xs font-semibold uppercase text-brand-700">Администрирование</p>
             <h2 className="mt-1 text-lg font-semibold text-slate-950">Центр регистрации и привязок</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Очереди собраны по сценариям администратора: регистрация устройства, смена владельца, связь UI-аккаунта с персоной и качество профилей.
+              Очереди собраны по сценариям администратора: регистрация устройства, смена владельца, привязки и качество данных.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <a
               className="inline-flex h-9 items-center justify-center gap-2 rounded-pill border border-brand-200 bg-white px-3 text-sm font-medium text-brand-800 transition-colors hover:bg-brand-50"
-              href="/app/admin/access"
-              title="Открыть RBAC-пользователей для смены или сброса UI-пароля"
+              href="/app/admin/users"
+              title="Открыть карточки людей, учётные записи и права"
             >
               <KeyRound className="h-4 w-4" />
-              Открыть RBAC-пользователей
+              Пользователи и доступ
             </a>
             <a
               className="inline-flex h-9 items-center justify-center gap-2 rounded-pill border border-border bg-white px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
@@ -354,12 +271,12 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Очереди по сценариям</h2>
-            <p className="text-sm text-slate-500">Карточки ведут в существующие заявки, устройства, пользователей и timeline.</p>
+            <p className="text-sm text-slate-500">Карточки ведут в заявки, устройства и проблемы качества данных.</p>
           </div>
-          <Badge tone="neutral">{scenarioQueues.reduce((total, queue) => total + queue.count, uiAccountQueue.count)} задач</Badge>
+          <Badge tone="neutral">{scenarioQueues.reduce((total, queue) => total + queue.count, 0)} задач</Badge>
         </div>
         <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
-          {[...scenarioQueues, uiAccountQueue].map((queue) => (
+          {scenarioQueues.map((queue) => (
             <ScenarioQueueCard key={queue.key} queue={queue} />
           ))}
         </div>

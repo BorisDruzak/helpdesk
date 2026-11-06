@@ -268,6 +268,10 @@ from web_api.session_handlers import (
     handle_web_registration_options,
     handle_web_session_capabilities,
 )
+from web_api.user_account_handlers import (
+    handle_web_admin_user_accounts,
+    handle_web_admin_user_account_save,
+)
 from web_api.access_handlers import (
     handle_web_admin_access_audit,
     handle_web_admin_access_catalog,
@@ -680,6 +684,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/access/effective', handle_web_admin_access_effective),
         web.get('/api/web/admin/access/audit', handle_web_admin_access_audit),
         web.post('/api/web/admin/access/users/{user_login}/password', handle_web_admin_access_user_password),
+        web.get('/api/web/admin/users/{person_id}/account', handle_web_admin_user_accounts),
+        web.put('/api/web/admin/users/{person_id}/account', handle_web_admin_user_account_save),
         web.post('/api/web/admin/access/groups', handle_web_admin_access_create_group),
         web.patch('/api/web/admin/access/groups/{group_id}', handle_web_admin_access_update_group),
         web.put('/api/web/admin/access/groups/{group_id}/permissions', handle_web_admin_access_group_permissions),

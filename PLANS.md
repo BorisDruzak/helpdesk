@@ -1,3 +1,29 @@
+# 2026-11-06 Unified user administration
+
+Goal: separate Users (profile/account/role/queues) from reference Registries.
+Scope: Helpdesk admin frontend and atomic person/account access provider only.
+Constraints: preserve existing dirty work; no dependencies, migration, production
+deployment or live role grants. User explicitly requested implementation of the
+unified card proposed in this chat. Existing checkout/branch reused.
+Decisions: compact searchable list + Profile/Account/Permissions card; canonical
+group editor remains within Users. Legacy access links redirect to Users.
+Current State: local implementation complete. Unified Users card owns profile,
+account, role and queue/group grants; Registries owns reference/device jobs.
+Legacy redirects and compact person tools preserve advanced workflows. Clean
+cards adopt operation results; conflicting drafts block saves pending reload.
+Safe unique-login membership aliases preserve password/SSO grants without
+changing ticket ownership or duplicating operators/approvers. Scoped reviewers
+report no remaining actionable findings. GitNexus unavailable in this session;
+bounded source/tests used; Query 5 and SQLAlchemy 2 documentation checked.
+Next Steps: live authenticated staging acceptance/deployment is not performed.
+Verification: isolated PG83 + saved-view3 + adjacent noDB48 passed; frontend80
+focused tests, browser5 (1366/1920/390), TypeScript/Vite build and workspace
+verification passed. Full frontend run1061 passed/5 failed; two stale sidebar
+assertions fixed and rechecked, three failures outside touched surfaces remain
+confirmed separately (requester role label and two support upload tests).
+Handoff: docs/ADMIN_USERS_WORKSPACE.md and
+docs/ADMIN_USERS_VERIFICATION_2026-11-06.md record usage, checks and limitations.
+
 # 2026-10-27 SSO + Helpdesk + Endpoint + WorkTime
 
 Latest checkpoint, 2026-10-27 05:30 UTC (10:30 Asia/Yekaterinburg): Helpdesk

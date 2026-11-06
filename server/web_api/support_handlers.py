@@ -47,6 +47,7 @@ from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
 from app.services.operation_service import OperationService
+from app.repos.ui_actor_memberships import ui_actor_membership_ids
 from app.services.playbook_engine import start_run
 from auth.middleware import ensure_server_request_id, require_auth
 from consent.operation_consent import create_operation_user_consent
@@ -527,11 +528,12 @@ async def _support_accessible_queue_ids(session, auth_context) -> set[int]:
     actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
     if not actor_id:
         return set()
+    membership_actor_ids = await ui_actor_membership_ids(session, actor_id)
     rows = (
         await session.execute(
             select(TicketQueueMember.queue_id)
             .join(TicketQueue, TicketQueue.id == TicketQueueMember.queue_id)
-            .where(TicketQueueMember.actor_id == actor_id)
+            .where(TicketQueueMember.actor_id.in_(membership_actor_ids))
             .where(TicketQueue.is_active.is_(True))
         )
     ).scalars().all()
