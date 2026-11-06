@@ -2960,3 +2960,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verification:53Python/34UI tests, build/workspace and3browser viewport cases pass. Three reviewer precision issues fixed with red/green regressions; followup has no findings.
 - Complete: runtime17327fbc981ba1d3261fa0a77f0fb37b863b8550 installed; verified155backup/6source hashes/health200/3active services, unchanged catalog and business counts. Live API generic20distinct, startup7, login13; network and named systems narrowed. Staging active; production unchanged.
 - Evidence: docs/CATALOG_SYMPTOM_SEARCH_2026-11-05.md and tmp/catalog-symptom-search-20261105. Shared checkout/index preserved through private freeze on ab80b1a2.
+
+
+## Preserve resolution SLA on confirmation (2026-11-06)
+
+- Goal: fix and deploy false overdue after requester acceptance, restore T-000075 from verified stop event.
+- Cause: closing replaced already stopped resolution_at with closed_at; actual05Nov17:42 solution was before18:47 due, confirmed06Nov09:56.
+- Change: preserve stopped SLA, retain close-only fallback and reopen reset. Admin/staging/exact-ticket fingerprinted repair with canonical update and internal audit; no bulk/schema/auth changes.
+- Verification:51focusedPython and3browser viewport cases pass; workspace and independent review pass. RealPG rollback/durable audit/idempotence acceptance remains.
+- Next: verified backup, immutable exact-SHA staging install, guarded repair and browser/API/count acceptance; keep staging active for requested testing.
+- Evidence: docs/SLA_CONFIRMATION_FIX_2026-11-06.md and tmp/sla-confirmation-fix-20261106. Private branch/index preserve shared work and prior requester/catalog improvements.

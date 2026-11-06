@@ -1,4 +1,6 @@
 import { expect, test } from "playwright/test";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }, { width: 390, height: 844 }]) {
   test(`requester can decide a solution after scrolling history ${viewport.width}`, async ({ page }, info) => {
@@ -7,6 +9,11 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     const commands: Array<{ path: string; body: unknown }> = [];
     const errors: string[] = [], unexpected: string[] = [];
     const code = "T-009990";
+    const closedTimer = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-X", "utf8", "-c",
+      "import sys,json;from pathlib import Path;sys.path[:0]=[sys.argv[1],str(Path(sys.argv[1]).parent)];from datetime import datetime,timezone,timedelta;from types import SimpleNamespace;from tickets.workflow_service import _build_transition_updates;from requester.ticket_handling import sla_timer;due=datetime(2026,11,5,13,47,tzinfo=timezone.utc);resolved=due-timedelta(minutes=65);closed=due+timedelta(hours=15);t=SimpleNamespace(status='resolved',created_at=due-timedelta(hours=5),resolution_at=resolved,resolved_at=resolved,resolution_due_at=due,closed_at=None,canceled_at=None,sla_paused_at=None,sla_paused_seconds=0,resolution_breached_at=None);t.__dict__.update(_build_transition_updates(t,'resolved','closed',closed,None),status='closed');print(json.dumps(sla_timer(t,t.__dict__,resolution=True,now=closed)))",
+      fileURLToPath(new URL("../../server", import.meta.url))], { encoding: "utf8" }));
+    expect(closedTimer.completed_at).toBe("2026-11-05T12:42:00+00:00");
+    expect(closedTimer.completed_within_target).toBe(true);
     const ticket = () => ({ ticket_id: "synthetic-resolution", ticket_code: code, title: "Синтетическая проверка решения", status: phase,
       requester_status_label: phase === "resolved" ? "Проверьте решение" : phase === "closed" ? "Закрыто" : "В работе",
       requester_resolution_summary: "Специалист предложил решение. Проверьте результат.",
@@ -26,7 +33,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
         data = { ticket: ticket() };
       } else if (path === `/api/web/requester/tickets/${code}`) data = {
         ticket: ticket(), events: [],
-        handling: { status_label: ticket().requester_status_label, assignee: { assigned: true, display_name: "Специалист" }, next_action_owner: "requester", device: { state: "none" }, sla: { resolution: { status: "paused", remaining_seconds: 3600 } } },
+        handling: { status_label: ticket().requester_status_label, assignee: { assigned: true, display_name: "Специалист" }, next_action_owner: phase === "closed" ? null : "requester", device: { state: "none" }, sla: { resolution: phase === "closed" ? closedTimer : { status: "paused", remaining_seconds: 3600 } } },
         messages: Array.from({ length: 45 }, (_, i) => ({ message_id: `m${i}`, from_role: i === 44 || i % 2 ? "support" : "user", text: i === 44 ? "Проблема решена. Для подтверждения используйте одну из кнопок ниже." : `Предыдущее сообщение ${i + 1}. Подробности проверки рабочего места.`, created_at: `2026-11-05T10:${String(i).padStart(2, "0")}:00Z` })),
       };
       else { unexpected.push(path); return route.fulfill({ status: 404, json: { status: "error" } }); }
@@ -52,6 +59,9 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await confirm.click();
     await expect(page.getByText("Решение подтверждено", { exact: true })).toBeVisible();
     await expect(bar).toHaveCount(0);
+    await expect(page.getByText("Срок был нарушен", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath("closed-sla.png") });
     expect(commands).toEqual([{ path: `/api/web/requester/tickets/${code}/close`, body: { reason: "requester_confirmed_resolution" } }]);
 
     phase = "resolved"; await page.reload();

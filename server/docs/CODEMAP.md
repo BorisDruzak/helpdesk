@@ -561,6 +561,12 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   resets retain their original precedence over explicit resolution metadata.
   All stages run under the same row lock and caller transaction; required
   effects still fail closed before commit.
+  Closing preserves an already stopped `resolution_at`; `closed_at` records
+  independent acceptance/closure. With no stopped SLA, the close-time fallback
+  remains. Reopening clears the prior cycle timestamps. Regression coverage is in
+  `test_workflow_update_builder_no_db.py`; `scripts/helpdesk_repair_t75_sla.py`
+  provides an admin-only, fingerprinted, staging-only T-000075 repair from its
+  verified SLA stop event, with an atomic internal audit and no bulk migration.
 
 - `server/tickets/workflow_service.py` locks and refreshes the ticket before
   policies or lifecycle side effects. A stale `from_status` raises
