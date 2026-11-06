@@ -132,6 +132,22 @@ def apply_scenario_processing_facts(validated, facts):
     return result
 
 
+async def scenario_sla_reference_issues(session, definition):
+    """Check explicit block policies even when readiness cannot prove a route."""
+    issues = []
+    if definition.schema_version != 4:
+        return issues
+    for block in definition.blocks:
+        if block.kind not in {"sla", "submit_ticket"} or not block.policy_ref:
+            continue
+        try:
+            await apply_scenario_policy_refs(session, {"template_context": {}}, {"sla": block.policy_ref})
+        except ValueError:
+            issues.append({"code": "policy_reference_unavailable", "path": f"blocks.{block.id}.policy_ref",
+                           "message": "Выбранная политика SLA недоступна или не опубликована."})
+    return issues
+
+
 async def apply_scenario_policy_refs(session, validated, references):
     if not references:
         return validated

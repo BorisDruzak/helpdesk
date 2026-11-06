@@ -2,6 +2,12 @@ import { createElement, useState, type ComponentType } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ScenarioMapCanvas, type MapNode } from "./scenario-map-canvas";
+it("opens a Start subsection without serializing a definition change", () => {
+  const section = vi.fn();
+  render(<ScenarioMapCanvas {...props} definition={definition} onStartSection={section} />);
+  fireEvent.click(screen.getByRole("button", { name: "Начало: Раздел и категория" }));
+  expect(section).toHaveBeenCalledWith("catalog");
+});
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
 vi.mock("@xyflow/react", () => ({
@@ -17,6 +23,14 @@ const definition: ScenarioDraftDefinition = { schema_version: 3, scenario_key: "
   { id: "end", kind: "submit_ticket", title: "Обращение" },
 ] };
 const props = { selected: "d", selectedEdge: null, disabled: false, onSelect: vi.fn(), onEdge: vi.fn(), onMove: vi.fn(), onConnect: vi.fn(), onReconnect: vi.fn(), onDropBlock: vi.fn(), onEntrance: vi.fn(), onEntranceReconnect: vi.fn(), onReady: vi.fn() };
+it("shows the server-confirmed SLA, queue and actual route at the terminal node", () => {
+  render(<ScenarioMapCanvas {...props} definition={definition} simulationResult={{ state: { current_block_id: "end", history: ["q","d"] }, processing: { sla: { first_response_min: 5, resolution_min: 60, time_basis: "calendar" }, routing: { queue_title: "Сетевая поддержка" } } } as never} />);
+  const end = screen.getByTestId("node-end");
+  expect(end).toHaveTextContent("решение 60 мин.");
+  expect(end).toHaveTextContent("Сетевая поддержка");
+  expect(end).toHaveTextContent("Пройденный маршрут");
+  expect(end).toHaveTextContent("Условие → Обращение");
+});
 it("offers explicit Yes and No actions on an empty decision without changing the definition", () => {
   const onAnswerAdd = vi.fn(), before = structuredClone(definition);
   render(<ScenarioMapCanvas {...props} definition={definition} onAnswerAdd={onAnswerAdd} />);

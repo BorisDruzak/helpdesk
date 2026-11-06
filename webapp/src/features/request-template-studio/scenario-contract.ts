@@ -50,7 +50,7 @@ export type ScenarioBlock = BlockBase & (
   | { kind: "resolution_check" }
   | { kind: "diagnostic"; capability?: string; require_consent?: boolean; timeout_seconds?: number; execution_mode?: "unavailable" }
   | { kind: "review" }
-  | { kind: "submit_ticket" }
+  | { kind: "submit_ticket"; sla_profile?: string | null; policy_ref?: string | null }
   | { kind: "finish"; message?: string }
 );
 export type ScenarioPolicyKind = "priority" | "routing" | "sla" | "ola" | "approval" | "notification" | "closure" | "visibility";

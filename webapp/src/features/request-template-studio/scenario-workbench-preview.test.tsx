@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach,expect,it,vi } from "vitest";
 import { ScenarioMapWorkbench } from "./scenario-map-workbench";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
-vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitionId:(source:string,index:number)=>`${source}:${index}`,entranceEdgeId:(key:string|null)=>`entry:${key}`,ScenarioMapCanvas:({onSelect,onEntrance,expandedId,inlineEditor}:{onSelect:(id:string)=>void;onEntrance:(key:string,target:string)=>void;expandedId?:string|null;inlineEditor?:React.ReactNode})=><div><button onClick={()=>onSelect("q")}>Выбрать вопрос</button><button onClick={()=>onSelect("branch")}>Выбрать второе условие</button><button onClick={()=>onEntrance("named","q")}>Выбрать связь входа</button>{expandedId && inlineEditor}</div>}));
+vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitionId:(source:string,index:number)=>`${source}:${index}`,entranceEdgeId:(key:string|null)=>`entry:${key}`,ScenarioMapCanvas:({onSelect,onEntrance,expandedId,inlineEditor,onStartSection}:{onSelect:(id:string)=>void;onEntrance:(key:string,target:string)=>void;expandedId?:string|null;inlineEditor?:React.ReactNode;onStartSection?:(section:"catalog")=>void})=><div><button onClick={()=>onStartSection?.("catalog")}>Открыть раздел начала</button><button onClick={()=>onSelect("q")}>Выбрать вопрос</button><button onClick={()=>onSelect("branch")}>Выбрать второе условие</button><button onClick={()=>onEntrance("named","q")}>Выбрать связь входа</button>{expandedId && inlineEditor}</div>}));
 const definition:ScenarioDraftDefinition={scenario_key:"s",title:"Карта",service_code:"it",offering_full_code:"it.p",process_binding:{request_template_key:"p"},entry_block_id:"q",entry_points:[{key:"named",title:"Вход",target_block_id:"q"}],blocks:[{id:"q",kind:"instruction",title:"Проверка",content:{body:"Шаг"},transitions:[]},{id:"done",kind:"finish",title:"Готово"}]};
 const catalog={services:[],offerings:[],categories:[],scenarios:[],total:0,offset:0,limit:100};
 afterEach(()=>vi.unstubAllGlobals());
@@ -97,4 +97,15 @@ it("a missing-route hint reveals editing controls from employee preview",()=>{
  render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
  fireEvent.click(screen.getByRole("button",{name:"Выбрать вопрос"}));
  fireEvent.click(screen.getByRole("button",{name:"Редактировать выбранный блок"}));fireEvent.click(screen.getByRole("tab",{name:"Как у сотрудника"}));fireEvent.click(screen.getByRole("button",{name:/«Проверка»: укажите следующий шаг/}));fireEvent.click(screen.getByRole("button",{name:/Исправить: «Проверка»: укажите следующий шаг/}));expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");expect(screen.getByLabelText("Название блока")).toBeVisible();
+});
+
+it("opens Start sections while a different inspector panel is active without changing the draft",()=>{
+ const change=vi.fn();
+ function Harness(){const [panel,setPanel]=useState(true);return <ScenarioMapWorkbench definition={definition} catalog={catalog} existing disabled={false} onChange={change} inspectorPanel={panel?<p>Проверка пути открыта</p>:undefined} onInspect={()=>setPanel(false)}/>;}
+ render(<Harness/>);
+ expect(screen.getByText("Проверка пути открыта")).toBeVisible();
+ fireEvent.click(screen.getByRole("button",{name:"Открыть раздел начала"}));
+ expect(screen.queryByText("Проверка пути открыта")).not.toBeInTheDocument();
+ expect(screen.getByRole("combobox",{name:"Раздел каталога"})).toBeVisible();
+ expect(change).not.toHaveBeenCalled();
 });

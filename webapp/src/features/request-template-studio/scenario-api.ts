@@ -36,7 +36,7 @@ export type OfferingCard = { offering: AdminServiceCatalogOffering; scenarios: S
   active_mode: "form" | "scenario"; requester_available?: boolean; active_scenario_id?: string | null; category_ids: string[] };
 export type SimulationState = { current_block_id: string; revision: number; state: string; answers: Record<string, unknown>; history: string[]; results: Record<string, unknown> };
 export type ScenarioConditionEvaluation = { op: string; matched: boolean; source?: string; field?: string; value?: unknown; actual?: unknown; present?: boolean; children?: ScenarioConditionEvaluation[] };
-type ProcessingSource = { kind: "default" | "transition"; block_id?: string; transition_index?: number };
+export type ProcessingSource = { kind: "default" | "transition" | "terminal" | "block" | "server"; block_id?: string; transition_index?: number };
 export type ScenarioMapProcessingResult = {
   assignment_mode: "last_matching_branch";
   route: { key: string; title: string; queue_code: string; source: ProcessingSource };
@@ -51,7 +51,7 @@ export type ScenarioSimulation = { revision: number; current_block: ScenarioBloc
   simulation_scope?: { limited_scope: boolean; excluded_block_ids: string[]; issues: { code: string; path: string; message: string }[] };
   current_step?: ScenarioStepDisplay;
   processing?: { priority: { priority_class: string; reason?: string | null }; routing: { queue_title?: string | null; queue_code?: string; queue_id?: number };
-    sla: { first_response_min?: number; resolution_min?: number; first_response_due_preview?: string | null; resolution_due_preview?: string | null }; map_processing?: ScenarioMapProcessingResult; ola?: { policy_code?: string | null; ack_min?: number; processing_min?: number };
+    sla: { first_response_min?: number; resolution_min?: number; time_basis?: "calendar" | "business"; policy_code?: string | null; source?: ProcessingSource; selection?: { kind: "policy" | "profile"; key: string; source: ProcessingSource }; first_response_due_preview?: string | null; resolution_due_preview?: string | null }; map_processing?: ScenarioMapProcessingResult; ola?: { policy_code?: string | null; ack_min?: number; processing_min?: number };
     approval: { required: boolean }; closure?: { requires_public_summary: boolean; requires_resolution_code: boolean };
     validated_facts?: Record<string, unknown>; notification?: { would_send: false; recipient_groups: string[]; channels: { channel: string; enabled: boolean; available: boolean }[] };
     would_create_ticket: false } | null;

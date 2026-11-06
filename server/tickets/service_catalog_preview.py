@@ -119,6 +119,15 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
     simulation = await PolicyHealthService(session).simulate(simulate_payload, validated_submission=validated)
     if scenario_snapshot and scenario_snapshot.get("map_processing") is not None:
         simulation["map_processing"] = deepcopy(scenario_snapshot["map_processing"])
+    if scenario_snapshot is not None:
+        selected_sla = scenario_snapshot.get("sla_selection")
+        if scenario_snapshot.get("map_processing") is not None:
+            profile = scenario_snapshot["map_processing"]["sla_profile"]
+            selected_sla = {"kind": "profile", "key": profile["key"], "source": profile["source"]}
+        sla = simulation.setdefault("sla", {})
+        sla["source"] = deepcopy(selected_sla["source"] if selected_sla else {"kind": "server"})
+        if selected_sla:
+            sla["selection"] = deepcopy(selected_sla)
     return selection, simulation
 
 

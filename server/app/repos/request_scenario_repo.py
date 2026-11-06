@@ -284,6 +284,10 @@ class RequestScenarioRepo:
         references = {kind: code for kind, code in definition.process_binding.policy_refs.items()
                       if not (definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None) or kind not in {"routing", "sla"}}
         await apply_scenario_policy_refs(self.session, {"template_context": {}}, references)
+        from tickets.request_scenario_processing import scenario_sla_reference_issues
+        block_policy_issues = await scenario_sla_reference_issues(self.session, definition)
+        if block_policy_issues:
+            raise ValueError({issue["path"]: issue["message"] for issue in block_policy_issues})
         await self._category(definition.category_id, definition.service_code)
         for entry in definition.entry_points:
             await self._category(entry.category_id, definition.service_code)

@@ -43,7 +43,7 @@ def validate_scenario(definition):
                         if value is not None and value not in choices:
                             add("processing_reference_unknown", f"blocks.{block.id}.transitions.{index}.processing.{kind}", "Результат ветки ссылается на отсутствующую настройку карты.")
             for block in definition.blocks:
-                if block.kind == "sla" and block.sla_profile is not None and block.sla_profile not in config.sla_profiles:
+                if block.kind in {"sla", "submit_ticket"} and block.sla_profile is not None and block.sla_profile not in config.sla_profiles:
                     add("processing_reference_unknown", f"blocks.{block.id}.sla_profile", "Unknown SLA profile")
             for key, profile in config.sla_profiles.items():
                 for duration in ("first_response_minutes", "resolution_minutes"):
@@ -167,10 +167,12 @@ def validate_scenario(definition):
                 add("invalid_buttons", path, "Automatic transitions cannot have buttons")
             if block.kind == "sla" and (len(block.transitions) != 1 or block.transitions[0].when is not None or block.sla_profile and block.policy_ref):
                 add("invalid_sla", path, "SLA requires one unconditional continuation and at most one profile or policy")
-            if block.kind == "sla" and block.policy_ref and definition.processing is not None:
-                add("invalid_sla", path, "A map-owned SLA cannot select a registry policy")
-            if block.kind == "sla" and block.sla_profile and definition.processing is None:
-                add("processing_reference_unknown", path, "SLA profile requires map processing")
+            if block.kind == "submit_ticket" and block.sla_profile and block.policy_ref:
+                add("invalid_sla", f"blocks.{block.id}.sla_profile", "Choose one final SLA profile or policy")
+            if block.kind in {"sla", "submit_ticket"} and block.policy_ref and definition.processing is not None:
+                add("invalid_sla", f"blocks.{block.id}.policy_ref", "A map-owned SLA cannot select a registry policy")
+            if block.kind in {"sla", "submit_ticket"} and block.sla_profile and definition.processing is None:
+                add("processing_reference_unknown", f"blocks.{block.id}.sla_profile", "SLA profile requires map processing")
         conditional = [edge for edge in block.transitions if edge.when is not None]
         fallback = [edge for edge in block.transitions if edge.when is None]
         # An empty answer set cannot prove coverage for real user answers.

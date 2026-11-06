@@ -377,6 +377,14 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   the v4 rules. Navigation and SLA nodes are separate; legacy SLA settings remain
   represented. Rich documents and scoped author assets use `scenario-rich-*` and
   `request_scenario_assets`, with asset rebinding on copy.
+  Optional v4 `submit_ticket.sla_profile/policy_ref` selects a final SLA after the
+  retained path; omission preserves inheritance and the prior wire format.
+  Graph/source checks, publication/import policy availability and fragment remapping
+  share existing validators. `service_catalog_preview` returns trusted SLA source
+  metadata and canonical simulation time basis. `scenario-terminal-sla-model`
+  bounds structural route alternatives; `scenario-terminal-sla` shows inherited
+  choices and the actual tested path/queue/SLA, without evaluating policy durations
+  or claiming conditional paths feasible. Finish creates no ticket/SLA obligation.
   `request_scenario_fragment_handlers`, `request_scenario_fragment_library` and
   `request_scenario_fragments` provide list/create/detail/archive and CAS insert;
   explicit dependency and fact mappings, copied asset claims and destination v4

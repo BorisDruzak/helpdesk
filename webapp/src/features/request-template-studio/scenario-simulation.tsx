@@ -10,7 +10,7 @@ import { ScenarioStepContent } from "../requester/scenario-step-content";
 import { ScenarioSimulationComparison, ScenarioSimulationTrace } from "./scenario-simulation-trace";
 import { scenarioIssueText, type ScenarioApiIssue } from "./scenario-issues";
 
-export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition, onIssue, onState }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; onIssue?: (target: ScenarioIssueDestination) => void; onState?: (current: string, path: string[]) => void }) {
+export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition, onIssue, onState }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; onIssue?: (target: ScenarioIssueDestination) => void; onState?: (current: string, path: string[], result: ScenarioSimulation) => void }) {
   const [entryPointKey, setEntryPointKey] = useState("");
   const [result, setResult] = useState<ScenarioSimulation | null>(null);
   const [comparison, setComparison] = useState<ScenarioSimulation | null>(null);
@@ -43,7 +43,7 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
       const response = await simulateScenario(id, revision, next, preview, outcomes, entryPointKey);
       if (current !== sequence.current) return;
       setResult(response);
-      onState?.(response.state.current_block_id, response.state.history ?? []);
+      onState?.(response.state.current_block_id, response.state.history ?? [], response);
       if (!preview) { setSteps(next); setAcknowledged(false); setValues(Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, field.value])) as DynamicFormValues); }
       else setValues(previous => {
         const nextValues = Object.fromEntries((response.current_step?.fields || []).map(field => [field.key, previous[field.key]]));

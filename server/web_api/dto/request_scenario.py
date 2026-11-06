@@ -321,6 +321,16 @@ class Review(BlockBase):
 
 class SubmitTicket(BlockBase):
     kind: Literal["submit_ticket"]
+    sla_profile: Key | None = None
+    policy_ref: CatalogCode | None = None
+
+    @model_serializer(mode="wrap")
+    def omit_inherited_sla(self, handler):
+        raw = handler(self)
+        for key in ("sla_profile", "policy_ref"):
+            if raw.get(key) is None:
+                raw.pop(key, None)
+        return raw
 
 
 class Finish(BlockBase):
@@ -404,7 +414,8 @@ class ScenarioDraftDefinition(StrictModel):
         if self.schema_version == 4 and self.execution_semantics is None:
             self.execution_semantics = 3
         if self.schema_version < 4 and (self.execution_semantics is not None or any(
-            b.kind in {"navigation", "sla"} or b.transition_mode is not None or any(e.button is not None for e in b.transitions)
+            b.kind in {"navigation", "sla"} or b.kind == "submit_ticket" and (b.sla_profile is not None or b.policy_ref is not None)
+            or b.transition_mode is not None or any(e.button is not None for e in b.transitions)
             or (b.kind == "instruction" and b.content.rich_document is not None)
             or any(f.help_document is not None for f in getattr(b, "fields", ())) for b in self.blocks)):
             raise ValueError("v4 features require schema_version 4")

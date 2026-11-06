@@ -155,6 +155,8 @@ class ScenarioPublicationService:
         definition = None
         try:
             definition = ScenarioDefinition.model_validate(draft.definition)
+            from tickets.request_scenario_processing import scenario_sla_reference_issues
+            issues.extend(await scenario_sla_reference_issues(self.session, definition))
             from tickets.request_scenario_processing import validate_map_processing_references
             if (definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None):
                 issues.extend(validate_map_processing_references(definition, source["queues"], source["business_calendars"]))
@@ -194,7 +196,7 @@ class ScenarioPublicationService:
                 routing, sla, approval = result["routing"], result["sla"], result["approval"]
                 if routing.get("queue_id") not in active_queue_ids:
                     add("routing_unavailable", "Одна из ветвей не попадает в действующую очередь.")
-                if ((definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None) or "sla" in references or not (template.get("config") or {}).get("no_sla")) and not sla.get("resolution_min"):
+                if ((definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None) or "sla" in snapshot["policy_refs"] or not (template.get("config") or {}).get("no_sla")) and not sla.get("resolution_min"):
                     add("sla_unavailable", "Одна из ветвей не имеет срока выполнения по действующей политике.")
                 if approval.get("required") and not approval.get("approvers"):
                     add("approval_unavailable", "Согласование требуется, но действующий источник не определил согласующих.")

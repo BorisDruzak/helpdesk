@@ -24,6 +24,8 @@ export function ScenarioProcessingResult({ result, definition }: { result: Scena
     <p>Очередь: {processing.routing.queue_title || processing.routing.queue_code || "Не определена"}</p>
     <p>Первый ответ: {processing.sla.first_response_min ? `${processing.sla.first_response_min} мин.` : "Не определён"}</p>
     <p>Срок выполнения: {processing.sla.resolution_min ? `${processing.sla.resolution_min} мин.` : "Не определён"}</p>
+    {processing.sla.time_basis && <p>{processing.sla.time_basis === "business" ? "Рабочее время" : "Календарное время"}</p>}
+    {processing.sla.source && <p>Источник SLA: {processing.sla.source.kind === "terminal" ? `итоговый выбор в блоке «${definition?.blocks?.find(block => block.id === processing.sla.source?.block_id)?.title ?? "Завершение"}»` : processing.sla.source.kind === "block" ? `блок «${definition?.blocks?.find(block => block.id === processing.sla.source?.block_id)?.title ?? "SLA"}»` : processing.sla.source.kind === "transition" ? `ветвь блока «${definition?.blocks?.find(block => block.id === processing.sla.source?.block_id)?.title ?? "Шаг сценария"}»` : processing.sla.source.kind === "default" ? "настройка по умолчанию" : "действующая серверная политика"}.</p>}
     {processing.sla.first_response_due_preview && <p>Ответить до: {deadline(processing.sla.first_response_due_preview)}</p>}
     {processing.sla.resolution_due_preview && <p>Решить до: {deadline(processing.sla.resolution_due_preview)}</p>}
     {processing.ola?.ack_min || processing.ola?.processing_min ? <p>Подтверждение поддержки: {processing.ola.ack_min ?? "не определено"} мин.; обработка: {processing.ola.processing_min ?? "не определено"} мин.</p> : <p>Внутренние сроки поддержки не настроены.</p>}

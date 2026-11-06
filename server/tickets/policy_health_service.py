@@ -366,6 +366,7 @@ class PolicyHealthService:
                 "policy_code": _policy_code(sla_policy if isinstance(sla_policy, dict) else {}, template_context, "sla"),
                 "first_response_min": sla_target.first_response_min,
                 "resolution_min": sla_target.resolution_min,
+                "time_basis": "business" if calendar is not None else "calendar",
                 "first_response_due_preview": sla_service._due_at(now, sla_target.first_response_min, calendar).isoformat(),
                 "resolution_due_preview": sla_service._due_at(now, sla_target.resolution_min, calendar).isoformat(),
             }

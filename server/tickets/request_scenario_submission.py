@@ -104,9 +104,15 @@ def map_processing(definition, state):
             assignments = {"sla_profile": block.sla_profile, **assignments}
         for key, value in assignments.items():
             selected[key] = value
-            sources[key] = {"kind": "transition", "block_id": identifier, "transition_index": index}
+            sources[key] = ({"kind": "block", "block_id": identifier}
+                if key == "sla_profile" and block.kind == "sla" and not getattr(edge.processing, "sla_profile", None)
+                else {"kind": "transition", "block_id": identifier, "transition_index": index})
         trace.append({"block_id": identifier, "transition_index": index, "to": edge.to,
             "condition": edge.when.model_dump(mode="json") if edge.when else None, "matched": True, "assignments": assignments})
+    terminal = blocks[state.current_block_id]
+    if definition.schema_version == 4 and terminal.kind == "submit_ticket" and terminal.sla_profile is not None:
+        selected["sla_profile"] = terminal.sla_profile
+        sources["sla_profile"] = {"kind": "terminal", "block_id": terminal.id}
     result = {"assignment_mode": config.assignment_mode, "trace": trace, "condition_trace": condition_trace}
     for kind, items in (("route", config.routes), ("sla_profile", config.sla_profiles)):
         result[kind] = {"key": selected[kind], **items[selected[kind]].model_dump(mode="json"), "source": sources[kind]}
@@ -156,10 +162,17 @@ def build_scenario_submission(definition, state, *, session_id, version_id, sour
         "reported_context": deepcopy(state.results.get("_entry_point")),
     }
     if definition.schema_version == 4:
+        if snapshot["policy_refs"].get("sla"):
+            snapshot["sla_selection"] = {"kind": "policy", "key": snapshot["policy_refs"]["sla"], "source": {"kind": "default"}}
         for identifier in state.history:
             block = runtime.blocks[identifier]
             if block.kind == "sla" and block.policy_ref:
                 snapshot["policy_refs"]["sla"] = block.policy_ref
+                snapshot["sla_selection"] = {"kind": "policy", "key": block.policy_ref, "source": {"kind": "block", "block_id": identifier}}
+        terminal = runtime.blocks[state.current_block_id]
+        if terminal.policy_ref:
+            snapshot["policy_refs"]["sla"] = terminal.policy_ref
+            snapshot["sla_selection"] = {"kind": "policy", "key": terminal.policy_ref, "source": {"kind": "terminal", "block_id": terminal.id}}
     if (definition.execution_semantics if definition.schema_version == 4 else definition.schema_version) >= 2:
         snapshot["form_schema"] = derive_scenario_form(definition, projected)
     if definition.schema_version >= 2:

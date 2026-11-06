@@ -66,8 +66,10 @@ def document_issues(definition):
 
 async def document_reference_issues(session, definition):
     """Read-only import checks share the publication reference validator."""
+    from tickets.request_scenario_processing import scenario_sla_reference_issues
+    issues = await scenario_sla_reference_issues(session, definition)
     if definition.schema_version not in (3, 4) or definition.processing is None:
-        return []
+        return issues
     from sqlalchemy import select
     from app.db.models import TicketQueue, TicketBusinessCalendar
     from tickets.request_scenario_processing import validate_map_processing_references
@@ -75,7 +77,7 @@ async def document_reference_issues(session, definition):
               for row in await session.scalars(select(TicketQueue))]
     calendars = [{key: getattr(row, key) for key in ("id", "is_active", "timezone", "weekly_hours_json", "holidays_json")}
                  for row in await session.scalars(select(TicketBusinessCalendar))]
-    return validate_map_processing_references(definition, queues, calendars)
+    return issues + validate_map_processing_references(definition, queues, calendars)
 
 
 def export_scenario_document(definition, format):

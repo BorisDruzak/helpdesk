@@ -55,7 +55,7 @@ def extract_fragment(definition, block_ids):
             for kind in ('route', 'sla_profile'):
                 if processing.get(kind):
                     deps.add((kind, processing[kind]))
-        if block['kind'] == 'sla':
+        if block['kind'] in {'sla', 'submit_ticket'}:
             for kind in ('sla_profile', 'policy_ref'):
                 if block.get(kind):
                     deps.add((kind, block[kind]))
@@ -147,7 +147,7 @@ def insert_fragment(destination, fragment, *, position, mappings):
             for kind in ('route', 'sla_profile'):
                 if settings.get(kind):
                     settings[kind] = resolved[(kind, settings[kind])]
-        if block['kind'] == 'sla':
+        if block['kind'] in {'sla', 'submit_ticket'}:
             for kind in ('sla_profile', 'policy_ref'):
                 if block.get(kind):
                     block[kind] = resolved[(kind, block[kind])]
