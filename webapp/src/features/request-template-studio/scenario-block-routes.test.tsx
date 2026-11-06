@@ -4,6 +4,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioBlockRoutes } from "./scenario-block-routes";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 afterEach(cleanup);
+it("identifies a missing Else route even when answer branches already exist", () => {
+  const definition: ScenarioDraftDefinition = { scenario_key: "s", title: "Test", service_code: "it", offering_full_code: "it.test", process_binding: { request_template_key: "test" }, blocks: [
+    { id: "d", kind: "decision", title: "Условие", transitions: [{ to: "end", when: { op: "eq", source: "answer", field: "mode", value: "browser" } }] },
+    { id: "end", kind: "submit_ticket", title: "В поддержку" },
+  ] };
+  render(<ScenarioBlockRoutes definition={definition} block={definition.blocks![0]} disabled={false} onChange={vi.fn()} />);
+  expect(screen.getByText(/Не настроен запасной переход «Иначе»/)).toBeVisible();
+});
 it("collapses branches independently with human summaries and no scenario writes", () => {
   const definition: ScenarioDraftDefinition = { schema_version: 2, scenario_key: "s", title: "Test", service_code: "it", offering_full_code: "it.test", process_binding: { request_template_key: "test" }, entry_block_id: "q", blocks: [
     { id: "q", kind: "form_page", title: "Вопрос", fields: [{ key: "private_key", type: "select", label: "Что не работает?", options: [{ value: "mail_raw", label: "Почта" }, { value: "vpn_raw", label: "VPN" }] }], transitions: [{ to: "d" }] },

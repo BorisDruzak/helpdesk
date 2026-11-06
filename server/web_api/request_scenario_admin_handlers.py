@@ -44,6 +44,52 @@ def _id(request):
     return TypeAdapter(Identifier).validate_python(request.match_info["identifier"])
 
 
+def _validation_issues(exc):
+    # Never expose Pydantic input, validator exception text, patterns or context.
+    messages = {"missing": "Заполните обязательное поле.", "extra_forbidden": "Удалите неподдерживаемую настройку.",
+                "literal_error": "Выберите одно из допустимых значений.",
+                "string_pattern_mismatch": "Используйте допустимый формат значения.",
+                "string_type": "Введите текст.", "int_type": "Введите целое число.",
+                "int_parsing": "Введите целое число.", "bool_type": "Выберите да или нет.",
+                "finite_number": "Введите конечное число.", "union_tag_invalid": "Выберите поддерживаемый тип блока или условия.",
+                "union_tag_not_found": "Укажите тип блока или условия."}
+    issues = []
+    for item in exc.errors(include_input=False, include_url=False)[:100]:
+        code = item["type"]
+        message = messages.get(code, "Проверьте тип, формат и допустимый диапазон значения.")
+        if code == "value_error":
+            reasons = {
+                "choice field requires options": "Добавьте варианты ответа для вопроса с выбором.",
+                "option values must be unique": "Значения вариантов ответа должны различаться.",
+                "process roles must be unique": "Удалите повторяющиеся роли вопроса.",
+                "lower validation bound exceeds upper": "Минимальное значение не должно превышать максимальное.",
+                "calendar time must not select a business calendar": "Для календарных сроков уберите рабочий календарь.",
+                "offering must belong to the selected service": "Выберите услугу из раздела сценария.",
+                "definition exceeds nesting or item limit": "Уменьшите число элементов или вложенность карты.",
+                "definition exceeds byte limit": "Уменьшите размер карты: превышен допустимый объём данных.",
+                "attachment URL must identify its canonical asset": "Удалите и заново добавьте вложение: ссылка не соответствует файлу.",
+                "answer requires field; current_result permits only null or omitted field": "В условии по ответу выберите вопрос; в условии по результату шага уберите вопрос.",
+                "schema_version must be an integer": "Версия карты должна быть целым числом.",
+                "map-owned processing requires schema_version 3": "Обработка на карте требует версию схемы 3.",
+                "processing effects require schema_version 2": "Влияние ответов на обработку требует версию схемы 2 или 3.",
+            }
+            message = reasons.get(str(item.get("ctx", {}).get("error", "")), message)
+        # Only numeric bounds from built-in constraint errors are public.
+        limits = {"string_too_long": ("max_length", "Сократите текст: не более {} символов."),
+                  "string_too_short": ("min_length", "Введите текст: не менее {} символов."),
+                  "too_long": ("max_length", "Уменьшите список: не более {} элементов."),
+                  "too_short": ("min_length", "Дополните список: не менее {} элементов."),
+                  "greater_than_equal": ("ge", "Укажите число не меньше {}."),
+                  "less_than_equal": ("le", "Укажите число не больше {}.")}
+        if code in limits:
+            key, template = limits[code]
+            bound = item.get("ctx", {}).get(key)
+            if type(bound) in (int, float):
+                message = template.format(bound)
+        issues.append({"code": code, "path": ".".join(str(part)[:100] for part in item["loc"])[:1000], "message": message})
+    return issues
+
+
 async def _run(request, operation, *, write=False):
     try:
         async with get_session() as session:
@@ -61,7 +107,9 @@ async def _run(request, operation, *, write=False):
         return web.json_response({"status": "error", "error_code": "REVISION_CONFLICT"}, status=409)
     except ScenarioInputError as exc:
         return web.json_response({"status": "error", "error_code": "INVALID_ANSWERS", "errors": exc.errors}, status=400)
-    except (ValidationError, ValueError, TypeError):
+    except ValidationError as exc:
+        return web.json_response({"status": "error", "error_code": "VALIDATION_ERROR", "issues": _validation_issues(exc)}, status=400, headers={"Cache-Control": "no-store"})
+    except (ValueError, TypeError):
         return web.json_response({"status": "error", "error_code": "VALIDATION_ERROR"}, status=400)
     except DBAPIError as exc:
         code = getattr(exc.orig, "sqlstate", None)

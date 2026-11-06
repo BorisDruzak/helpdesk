@@ -1,5 +1,6 @@
 import type { AdminServiceCatalogOffering, AdminServiceCatalogService } from "../service-catalog/api";
 import { RequestStudioApiError } from "./api";
+import type { ScenarioApiIssue } from "./scenario-issues";
 import type { ScenarioAnswerRequest, ScenarioAttachment, ScenarioBlock, ScenarioDraftDefinition, ScenarioEntryPoint } from "./scenario-contract";
 import type { RequestFormField } from "../requester/types";
 import type { DiagnosticFailureStatus } from "./scenario-diagnostics";
@@ -71,7 +72,7 @@ export async function uploadScenarioAttachment(id: string, file: File, blockId: 
   return payload.data;
 }
 export class ScenarioApiError extends RequestStudioApiError {
-  constructor(status: number, code?: string, public issues: { code: string; path: string }[] = []) {
+  constructor(status: number, code?: string, public issues: ScenarioApiIssue[] = []) {
     super("Не удалось выполнить действие в Студии", status, code);
   }
 }
@@ -80,7 +81,7 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
     ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
   const payload = response.headers.get("content-type")?.includes("application/json") ? await response.json() : null;
   if (!response.ok || payload?.status !== "success") {
-    const issues = Array.isArray(payload?.issues) ? payload.issues.filter((item: unknown): item is { code: string; path: string } => !!item && typeof item === "object" && "code" in item && typeof item.code === "string" && "path" in item && typeof item.path === "string").slice(0, 100).map((item: { code: string; path: string }) => ({ code: item.code, path: item.path })) : [];
+    const issues = Array.isArray(payload?.issues) ? payload.issues.filter((item: unknown): item is ScenarioApiIssue => !!item && typeof item === "object" && "code" in item && typeof item.code === "string" && "path" in item && typeof item.path === "string").slice(0, 100).map((item: ScenarioApiIssue) => ({ code: item.code, path: item.path, ...(typeof item.message === "string" ? { message: item.message.slice(0, 1000) } : {}) })) : [];
     throw new ScenarioApiError(response.status, payload?.error_code, issues);
   }
   return payload.data as T;

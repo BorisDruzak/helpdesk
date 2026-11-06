@@ -8,7 +8,7 @@ export function scenarioIssueDestination(issue: Pick<ScenarioPublicationPreview[
   const entrance = definition.entry_points?.find(entry => path === `entry_points.${entry.key}` || path.startsWith(`entry_points.${entry.key}.`));
   if (entrance) return { step: 1, label: entrance.title, blockId: entrance.target_block_id };
   const block = definition.blocks?.find(item => path === `blocks.${item.id}` || path.startsWith(`blocks.${item.id}.`));
-  if (block) return { step: 1, label: block.title, blockId: block.id, transitions: path.endsWith(".transitions") };
+  if (block) return { step: 1, label: block.title, blockId: block.id, transitions: issue.code !== "missing_fallback" && path.endsWith(".transitions") };
   const policy: Partial<Record<string, ScenarioPolicyKind>> = { routing_unavailable: "routing", sla_unavailable: "sla", closure_missing: "closure", visibility_missing: "visibility", approval_unavailable: "approval" };
   const kind = policy[issue.code];
   const labels: Partial<Record<ScenarioPolicyKind, string>> = { routing: "Маршрут и очередь", sla: "Сроки обслуживания", closure: "Закрытие обращения", visibility: "Видимость обращения", approval: "Согласование" };

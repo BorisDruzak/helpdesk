@@ -21,6 +21,24 @@ function copyHook() {
 }
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("reports the failed draft field and preserves the local definition", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "error", error_code: "VALIDATION_ERROR", issues: [{ code: "string_too_long", path: "definition.blocks.0.instruction.title", message: "Сократите текст: не более 300 символов." }] }), { status: 400, headers: { "content-type": "application/json" } })));
+  const hook = copyHook();
+  const before = hook.result.current.definition;
+  await act(async () => { await hook.result.current.save.mutateAsync().catch(() => {}); });
+  expect(hook.result.current.error).toContain("Помощь");
+  expect(hook.result.current.error).toContain("Название шага");
+  expect(hook.result.current.error).toContain("не более 300 символов");
+  expect(hook.result.current.definition).toBe(before);
+  expect(hook.result.current.conflict).toBe(false);
+});
+it("does not call every HTTP 409 a revision conflict", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "error", error_code: "CONSTRAINT_CONFLICT" }), { status: 409, headers: { "content-type": "application/json" } })));
+  const hook = copyHook();
+  await act(async () => { await hook.result.current.save.mutateAsync().catch(() => {}); });
+  expect(hook.result.current.conflict).toBe(false);
+  expect(hook.result.current.error).toContain("связи с каталогом");
+});
 it("does not mark a round-trip definition dirty when only object key order changes", () => {
   const client = new QueryClient();
   function Wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={client}>{children}</QueryClientProvider>; }

@@ -43,6 +43,7 @@ export function ScenarioBlockRoutes({ definition, block, disabled, onChange, sou
   return <section className="space-y-3" aria-label="Ветви логического блока">
     {block.kind === "decision" && <ScenarioAnswerBranches definition={definition} block={block} disabled={disabled} sourceFieldKey={sourceFieldKey} onSourceField={onSourceField} onChange={onChange} onAdd={onAddAnswer} />}
     <h3 className="font-semibold">Куда идти дальше</h3>
+    {block.kind === "decision" && !fallback && <p role="status" className="rounded border border-amber-300 p-2 text-sm">Не настроен запасной переход «Иначе». Ветки по ответам сохранятся, но для проверки и публикации выберите следующий шаг в «Иначе» ниже.</p>}
     {error && <p role="alert">{error}</p>}
     <p className="text-xs text-slate-500">Каждая ветвь — ответ и следующий шаг. Нажмите на неё, чтобы изменить. Следующим шагом может быть другое условие. Если ни одна ветвь не подходит, сервер использует «Иначе».</p>
     <p className="text-xs text-slate-500">Если подходят несколько ветвей, сервер выбирает первую по приоритету: меньшее число раньше, без числа — после заданных приоритетов; при равенстве действует порядок в списке. Расположение на карте на выбор не влияет.</p>

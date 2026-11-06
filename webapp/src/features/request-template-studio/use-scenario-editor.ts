@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RequestStudioApiError } from "./api";
-import { archiveScenario, createScenario, createServiceScenario, fetchScenarioDetail, saveScenario, type ScenarioDetail } from "./scenario-api";
+import { archiveScenario, createScenario, createServiceScenario, fetchScenarioDetail, saveScenario, ScenarioApiError, type ScenarioDetail } from "./scenario-api";
+import { scenarioIssueText } from "./scenario-issues";
 import type { ScenarioAttachment, ScenarioDraftDefinition } from "./scenario-contract";
 
 function semanticJson(value: unknown): string {
@@ -52,8 +53,23 @@ export function useScenarioEditor(autosaveEnabled = false, mapFirst = false) {
     cache.setQueryData(["scenario-detail", value.scenario.id], value);
     setMessage(`Черновик сохранён. Ревизия ${value.draft.revision}.`); await cache.invalidateQueries({ queryKey: ["scenario-catalog"] }); }, onError: value => {
     if (saveSequence.current !== requestSequence.current) return;
-    const isConflict = value instanceof RequestStudioApiError && value.status === 409;
-    setConflict(isConflict); setMessage(""); setError(value instanceof RequestStudioApiError && value.errorCode === "SERVICE_PROCESSING_DEFAULT_REQUIRED" ? "Для раздела не определена обработка новых услуг. Укажите настройки обработки по умолчанию в разделе каталога. Карта сохранена в редакторе." : isConflict ? "Черновик изменён другим администратором. Локальные изменения сохранены в редакторе; загрузка серверной версии заменит их." : "Черновик не сохранён. Проверьте название, раздел и настройки, затем повторите.");
+    const code = value instanceof RequestStudioApiError ? value.errorCode : undefined;
+    const isConflict = code === "REVISION_CONFLICT";
+    const reasons: Record<string, string> = {
+      SERVICE_PROCESSING_DEFAULT_REQUIRED: "Для раздела не определена обработка новых услуг. Укажите настройки обработки по умолчанию в разделе каталога.",
+      CONSTRAINT_CONFLICT: "Проверьте связи с каталогом: связанный объект удалён или такое значение уже существует.",
+      CATALOG_BINDING_INVALID: "Раздел, услуга и тип обращения не соответствуют друг другу. Проверьте назначение сценария.",
+      CATALOG_BINDING_IMMUTABLE: "Нельзя изменить привязку сохранённого сценария к разделу или услуге.",
+      CATEGORY_BINDING_INVALID: "Категория недоступна или принадлежит другому разделу. Выберите категорию в разделе сценария.",
+      SERVICE_NOT_FOUND: "Раздел каталога не найден. Выберите существующий раздел.",
+      OFFERING_NOT_FOUND: "Услуга каталога не найдена. Обновите каталог.",
+      TEMPLATE_NOT_FOUND: "Тип обращения не найден. Выберите существующий тип.",
+      PAYLOAD_TOO_LARGE: "Размер карты превышает 1 МБ. Сократите текст или число шагов.",
+    };
+    const issues = value instanceof ScenarioApiError ? value.issues : [];
+    const reason = issues.length ? issues.map(issue => scenarioIssueText(issue, latestDefinition.current ?? undefined)).join("\n")
+      : reasons[code ?? ""] ?? (value instanceof RequestStudioApiError ? value.status === 401 || value.status === 403 ? "Нет доступа к сохранению. Проверьте вход и права администратора." : value.status >= 500 ? "Сервер не смог сохранить карту. Повторите сохранение позже." : `Сервер отклонил сохранение (${code || `HTTP ${value.status}`}).` : "Нет ответа от сервера. Проверьте соединение и повторите сохранение.");
+    setConflict(isConflict); setMessage(""); setError(isConflict ? "Черновик изменён другим администратором. Локальные изменения сохранены в редакторе; загрузка серверной версии заменит их." : `Черновик не сохранён. ${reason}\nЛокальные изменения остаются в редакторе.`);
   } });
   useEffect(() => {
     if (!autosaveEnabled || !detail || detail.scenario.archived || !dirty || loading || save.isPending || conflict || error || !definition?.title.trim() || !definition.offering_full_code) return;

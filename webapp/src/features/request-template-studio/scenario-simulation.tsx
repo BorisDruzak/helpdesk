@@ -8,6 +8,7 @@ import { diagnosticFailureLabels, type DiagnosticFailureStatus } from "./scenari
 import { ScenarioProcessingResult } from "./scenario-processing-result";
 import { ScenarioFields } from "../requester/scenario-fields";
 import { ScenarioSimulationComparison, ScenarioSimulationTrace } from "./scenario-simulation-trace";
+import { scenarioIssueText, type ScenarioApiIssue } from "./scenario-issues";
 
 export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definition, onIssue, onState }: { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; onIssue?: (target: ScenarioIssueDestination) => void; onState?: (current: string, path: string[]) => void }) {
   const [entryPointKey, setEntryPointKey] = useState("");
@@ -18,7 +19,7 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [issues, setIssues] = useState<{ code: string; path: string }[]>([]);
+  const [issues, setIssues] = useState<ScenarioApiIssue[]>([]);
   const [diagnosticOutcomes, setDiagnosticOutcomes] = useState<Record<string, DiagnosticFailureStatus>>({});
   const diagnostics = (definition?.blocks || []).filter(item => item.kind === "diagnostic");
   const sequence = useRef(0);
@@ -77,8 +78,7 @@ export function ScenarioSimulationPanel({ id, revision, dirty, disabled, definit
     {result?.simulation_scope?.limited_scope && <p role="status" className="rounded border border-amber-300 p-3">Проверяется только допустимая часть выбранного входа. В черновике есть ошибки; публикация всей карты заблокирована. Исключённые шаги: {result.simulation_scope.excluded_block_ids.map(id => definition?.blocks?.find(block => block.id === id)?.title ?? "Шаг").join(", ")}.</p>}
     {issues.map((issue, index) => {
       const target = definition ? scenarioIssueDestination(issue, definition) : null;
-      const blockTitle = definition?.blocks?.find(block => block.id === target?.blockId)?.title;
-      return <div key={index} className="rounded border border-amber-300 p-3"><p>{blockTitle ? `Шаг «${blockTitle}»: ` : ""}{issue.code === "missing_fallback" ? "Не настроен переход дальше. Укажите следующий шаг и переход по умолчанию для возможных результатов." : "Проверьте настройки шага и его переходы."}</p>{target && onIssue && <Button variant="outline" onClick={() => onIssue(target)}>Исправить шаг</Button>}</div>;
+      return <div key={index} className="rounded border border-amber-300 p-3"><p>{scenarioIssueText(issue, definition)}</p>{target && onIssue && <Button variant="outline" onClick={() => onIssue(target)}>Исправить шаг</Button>}</div>;
     })}
     {Object.entries(result?.state.results || {}).filter(([, value]) => value !== null && typeof value === "object" && "simulated" in value && value.simulated === true && "operation_created" in value && value.operation_created === false).map(([key, value]) => {
       const status = (value as { status?: string }).status;

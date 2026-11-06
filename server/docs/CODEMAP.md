@@ -273,6 +273,11 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   `app/db/request_scenario_models.py`, additive migration 147. See
   `GUIDED_REQUEST_SCENARIOS.md` for limits, immutable version/session pins,
   cleanup classification and the 147 → 146 rollback boundary.
+  `web_api/request_scenario_admin_handlers.py` returns bounded `issues`
+  (`code`, Pydantic `path`, safe Russian `message`) on DTO validation failures,
+  without submitted values or exception details. Frontend `scenario-issues.ts`
+  resolves indexed/graph paths to step/field labels and explains the required
+  explicit Else route separately from configured conditional branches.
 - Studio materials and answer files: migration155 adds `RequestStudioAsset`;
   `tickets/request_scenario_assets.py` validates scenario material refs, projects
   owned session files and claims retained visible answers into canonical ticket
