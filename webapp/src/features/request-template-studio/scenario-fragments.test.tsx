@@ -17,6 +17,37 @@ it("blocks built-in edits for read-only users", () => {
  render(<ScenarioFragments definition={definition} detail={null} dirty={false} disabled position={{x:0,y:0}} onLocalInsert={vi.fn()} onInserted={vi.fn()} />);
  expect(screen.getByRole("button", {name:"Описание проблемы со скриншотом"})).toBeDisabled();
 });
+it("requires explicit ordinary-block mapping for an external attachment target", async () => {
+ const api = await import("./scenario-fragment-api");
+ const destination = { ...definition, blocks: [{ id: "end", kind: "submit_ticket" as const, title: "Обращение" }, { id: "sla", kind: "sla_attachment" as const, title: "Настройка" }] };
+ const detail = { scenario: { id: "s1", scenario_key: "s", service_code: "it", offering_full_code: "it.s", category_id: null, title: "S", description: "", archived: false, enabled: true, published_version_id: null }, draft: { revision: 2, definition: destination } };
+ const fragment = { fragment: { id: "attachment-fragment", title: "Настройки SLA", revision: 1, block_count: 1, source_title: "Источник", archived: false }, definition: destination, external_dependencies: [{ kind: "attachment_target", key: "old", label: "Связанный вопрос" }] };
+ vi.mocked(api.fetchScenarioFragments).mockResolvedValueOnce({ items: [fragment.fragment], total: 1 }); vi.spyOn(api, "fetchScenarioFragment").mockResolvedValueOnce(fragment);
+ render(<ScenarioFragments definition={destination} detail={detail} dirty={false} disabled={false} position={{ x: 0, y: 0 }} onLocalInsert={vi.fn()} onInserted={vi.fn()} />);
+ fireEvent.click(await screen.findByRole("button", { name: /Настройки SLA/ }));
+ const insert = await screen.findByRole("button", { name: "Вставить фрагмент" }); expect(insert).toBeDisabled();
+ fireEvent.change(screen.getByLabelText("Блок для настройки: Связанный вопрос"), { target: { value: "end" } });
+ expect(insert).toBeEnabled(); expect(screen.queryByRole("option", { name: "Настройка" })).not.toBeInTheDocument();
+});
+it("keeps SLA and routing policies with identical codes in independent mappings", async () => {
+ const api = await import("./scenario-fragment-api");
+ const registry = await import("../forms-builder/api");
+ vi.spyOn(registry, "fetchHelpdeskModelRegistry").mockResolvedValueOnce({ policies: { sla: [{ code: "shared", title: "SLA shared", is_active: true, published_at: "now" }], routing: [{ code: "shared", title: "Routing shared", is_active: true, published_at: "now" }] } } as unknown as Awaited<ReturnType<typeof registry.fetchHelpdeskModelRegistry>>);
+ const destination = { ...definition, blocks: [{ id: "end", kind: "submit_ticket" as const, title: "Обращение" }] };
+ const detail = { scenario: { id: "s1", scenario_key: "s", service_code: "it", offering_full_code: "it.s", category_id: null, title: "S", description: "", archived: false, enabled: true, published_version_id: null }, draft: { revision: 2, definition: destination } };
+ const fragment = { fragment: { id: "policies", title: "Разные правила", revision: 1, block_count: 2, source_title: "Источник", archived: false }, definition: destination, external_dependencies: [{ kind: "sla_policy_ref", key: "shared", label: "Исходный SLA" }, { kind: "routing_policy_ref", key: "shared", label: "Исходный маршрут" }] };
+ vi.mocked(api.fetchScenarioFragments).mockResolvedValueOnce({ items: [fragment.fragment], total: 1 }); vi.spyOn(api, "fetchScenarioFragment").mockResolvedValueOnce(fragment);
+ const insertApi = vi.spyOn(api, "insertSavedScenarioFragment").mockResolvedValueOnce(detail);
+ render(<ScenarioFragments definition={destination} detail={detail} dirty={false} disabled={false} position={{ x: 0, y: 0 }} onLocalInsert={vi.fn()} onInserted={vi.fn()} />);
+ fireEvent.click(await screen.findByRole("button", { name: /Разные правила/ }));
+ await waitFor(() => expect(screen.getByRole("option", { name: "SLA shared" })).toBeInTheDocument());
+ const insert = screen.getByRole("button", { name: "Вставить фрагмент" });
+ fireEvent.change(screen.getByLabelText("Правило SLA: Исходный SLA"), { target: { value: "shared" } }); expect(insert).toBeDisabled();
+ fireEvent.change(screen.getByLabelText("Правило маршрутизации: Исходный маршрут"), { target: { value: "shared" } }); expect(insert).toBeEnabled();
+ fireEvent.click(insert);
+ await waitFor(() => expect(insertApi).toHaveBeenCalled());
+ expect(insertApi.mock.lastCall![5]).toMatchObject({ sla_policy_refs: { shared: "shared" }, routing_policy_refs: { shared: "shared" }, policy_refs: {} });
+});
 it("requires explicit fact mapping and a saved v4 draft before insertion", async () => {
  const api = await import("./scenario-fragment-api");
  const destination = {...definition, blocks:[{id:"b",kind:"finish" as const,title:"Конец",transitions:[]}]};

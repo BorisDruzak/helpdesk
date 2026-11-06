@@ -1,19 +1,21 @@
 import { uniqueButtonLabel } from "./scenario-v4-model";
 import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioTransition } from "./scenario-contract";
 import { addBlock, newBlock, newKey, removeBlock } from "./scenario-builder-model";
+import { isPolicyAttachment, reassignPolicyAttachments } from "./scenario-policy-attachments-model";
 
 export const mapPalette: { kind: ScenarioBlock["kind"]; label: string }[] = [
   { kind: "form_page", label: "Вопрос" }, { kind: "instruction", label: "Инструкция" },
   { kind: "decision", label: "Условие" }, { kind: "resolution_check", label: "Проверка результата" },
   { kind: "submit_ticket", label: "Результат" },
-  { kind: "navigation", label: "Переходы · кнопки" }, { kind: "sla", label: "SLA" },
+  { kind: "navigation", label: "Переходы · кнопки" }, { kind: "sla_attachment", label: "SLA" }, { kind: "routing_attachment", label: "Маршрут" },
 ];
-export const mapKindLabel = (kind: ScenarioBlock["kind"]) => kind === "finish" ? "Результат" : mapPalette.find(item => item.kind === kind)?.label ?? kind;
+export const mapKindLabel = (kind: ScenarioBlock["kind"]) => kind === "finish" ? "Результат" : kind === "sla" ? "SLA · последовательный блок" : mapPalette.find(item => item.kind === kind)?.label ?? kind;
 export const terminal = (kind: ScenarioBlock["kind"]) => kind === "finish" || kind === "submit_ticket";
 
 export function connectStart(definition: ScenarioDraftDefinition, target: string) {
   const block = definition.blocks?.find(item => item.id === target);
   if (!block) throw new Error("Выберите существующий начальный блок");
+  if (isPolicyAttachment(block)) throw new Error("Настройка не может быть началом маршрута. Прикрепите её к шагу.");
   const entries = definition.entry_points ?? [];
   if (entries.some(entry => entry.target_block_id === target)) return definition.entry_block_id ? definition : { ...definition, entry_block_id: target };
   if (entries.length >= 64) throw new Error("Достигнут лимит 64 точек входа");
@@ -23,6 +25,7 @@ export function connectStart(definition: ScenarioDraftDefinition, target: string
 }
 export function reconnectStart(definition: ScenarioDraftDefinition, key: string | null, target: string) {
   if (!definition.blocks?.some(item => item.id === target)) throw new Error("Выберите существующий начальный блок");
+  if (isPolicyAttachment(definition.blocks.find(item => item.id === target)!)) throw new Error("Настройка не может быть началом маршрута. Прикрепите её к шагу.");
   if (key === null) return { ...definition, entry_block_id: target };
   if (!definition.entry_points?.some(entry => entry.key === key)) throw new Error("Точка входа не найдена");
   const entry_points = definition.entry_points.map(entry => entry.key === key ? { ...entry, target_block_id: target } : entry);
@@ -60,7 +63,7 @@ export function nearMapPosition(definition: ScenarioDraftDefinition, center: { x
   return origin;
 }
 export function requireAcyclic(definition: ScenarioDraftDefinition) {
-  const blocks = new Map((definition.blocks ?? []).map(block => [block.id, block]));
+  const blocks = new Map((definition.blocks ?? []).filter(block => !isPolicyAttachment(block)).map(block => [block.id, block]));
   const active = new Set<string>(), visited = new Set<string>();
   function visit(id: string) {
     if (active.has(id)) throw new Error("Соединение создаёт запрещённый цикл. Возврат к вопросу выполняется через навигацию сеанса.");
@@ -73,6 +76,7 @@ export function requireAcyclic(definition: ScenarioDraftDefinition) {
   return definition;
 }
 export function replaceTransitions(definition: ScenarioDraftDefinition, id: string, transitions: ScenarioTransition[]) {
+  if (isPolicyAttachment(definition.blocks?.find(block => block.id === id)?.kind ?? "instruction") || transitions.some(edge => isPolicyAttachment(definition.blocks?.find(block => block.id === edge.to)?.kind ?? "instruction"))) throw new Error("Настройку нужно прикрепить к блоку отдельной связью, а не переходом маршрута.");
   return requireAcyclic({ ...definition, blocks: definition.blocks?.map(block => block.id === id ? { ...block, transitions } : block) });
 }
 export function reconnectTransition(definition: ScenarioDraftDefinition, source: string, index: number, target: string) {
@@ -82,6 +86,7 @@ export function reconnectTransition(definition: ScenarioDraftDefinition, source:
 }
 export function connectBlocks(definition: ScenarioDraftDefinition, source: string, target: string) {
   const block = definition.blocks?.find(item => item.id === source);
+  if (isPolicyAttachment(block?.kind ?? "instruction") || isPolicyAttachment(definition.blocks?.find(item => item.id === target)?.kind ?? "instruction")) throw new Error("Настройку нужно прикрепить к блоку отдельной связью, а не переходом маршрута.");
   if (!block || terminal(block.kind) || !definition.blocks?.some(item => item.id === target)) throw new Error("Этот блок нельзя соединить с выбранной целью");
   if ((block.transitions?.length ?? 0) >= (block.transition_mode === "buttons" ? 10 : 30)) throw new Error("Достигнут лимит переходов");
   if (block.kind === "sla" && block.transitions?.length) throw new Error("У блока SLA может быть только один следующий шаг");
@@ -95,6 +100,7 @@ export function connectBlocks(definition: ScenarioDraftDefinition, source: strin
   return replaceTransitions(definition, source, [...block.transitions ?? [], edge]);
 }
 export function insertOnTransition(definition: ScenarioDraftDefinition, source: string, index: number, kind: ScenarioBlock["kind"], position?: { x: number; y: number }) {
+  if (isPolicyAttachment(kind)) throw new Error("Добавьте настройку из библиотеки и прикрепите её к блоку. Настройки не вставляются в переходы.");
   if (["sla", "navigation"].includes(kind) && definition.schema_version !== 4) throw new Error("Сначала включите новые возможности карты. Существующие услуги сохраняют прежние правила.");
   if (terminal(kind) || kind === "resolution_check") throw new Error("Этот шаг завершает маршрут или требует отдельных ветвей. Добавьте его из библиотеки и явно настройте переходы.");
   const from = definition.blocks?.find(item => item.id === source);
@@ -111,14 +117,16 @@ export function insertOnTransition(definition: ScenarioDraftDefinition, source: 
   return requireAcyclic(next);
 }
 export function addMapBlock(definition: ScenarioDraftDefinition, kind: ScenarioBlock["kind"], position: { x: number; y: number }) {
-  if (["sla", "navigation"].includes(kind) && definition.schema_version !== 4) throw new Error("Сначала включите новые возможности карты. Существующие услуги сохраняют прежние правила.");
+  if (["sla", "navigation", "sla_attachment", "routing_attachment"].includes(kind) && definition.schema_version !== 4) throw new Error("Сначала включите новые возможности карты. Существующие услуги сохраняют прежние правила.");
   if ((definition.blocks?.length ?? 0) >= 256) throw new Error("Достигнут лимит 256 шагов карты");
-  const next = addBlock(definition, kind, null);
+  const next = isPolicyAttachment(kind) ? { ...definition, blocks: [...definition.blocks ?? [], { id: newKey("block"), title: kind === "sla_attachment" ? "SLA" : "Маршрут", kind } as ScenarioBlock] } : addBlock(definition, kind, null);
   return positionBlock(next, next.blocks![next.blocks!.length - 1].id, position);
 }
 /** Contextual addition is one undoable mutation. Existing branches are never guessed. */
 export function appendMapStep(definition: ScenarioDraftDefinition, source: string | null, kind: ScenarioBlock["kind"]): ScenarioDraftDefinition {
+  if (isPolicyAttachment(kind)) throw new Error("Добавьте настройку из библиотеки и прикрепите её к блоку. Настройки не являются следующим шагом.");
   const from = definition.blocks?.find(block => block.id === source);
+  if (from && isPolicyAttachment(from)) throw new Error("Настройку нужно прикрепить к блоку. У неё нет следующего шага.");
   if (source && (!from || terminal(from.kind))) throw new Error("После результата маршрут завершён. Добавьте шаг перед результатом.");
   if (from?.transitions?.length) {
     if (from.transitions.length !== 1) throw new Error("У блока несколько ветвей. Нажмите «+» на нужной стрелке.");
@@ -132,6 +140,8 @@ export function appendMapStep(definition: ScenarioDraftDefinition, source: strin
   return next;
 }
 export function deleteMapBlock(definition: ScenarioDraftDefinition, id: string, replacement: string | null, entranceAction?: "remove" | "reassign", referenceAction: "redirect" | "detach" = "redirect") {
+  if (replacement && isPolicyAttachment(definition.blocks?.find(block => block.id === replacement)?.kind ?? "instruction")) throw new Error("Выберите шаг или результат: настройка не может заменить удаляемый блок.");
+  definition = reassignPolicyAttachments(definition, id, referenceAction === "detach" ? null : replacement);
   const entrances = definition.entry_points ?? [];
   if (entrances.some(entry => entry.target_block_id === id) && !entranceAction) throw new Error("Блок используется точкой входа. Выберите явное переназначение или удаление привязок из черновика.");
   if (entranceAction === "reassign" && (!replacement || replacement === id || !definition.blocks?.some(block => block.id === replacement))) throw new Error("Выберите другой начальный блок для точек входа");

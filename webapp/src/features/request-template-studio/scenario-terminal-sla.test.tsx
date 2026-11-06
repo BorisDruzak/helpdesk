@@ -24,6 +24,15 @@ it("lets an author select a final profile and test the path", () => {
  expect(change.mock.lastCall![0]).toMatchObject({ sla_profile: "fast" });
  fireEvent.click(screen.getByRole("button", { name: "Проверить путь" })); expect(test).toHaveBeenCalledOnce();
 });
+it("selects and clears an explicit final route independently of SLA", () => {
+ const definition = slaDefinition(), change = vi.fn(), block = { ...definition.blocks![1], kind: "submit_ticket" as const, sla_profile: "fast", route: "desk" };
+ render(<ScenarioTerminalSla block={block} definition={definition} disabled={false} onChange={change} />);
+ fireEvent.change(screen.getByLabelText("Маршрут при создании обращения"), { target: { value: "" } });
+ expect(change.mock.lastCall![0]).not.toHaveProperty("route"); expect(change.mock.lastCall![0]).not.toHaveProperty("routing_policy_ref");
+ expect(change.mock.lastCall![0]).toMatchObject({ sla_profile: "fast" });
+ fireEvent.change(screen.getByLabelText("Маршрут при создании обращения"), { target: { value: "desk" } });
+ expect(change.mock.lastCall![0]).toMatchObject({ route: "desk", sla_profile: "fast" });
+});
 it("loads only published policy choices and never invents policy durations", async () => {
  const definition = slaDefinition(); definition.processing = null; const change = vi.fn();
  render(<ScenarioTerminalSla block={definition.blocks![1]} definition={definition} disabled={false} onChange={change} />);

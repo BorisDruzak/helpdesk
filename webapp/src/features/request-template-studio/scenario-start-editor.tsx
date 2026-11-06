@@ -1,6 +1,7 @@
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { ScenarioPurpose } from "./scenario-purpose";
+import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 import type { ScenarioCatalog } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
@@ -16,7 +17,7 @@ export function ScenarioStartEditor({ section, onSection, onEntry, onConnect, on
         <p className="text-sm text-slate-500">Каждый вход открывает свой первый шаг. Условия дальнейшего пути задаются на связях карты.</p>
         {(definition.entry_points ?? []).map(entry => <Button key={entry.key} variant="outline" aria-label={`Настроить вход ${entry.title}`} onClick={() => onEntry(entry.key, entry.target_block_id)}>{entry.title}{entry.enabled === false ? " · отключён" : ""}</Button>)}
         {!definition.entry_points?.length && <p>Входы пока не созданы.</p>}
-        <label className="block">Добавить вход к шагу<Select disabled={disabled} value="" onChange={event => onConnect(event.target.value)}><option value="">Выберите блок на карте</option>{(definition.blocks ?? []).map(block => <option key={block.id} value={block.id}>{block.title}</option>)}</Select></label>
+        <label className="block">Добавить вход к шагу<Select disabled={disabled} value="" onChange={event => onConnect(event.target.value)}><option value="">Выберите блок на карте</option>{(definition.blocks ?? []).filter(block=>!isPolicyAttachment(block)).map(block => <option key={block.id} value={block.id}>{block.title}</option>)}</Select></label>
       </div>
     </details>
     <Button variant="outline" onClick={onProcessing}>Обработка и SLA</Button>

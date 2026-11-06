@@ -4,6 +4,12 @@ import { ScenarioWizard } from "./scenario-wizard";
 vi.mock("./scenario-map-workbench",()=>({ScenarioMapWorkbench:({simulationResult,onTest,inspectorPanel}:any)=><div><button onClick={onTest}>Открыть тест</button><output data-testid="result">{simulationResult?.revision??"нет"}</output>{inspectorPanel}</div>}));
 vi.mock("./scenario-simulation",()=>({ScenarioSimulationPanel:({revision,onState}:any)=><button onClick={()=>onState("end",["q"],{revision,state:{current_block_id:"end"}})}>Получить результат</button>}));
 vi.mock("./scenario-author-attachments",()=>({ScenarioAuthorAttachmentProvider:({children}:any)=>children}));
+vi.mock("./scenario-requester-preview",()=>({ScenarioPagePreview:()=> <section aria-label="Страница сотрудника">Визуальное оформление черновика</section>}));
+it("opens employee visual preview from the top actions even for an unsaved draft",()=>{
+ render(<ScenarioWizard definition={{scenario_key:"test",blocks:[],process_binding:{request_template_key:"t"}} as never} detail={null} catalog={{offerings:[]} as never} disabled={false} dirty onChange={vi.fn()}/>);
+ fireEvent.click(screen.getByRole("button",{name:"Как у сотрудника"}));
+ expect(screen.getByRole("region",{name:"Страница сотрудника"})).toBeVisible();
+});
 it("discards an actual terminal result on draft edits, revision and disabled changes",()=>{
  const props:any={definition:{scenario_key:"test",blocks:[],process_binding:{request_template_key:"t"}},detail:{scenario:{id:"s"},draft:{revision:1}},catalog:{offerings:[]},disabled:false,dirty:false,onChange:vi.fn()};
  const view=render(<ScenarioWizard {...props}/>);

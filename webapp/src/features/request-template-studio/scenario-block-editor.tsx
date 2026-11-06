@@ -1,3 +1,4 @@
+import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 import { ScenarioRichEditor } from "./scenario-rich-editor";
 import { plainRichDocument, richPlainText } from "./scenario-rich-content";
 import { useEffect, useRef } from "react";
@@ -25,7 +26,7 @@ export function ScenarioBlockEditor({ block, definition, disabled, onChange, foc
   }, [block.id, focusTransitions]);
   useEffect(() => { if (focusTitle) titleRef.current?.focus(); }, [block.id, focusTitle]);
   const fields = conditionFields(definition, block.id);
-  const targets = (definition.blocks ?? []).filter(item => item.id !== block.id);
+  const targets = (definition.blocks ?? []).filter(item => item.id !== block.id && !isPolicyAttachment(item));
   const transitions = block.transitions ?? [];
   const issueTransitionIndex = Math.max(0, transitions.findIndex(edge => !targets.some(item => item.id === edge.to)));
   const terminal = block.kind === "finish" || block.kind === "submit_ticket";

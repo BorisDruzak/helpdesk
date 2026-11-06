@@ -6,7 +6,7 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import type { ScenarioAttachment, ScenarioRichDocument } from "./scenario-contract";
 import { canonicalRichDocument, safeRichLink, scopedRichImage } from "./scenario-rich-content";
-export function ScenarioRichEditor({ value, disabled, attachments = [], label, onChange }: { value: ScenarioRichDocument; disabled: boolean; attachments?: ScenarioAttachment[]; label: string; onChange: (value: ScenarioRichDocument) => void }) {
+export function ScenarioRichEditor({ value, disabled, attachments = [], label, placeholder = "", onChange }: { value: ScenarioRichDocument; disabled: boolean; attachments?: ScenarioAttachment[]; label: string; placeholder?: string; onChange: (value: ScenarioRichDocument) => void }) {
   const latest = useRef({ onChange, attachments }); latest.current = { onChange, attachments };
   const [link, setLink] = useState(""), [image, setImage] = useState(""), [description, setDescription] = useState("");
   const imageExtension = useMemo(() => Node.create({
@@ -18,7 +18,7 @@ export function ScenarioRichEditor({ value, disabled, attachments = [], label, o
   const editor = useEditor({
     extensions: [StarterKit.configure({ heading: { levels: [1, 2, 3] }, codeBlock: false, horizontalRule: false, underline: false, link: { openOnClick: false, autolink: false, linkOnPaste: false } }), imageExtension],
     content: value, editable: !disabled, immediatelyRender: false,
-    editorProps: { attributes: { "aria-label": label, role: "textbox", "aria-multiline": "true", class: "studio-rich-content studio-rich-editable nodrag nopan nowheel" } },
+    editorProps: { attributes: state => ({ "aria-label": label, role: "textbox", "aria-multiline": "true", "aria-placeholder": placeholder, "data-placeholder": placeholder, "data-empty": String(state.doc.childCount === 1 && state.doc.firstChild?.type.name === "paragraph" && state.doc.firstChild.content.size === 0), class: "studio-rich-content studio-rich-editable nodrag nopan nowheel" }) },
     onUpdate: ({ editor }) => latest.current.onChange(canonicalRichDocument(editor.getJSON() as ScenarioRichDocument)),
   });
   useEffect(() => { editor?.setEditable(!disabled, false); }, [editor, disabled]);

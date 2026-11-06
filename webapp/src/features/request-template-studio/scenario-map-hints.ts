@@ -1,5 +1,6 @@
 import type { ScenarioCondition, ScenarioDraftDefinition } from "./scenario-contract";
 import { terminal } from "./scenario-map-model";
+import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 export type MapHint = { code: string; text: string; level: "required" | "suggestion"; target?: "catalog" | "blocks"; blockId?: string };
 function confirmsResolution(condition: ScenarioCondition | null | undefined): boolean {
   if (!condition) return false;
@@ -11,8 +12,14 @@ function confirmsResolution(condition: ScenarioCondition | null | undefined): bo
 }
 /** Authoring guidance only; canonical publication remains the complete readiness check. */
 export function scenarioMapHints(definition: ScenarioDraftDefinition): MapHint[] {
-  const hints: MapHint[] = [], blocks = definition.blocks ?? [], ids = new Set(blocks.map(block => block.id));
+  const all = definition.blocks ?? [], blocks = all.filter(block=>!isPolicyAttachment(block));
+  const hints: MapHint[] = [], ids = new Set(blocks.map(block => block.id));
   const add = (code: string, text: string, blockId?: string) => hints.push({ code, text, blockId, level: "required" });
+  const targets = new Set<string>();
+  for(const item of all.filter(isPolicyAttachment)) {
+    if(!item.attached_to || !ids.has(item.attached_to)) add("attachment_target_invalid",`«${item.title}»: подключите настройку к обычному блоку карты.`,item.id);
+    else { const key=`${item.kind}:${item.attached_to}`; if(targets.has(key)) add("duplicate_attachment",`«${item.title}»: у этого блока уже есть такая настройка.`,item.id); targets.add(key); }
+  }
   const result = blocks.find(block => block.kind === "submit_ticket");
   if ((definition.schema_version ?? 1) < 2 && !definition.offering_full_code) add("offering", "Выберите тип обращения, чтобы сохранить черновик.", result?.id);
   else if ((definition.schema_version ?? 1) < 2 && !definition.process_binding.request_template_key) add("template", "Для обращения не выбран шаблон заявки.", result?.id);

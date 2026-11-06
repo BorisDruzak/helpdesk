@@ -6,10 +6,10 @@ import { ScenarioWizard } from "./scenario-wizard";
 import type { ScenarioCatalog, ScenarioDetail } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 
-// React Flow hides unmeasured nodes in JSDOM; model its inline editor contract here.
+// React Flow hides unmeasured nodes in JSDOM; model inline node and edge editors.
 vi.mock("./scenario-map-canvas", () => ({
   metadataNodeId: "studio:metadata", transitionId: (source: string, index: number) => `${source}:${index}`, entranceEdgeId: (key: string | null) => `entry:${key}`,
-  ScenarioMapCanvas: ({ expandedId, inlineEditor }: { expandedId?: string | null; inlineEditor?: React.ReactNode }) => <div aria-label="Визуальная карта сценария">{expandedId && inlineEditor}</div>,
+  ScenarioMapCanvas: ({ expandedId, inlineEditor, edgeEditor }: { expandedId?: string | null; inlineEditor?: React.ReactNode; edgeEditor?: React.ReactNode }) => <div aria-label="Визуальная карта сценария">{expandedId && inlineEditor}{edgeEditor}</div>,
 }));
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });

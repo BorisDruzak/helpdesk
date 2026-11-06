@@ -1,3 +1,4 @@
+import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import type { ScenarioBlock, ScenarioDraftDefinition } from "./scenario-contract";
@@ -18,7 +19,7 @@ export function ScenarioEdgeInspector({ definition, source, index, disabled, onC
   return <fieldset disabled={disabled} className="space-y-4">
     <legend className="text-lg font-semibold">Переход из «{block.title}»</legend>
     {edge.button && <label className="block">Текст кнопки перехода<Input disabled={disabled} maxLength={300} value={edge.button.label} onChange={event => update({ button: { ...edge.button!, label: event.target.value } })} /></label>}
-    <label className="block">Следующий блок<Select autoFocus value={edge.to} onChange={event => update({ to: event.target.value })}><option value="" disabled>Выберите блок</option>{definition.blocks?.filter(item => item.id !== source).map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
+    <label className="block">Следующий блок<Select autoFocus value={edge.to} onChange={event => update({ to: event.target.value })}><option value="" disabled>Выберите блок</option>{definition.blocks?.filter(item => item.id !== source && !isPolicyAttachment(item)).map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
     {block.transition_mode !== "buttons" && !edge.button && <label className="block">Приоритет перехода<Input type="number" min={1} max={10000} value={edge.priority ?? ""} onChange={event => update({ priority: event.target.value ? Number(event.target.value) : null })} /></label>}
     <ScenarioConditionEditor label="Условие перехода" value={edge.when} fields={conditionFields(definition, source)} resultValues={results} disabled={disabled} onChange={when => update({ when })} />
     {!!maybeMissing.length && <p role="status" className="text-sm text-amber-800">При специализированном входе или скрытом вопросе могут отсутствовать ответы: {maybeMissing.map(item => item.field.label).join(", ")}. Проверяйте «Ответ задан»; отсутствие ответа не означает «Нет». Настройте резервный маршрут.</p>}

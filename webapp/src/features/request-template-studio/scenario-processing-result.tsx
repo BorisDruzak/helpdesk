@@ -2,6 +2,8 @@ import { AdvancedDisclosure } from "../../components/ui-page/advanced-disclosure
 import type { ScenarioSimulation } from "./scenario-api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 import { ScenarioSimulationTrace } from "./scenario-simulation-trace";
+import { actualSourceLabel } from "./scenario-terminal-sla-model";
+import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 
 const groups: Record<string, string> = { queue: "участники очереди", assignee: "исполнитель", watchers: "наблюдатели", requester: "сотрудник" };
 function deadline(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? "Не определён" : new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(date); }
@@ -9,7 +11,12 @@ export function ScenarioProcessingResult({ result, definition }: { result: Scena
   const processing = result.processing;
   if (!processing) return null;
   const fields = (definition?.blocks || []).flatMap(block => block.kind === "form_page" ? block.fields : []);
-  const branch = [...result.state.history, result.current_step?.id || result.state.current_block_id].filter(Boolean).map(id => definition?.blocks?.find(item => item.id === id)?.title || "Шаг сценария");
+  const history = [...result.state.history], currentId = result.current_step?.id || result.state.current_block_id;
+  if (currentId && history.at(-1) !== currentId) history.push(currentId);
+  const branch = history.filter(id => !!id && !isPolicyAttachment(definition?.blocks?.find(item => item.id === id))).map(id => definition?.blocks?.find(item => item.id === id)?.title || "Шаг сценария");
+  const map = result.map_processing ?? processing.map_processing;
+  const slaSource = processing.sla.source ?? processing.sla.selection?.source ?? map?.sla_profile.source;
+  const routingSource = processing.routing.source ?? processing.routing.selection?.source ?? map?.route.source;
   function display(key: string, value: unknown) {
     const field = fields.find(item => (item.process_mapping?.fact_key || item.key) === key);
     function one(item: unknown): string { return field?.options?.find(option => option.value === item)?.label || (item === true ? "Да" : item === false ? "Нет" : item === null ? "Не знаю" : typeof item === "string" || typeof item === "number" ? String(item) : "Проверенный контекст"); }
@@ -25,7 +32,8 @@ export function ScenarioProcessingResult({ result, definition }: { result: Scena
     <p>Первый ответ: {processing.sla.first_response_min ? `${processing.sla.first_response_min} мин.` : "Не определён"}</p>
     <p>Срок выполнения: {processing.sla.resolution_min ? `${processing.sla.resolution_min} мин.` : "Не определён"}</p>
     {processing.sla.time_basis && <p>{processing.sla.time_basis === "business" ? "Рабочее время" : "Календарное время"}</p>}
-    {processing.sla.source && <p>Источник SLA: {processing.sla.source.kind === "terminal" ? `итоговый выбор в блоке «${definition?.blocks?.find(block => block.id === processing.sla.source?.block_id)?.title ?? "Завершение"}»` : processing.sla.source.kind === "block" ? `блок «${definition?.blocks?.find(block => block.id === processing.sla.source?.block_id)?.title ?? "SLA"}»` : processing.sla.source.kind === "transition" ? `ветвь блока «${definition?.blocks?.find(block => block.id === processing.sla.source?.block_id)?.title ?? "Шаг сценария"}»` : processing.sla.source.kind === "default" ? "настройка по умолчанию" : "действующая серверная политика"}.</p>}
+    {slaSource && <p>Источник SLA: {slaSource.kind === "terminal" ? `итоговый выбор в блоке «${definition?.blocks?.find(block => block.id === slaSource.block_id)?.title ?? "Завершение"}»` : actualSourceLabel(definition, slaSource)}.</p>}
+    {routingSource && <p>Источник очереди: {actualSourceLabel(definition, routingSource)}.</p>}
     {processing.sla.first_response_due_preview && <p>Ответить до: {deadline(processing.sla.first_response_due_preview)}</p>}
     {processing.sla.resolution_due_preview && <p>Решить до: {deadline(processing.sla.resolution_due_preview)}</p>}
     {processing.ola?.ack_min || processing.ola?.processing_min ? <p>Подтверждение поддержки: {processing.ola.ack_min ?? "не определено"} мин.; обработка: {processing.ola.processing_min ?? "не определено"} мин.</p> : <p>Внутренние сроки поддержки не настроены.</p>}

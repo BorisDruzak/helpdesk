@@ -1,3 +1,4 @@
+import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 import { useId, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
@@ -25,7 +26,7 @@ function BranchCard({ title, description, target, expanded, onToggle, children }
 
 export function ScenarioBlockRoutes({ definition, block, disabled, onChange, sourceFieldKey, onSourceField, onAddAnswer }: { definition: ScenarioDraftDefinition; block: ScenarioBlock; disabled: boolean; onChange: (next: ScenarioDraftDefinition) => void; sourceFieldKey?: string; onSourceField?: (key: string) => void; onAddAnswer?: (when: ScenarioCondition) => void }) {
   const transitions = block.transitions ?? [], fields = conditionFields(definition, block.id);
-  const targets = definition.blocks?.filter(item => item.id !== block.id) ?? [];
+  const targets = definition.blocks?.filter(item => item.id !== block.id && !isPolicyAttachment(item)) ?? [];
   const [expanded, setExpanded] = useState<number[]>([]);
   const [fallbackExpanded, setFallbackExpanded] = useState(false);
   const [error, setError] = useState("");

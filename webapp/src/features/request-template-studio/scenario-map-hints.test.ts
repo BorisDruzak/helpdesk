@@ -1,5 +1,14 @@
 import { expect, it } from "vitest";
 import { scenarioMapHints } from "./scenario-map-hints";
+it("treats attached policies as settings rather than disconnected executable steps",()=>{
+ const value={schema_version:4,scenario_key:"s",title:"S",entry_block_id:"q",process_binding:{request_template_key:"s"},blocks:[{id:"q",kind:"submit_ticket",title:"Создание"},{id:"a",kind:"sla_attachment",title:"SLA",attached_to:"q"}]} as never;
+ expect(scenarioMapHints(value).filter(hint=>hint.blockId==="a")).toEqual([]);
+});
+it("asks to attach an unlinked setting without asking for a next step",()=>{
+ const value={schema_version:4,scenario_key:"s",title:"S",entry_block_id:"q",process_binding:{request_template_key:"s"},blocks:[{id:"q",kind:"submit_ticket",title:"Создание"},{id:"a",kind:"routing_attachment",title:"Маршрут"}]} as never;
+ const hints=scenarioMapHints(value).filter(hint=>hint.blockId==="a");
+ expect(hints.map(hint=>hint.code)).toEqual(["attachment_target_invalid"]);
+});
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 const base: ScenarioDraftDefinition = { scenario_key: "test", title: "Карта", service_code: "it", offering_full_code: "it.printer", process_binding: { request_template_key: "printer" }, entry_block_id: "a", blocks: [{ id: "a", title: "Инструкция", kind: "instruction", content: { body: "Шаг" }, transitions: [{ to: "end" }] }, { id: "end", title: "Обращение", kind: "submit_ticket" }] };
 it("points an empty map to service selection and blocks without claiming readiness", () => {

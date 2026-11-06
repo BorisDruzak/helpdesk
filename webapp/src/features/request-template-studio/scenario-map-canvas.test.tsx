@@ -15,7 +15,7 @@ vi.mock("@xyflow/react", () => ({
   useUpdateNodeInternals: () => vi.fn(),
   useNodesState: (initial: MapNode[]) => { const [nodes, setNodes] = useState(initial); return [nodes, setNodes, vi.fn()]; },
   Handle: ({ id, "aria-label": label, isConnectable }: { id?: string; "aria-label"?: string; isConnectable?: boolean }) => <span data-testid={`handle-${id ?? "target"}`} aria-label={label} data-connectable={String(isConnectable ?? true)} />,
-  ReactFlow: ({ nodes, edges, nodeTypes, onNodesChange }: { onNodesChange: (changes: unknown[]) => void; nodes: MapNode[]; edges: { id: string; label: string }[]; nodeTypes: { scenario: ComponentType<{ id: string; data: MapNode["data"]; selected?: boolean }> } }) => <><button onClick={() => onNodesChange([{type: "position", id: "studio:legacy-sla:q", position: {x: 1, y: 2}, dragging: false}])}>simulate auxiliary move</button>{nodes.map(node => <div key={node.id} data-testid={`node-${node.id}`}>{createElement(nodeTypes.scenario, { id: node.id, data: node.data, selected: node.selected })}</div>)}{edges.map(edge => <span key={edge.id}>{edge.label}</span>)}</>,
+  ReactFlow: ({ nodes, edges, nodeTypes, onNodesChange }: { onNodesChange: (changes: unknown[]) => void; nodes: MapNode[]; edges: { id: string; label: string; data?: { editor?: React.ReactNode; attachment?: boolean } }[]; nodeTypes: { scenario: ComponentType<{ id: string; data: MapNode["data"]; selected?: boolean }> } }) => <><button onClick={() => onNodesChange([{type: "position", id: "studio:legacy-sla:q", position: {x: 1, y: 2}, dragging: false}])}>simulate auxiliary move</button>{nodes.map(node => <div key={node.id} data-testid={`node-${node.id}`}>{createElement(nodeTypes.scenario, { id: node.id, data: node.data, selected: node.selected })}</div>)}{edges.map(edge => <span key={edge.id} data-testid={`edge-${edge.id}`} data-attachment={String(!!edge.data?.attachment)}>{edge.label}{edge.data?.editor}</span>)}</>,
 }));
 const definition: ScenarioDraftDefinition = { schema_version: 3, scenario_key: "test", service_code: "it", offering_full_code: "it.test", title: "Test", process_binding: { request_template_key: "test" }, entry_block_id: "q", blocks: [
   { id: "q", kind: "form_page", title: "Вопрос", fields: [{ key: "answer", type: "checkbox", label: "123" }], transitions: [{ to: "d" }] },
@@ -23,6 +23,13 @@ const definition: ScenarioDraftDefinition = { schema_version: 3, scenario_key: "
   { id: "end", kind: "submit_ticket", title: "Обращение" },
 ] };
 const props = { selected: "d", selectedEdge: null, disabled: false, onSelect: vi.fn(), onEdge: vi.fn(), onMove: vi.fn(), onConnect: vi.fn(), onReconnect: vi.fn(), onDropBlock: vi.fn(), onEntrance: vi.fn(), onEntranceReconnect: vi.fn(), onReady: vi.fn() };
+it("persists the shifted node origin once when resizing its north-west edge",()=>{
+ const move=vi.fn();
+ render(<ScenarioMapCanvas {...props} onMove={move} definition={{...definition,editor_layout:{positions:{q:{x:100,y:100}}}}} expandedId="q" inlineEditor={<p>Содержимое</p>}/>);
+ fireEvent.keyDown(screen.getByRole("button",{name:"Изменить размер редактора блока: верхний левый угол"}),{key:"ArrowLeft"});
+ expect(move).toHaveBeenCalledTimes(1);
+ expect(move).toHaveBeenCalledWith("q",{x:80,y:100});
+});
 it("shows the server-confirmed SLA, queue and actual route at the terminal node", () => {
   render(<ScenarioMapCanvas {...props} definition={definition} simulationResult={{ state: { current_block_id: "end", history: ["q","d"] }, processing: { sla: { first_response_min: 5, resolution_min: 60, time_basis: "calendar" }, routing: { queue_title: "Сетевая поддержка" } } } as never} />);
   const end = screen.getByTestId("node-end");
@@ -69,4 +76,18 @@ it("shows legacy SLA editor in its expanded auxiliary node without bubbling clic
   expect(screen.getByLabelText("Вход блока «SLA по ответам и ветвям»")).toHaveAttribute("data-connectable", "false");
   fireEvent.click(input); expect(outside).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("simulate auxiliary move")); expect(props.onMove).not.toHaveBeenCalledWith("studio:legacy-sla:q", expect.anything());
+});
+
+it("opens the selected transition editor at its edge rather than in a side inspector",()=>{
+ render(<ScenarioMapCanvas {...props} definition={definition} selectedEdge="q:0" edgeEditor={<textarea aria-label="Переход на карте"/>}/>);
+ expect(screen.getByTestId("edge-q:0")).toContainElement(screen.getByRole("textbox",{name:"Переход на карте"}));
+});
+it("renders an attached SLA card with a setting link and no flow ports or next-step action",()=>{
+ const next={...definition,schema_version:4 as const,execution_semantics:3 as const,blocks:[...definition.blocks!,{id:"policy",kind:"sla_attachment" as const,title:"Политика SLA",attached_to:"q"}]};
+ render(<ScenarioMapCanvas {...props} definition={next}/>);
+ const card=screen.getByTestId("node-policy");
+ expect(card.querySelector('[data-testid="handle-target"]')).toBeNull();
+ expect(card.querySelector('[data-testid="handle-policy"]')).not.toBeNull();
+ expect(screen.queryByRole("button",{name:"Добавить следующий шаг после «Политика SLA»"})).not.toBeInTheDocument();
+ expect(screen.getByTestId("edge-studio:attachment:policy")).toHaveAttribute("data-attachment","true");
 });

@@ -65,9 +65,9 @@ for (const width of [1366, 1920]) {
     const inlineEditor = node.locator('.studio-resizable-editor');
     const editorBeforePointer = (await inlineEditor.boundingBox())!;
     const resizeHandle = (await page.getByRole("button", { name: "Изменить размер редактора блока", exact: true }).boundingBox())!;
-    await page.mouse.move(resizeHandle.x + resizeHandle.width - 20, resizeHandle.y + resizeHandle.height / 2);
+    await page.mouse.move(resizeHandle.x + resizeHandle.width / 2, resizeHandle.y + resizeHandle.height / 2);
     await page.mouse.down();
-    await page.mouse.move(resizeHandle.x + resizeHandle.width + 45, resizeHandle.y + resizeHandle.height / 2 + 30, { steps: 8 });
+    await page.mouse.move(resizeHandle.x + resizeHandle.width / 2 + 45, resizeHandle.y + resizeHandle.height / 2 + 30, { steps: 8 });
     await page.mouse.up();
     await expect.poll(async () => (await inlineEditor.boundingBox())!.width).toBeGreaterThan(editorBeforePointer.width);
     const sizePreferenceKey = 'studio-editor-size:v1:print:q1:inline';
@@ -90,10 +90,11 @@ for (const width of [1366, 1920]) {
       return block.transitions!.map(edge => [edge.button?.key, edge.button?.label]);
     }).toEqual([["route-a", "Проверить принтер"], ["route-b", "Проверить подключение"]]);
     await page.locator('[data-scenario-edge="q2:0"] .studio-route-button').click();
-    const popup = page.getByRole("dialog", { name: "Настройки выбранного элемента", exact: true });
+    const popup = page.locator('[data-scenario-edge="q2:0"] .studio-resizable-editor');
     await expect(popup).toBeVisible();
-    await page.getByRole("button", { name: "Изменить размер окна перехода", exact: true }).press("ArrowLeft");
-    expect(await popup.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.getByRole("button", { name: "Размер редактора перехода", exact: true }).press("ArrowLeft");
+    expect(await popup.locator('.studio-resizable-editor__body').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expect(popup.getByRole("button", { name: "Закрыть", exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toBeInViewport();
     await page.screenshot({ path: info.outputPath(`connections-and-popover-${width}.png`), fullPage: true });

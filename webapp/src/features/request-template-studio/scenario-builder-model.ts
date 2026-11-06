@@ -1,10 +1,11 @@
 import type { ScenarioBlock, ScenarioCondition, ScenarioDraftDefinition, ScenarioField, ScenarioFieldType, ScenarioRole } from "./scenario-contract";
+import { isPolicyAttachment, reassignPolicyAttachments } from "./scenario-policy-attachments-model";
 
 export const blockLabels: Record<ScenarioBlock["kind"], string> = {
   form_page: "Страница вопросов", instruction: "Инструкция", decision: "Условие",
   resolution_check: "Проверка результата", diagnostic: "Диагностика",
   review: "Просмотр ответов", submit_ticket: "Создание обращения", finish: "Завершение без обращения",
-  navigation: "Переходы", sla: "SLA",
+  navigation: "Переходы", sla: "SLA · последовательный блок", sla_attachment: "SLA", routing_attachment: "Маршрут",
 };
 export const fieldLabels: Record<ScenarioFieldType, string> = {
   text: "Короткий текст", textarea: "Длинный текст", select: "Список", multi_select: "Несколько вариантов",
@@ -40,6 +41,7 @@ export function editFieldOption(field: ScenarioField, index: number, value: stri
     process_mapping: { ...field.process_mapping, effects: (field.process_mapping?.effects ?? []).flatMap(effect => effect.value !== old.value ? [effect] : value === null ? [] : [{ ...effect, value }]) } };
 }
 export function newBlock(kind: ScenarioBlock["kind"]): ScenarioBlock {
+  if (kind === "sla_attachment" || kind === "routing_attachment") return { id: newKey("block"), title: blockLabels[kind], kind };
   const base = { id: newKey("block"), title: blockLabels[kind], transitions: [] };
   switch (kind) {
     case "navigation": return { ...base, kind, transition_mode: "buttons" };
@@ -55,7 +57,7 @@ export function addBlock(definition: ScenarioDraftDefinition, kind: ScenarioBloc
   const block = newBlock(kind);
   const index = blocks.findIndex(item => item.id === after);
   blocks.splice(index < 0 ? blocks.length : index + 1, 0, block);
-  return { ...definition, blocks, entry_block_id: definition.entry_block_id ?? block.id };
+  return { ...definition, blocks, entry_block_id: definition.entry_block_id ?? (isPolicyAttachment(block) ? null : block.id) };
 }
 export function mapCondition(condition: ScenarioCondition | null | undefined, map: Record<string, string>): ScenarioCondition | null | undefined {
   if (!condition) return condition;
@@ -70,6 +72,7 @@ export function duplicateBlock(definition: ScenarioDraftDefinition, id: string) 
   if (index < 0 || blocks.length >= 256) throw new Error("Блок не найден или достигнут лимит");
   const copy = structuredClone(blocks[index]);
   copy.id = newKey("block"); copy.title = `${copy.title.slice(0, 290)} — копия`;
+  if (isPolicyAttachment(copy)) { delete copy.attached_to; delete copy.transitions; delete copy.transition_mode; }
   if (copy.kind === "form_page") {
     const map = Object.fromEntries(copy.fields.map(field => [field.key, newKey("field")]));
     copy.fields = copy.fields.map(field => ({ ...field, key: map[field.key], aliases: [],
@@ -138,6 +141,8 @@ export function conditionFieldAvailability(definition: ScenarioDraftDefinition, 
   });
 }
 export function removeBlock(definition: ScenarioDraftDefinition, id: string, replacement: string | null) {
+  if (replacement && isPolicyAttachment(definition.blocks?.find(block => block.id === replacement)?.kind ?? "instruction")) throw new Error("Настройка не может заменить удалённый шаг");
+  definition = reassignPolicyAttachments(definition, id, replacement);
   const block = definition.blocks?.find(item => item.id === id);
   if (!block) return definition;
   const remaining = definition.blocks!.filter(item => item.id !== id);
@@ -146,5 +151,5 @@ export function removeBlock(definition: ScenarioDraftDefinition, id: string, rep
   if (replacement && !remaining.some(item => item.id === replacement)) throw new Error("Выберите существующий блок");
   if (linked && remaining.length && !replacement) throw new Error("Переназначьте входящие переходы и начало сценария");
   return { ...definition, entry_block_id: definition.entry_block_id === id ? replacement : definition.entry_block_id,
-    blocks: remaining.map(item => ({ ...item, transitions: item.transitions?.map(edge => edge.to === id ? { ...edge, to: replacement! } : edge) })) };
+    blocks: remaining.map(item => isPolicyAttachment(item) ? item : ({ ...item, transitions: item.transitions?.map(edge => edge.to === id ? { ...edge, to: replacement! } : edge) })) };
 }

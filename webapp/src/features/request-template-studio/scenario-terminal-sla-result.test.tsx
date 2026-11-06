@@ -12,3 +12,10 @@ it("shows actual SLA durations, time basis and terminal override source", () => 
  expect(screen.getByText("Рабочее время")).toBeInTheDocument();
  expect(screen.getByText(/итоговый выбор в блоке «Отправка»/)).toBeInTheDocument();
 });
+it("shows actual queue, visited path and both attachment sources with target context", () => {
+ const result = { state: { history: ["question", "submit"], current_block_id: "submit", answers: {}, results: {} }, processing: { priority: { priority_class: "P2" }, routing: { queue_title: "Инженеры", selection: { kind: "policy", key: "published-routing", source: { kind: "attachment", block_id: "ra", attached_to: "submit" } } }, sla: { first_response_min: 7, resolution_min: 42, time_basis: "calendar", source: { kind: "attachment", block_id: "sa", attached_to: "question" } }, approval: { required: false }, would_create_ticket: false } } as unknown as ScenarioSimulation;
+ render(<ScenarioProcessingResult result={result} definition={{ scenario_key: "map", service_code: "it", offering_full_code: "it.print", title: "Print", process_binding: { request_template_key: "printer" }, blocks: [{ id: "question", title: "Проблема", kind: "form_page", fields: [] }, { id: "submit", title: "Отправка", kind: "submit_ticket" }, { id: "sa", title: "Срочный SLA", kind: "sla_attachment", attached_to: "question" }, { id: "ra", title: "Маршрут инженеров", kind: "routing_attachment", attached_to: "submit" }] }} />);
+ expect(screen.getByText("Проблема → Отправка")).toBeInTheDocument(); expect(screen.getByText("Очередь: Инженеры")).toBeInTheDocument();
+ expect(screen.getByText("Источник SLA: настройка «Срочный SLA» у блока «Проблема».")).toBeInTheDocument();
+ expect(screen.getByText("Источник очереди: настройка «Маршрут инженеров» у блока «Отправка».")).toBeInTheDocument();
+});

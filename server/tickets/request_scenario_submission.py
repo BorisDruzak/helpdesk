@@ -46,6 +46,17 @@ def _route_edge(block, answers, result, state):
     return selected_transition(block, answers, result)
 
 
+def attached_settings(definition, target_id):
+    """Validation guarantees one setting of each kind per ordinary target."""
+    if definition.schema_version == 4:
+        yield from (block for block in definition.blocks
+                    if block.kind in {"sla_attachment", "routing_attachment"} and block.attached_to == target_id)
+
+
+def attachment_source(block):
+    return {"kind": "attachment", "block_id": block.id, "attached_to": block.attached_to}
+
+
 def processing_facts(definition, state):
     from tickets.request_scenario_processing import FACT_VALUES
     from tickets.request_scenario_conditions import selected_transition, evaluate_condition
@@ -68,10 +79,16 @@ def processing_facts(definition, state):
         if isinstance(result, dict):
             result = result.get("result") or result.get("status")
         edge = _route_edge(block, state.answers, result, state)
+        for setting in attached_settings(definition, identifier):
+            if setting.kind == "sla_attachment":
+                contribute(setting.processing_facts)
         if block.kind == "sla":
             contribute(block.processing_facts)
         if edge and edge.processing_facts:
             contribute(edge.processing_facts)
+    for setting in attached_settings(definition, state.current_block_id):
+        if setting.kind == "sla_attachment":
+            contribute(setting.processing_facts)
     return facts
 
 
@@ -83,7 +100,15 @@ def map_processing(definition, state):
     sources = {key: {"kind": "default"} for key in selected}
     trace, condition_trace, answers = [], [], {}
     blocks = {block.id: block for block in definition.blocks}
+    def apply_attachments(identifier):
+        for setting in attached_settings(definition, identifier):
+            key = "sla_profile" if setting.kind == "sla_attachment" else "route"
+            value = getattr(setting, key)
+            if value is not None:
+                selected[key] = value
+                sources[key] = attachment_source(setting)
     for offset, identifier in enumerate(state.history):
+        apply_attachments(identifier)
         block = blocks[identifier]
         for field in getattr(block, "fields", ()):
             if field.key in state.answers:
@@ -110,9 +135,12 @@ def map_processing(definition, state):
         trace.append({"block_id": identifier, "transition_index": index, "to": edge.to,
             "condition": edge.when.model_dump(mode="json") if edge.when else None, "matched": True, "assignments": assignments})
     terminal = blocks[state.current_block_id]
-    if definition.schema_version == 4 and terminal.kind == "submit_ticket" and terminal.sla_profile is not None:
-        selected["sla_profile"] = terminal.sla_profile
-        sources["sla_profile"] = {"kind": "terminal", "block_id": terminal.id}
+    apply_attachments(terminal.id)
+    if definition.schema_version == 4 and terminal.kind == "submit_ticket":
+        for key in ("sla_profile", "route"):
+            if getattr(terminal, key) is not None:
+                selected[key] = getattr(terminal, key)
+                sources[key] = {"kind": "terminal", "block_id": terminal.id}
     result = {"assignment_mode": config.assignment_mode, "trace": trace, "condition_trace": condition_trace}
     for kind, items in (("route", config.routes), ("sla_profile", config.sla_profiles)):
         result[kind] = {"key": selected[kind], **items[selected[kind]].model_dump(mode="json"), "source": sources[kind]}
@@ -162,17 +190,22 @@ def build_scenario_submission(definition, state, *, session_id, version_id, sour
         "reported_context": deepcopy(state.results.get("_entry_point")),
     }
     if definition.schema_version == 4:
-        if snapshot["policy_refs"].get("sla"):
-            snapshot["sla_selection"] = {"kind": "policy", "key": snapshot["policy_refs"]["sla"], "source": {"kind": "default"}}
-        for identifier in state.history:
+        def select_policy(kind, code, source):
+            if code:
+                snapshot["policy_refs"][kind] = code
+                snapshot[kind + "_selection"] = {"kind": "policy", "key": code, "source": source}
+        for kind in ("sla", "routing"):
+            select_policy(kind, snapshot["policy_refs"].get(kind), {"kind": "default"})
+        for identifier in [*state.history, state.current_block_id]:
+            for setting in attached_settings(definition, identifier):
+                kind = "sla" if setting.kind == "sla_attachment" else "routing"
+                select_policy(kind, setting.policy_ref, attachment_source(setting))
             block = runtime.blocks[identifier]
-            if block.kind == "sla" and block.policy_ref:
-                snapshot["policy_refs"]["sla"] = block.policy_ref
-                snapshot["sla_selection"] = {"kind": "policy", "key": block.policy_ref, "source": {"kind": "block", "block_id": identifier}}
+            if block.kind == "sla":
+                select_policy("sla", block.policy_ref, {"kind": "block", "block_id": identifier})
         terminal = runtime.blocks[state.current_block_id]
-        if terminal.policy_ref:
-            snapshot["policy_refs"]["sla"] = terminal.policy_ref
-            snapshot["sla_selection"] = {"kind": "policy", "key": terminal.policy_ref, "source": {"kind": "terminal", "block_id": terminal.id}}
+        for kind, field in (("sla", "policy_ref"), ("routing", "routing_policy_ref")):
+            select_policy(kind, getattr(terminal, field), {"kind": "terminal", "block_id": terminal.id})
     if (definition.execution_semantics if definition.schema_version == 4 else definition.schema_version) >= 2:
         snapshot["form_schema"] = derive_scenario_form(definition, projected)
     if definition.schema_version >= 2:

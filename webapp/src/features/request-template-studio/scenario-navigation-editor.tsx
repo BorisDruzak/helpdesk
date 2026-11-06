@@ -1,3 +1,4 @@
+import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 import { useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -8,7 +9,7 @@ import { setNavigationMode, uniqueButtonLabel } from "./scenario-v4-model";
 export function ScenarioNavigationEditor({ definition, block, disabled, onChange }: { definition: ScenarioDraftDefinition; block: ScenarioBlock; disabled: boolean; onChange: (next: ScenarioBlock) => void }) {
   const [error, setError] = useState("");
   const buttons = block.kind === "navigation" || block.transition_mode === "buttons";
-  const routes = block.transitions ?? [], targets = definition.blocks?.filter(item => item.id !== block.id) ?? [];
+  const routes = block.transitions ?? [], targets = definition.blocks?.filter(item => item.id !== block.id && !isPolicyAttachment(item)) ?? [];
   function mode(value: "automatic" | "buttons") {
     if (definition.schema_version !== 4 || !["form_page", "instruction", "review"].includes(block.kind)) return;
     try { onChange(setNavigationMode(block, value, id => targets.find(target => target.id === id)?.title ?? "Продолжить")); setError(""); }

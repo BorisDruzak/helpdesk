@@ -299,6 +299,34 @@ class Sla(BlockBase):
     policy_ref: CatalogCode | None = None
 
 
+class PolicyAttachmentBase(StrictModel):
+    """A setting link, never an executable employee step or flow edge."""
+    id: Key
+    title: Annotated[str, Field(min_length=1, max_length=300)]
+    attached_to: Key | None = None
+
+    @property
+    def transitions(self):
+        return ()
+
+    @property
+    def transition_mode(self):
+        return None
+
+
+class SlaAttachment(PolicyAttachmentBase):
+    kind: Literal["sla_attachment"]
+    processing_facts: ProcessingFacts = Field(default_factory=ProcessingFacts)
+    sla_profile: Key | None = None
+    policy_ref: CatalogCode | None = None
+
+
+class RoutingAttachment(PolicyAttachmentBase):
+    kind: Literal["routing_attachment"]
+    route: Key | None = None
+    policy_ref: CatalogCode | None = None
+
+
 class Decision(BlockBase):
     kind: Literal["decision"]
 
@@ -321,13 +349,15 @@ class Review(BlockBase):
 
 class SubmitTicket(BlockBase):
     kind: Literal["submit_ticket"]
+    route: Key | None = None
+    routing_policy_ref: CatalogCode | None = None
     sla_profile: Key | None = None
     policy_ref: CatalogCode | None = None
 
     @model_serializer(mode="wrap")
     def omit_inherited_sla(self, handler):
         raw = handler(self)
-        for key in ("sla_profile", "policy_ref"):
+        for key in ("sla_profile", "policy_ref", "route", "routing_policy_ref"):
             if raw.get(key) is None:
                 raw.pop(key, None)
         return raw
@@ -338,7 +368,7 @@ class Finish(BlockBase):
     message: str = Field(default="Проблема решена без обращения", max_length=2000)
 
 
-Block = Annotated[FormPage | Instruction | Navigation | Sla | Decision | ResolutionCheck | Diagnostic | Review | SubmitTicket | Finish, Field(discriminator="kind")]
+Block = Annotated[FormPage | Instruction | Navigation | Sla | SlaAttachment | RoutingAttachment | Decision | ResolutionCheck | Diagnostic | Review | SubmitTicket | Finish, Field(discriminator="kind")]
 
 
 class ProcessBinding(StrictModel):
@@ -414,7 +444,7 @@ class ScenarioDraftDefinition(StrictModel):
         if self.schema_version == 4 and self.execution_semantics is None:
             self.execution_semantics = 3
         if self.schema_version < 4 and (self.execution_semantics is not None or any(
-            b.kind in {"navigation", "sla"} or b.kind == "submit_ticket" and (b.sla_profile is not None or b.policy_ref is not None)
+            b.kind in {"navigation", "sla", "sla_attachment", "routing_attachment"} or b.kind == "submit_ticket" and (b.sla_profile is not None or b.policy_ref is not None or b.route is not None or b.routing_policy_ref is not None)
             or b.transition_mode is not None or any(e.button is not None for e in b.transitions)
             or (b.kind == "instruction" and b.content.rich_document is not None)
             or any(f.help_document is not None for f in getattr(b, "fields", ())) for b in self.blocks)):

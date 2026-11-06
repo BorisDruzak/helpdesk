@@ -1161,6 +1161,81 @@
       "title": "RichDocument",
       "type": "object"
     },
+    "RoutingAttachment": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "attached_to": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attached To"
+        },
+        "kind": {
+          "const": "routing_attachment",
+          "title": "Kind",
+          "type": "string"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "policy_ref": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy Ref"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "RoutingAttachment",
+      "type": "object"
+    },
     "ScenarioAttachment": {
       "additionalProperties": false,
       "properties": {
@@ -1835,6 +1910,84 @@
       "title": "Sla",
       "type": "object"
     },
+    "SlaAttachment": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "attached_to": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attached To"
+        },
+        "kind": {
+          "const": "sla_attachment",
+          "title": "Kind",
+          "type": "string"
+        },
+        "processing_facts": {
+          "$ref": "#/$defs/ProcessingFacts"
+        },
+        "sla_profile": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sla Profile"
+        },
+        "policy_ref": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy Ref"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "SlaAttachment",
+      "type": "object"
+    },
     "SubmitTicket": {
       "additionalProperties": false,
       "properties": {
@@ -1879,6 +2032,36 @@
           "const": "submit_ticket",
           "title": "Kind",
           "type": "string"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "routing_policy_ref": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Routing Policy Ref"
         },
         "sla_profile": {
           "anyOf": [
@@ -2165,7 +2348,9 @@
             "navigation": "#/$defs/Navigation",
             "resolution_check": "#/$defs/ResolutionCheck",
             "review": "#/$defs/Review",
+            "routing_attachment": "#/$defs/RoutingAttachment",
             "sla": "#/$defs/Sla",
+            "sla_attachment": "#/$defs/SlaAttachment",
             "submit_ticket": "#/$defs/SubmitTicket"
           },
           "propertyName": "kind"
@@ -2182,6 +2367,12 @@
           },
           {
             "$ref": "#/$defs/Sla"
+          },
+          {
+            "$ref": "#/$defs/SlaAttachment"
+          },
+          {
+            "$ref": "#/$defs/RoutingAttachment"
           },
           {
             "$ref": "#/$defs/Decision"

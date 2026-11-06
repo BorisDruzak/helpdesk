@@ -9,6 +9,7 @@ from tickets.request_scenario_conditions import evaluate_condition, finite_numbe
 DIAGNOSTIC_CAPABILITIES = frozenset({"endpoint.context.diagnostic.collect"})
 DIAGNOSTIC_FAILURE_STATUSES = ("unavailable", "denied", "timeout", "capability_absent")
 AUTHORITY_KEYS = frozenset({"actor_id", "actor_role", "owner_actor_id", "requester_id", "queue_id", "priority", "priority_class", "sla_policy_code", "sla_policy_id", "ola_policy_code", "deadline", "consent_token", "auth_token"})
+MODIFIER_KINDS = frozenset({"sla_attachment", "routing_attachment"})
 PRIORITY_TYPES = frozenset({"select", "radio", "number", "checkbox"})
 
 
@@ -43,8 +44,11 @@ def validate_scenario(definition):
                         if value is not None and value not in choices:
                             add("processing_reference_unknown", f"blocks.{block.id}.transitions.{index}.processing.{kind}", "Результат ветки ссылается на отсутствующую настройку карты.")
             for block in definition.blocks:
-                if block.kind in {"sla", "submit_ticket"} and block.sla_profile is not None and block.sla_profile not in config.sla_profiles:
+                if block.kind in {"sla", "sla_attachment", "submit_ticket"} and block.sla_profile is not None and block.sla_profile not in config.sla_profiles:
                     add("processing_reference_unknown", f"blocks.{block.id}.sla_profile", "Unknown SLA profile")
+            for block in definition.blocks:
+                if block.kind in {"routing_attachment", "submit_ticket"} and block.route is not None and block.route not in config.routes:
+                    add("processing_reference_unknown", f"blocks.{block.id}.route", "Unknown map route")
             for key, profile in config.sla_profiles.items():
                 for duration in ("first_response_minutes", "resolution_minutes"):
                     if getattr(profile, duration) < 1:
@@ -121,6 +125,19 @@ def validate_scenario(definition):
             if re.search(r"<[A-Za-z!/]", block.content.body) or re.search(r"\]\(\s*(?:javascript|data|file):", block.content.body, re.I):
                 add("unsafe_instruction", path, "Instructions cannot contain HTML or executable links")
 
+    attachment_targets = set()
+    for block in definition.blocks:
+        if block.kind not in MODIFIER_KINDS:
+            continue
+        path = f"blocks.{block.id}.attached_to"
+        target = blocks.get(block.attached_to)
+        if target is None or target.kind in MODIFIER_KINDS:
+            add("attachment_target_invalid", path, "Attach settings to an existing ordinary block")
+        elif (block.kind, block.attached_to) in attachment_targets:
+            add("duplicate_attachment", path, "Only one setting of each kind may attach to a block")
+        attachment_targets.add((block.kind, block.attached_to))
+    if definition.entry_block_id in blocks and blocks[definition.entry_block_id].kind in MODIFIER_KINDS:
+        add("modifier_flow_target", "entry_block_id", "A setting cannot be a flow entrance")
     if definition.entry_block_id not in blocks:
         add("unknown_entry", "entry_block_id", "Entry block does not exist")
     if (definition.execution_semantics if definition.schema_version == 4 else definition.schema_version) == 2 and (not definition.entry_points or not any(
@@ -136,6 +153,8 @@ def validate_scenario(definition):
         entry_keys.add(entry.key)
         if entry.target_block_id not in blocks:
             add("unknown_entry", path, "Entrance target does not exist")
+        if entry.target_block_id in blocks and blocks[entry.target_block_id].kind in MODIFIER_KINDS:
+            add("modifier_flow_target", path + ".target_block_id", "A setting cannot be a flow entrance")
         entries.append(entry.target_block_id)
     for key in definition.editor_layout.positions:
         if key not in blocks and key != "system_start":
@@ -144,6 +163,22 @@ def validate_scenario(definition):
     parents = {key: set() for key in blocks}
     for block in blocks.values():
         path = f"blocks.{block.id}.transitions"
+        if definition.schema_version == 4:
+            for profile_field, policy_field, kinds, label in (
+                ("sla_profile", "policy_ref", {"sla_attachment"}, "SLA"),
+                ("route", "routing_policy_ref" if block.kind == "submit_ticket" else "policy_ref", {"routing_attachment", "submit_ticket"}, "routing"),
+            ):
+                if block.kind not in kinds:
+                    continue
+                profile, policy = getattr(block, profile_field), getattr(block, policy_field)
+                if profile and policy:
+                    add("invalid_processing_source", f"blocks.{block.id}.{profile_field}", f"Choose one {label} map value or published policy")
+                if policy and definition.processing is not None:
+                    add("invalid_processing_source", f"blocks.{block.id}.{policy_field}", f"Map-owned {label} cannot select a registry policy")
+                if profile and definition.processing is None:
+                    add("processing_reference_unknown", f"blocks.{block.id}.{profile_field}", f"{label} value requires map processing")
+        if block.kind in MODIFIER_KINDS:
+            continue
         terminal = block.kind in {"finish", "submit_ticket"}
         if terminal and block.transitions:
             add("terminal_outgoing", path, "A terminal cannot execute another block")
@@ -171,7 +206,7 @@ def validate_scenario(definition):
                 add("invalid_sla", f"blocks.{block.id}.sla_profile", "Choose one final SLA profile or policy")
             if block.kind in {"sla", "submit_ticket"} and block.policy_ref and definition.processing is not None:
                 add("invalid_sla", f"blocks.{block.id}.policy_ref", "A map-owned SLA cannot select a registry policy")
-            if block.kind in {"sla", "submit_ticket"} and block.sla_profile and definition.processing is None:
+            if block.kind in {"sla", "sla_attachment", "submit_ticket"} and block.sla_profile and definition.processing is None:
                 add("processing_reference_unknown", f"blocks.{block.id}.sla_profile", "SLA profile requires map processing")
         conditional = [edge for edge in block.transitions if edge.when is not None]
         fallback = [edge for edge in block.transitions if edge.when is None]
@@ -207,6 +242,8 @@ def validate_scenario(definition):
                     add("invalid_ticket_request_target", path, "A ticket request must lead to a review block")
             if edge.to not in blocks:
                 add("unknown_target", path, "Transition target does not exist")
+            elif blocks[edge.to].kind in MODIFIER_KINDS:
+                add("modifier_flow_target", path, "Flow transitions cannot enter settings")
             else:
                 adjacency[block.id].append(edge.to)
                 parents[edge.to].add(block.id)
@@ -232,7 +269,7 @@ def validate_scenario(definition):
             pending.extend(edges[key])
         return seen
     reached = set().union(*(reachable(entry, adjacency) for entry in entries))
-    for key in blocks.keys() - reached:
+    for key in {key for key, block in blocks.items() if block.kind not in MODIFIER_KINDS} - reached:
         add("unreachable_block", f"blocks.{key}", "Block cannot be reached from entry")
     unconfirmed = {key: [edge.to for edge in block.transitions if not (block.kind == "resolution_check" and guarantees_yes(edge.when))] for key, block in blocks.items()}
     unconfirmed_reached = set().union(*(reachable(entry, unconfirmed) for entry in entries))

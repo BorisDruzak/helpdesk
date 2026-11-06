@@ -4,6 +4,8 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useScenarioEditor } from "./use-scenario-editor";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
+import { addMapBlock } from "./scenario-map-model";
+import { connectPolicyAttachment } from "./scenario-policy-attachments-model";
 
 const sourceMaterial = { asset_id: "original", name: "guide.png", mime_type: "image/png", size_bytes: 20, url: "/api/web/request-scenario-assets/original/download" };
 const copiedMaterial = { ...sourceMaterial, asset_id: "copied", url: "/api/web/request-scenario-assets/copied/download" };
@@ -21,6 +23,24 @@ function copyHook() {
 }
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("round-trips newly created attachments through the real draft JSON API without flow properties", async () => {
+ const client = new QueryClient();
+ function Wrapper({ children }: { children: ReactNode }) { return <QueryClientProvider client={client}>{children}</QueryClientProvider>; }
+ const hook = renderHook(useScenarioEditor, { wrapper: Wrapper });
+ let definition: ScenarioDraftDefinition = { ...sourceDefinition, schema_version: 4, blocks: [{ id: "end", title: "Обращение", kind: "submit_ticket", route: "desk", sla_profile: "normal" }], entry_block_id: "end" };
+ definition = addMapBlock(definition, "sla_attachment", { x: 1, y: 2 }); const slaId = definition.blocks!.at(-1)!.id;
+ definition = connectPolicyAttachment(definition, slaId, "end");
+ definition = addMapBlock(definition, "routing_attachment", { x: 3, y: 4 }); const routingId = definition.blocks!.at(-1)!.id;
+ definition = connectPolicyAttachment(definition, routingId, "end");
+ act(() => hook.result.current.accept({ scenario: { id: "s1" }, draft: { revision: 2, definition: sourceDefinition } } as Parameters<typeof hook.result.current.accept>[0]));
+ act(() => hook.result.current.change(definition));
+ const fetcher = vi.fn(async (_url: unknown, init?: RequestInit) => new Response(JSON.stringify({ status: "success", data: { scenario: { id: "s1" }, draft: { revision: 3, definition: JSON.parse(String(init?.body)).definition } } }), { headers: { "content-type": "application/json" } }));
+ vi.stubGlobal("fetch", fetcher);
+ await act(async () => { await hook.result.current.save.mutateAsync(); });
+ const payload = JSON.parse(String(fetcher.mock.calls[0][1]?.body)); expect(payload.revision).toBe(2);
+ for (const modifier of payload.definition.blocks.slice(1)) { expect(modifier.attached_to).toBe("end"); expect(modifier).not.toHaveProperty("transitions"); expect(modifier).not.toHaveProperty("transition_mode"); }
+ expect(hook.result.current.definition).toEqual(definition); expect(hook.result.current.dirty).toBe(false);
+});
 it("upgrades a saved legacy draft through the server operation after saving local changes", async () => {
   const hook = copyHook();
   act(() => hook.result.current.accept({ scenario: { id: "s1" }, draft: { revision: 2, definition: sourceDefinition } } as Parameters<typeof hook.result.current.accept>[0]));

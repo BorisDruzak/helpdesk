@@ -13,10 +13,14 @@ class FragmentCreate(StrictModel):
 
 
 class FragmentMappings(StrictModel):
+    blocks: dict[Key, Key] = Field(default_factory=dict, max_length=256)
     facts: dict[Key, Key] = Field(default_factory=dict, max_length=256)
     fields: dict[Key, Key] = Field(default_factory=dict, max_length=256)
     routes: dict[Key, Key] = Field(default_factory=dict, max_length=64)
     sla_profiles: dict[Key, Key] = Field(default_factory=dict, max_length=64)
+    sla_policy_refs: dict[CatalogCode, CatalogCode] = Field(default_factory=dict, max_length=64)
+    routing_policy_refs: dict[CatalogCode, CatalogCode] = Field(default_factory=dict, max_length=64)
+    # Legacy SLA mappings remain accepted for saved fragments and older clients.
     policy_refs: dict[CatalogCode, CatalogCode] = Field(default_factory=dict, max_length=64)
     calendars: dict[Key, Annotated[StrictInt, Field(ge=1)]] = Field(default_factory=dict, max_length=64)
 

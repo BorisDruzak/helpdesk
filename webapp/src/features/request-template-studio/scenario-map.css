@@ -125,10 +125,38 @@
 .studio-map-explorer [aria-label="Библиотека фрагментов"] h4 { font-weight:600; font-size:12px; margin:10px 0 6px; }.studio-map-explorer [aria-label="Библиотека фрагментов"] p { font-size:12px; color:#597466; }
 
 /* Local editor geometry is independent from persisted map/business geometry. */
-.studio-resizable-editor { display:flex; flex-direction:column; min-width:0; max-width:100%; overflow:hidden; background:white; }
-.studio-resizable-editor__body { flex:1; min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; padding:12px; }
-.studio-editor-resize { flex:none; align-self:stretch; display:flex; justify-content:flex-end; align-items:center; gap:8px; min-height:28px; padding:3px 8px; cursor:nwse-resize; touch-action:none; border-top:1px solid #dce9e1; color:#32674b; background:#f2f8f4; font-size:12px; }
-.studio-editor-resize:focus-visible { outline:2px solid #087443; outline-offset:-2px; }
+.studio-resizable-editor { position:relative; display:flex; flex-direction:column; box-sizing:border-box; min-width:0; max-width:100%; overflow:visible; padding:6px; border-radius:inherit; background:white; }
+.studio-resizable-editor__body { flex:1; min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; padding:6px; border-radius:inherit; scrollbar-gutter:stable; }
+.studio-resizable-editor.is-grabbable { cursor:grab; }
+.studio-resizable-editor.is-grabbable .studio-inline-editor { cursor:inherit; }
+.studio-resizable-editor.is-grabbing,.studio-resizable-editor.is-grabbing * { cursor:grabbing; user-select:none; }
+.studio-resizable-editor :is(input,textarea,[contenteditable]) { cursor:text; }
+.studio-resizable-editor :is(select,summary,label,.field-base,.studio-question-answer) { cursor:default; }
+.studio-resizable-editor :is(button,a) { cursor:pointer; }
+/* Border hit zones stay outside the inner scrollbar and do not cover fields. */
+.studio-resizable-editor .studio-editor-resize { position:absolute; z-index:5; min-width:0; min-height:0; width:10px; height:10px; padding:0; border:0; border-radius:3px; background:transparent; touch-action:none; }
+.studio-editor-resize.is-n,.studio-editor-resize.is-s { left:8px; right:8px; width:auto; cursor:ns-resize; }
+.studio-editor-resize.is-n { top:-5px; }.studio-editor-resize.is-s { bottom:-5px; }
+.studio-editor-resize.is-e,.studio-editor-resize.is-w { top:8px; bottom:8px; height:auto; cursor:ew-resize; }
+.studio-editor-resize.is-e { right:-5px; }.studio-editor-resize.is-w { left:-5px; }
+.studio-editor-resize.is-ne { top:-5px; right:-5px; cursor:nesw-resize; }.studio-editor-resize.is-sw { bottom:-5px; left:-5px; cursor:nesw-resize; }
+.studio-editor-resize.is-nw { top:-5px; left:-5px; cursor:nwse-resize; }.studio-editor-resize.is-se { bottom:-5px; right:-5px; cursor:nwse-resize; }
+.studio-editor-resize:focus-visible { outline:2px solid #087443; outline-offset:1px; background:#cce6d6; }
+.studio-full-editor,.studio-map-popover { overflow:visible; background:transparent; }
+/* ReactFlow elevates selected node wrappers to inline z-index:1000. Keep
+   collapsed transition actions above those wrappers, native expanded editors
+   above collapsed labels, and the active transition editor above both. */
+.studio-map-canvas .react-flow__edgelabel-renderer { z-index:1001; }
+.studio-map-canvas .react-flow__node:has(> .studio-map-node.is-expanded) { z-index:1002 !important; }
+.studio-map-canvas .react-flow__edgelabel-renderer:has(.studio-route-label.is-expanded) { z-index:1003; }
+.studio-route-label { z-index:1; }
+.studio-route-label.is-expanded { z-index:20; padding:0; background:transparent; }
+.studio-route-label.is-expanded > .studio-resizable-editor { border:1px solid #b8d9c6; border-radius:12px; box-shadow:0 10px 32px #15372825; color:#172e28; font-size:13px; }
+.studio-route-label__controls { display:grid; grid-template-columns:minmax(0,auto) auto; align-items:center; justify-content:center; gap:4px; }
+.studio-route-label__controls > .studio-route-edit { grid-column:1; grid-row:2; justify-self:start; }
+.studio-route-label__controls > .studio-step-plus { grid-column:2; grid-row:1; }
+.studio-route-label.is-expanded .studio-route-label__controls { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:6px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #dce9e1; }
+.studio-route-edit { padding:3px 6px; color:#087443; font-size:10px; text-decoration:underline; white-space:nowrap; }
 .studio-map-node.is-expanded > .studio-resizable-editor { margin-top:12px; border:1px solid #dce9e1; border-radius:10px; }
 .studio-node-editor-content,.studio-question-card { min-width:0; overflow-wrap:anywhere; }
 .studio-node-editor-content .field-base { display:block; width:100%; min-width:0; max-width:100%; }
@@ -156,7 +184,7 @@
 .studio-question-card section[aria-label="Визуальный редактор текста"]:focus-within > .studio-rich-toolbar { display:flex; }
 .studio-question-card section[aria-label="Визуальный редактор текста"]:focus-within > details,
 .studio-question-card section[aria-label="Визуальный редактор текста"]:focus-within > p { display:block; }
-.studio-question-card .studio-rich-editable p:only-child:empty::before { content:"Подсказка к вопросу…"; color:#7a8c82; pointer-events:none; }
+.studio-question-help-heading { display:grid; gap:4px; }
 .studio-question-answer { min-width:0; }
 
 /* The author edits the label above; keep the repeated control label accessible. */

@@ -377,6 +377,24 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   the v4 rules. Navigation and SLA nodes are separate; legacy SLA settings remain
   represented. Rich documents and scoped author assets use `scenario-rich-*` and
   `request_scenario_assets`, with asset rebinding on copy.
+  v4 `sla_attachment`/`routing_attachment` add one setting of each kind per
+  ordinary `attached_to` target. Their strict DTOs have no transitions; graph
+  validation excludes them from employee flow and reports invalid/duplicate
+  targets. Submission replays settings only for retained targets before selected
+  edge assignments; terminal attachments precede explicit final overrides.
+  `submit_ticket.route/routing_policy_ref` adds the analogous final route choice;
+  inherited fields remain omitted on the wire. `request_scenario_processing`
+  validates SLA and routing policy availability for save/import/publication.
+  Scoped admin simulation retains settings attached to reachable targets;
+  readiness uses the unchanged canonical employee traversal. Fragment extraction
+  reports external `attachment_target` dependencies (`mappings.blocks`) and
+  remaps internal targets plus routes/profiles/policies without schema migration.
+  Policy fragment dependencies are kind-specific (`sla_policy_ref` and
+  `routing_policy_ref`) with separate `sla_policy_refs`/`routing_policy_refs`
+  maps. Legacy `policy_refs` remains a fallback for SLA and unambiguous routing-
+  only codes; an identical code in both registries requires a distinct route map.
+  `test_request_scenario_attachments.py` covers retained branches, backtracking,
+  precedence, validation, legacy semantics, interchange and readiness.
   Optional v4 `submit_ticket.sla_profile/policy_ref` selects a final SLA after the
   retained path; omission preserves inheritance and the prior wire format.
   Graph/source checks, publication/import policy availability and fragment remapping

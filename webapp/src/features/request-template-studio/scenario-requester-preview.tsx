@@ -1,3 +1,4 @@
+import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
@@ -7,6 +8,7 @@ import type { DynamicFormValues } from "../requester/dynamic-form";
 import type { ScenarioBlock, ScenarioDraftDefinition } from "./scenario-contract";
 export function ScenarioRequesterPreview({ definition, block }: { definition:ScenarioDraftDefinition; block?:ScenarioBlock }) {
  const [values,setValues]=useState<DynamicFormValues>({}),[acknowledged,setAcknowledged]=useState(false);
+ if(block && isPolicyAttachment(block)) return <p>Настройка применяется автоматически к связанному блоку и не показывается сотруднику.</p>;
  if(!block) return <p>Выберите блок на карте, чтобы увидеть его оформление для сотрудника.</p>;
  const projected:ScenarioStepDisplay={id:block.id,kind:block.kind,title:block.title};
  if(block.kind==="form_page"){projected.layout=block.layout;projected.fields=block.fields.map(({visible_when: _visible,required_when: _required,...field})=>field);}
@@ -33,13 +35,14 @@ export function ScenarioRequesterPreview({ definition, block }: { definition:Sce
 export function ScenarioPagePreview({ definition, block, offeringTitle, onClose, onTest }: {definition:ScenarioDraftDefinition;block?:ScenarioBlock;offeringTitle:string;onClose:()=>void;onTest?:()=>void}) {
  const dialog=useRef<HTMLDialogElement>(null);
  const [selected,setSelected]=useState(block?.id??"");
- const previewBlock=definition.blocks?.find(item=>item.id===selected)??block;
+ const flowBlocks=definition.blocks?.filter(item=>!isPolicyAttachment(item))??[];
+ const previewBlock=flowBlocks.find(item=>item.id===selected)??(block&&!isPolicyAttachment(block)?block:flowBlocks.find(item=>item.id===definition.entry_block_id)??flowBlocks[0]);
  useEffect(()=>{const element=dialog.current;if(element&&!element.open)element.showModal();return()=>{if(element?.open)element.close();};},[]);
  return <dialog ref={dialog} className="studio-requester-page-preview" aria-label="Предпросмотр полной страницы" onCancel={onClose} onClose={onClose} onKeyDown={event=>event.stopPropagation()}>
   <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-white p-4"><h2 className="font-semibold">Предпросмотр страницы сотрудника</h2><Button autoFocus onClick={onClose}>Вернуться к карте</Button></div>
   <main className="mx-auto grid w-full max-w-4xl gap-5 p-4 md:p-8"><div><p className="text-sm text-slate-500">Помощь → {offeringTitle||"Услуга не выбрана"}</p><h1 className="mt-2 text-2xl font-semibold">{offeringTitle||definition.title}</h1>{definition.description&&<p className="mt-2">{definition.description}</p>}</div>
    <p className="text-sm text-slate-500">Предпросмотр черновика. Ответы не сохраняются, обращение не создаётся.</p>
-   <label>Страница для предпросмотра<Select value={previewBlock?.id??""} onChange={event=>setSelected(event.target.value)}>{definition.blocks?.map(item=><option key={item.id} value={item.id}>{item.title}{item.id===definition.entry_block_id?" · начало":""}</option>)}</Select></label>
+   <label>Страница для предпросмотра<Select value={previewBlock?.id??""} onChange={event=>setSelected(event.target.value)}>{flowBlocks.map(item=><option key={item.id} value={item.id}>{item.title}{item.id===definition.entry_block_id?" · начало":""}</option>)}</Select></label>
    <ScenarioRequesterPreview key={previewBlock?.id??"empty"} definition={definition} block={previewBlock}/>
    {onTest && <div className="space-y-2"><p className="text-sm">Чтобы пройти маршрут с ответами и проверить условия, запустите серверную проверку черновика.</p><Button onClick={onTest}>Пройти маршрут с начала</Button></div>}
   </main>

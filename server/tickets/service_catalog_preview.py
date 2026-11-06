@@ -128,6 +128,14 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
         sla["source"] = deepcopy(selected_sla["source"] if selected_sla else {"kind": "server"})
         if selected_sla:
             sla["selection"] = deepcopy(selected_sla)
+        selected_route = scenario_snapshot.get("routing_selection")
+        if scenario_snapshot.get("map_processing") is not None:
+            route = scenario_snapshot["map_processing"]["route"]
+            selected_route = {"kind": "route", "key": route["key"], "source": route["source"]}
+        if selected_route:
+            routing = simulation.setdefault("routing", {})
+            routing["source"] = deepcopy(selected_route["source"])
+            routing["selection"] = deepcopy(selected_route)
     return selection, simulation
 
 

@@ -32,6 +32,15 @@ def _validate_field_identities(blocks):
     return fields
 
 
+def _processing_references(block):
+    """Registry codes are unique within a policy kind, not across kinds."""
+    for field, kind in (("sla_profile", "sla_profile"), ("route", "route"),
+                        ("policy_ref", "routing_policy_ref" if block["kind"] == "routing_attachment" else "sla_policy_ref"),
+                        ("routing_policy_ref", "routing_policy_ref")):
+        if block.get(field):
+            yield field, kind
+
+
 def extract_fragment(definition, block_ids):
     source = ScenarioDraftDefinition.model_validate(deepcopy(definition)).model_dump(mode='json')
     ids = set(block_ids)
@@ -43,22 +52,23 @@ def extract_fragment(definition, block_ids):
     fact_labels = {(field.get('process_mapping') or {}).get('fact_key') or field['key']: field['label'] for field in selected_fields}
     deps = {('fact', key) for key in fact_labels}
     for block in blocks:
-        for edge in block['transitions']:
+        for edge in block.get('transitions', []):
             if edge['to'] not in ids:
                 deps.add(('block', edge['to']))
-        block['transitions'] = [edge for edge in block['transitions'] if edge['to'] in ids]
+        if 'transitions' in block:
+            block['transitions'] = [edge for edge in block['transitions'] if edge['to'] in ids]
+        if block.get('attached_to') and block['attached_to'] not in ids:
+            deps.add(('attachment_target', block['attached_to']))
         for condition in _conditions(block):
             if condition['field'] not in fields:
                 deps.add(('field', condition['field']))
-        for edge in block['transitions']:
+        for edge in block.get('transitions', []):
             processing = edge.get('processing') or {}
             for kind in ('route', 'sla_profile'):
                 if processing.get(kind):
                     deps.add((kind, processing[kind]))
-        if block['kind'] in {'sla', 'submit_ticket'}:
-            for kind in ('sla_profile', 'policy_ref'):
-                if block.get(kind):
-                    deps.add((kind, block[kind]))
+        for field, kind in _processing_references(block):
+            deps.add((kind, block[field]))
     source_profiles = (source.get('processing') or {}).get('sla_profiles', {})
     for kind, key in list(deps):
         if kind == 'sla_profile':
@@ -84,15 +94,20 @@ def insert_fragment(destination, fragment, *, position, mappings):
     source, dependencies = extract_fragment(fragment, [block['id'] for block in fragment['blocks']])
     available_fields = {field['key'] for block in target['blocks'] for field in block.get('fields', [])}
     processing = target.get('processing') or {}
-    targets = {'field': available_fields, 'route': set(processing.get('routes', {})),
+    targets = {'attachment_target': {block['id'] for block in target['blocks'] if block['kind'] not in {'sla_attachment', 'routing_attachment'}}, 'field': available_fields, 'route': set(processing.get('routes', {})),
                'sla_profile': set(processing.get('sla_profiles', {}))}
-    names = {'field': 'fields', 'route': 'routes', 'sla_profile': 'sla_profiles', 'policy_ref': 'policy_refs', 'calendar': 'calendars', 'fact': 'facts'}
+    names = {'attachment_target': 'blocks', 'field': 'fields', 'route': 'routes', 'sla_profile': 'sla_profiles', 'sla_policy_ref': 'sla_policy_refs', 'routing_policy_ref': 'routing_policy_refs', 'calendar': 'calendars', 'fact': 'facts'}
     resolved, missing = {}, []
+    dependency_keys = {(dep['kind'], dep['key']) for dep in dependencies}
     for dep in dependencies:
         kind, key = dep['kind'], dep['key']
         if kind == 'block':
             continue
         value = mappings.get(names[kind], {}).get(key)
+        if value is None and (kind == 'sla_policy_ref' or kind == 'routing_policy_ref' and ('sla_policy_ref', key) not in dependency_keys):
+            # Old saved fragments and clients used one SLA policy map. A routing-
+            # only legacy code is unambiguous; shared codes require a typed route map.
+            value = mappings.get('policy_refs', {}).get(key)
         if not value or kind in targets and value not in targets[kind]:
             missing.append(dep)
         else:
@@ -139,7 +154,7 @@ def insert_fragment(destination, fragment, *, position, mappings):
         for condition in _conditions(block):
             key = condition['field']
             condition['field'] = field_keys.get(key) or resolved[('field', key)]
-        for edge in block['transitions']:
+        for edge in block.get('transitions', []):
             edge['to'] = block_keys[edge['to']]
             if edge.get('button'):
                 edge['button']['key'] = _new_key('action')
@@ -147,17 +162,18 @@ def insert_fragment(destination, fragment, *, position, mappings):
             for kind in ('route', 'sla_profile'):
                 if settings.get(kind):
                     settings[kind] = resolved[(kind, settings[kind])]
-        if block['kind'] in {'sla', 'submit_ticket'}:
-            for kind in ('sla_profile', 'policy_ref'):
-                if block.get(kind):
-                    block[kind] = resolved[(kind, block[kind])]
+        if block.get('attached_to'):
+            key = block['attached_to']
+            block['attached_to'] = block_keys.get(key) or resolved[('attachment_target', key)]
+        for field, kind in _processing_references(block):
+            block[field] = resolved[(kind, block[field])]
     target['blocks'].extend(source['blocks'])
     _validate_field_identities(target['blocks'])
     definition = ScenarioDraftDefinition.model_validate(target)
     from tickets.request_scenario_validation import validate_scenario
     inserted = list(block_keys.values())
-    invalid = [issue for issue in validate_scenario(definition) if issue.code in {'incompatible_condition', 'unknown_field'}
+    invalid = [issue for issue in validate_scenario(definition) if issue.code in {'incompatible_condition', 'unknown_field', 'duplicate_attachment'}
                and any(issue.path.startswith(f'blocks.{key}.') for key in inserted)]
     if invalid:
-        raise FragmentDependencyError([dep for dep in dependencies if dep['kind'] == 'field'])
+        raise FragmentDependencyError([dep for dep in dependencies if dep['kind'] in {'field', 'attachment_target'}])
     return definition.model_dump(mode='json'), inserted

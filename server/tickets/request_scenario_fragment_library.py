@@ -83,7 +83,7 @@ async def insert_saved_fragment(repo, identifier, fragment_id, payload):
         raise ScenarioAdminError('UPGRADE_REQUIRED', 409)
     mapping = payload.mappings.model_dump()
     # Resolve mappings and validate before writing or cloning anything.
-    insert_fragment(draft.definition, fragment.definition, position=payload.position, mappings=mapping)
+    candidate, candidate_ids = insert_fragment(draft.definition, fragment.definition, position=payload.position, mappings=mapping)
     refs = list(material_references(fragment.definition))
     ids = {ref['asset_id'] for ref in refs}
     links = set((await repo.session.scalars(select(RequestStudioFragmentAsset.asset_id).where(
@@ -96,9 +96,13 @@ async def insert_saved_fragment(repo, identifier, fragment_id, payload):
         if not asset or asset.removed_at or asset.scenario_id != fragment.source_scenario_id or any(asset_metadata(asset) != ref for ref in refs if ref['asset_id'] == identifier_):
             raise ScenarioAdminError('ATTACHMENT_REFERENCE_INVALID', 409)
         sources[identifier_] = asset
-    for value in mapping.get('policy_refs', {}).values():
-        from tickets.request_scenario_processing import apply_scenario_policy_refs
-        await apply_scenario_policy_refs(repo.session, {'template_context': {}}, {'sla': value})
+    # A policy mapping retains its actual kind, including final route overrides.
+    from tickets.request_scenario_processing import scenario_sla_reference_issues
+    selected = ScenarioDraftDefinition.model_validate(candidate)
+    selected = selected.model_copy(update={'blocks': [block for block in selected.blocks if block.id in candidate_ids]})
+    issues = await scenario_sla_reference_issues(repo.session, selected)
+    if issues:
+        raise ValueError({issue['path']: issue['message'] for issue in issues})
     fragment_copy, _ = await clone_material_assets(repo.session, row.id, fragment.definition, sources, repo.auth.actor_id)
     updated, inserted = insert_fragment(draft.definition, fragment_copy, position=payload.position, mappings=mapping)
     result = await repo.save(row.id, ScenarioSave(revision=draft.revision,

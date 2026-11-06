@@ -13,6 +13,15 @@ const draft = (): ScenarioDraftDefinition => ({
 });
 
 describe("safe scenario builder operations", () => {
+ it("keeps settings outside the flow during create, duplicate, and target removal", () => {
+  const source = { ...draft(), schema_version: 4 as const, blocks: [], entry_block_id: null };
+  const created = addBlock(source, "sla_attachment", null);
+  expect(created.entry_block_id).toBeNull(); expect(created.blocks![0]).not.toHaveProperty("transitions");
+  const d = { ...draft(), schema_version: 4 as const }; d.blocks!.push({ id: "sla", kind: "sla_attachment", title: "SLA", attached_to: "done" });
+  const duplicate = duplicateBlock(d, "sla").blocks!.at(-1)!;
+  expect(duplicate).not.toHaveProperty("attached_to"); expect(duplicate).not.toHaveProperty("transitions");
+  expect(removeBlock(d, "done", "questions").blocks!.find(block => block.id === "sla")).toMatchObject({ attached_to: "questions" });
+ });
   it("reconciles typed effects when choices are renamed, removed or replaced by a different answer type", () => {
     const field = { key: "scope", label: "Scope", type: "radio" as const, options: [{ value: "all", label: "All" }, { value: "one", label: "One" }], process_mapping: { effects: [{ value: "all", facts: { impact: "department" as const } }] } };
     expect(editFieldOption(field, 0, "team").process_mapping?.effects?.[0].value).toBe("team");

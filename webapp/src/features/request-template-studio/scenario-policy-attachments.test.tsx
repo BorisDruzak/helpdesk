@@ -1,0 +1,59 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import type { ScenarioDraftDefinition } from "./scenario-contract";
+import { ScenarioPolicyAttachmentEditor } from "./scenario-policy-attachments";
+import { fetchHelpdeskModelRegistry } from "../forms-builder/api";
+import { ScenarioRequesterPreview } from "./scenario-requester-preview";
+const draft = (): ScenarioDraftDefinition => ({ schema_version: 4, scenario_key: "test", title: "Карта", service_code: "it", offering_full_code: "it.test", process_binding: { request_template_key: "test" }, entry_block_id: "end", blocks: [
+ { id: "end", kind: "submit_ticket", title: "Обращение" }, { id: "sla", kind: "sla_attachment", title: "SLA" }, { id: "route", kind: "routing_attachment", title: "Маршрут" },
+], processing: { defaults: { route: "desk", sla_profile: "normal" }, routes: { desk: { title: "Поддержка", queue_code: "support" } }, sla_profiles: { normal: { title: "Рабочий SLA", first_response_minutes: 15, resolution_minutes: 240, time_basis: "business", calendar_id: 3 } } } });
+vi.mock("../forms-builder/api", () => ({ fetchHelpdeskModelRegistry: vi.fn(async () => ({ policies: { sla: [{ code: "sla", title: "Опубликованный SLA", is_active: true, published_at: "now" }], routing: [{ code: "route", title: "Опубликованный маршрут", is_active: true, published_at: "now" }, { code: "draft", title: "Черновик маршрута", is_active: true }] } })) }));
+it("chooses a target and an existing SLA profile without creating duration defaults", () => {
+ const definition = draft(), change = vi.fn();
+ render(<ScenarioPolicyAttachmentEditor block={definition.blocks![1]} definition={definition} disabled={false} onChange={change} />);
+ expect(change).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByLabelText("Применять к блоку"), { target: { value: "end" } });
+ expect(change.mock.lastCall![0].blocks[1]).toMatchObject({ attached_to: "end" });
+ fireEvent.change(screen.getByLabelText("Профиль SLA"), { target: { value: "normal" } });
+ expect(change.mock.lastCall![0].blocks[1]).toMatchObject({ sla_profile: "normal" });
+ expect(change.mock.lastCall![0].processing).toEqual(definition.processing);
+ expect(screen.queryByRole("option", { name: "Маршрут" })).not.toBeInTheDocument();
+});
+it("does not render attachment cards as employee steps", () => {
+ const definition = draft();
+ render(<ScenarioRequesterPreview block={definition.blocks![1]} definition={definition} />);
+ expect(screen.getByText(/не показывается сотруднику/)).toBeInTheDocument(); expect(screen.queryByLabelText("Блок глазами сотрудника")).not.toBeInTheDocument();
+});
+it("chooses existing map routes and shows their actual queue", () => {
+ const definition = draft(), change = vi.fn();
+ render(<ScenarioPolicyAttachmentEditor block={{ ...definition.blocks![2], kind: "routing_attachment", route: "desk" }} definition={definition} disabled={false} onChange={change} />);
+ expect(screen.getByText(/Очередь: support/)).toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText("Маршрут обработки"), { target: { value: "" } });
+ expect(change.mock.lastCall![0].blocks[2]).not.toHaveProperty("route");
+});
+it("shows only published active routing policies and preserves an unavailable selection", async () => {
+ const definition = draft(); definition.processing = null; const change = vi.fn();
+ render(<ScenarioPolicyAttachmentEditor block={{ ...definition.blocks![2], kind: "routing_attachment", policy_ref: "missing" }} definition={definition} disabled={false} onChange={change} />);
+ await waitFor(() => expect(screen.getByRole("option", { name: "Опубликованный маршрут" })).toBeInTheDocument());
+ expect(screen.queryByRole("option", { name: "Черновик маршрута" })).not.toBeInTheDocument();
+ expect(screen.getByRole("option", { name: /Сохранённое правило недоступно/ })).toHaveValue("missing");
+ expect(change).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByLabelText("Правило маршрутизации"), { target: { value: "route" } });
+ expect(change.mock.lastCall![0].blocks[2]).toMatchObject({ policy_ref: "route" });
+});
+it("reports target conflicts instead of overwriting another setting", () => {
+ const definition = draft(); definition.blocks!.push({ id: "other", kind: "sla_attachment", title: "Другой SLA", attached_to: "end" });
+ const change = vi.fn();
+ render(<ScenarioPolicyAttachmentEditor block={definition.blocks![1]} definition={definition} disabled={false} onChange={change} />);
+ fireEvent.change(screen.getByLabelText("Применять к блоку"), { target: { value: "end" } });
+ expect(screen.getByRole("alert")).toHaveTextContent(/уже есть/); expect(change).not.toHaveBeenCalled();
+});
+it("offers retry on registry failure without clearing saved policy", async () => {
+ vi.mocked(fetchHelpdeskModelRegistry).mockRejectedValueOnce(new Error("offline"));
+ const definition = draft(); definition.processing = null;
+ render(<ScenarioPolicyAttachmentEditor block={{ ...definition.blocks![1], kind: "sla_attachment", policy_ref: "saved" }} definition={definition} disabled={false} onChange={vi.fn()} />);
+ await waitFor(() => expect(screen.getByRole("button", { name: "Повторить загрузку правил" })).toBeInTheDocument());
+ fireEvent.click(screen.getByRole("button", { name: "Повторить загрузку правил" }));
+ await waitFor(() => expect(screen.getByRole("option", { name: "Опубликованный SLA" })).toBeInTheDocument());
+ expect(screen.getByRole("combobox", { name: "Правило SLA" })).toHaveValue("saved");
+});
