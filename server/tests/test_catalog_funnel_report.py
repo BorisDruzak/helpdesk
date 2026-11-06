@@ -1,4 +1,10 @@
 import json
+import pytest
+import subprocess
+import sys
+from pathlib import Path
+
+pytestmark = pytest.mark.no_db
 from scripts.catalog_funnel_report import summarize
 
 def test_report_deduplicates_sequences_and_does_not_call_incomplete_flows_abandoned():
@@ -10,6 +16,11 @@ def test_report_deduplicates_sequences_and_does_not_call_incomplete_flows_abando
     assert result['searches']==1 and result['flows_abandoned']==0
     assert summarize([lines[0]])['flows_unfinished_or_unobserved']==1
     assert result['median_submit_ms']==1000
-import pytest
 
-pytestmark = pytest.mark.no_db
+
+def test_cli_runs_without_server_runtime_or_third_party_packages(tmp_path):
+    script=Path(__file__).resolve().parents[2]/'scripts/catalog_funnel_report.py'
+    journal=tmp_path/'events.txt';journal.write_text('',encoding='utf-8')
+    result=subprocess.run([sys.executable,'-I','-S',str(script),str(journal)],cwd=tmp_path,capture_output=True,text=True)
+    assert result.returncode==0,result.stderr
+    assert json.loads(result.stdout)['flows_opened']==0

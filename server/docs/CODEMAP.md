@@ -985,6 +985,7 @@ and paths from the existing admin handler without altering backend contracts.
 
 ## Requester funnel metrics
 
+`web_api/catalog_funnel_contract.py` owns the dependency-free event allowlist.
 `web_api/catalog_funnel_handlers.py` accepts bounded authenticated UX events at
 `POST /api/web/requester/catalog-events`; `features/requester/catalog-funnel.tsx`
 owns one anonymous flow across form/entrance remounts. The journal contains no

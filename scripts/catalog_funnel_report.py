@@ -5,7 +5,7 @@ from collections import Counter
 
 def summarize(lines):
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'server'))
-    from web_api.catalog_funnel_handlers import validate_metric
+    from web_api.catalog_funnel_contract import validate_metric
     flows={};rejected=0
     for line in lines:
         if '[catalog_funnel] ' not in line:continue
