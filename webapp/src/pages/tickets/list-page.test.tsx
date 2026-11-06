@@ -288,6 +288,7 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
       actions: {
         status_options: [{ value: "waiting_on_user", label: "Ждёт пользователя" }],
         can_send_internal_note: true,
+        can_send_public_message: true,
         take_in_work: { allowed: true, reason_code: null, reason: null },
         can_hide_from_workspace: true,
         can_unhide_from_workspace: false,
@@ -446,10 +447,12 @@ describe("TicketListPage", () => {
     const workspace = workspacePayload();
     workspace.detail.ticket.status = "in_progress";
     workspace.detail.ticket.assignee_id = null;
+    workspace.detail.actions.can_send_public_message = false;
     workspace.detail.actions.take_in_work = { allowed: true, reason_code: null, reason: null };
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
     postSupportTicketAssignMock.mockImplementation(async () => {
       workspace.detail.ticket.assignee_id = "support-test";
+      workspace.detail.actions.can_send_public_message = true;
       return { ticket_id: "ticket-1" } as any;
     });
     renderTicketListPage("/app/tickets/ticket-1", false);
@@ -489,6 +492,7 @@ describe("TicketListPage", () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     const workspace = workspacePayload();
     workspace.detail.ticket.status = status;
+    workspace.detail.actions.can_send_public_message = false;
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
     fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [
       { ...timelinePayload().items[0], event_id: 501, event_type: "chat_message", event_category: "message", from_role: "support", visibility: "public", text: "Публичный итог работы" },
@@ -581,6 +585,7 @@ describe("TicketListPage", () => {
     const view = renderTicketListPage("/app/tickets/ticket-1");
     await screen.findByTestId("support-reply-composer");
     fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["log"], "ticket-one.txt")] } });
+    await waitFor(() => expect(uploadSupportTicketAttachmentMock).toHaveBeenCalledWith("ticket-1", expect.objectContaining({ name: "ticket-one.txt" })));
     fireEvent.click(await screen.findByText("Второе обращение"));
     await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
     fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Reply for ticket two" } });
@@ -613,10 +618,12 @@ describe("TicketListPage", () => {
     const view = renderTicketListPage("/app/tickets/ticket-1");
     await screen.findByTestId("support-reply-composer");
     fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["A"], "ticket-a.txt")] } });
+    await waitFor(() => expect(uploadSupportTicketAttachmentMock).toHaveBeenNthCalledWith(1, "ticket-1", expect.objectContaining({ name: "ticket-a.txt" })));
     fireEvent.click(await screen.findByText("Второе обращение"));
     await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
     fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Reply while B uploads" } });
     fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["B"], "ticket-b.txt")] } });
+    await waitFor(() => expect(uploadSupportTicketAttachmentMock).toHaveBeenNthCalledWith(2, "ticket-2", expect.objectContaining({ name: "ticket-b.txt" })));
     const attach = screen.getByRole("button", { name: "Прикрепить файлы" });
     expect(attach).toBeDisabled();
     expect(attach).toHaveAttribute("title", "Прикрепляем...");
@@ -640,6 +647,7 @@ describe("TicketListPage", () => {
     const view = renderTicketListPage("/app/tickets/ticket-1");
     await screen.findByTestId("support-reply-composer");
     fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["old"], "previous-visit-a.txt")] } });
+    await waitFor(() => expect(uploadSupportTicketAttachmentMock).toHaveBeenCalledWith("ticket-1", expect.objectContaining({ name: "previous-visit-a.txt" })));
     fireEvent.click(await screen.findByText("Второе обращение"));
     await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
     fireEvent.click(screen.getByText("Проверить OLA очередь"));
@@ -1145,6 +1153,7 @@ describe("TicketListPage", () => {
     );
     const unassignedPayload = workspacePayload();
     unassignedPayload.detail.ticket.assignee_id = null;
+    unassignedPayload.detail.actions.can_send_public_message = false;
     fetchSupportTicketWorkspaceMock.mockResolvedValue(unassignedPayload);
     postSupportTicketStatusMock.mockResolvedValue({ ticket_id: "ticket-1", status: "waiting_on_user", status_label: "Ждёт пользователя" });
     postSupportTicketQueueMock.mockResolvedValue({
@@ -2571,6 +2580,7 @@ describe("UI-SUPPORT-001 default workspace", () => {
   it("requires successful take-in-work before enabling a public reply and keeps status on conflict", async () => {
     const workspace = workspacePayload();
     workspace.detail.ticket.status = "queued";
+    workspace.detail.actions.can_send_public_message = false;
     workspace.detail.ticket.status_label = "В очереди";
     workspace.detail.ticket.assignee_id = null;
     workspace.detail.actions.status_options = [{ value: "in_progress", label: "В работе" }];

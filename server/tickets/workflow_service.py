@@ -928,7 +928,9 @@ def _build_transition_timestamps(ticket, from_status: str, to_status: str, now: 
 
     if to_status == "closed":
         updates["closed_at"] = now
-        updates["resolution_at"] = now
+        # Acceptance closes the ticket; it must not restart an already stopped SLA.
+        if getattr(ticket, "resolution_at", None) is None:
+            updates["resolution_at"] = now
 
     if to_status == "canceled":
         updates["canceled_at"] = now

@@ -1,18 +1,782 @@
+# 2026-11-06 Unified user administration
+
+Goal: separate Users (profile/account/role/queues) from reference Registries.
+Scope: Helpdesk admin frontend and atomic person/account access provider only.
+Constraints: preserve existing dirty work; no dependencies, migration, production
+deployment or live role grants. User explicitly requested implementation of the
+unified card proposed in this chat. Existing checkout/branch reused.
+Decisions: compact searchable list + Profile/Account/Permissions card; canonical
+group editor remains within Users. Legacy access links redirect to Users.
+Current State: local implementation complete. Unified Users card owns profile,
+account, role and queue/group grants; Registries owns reference/device jobs.
+Legacy redirects and compact person tools preserve advanced workflows. Clean
+cards adopt operation results; conflicting drafts block saves pending reload.
+Safe unique-login membership aliases preserve password/SSO grants without
+changing ticket ownership or duplicating operators/approvers. Scoped reviewers
+report no remaining actionable findings. GitNexus unavailable in this session;
+bounded source/tests used; Query 5 and SQLAlchemy 2 documentation checked.
+Next Steps: authorized staging deployment completed at
+d7971ca528b416eb77616026ee9144a713334304 over the actual9c247da staging baseline;
+the current mixed checkout and index were preserved. Staging remains available
+for the user. Actual card name is Заварухина Марина; no linked login exists yet.
+Live UI role/queue selection and rollback-only installed-service persistence
+smoke passed; no actual employee rights/profile changed. Schema stays155,
+business counts77/18525/6/160/45 unchanged. See staging acceptance report.
+Verification: isolated PG83 + saved-view3 + adjacent noDB48 passed; frontend80
+focused tests, browser5 (1366/1920/390), TypeScript/Vite build and workspace
+verification passed. Full frontend run1061 passed/5 failed; two stale sidebar
+assertions fixed and rechecked, three failures outside touched surfaces remain
+confirmed separately (requester role label and two support upload tests).
+Handoff: docs/ADMIN_USERS_WORKSPACE.md and
+docs/ADMIN_USERS_VERIFICATION_2026-11-06.md record usage, checks and limitations.
+Deployment: docs/ADMIN_USERS_STAGING_ACCEPTANCE_2026-11-06.md.
+
 # 2026-10-27 SSO + Helpdesk + Endpoint + WorkTime
 
-Latest checkpoint, 2026-10-27 05:30 UTC (10:30 Asia/Yekaterinburg): Helpdesk
+2026-11-03 current deployment reconciliation completed: separate reviewed capsule
+returned CurrentDeploymentReconciled for Endpoint staging1b6ce5a/schema43. Original
+consumed activation/backup/fallback/HOLD/switch-intent receipts remain byte-exact;
+original gate is still historically HOLD and its exact reason was not recovered.
+Confirmed diagnostic defect: imported Hold/Refused classes had different identities
+and their codes were dropped. New pinned diagnostics register actual classes at
+each module load and persist only allowed symbolic codes, phases and bounded frames.
+New local tool commit e40fd3eca3ff321a2f6870535ac688bbc634e551 (4 task files,
+no push) adds the inert .118 restore primitive, tests, runbook and CODEMAP.
+134 focused deploy/SSO/WorkTime/companion tests passed, with one existing Authlib
+deprecation warning. Short delta review fixed orphan-process cleanup, target-FS
+capacity, dynamically loaded Refused registration and durable receipt writes.
+Original12,521,774-byte PGDMP SHA c798ad8e33adc6403cf6cb72941673691f07f8b110705a1bbbe73564cfc543fc
+was actually restored in a new peer-only, socket-only PostgreSQL16 cluster.
+All71 tables/schema43/validated constraints restored;24 auth/audit/WorkTime seals
+reconstruct the original baseline allowing only3 qualified closed events within
+the independently evidenced consumed-marker-to-backup-receipt interval. This does
+not reconstruct or validate the lost original startup windows. The private cluster
+was stopped by exact pidfd binding and removed; independent /proc/Unix-socket
+checks confirm no owned process/socket/directory remains. Current full business
+seals, services/processes, configuration and main PostgreSQL were unchanged.
+Fresh operator counts clear: blocking/inflight/unknown/inconsistent0. Strict TLS,
+exact served index/JS/CSS and actual Linux ordinary/explicit-stepup URL probes pass;
+three unauthenticated employee APIs return401. No app redeploy, migration, restart,
+credential grant, production operation or domain-session action was performed.
+Services remain running for the user's staging work. New acceptance is limited to
+this reconciliation and does not authorize production rollout or native delivery.
+Evidence: C:/Temp/worktime-hold-reconcile-20261103/{run-result.json,
+independent-verification.json,auth-surface.json,verification.md}. Native domain
+notification and real pending-explanation acceptance remain deferred separately.
+
+2026-11-02 current live employee checkpoint: ordinary WorkTime SSO now accepted
+in the actual browser, reusing the user's existing Keycloak session with no OTP
+or password automation. Fresh readonly preflight found Helpdesk staging already
+at376b46c012160473fe2ebc40a0185784f692e487/PID316910; Endpoint remains1b6ce5a/
+API272154/worker272211. Both strict TLS entry probes return200 and config hashes
+match the previous checkpoint. Another explicitly authorized task had already
+created admin-2's separate confirmed profile with Helpdesk admin role; it was
+not duplicated or downgraded. Exact issuer/subject/GUID, verified legacy alias,
+active person and confirmed candidate match current canonical Keycloak data.
+Endpoint had no admin link or privileged grants; these remain absent after login.
+Five actual UI transitions start/break/resume/off_pc/end persisted once. Two
+clearly TEST corrections are immediately recorded with zero approvals; own audit7,
+events5, final stateENDED. First datetime fill displayed08:01 but submitted the
+default hour08:00-09:00; retain this failed input evidence. Keyboard-event input
+survived rerender; a new compensating ENDED08:01-09:00 record leaves one test
+minute plus the measured FSM seconds. Original hour/history retained, no SQL
+rewrites or deletion. Server readback confirms3600s WORKING then3540s ENDED;
+UI totals/history survive reload, browser warnings/errors0. Foreign WorkTime
+business-row digests unchanged (state maintenance cursors excluded explicitly).
+Technical activity remains UNKNOWN; no fake OS binding, schedule or return request.
+Windows VM .120 is now domain-joined and reachable, but Sensor session2 belongs
+to another identity and no selected admin-2/original-pilot session was observed.
+User chose to prepare that separate domain session later; native notification
+acceptance remains deferred. Existing production tab, processes and credentials
+were preserved. Original deployment HOLD remains distinct and unchanged.
+Evidence: C:/Temp/worktime-admin2-profile-20261102/{preflight-current.json,
+binding-verification.json,snapshot-before.json,snapshot-after.json,
+snapshot-compensated.json,cabinet-verified.jpg}. No application source changes,
+new user, person, binding or role grant in this turn. Earlier pending-profile
+notes below are superseded by this fresh observation.
+
+2026-10-30 latest login checkpoint: Endpoint staging now serves
+1b6ce5a83dd17852ecca724c1b45378ac8536041/schema43, API272154/worker272211.
+Ordinary employee login omits administrative ACR; explicit step-up and privileged
+callbacks retain assurance checks.97 focused source checks and10 deployment guards
+passed, with short delta reviews. Original activation returned HOLD without a
+persisted reason and remains HOLD; no replay or blanket gate PASS. Independent
+readonly current-verification.json confirms exact source/runtime/packages, strict
+TLS/assets, unchanged control/non-audit rows and preserved old audit rows; only
+3 qualified gateway-close and3 gateway-connect events were appended. Backup SHA/
+TOC checked, not restore-tested. Helpdesk19d/configs/production apps unchanged.
+Keycloak business login now includes only the separately proven admin-2 AD object
+through an exact-DN/GUID readonly provider. v1 stopped with its owned provider
+disabled; reviewed v2 reused it without a second create and returned
+BusinessAdLoginEnabled. Existing pilot/identities/roles/flows/OTP were preserved.
+No MFA setting was changed by the employee-login fix. The stale OTP tab was
+replaced with fresh ordinary sign-in: acr_values absent, login/password form
+visible. Authenticated cabinet acceptance remains pending: no staging UiUser,
+verified ui_login alias or confirmed identity binding exists for admin-2. Awaiting
+the user's choice of a separate test profile or a specified existing employee;
+no personnel binding or role grant was made. Native measured-return acceptance
+still needs its separately qualified staging Core/OS binding/schedule.
+Evidence: C:/Temp/worktime-employee-login-level-20261030/current-verification.json
+and C:/Temp/worktime-domain-login-20261030/v2/apply-result.json. All PID/source
+observations below are historical checkpoints, not the current deployment.
+
+2026-10-30 current WorkTime web-entry deployment: Endpoint staging `.118` now
+serves93525ba4740f62171a9d7161460b01e823f39b6b/schema43, API270584/worker270639.
+Agent notifications continue to open the employee web portal; work transitions,
+explanations and corrections are saved there without approval. The fix preserves
+only a validated day/request UUID through the encrypted one-use SSO flow.
+Canonical clean-source archive and exact unchanged Python package versions
+qualified; fresh12.5MB PGDMP SHA/TOC verified, not restore-tested. Authentication/
+WorkTime row sets preserved with only3 bounded gateway-close audit appends.
+HD267363/nginx213268 and configs unchanged; strictTLS/index/JS/CSS hashes passed;
+no blocking/inflight/unknown/inconsistent work.10 focused deploy guards and short
+delta reviews passed after correcting startup-job/recovery/timeout/source pins.
+The browser reaches domain sign-in with the target retained. Authenticated live
+employee acceptance remains pending user login; the request ID in that navigation
+probe is synthetic. Full native measured-return acceptance also needs a matching
+staging Core/verified OS binding/schedule and genuine domain activity. Local PC
+is domain-joined with signed-Setup158 components, but its Core remains production-
+origin and was neither redirected nor duplicated. Production `.19` not targeted.
+Evidence: C:/Temp/worktime-companion-web-entry-20261030/verification.md,
+activate-result.json and served-verification.json. Earlier PID/source observations
+below are historical; no prior consumed deployment phase was repeated.
+
+2026-10-30 follow-up: the two inventory commands are terminal EXPIRED, not
+successful. ACKs at12:19:26/27 preceded session closures during the owned restart;
+no results arrived. Native15-minute expiry closed command/delivery/collection at
+12:34:29/37 with collection_expired. Fresh readonly13:34:02UTC snapshot has
+inflight0/unknown0/inconsistent0, blocking0 and operator_counts_clear=true. No
+retry/force/row rewrite; this supersedes the current-state two-inflight note below
+without relabelling historical false-gate evidence.
+
+Next stage delivered: Helpdesk staging navigation commit
+19d53152f1b1da6330654d740d7c6993fe70a583 (9 task files, no push), fixed config
+origin pairs prod->prod/staging->staging and matching frontend whitelist.31 backend,
+31 focused frontend and4 Chromium cases passed, including actual fixture document
+navigation/no Referer/logout/desktop/mobile. Canonical19d archive deployed on .118;
+HD PID267363/schema151,39 package versions unchanged, six complete durable
+identity/person/audit table sets preserved. Only WORKTIME_PORTAL_URL changed;
+native projection accepts staging/rejects production. Endpoint10c/schema43 and
+API263352/worker263407 unchanged. Fresh13.7MB PGDMP SHA/TOC verified, not restored.
+First canonical install held on a diagnostic import-path error; OLD availability
+was independently verified. Exact already-owned candidate activation completed
+after driver fix, without repeating package install/migrations; old HOLD retained.
+StrictHTTPS and16 served asset hashes passed; real login page has0 console errors/
+warnings. Authenticated employee navigation remains fixture/native projection
+evidence, not a fresh SSO login. Short independent reviews covered only deltas.
+Evidence: C:/Temp/worktime-inventory-followup-20261030/activation-result.json and
+served-assets.json. Detailed plan: docs/superpowers/plans/2026-10-30-worktime-staging-navigation.md.
+Awaiting IP/name and readiness of the separate domain pilot session for native
+WorkTime notifications; the user was asked for that missing host information.
+
+WorkTime no-approval source candidate is committed locally (no push):
+10c2aa963fb98685f6146be13f82d06f392bcea4,
+feat(worktime): record corrections without approval;18 task-only files, existing
+Keycloak/identity-operator edits excluded. Root49 backend checks locally/52 on
+isolated Linux/PostgreSQL passed;69 UI units/build and13 browser scenarios passed.
+Reviewer-found stale HR monthly report/CSV was reproduced RED and fixed GREEN;
+final delta review clear. Desktop/mobile correction screenshots visually checked.
+GitNexus project_work target not indexed (UNKNOWN); direct source caller search
+and tests verified the changed dynamic path, no sync/reindex workaround.
+Canonical clean-checkout archive endpoint-platform-10c2aa963fb9.tar.gz434283B,
+SHA5cba11ff2346c3e477004c869a2d8eb3ddc82e756f696e6b44f67a1b4dcdec94;
+manifest78ed36b0f925e8c5fa167ad1617598f95b0ca5bc7594d04e0464ba5103abb798,
+300 members/266 files,263 source files exact to Git plus3 exact built assets.
+Release checkout: C:/Users/admin-2/Documents/endpoint/.worktrees/worktime-recorded-release-20261030
+(native app worktree creation was unavailable for this non-chat repo; fallback
+Git worktree inside existing ignored .worktrees, clean). Static pinned operator
+inputs installed root700/files600 on .118; unfinished controller NOT executed.
+Staging .118 now serves10c2aa/schema0043_worktime_recorded. API263352 and
+worker263407 qualified against exact source, service identity and process starts;
+strict HTTPS/health200. Fresh custom backup has verified SHA/TOC; not restore-tested.
+Existing correction1 applies its entire900s as recorded/approvalnull, approvals0;
+work total962s, UNKNOWN86400s remains UNKNOWN. Events5/explanation1/WT audit7
+preserved, no request replay or row rewrite. Three served assets match archive
+hashes/sizes exactly. Canonical previous-release CAS updated ab9->62 after effect.
+V3 early HOLD recovered OLD safely; V4 migrated successfully but held on a late
+qualified gateway connect after its premature window end. Owned NEW startup
+resume preserved immutable failed receipts; its120s quiet wait did not pass.
+Separate readonly runtime verification proved all24 prior row sets and controls
+exact, allowing only12 bounded owned lifecycle audit appends (6closed/6connected).
+Actual counts retain two acknowledged context.inventory.collect jobs, each linked
+to same-device context collection/no operation; unknown/inconsistent0. They were
+not forced/replayed. global_quiet_gate_passed=false remains explicit; availability,
+data preservation and WorkTime effect passed, no blanket release-gate PASS claimed.
+Final evidence: C:/Temp/worktime-self-recorded-20261030/release-v4/post-effect.json;
+runtime receipt880f69caa3c32b1f53d05f2ed903df0ee7fefd4b148e819d42d93de30b1be33b.
+All implementation/procedure deltas independently reviewed; review stayed scoped.
+No fresh employee-browser SSO login or native notification acceptance claimed.
+Clean npm build reports5 pre-existing dev-tool vulnerabilities; production-only
+audit0; lock/dependency versions unchanged, no automatic audit fix.
+
+2026-10-30 user decision supersedes the historical approval requirements below:
+remove WorkTime agreement/reviewer workflow; employee records explanation and
+correction directly. No second approver account is now required. Current work:
+backend immediate correction projection + disabled decision endpoints, frontend
+approval removal, additive0043 removing only self-finalizer DB constraint, focused
+tests/real isolated PG/browser/review and canonical staging release. Preserve old
+decisions/snapshots/raw events/audit, access boundaries and technical UNKNOWN.
+Detailed active plan: Endpoint docs/superpowers/plans/2026-10-30-worktime-self-recorded.md.
+Domain pilot session readiness remains needed only for native notification tests.
+
+Identity-operator source stage, 2026-10-29: reviewed SSO-only create/owned-retire
+CLI implemented in the approved Endpoint worktree; NO live rights/deployment.
+Helpera66fd2b445ab97c131604d969a245c4fab10e25db9ec426f5efdc91c2e82118e;
+Root25 unit +31 existing SSO regressions PASS on Windows3.12. Linux3.12.3 with
+the staging SQLAlchemy2.1.6/asyncpg0.32.0:28 PASS including3 real disposable PG
+cases, no failures/errors/skips. Concurrent4 calls create one; injected failures
+rollback; retirement preserves whole employee/fallback sessions/history. Canonical
+audit-redaction and actual driver UUID-subclass defects were fixed with regressions
+and bounded independent delta review. Earlier26PASS/1FAIL receipt is retained,
+not relabelled. Second raw result127f789e6ef85e505ec798c234fe3947716493bf12967afdc0c79f983606dccf;
+Root frozen-source verification08210169086a7cb2fa76889ad7945c2fe071e9087ec66a717f983a51d7edf286.
+Exact719 source/dependency bytes match; test host/loopback verified and owned PG
+stopped, no new processes/listeners/pidfile. Existing app DBs/config/services not
+changed by these tests. No auto expiry claimed, no personnel grant, no commit/push.
+Next live rights/admin/approval work needs the reviewed deployment/operations
+procedure and explicit owned actor qualification; separate AD approver and domain
+pilot-session IP/readiness remain pending. The genuine business checkpoint below
+remains current. Also observed: Helpdesk's fixed WorkTime link currently permits
+only the production URL, while staging config remains blank; qualify a safe staging
+navigation boundary before enabling that link. No staging-to-production link enabled.
+
+Current business checkpoint: correction-only business-resume-v1 actual PASS.
+Source freeze60439793ad483c6493dc088f4a8b511378e630754d09d392b3359d2a0abce984;
+raw resultc0618c1424fd9a5855c5c71159ea68ac9adf034b4e44df0b507ecafc211a9f2c;
+Root verification0b914fe3ddc54a0c96f6352c073d985aed047875bdb713cb5c7816609af29e0e;
+accepted7caf1c4850afd5f78e56cecac75ee6078ce6e6c4a9349de130df7858b8d4f3093.
+Only one new pending correction was submitted through the real employee UI;
+the prior six operations and their whole records remained exact. Fresh genuine
+password1/OTP1/callback303 and native BFF/session checks passed. Work62s/offpc1s/
+break1s, UNKNOWN86400, five events and explanation were preserved. Admin401,
+DLP403, HR403 and invalid-CSRF403 passed with valid employee authority.
+Desktop/mobile screenshots were visually checked, no overflow/errors/blocked/5xx.
+One actual UI logout DELETE204 awaited; same-cookie401 and native revocation
+passed. Current retired auth1/4/4/6; WTstate1 ENDED/events5/explanation1/correction1
+pending/audit7, all other WT tables0. Original pilot/OTP, HD20/admin/scopes and
+all old auth/audit rows stayed unchanged. Forty-five focused checks and bounded
+independent native/UI/transport reviews passed. Earlier prefix6 HOLD below is
+preserved and not relabelled; its operations were never replayed.
+No approval, personnel grants, notifications, live ticking timer, RP logout or
+canonical-six acceptance claim. Separate approver and domain-session PC readiness
+are pending. Prepare the missing controlled SSO-only identity-operator CLI in the
+approved Endpoint worktree (plan docs/superpowers/plans/2026-10-29-identity-operator.md);
+source/tests only, no rights applied, fallback untouched, no commit/push.
+
+Latest owned business checkpoint: business-v1 actual HOLD after6 canonical UI
+operations, sourcefreeze0ebbdbee42413018350cf2b754b0f1d1c24da5d5cbb25c3a76f04393b1ccbee2.
+Resultd0e21321267cc21aea78ef6ac591d7ae4e5c75a994f14362910568714d1c8d5c;
+protected accepted-6.json9e502267e8e36a2d5dc392bd37cffea017ec1721aa427df062ea1590af59f0db.
+Five actual FSM events plus one explanation persisted; measured work62s/offpc1s/
+break1s, same-key200 identical DTO/different-payload409 passed. Original events,
+totals/UNKNOWN, all old auth/audit/HD20/admin/pilot/OTP guards passed for prefix6;
+canonical cleanup revoked the session and native-after verified partial6, fullfalse.
+The correction was NOT submitted: exact wrapped-label selector for its status
+timed out. Independent actual Chromium synthetic canonical HTML reproduced old
+exact label count0; scoped correction combobox count1/defaultWORKING. This is a
+harness selector defect, not a product/credential/permission failure. Preserve
+HOLD, all six records and original freeze; never rerun those operations or reset.
+Current retired auth: identity1/session3/upstream3(all revoked)/flows5, created/
+revoked SSO audits3 each; WTstate1/ENDED, events5, explanation1, audit6, correction0,
+all other WT tables0. Resume-only source preparation is
+employee-worktime-business-resume-v1: qualify exact partial6 and known SSO windows,
+fresh genuine session, submit only pending correction7, preserve whole old rows.
+No live ticking UI timer claim: actual elapsed minute/final totals only. Domain
+pilot PC readiness, roles/manager/approval/notifications/RP/canonical6 stay open.
+
+Readonly employee acceptance, 2026-10-29 00:04 UTC: actual protected
+employee-worktime-browser-v1 PASS (sourcefreeze8af92df9f544598955b97f9e4f25f9d818e8737dc09eec4d0fae2873abcba78f;
+raw resultf8a7d9f6a53e5fc3ef27515d8fdeca1818de38583afd6258888c4e601a865566,
+Root verification6e17d173cf3fdfcfda9d861927745a31eafe6e3fa61d481c9576175e4a9ad53d).
+One genuine password/OTP each, callback303; existing identity reused, exact
+server BFF/current HMAC verified. Correct admin401/DLP403/HR403/invalidCSRF403
+with valid employee authority, private UI routes denied, real day/week/month/
+history, virtual categories7 and UNKNOWN86400/zero work projection passed.
+Desktop1440/mobile390 no overflow; ring pointer AND keyboard selection passed;
+Root visually inspected both real screenshots. UI logout issued one DELETE,
+awaited actual204 and same-cookie401; persisted current session/upstream revoked.
+Errors/blocked/page/5xx all0. Original pilot/OTP, HD20/binding, old complete auth/
+audit seals and all14 WT tables remain exact/zero. Native rows NOW: identity1,
+employee2/upstream2 all revoked, flows4 (old2 expired/unconsumed plus consumed2),
+created/revoked owned audits2 each, no grants/admin link/admin OIDC. Earlier V3
+HOLD2fe4dc remains unchanged. All39 focused checks and independent delta/closure
+review passed; source-only CA-mojibake and static HTTPS-fence defects were fixed
+before installation/auth, with regressions and candidate1 preserved.
+Next: bounded actual UI business pilot (five real FSM transitions, one explanation,
+one pending correction and idempotency check), canonical APIs only; native source
+preparation employee-worktime-business-v1. No approved correction/manager/HR,
+notifications, RP logout or canonical-six claim; domain pilot-session PC pending.
+Native/env/PID authority is still WT enable1 result.native_after below. Its old
+accounts()/readonly BEFORE contract now intentionally refuses the additional owned
+retired session; use the new explicit owned prefix qualifier for further stages.
+
+Latest native checkpoint: WorkTime staging enable1 preflight/apply/verify PASS.
+HD OIDC=true, EP SSO=true, EP WorkTime=true. One WT-only env flag change and one
+restart call/two EP units; HD env/unit, prepared10, source/schema0042, original
+HD20/binding, whole admin/password/scopes and stored auth/audit records unchanged.
+All14 WT tables were freshly zero before AND after activation (no retention
+policy). Post-BFF root-private checkpoint17ffe662d79d188729f92f5749e92af61f7b6b0bc1a24259b6950bc4511d9799
+is now the owned retired-auth/table baseline; it preserves V3 HOLD/partial claims.
+Gate /root/endpoint-staging-worktime-enable-v1 freeze9ce960cd91fc762e45597f4d4df570b9f624a869dbddb7e5806172bef03682b3;
+runtime592d955bf7c19c92058b83658ead797294a52a7368f517130a9f6bfe4cae7de2,
+policy a686237410e7ad881d4e216cb56756ef24eea50250dbf1065cf5c83d4c122033.
+Preflightdede64b6086c565d3f9480321c92561be446c760e3ddb3afa2e678a0428bcd60,
+applyecb0d2029f66b87e32e759c01f38d555bf0146ca11e1f33ca5b7f6016da87dc3,
+verify97c999db96b5e3336b7bd031636493a21bd291a1f1e1221703156808d76c4695.
+CURRENT native/env/PID authority is this gate.result.native_after; EP enable1
+baseline is historical. Twenty-one focused checks and short independent delta
+review passed. No UI, business mutation, active-employee negative, RP logout,
+notification, role grant/admin mapping or canonical-six acceptance claim.
+Next bounded pass: fresh genuine employee auth, real readonly WorkTime UI and
+admin/DLP/invalid-CSRF negatives, actual local logout. Native source is being
+prepared in employee-worktime-browser-v1 against this new authority. Readonly
+categories API returns seven virtual defaults; it DOES NOT insert category rows.
+All14 WT tables must remain0 through this readonly pass. Domain pilot-session
+address/readiness remains pending; no production promotion, commit or push.
+
+Current checkpoint, 2026-10-29 local date: genuine Endpoint employee BFF login
+and local logout have positive browser/API/native evidence, but the overall v3
+receipt remains HOLD. Password1/OTP1, callback303, exact employee principal,
+persisted identity/session/upstream and same-cookie revoke/401 passed; original
+pilot/OTP, HD binding/full20, admin/password/scopes and retained old2 flows passed.
+V3 receipt2fe4dc395a5aa37fb3b8927b9875a2ee5e5ec4e244fea67dedd8fee36d374c5a
+reports EmployeeReachedAdmin because the harness requested GET/api/admin/session
+(405), whereas canonical GET/api/admin/console/session requires admin authority.
+A separate credential-free strict-TLS probe confirmed wrong405/canonical401.
+The broad browser /admin prefix deny also covers shared /admin/assets CSS; the
+live receipt has blocked1/console1, with no captured per-request attribution.
+Do not relabel/replay v3 or claim full browser/permission acceptance. Carry the
+correct admin/DLP/invalid-CSRF/UI negatives into the next genuine WorkTime UI pass.
+Retained-flow observe/capture actually passed, root600 EXCL artifact SHA
+da5d6504375ff78a43eeac7b8f341cf81fbf5f61d688d5b38f08e863b8946666; only its
+exact literal pin changed reviewed probe37c3 to84454. V3 freezec326113b5102bb800f87e59aa6f05ff838cd6556acf1dcefcacb64b6ce3cd8b7,
+32 focused checks and short independent delta/closure review passed before the
+one genuine attempt. Windows metadata precheck held locally before RPC, then
+was fixed using matching birthtime and separate path-ctime checks; old receipts
+were unchanged. Current auth state: one confirmed employee identity, one revoked
+employee/upstream session, flows3 (old2 expired/unconsumed plus owned1 consumed),
+no admin link/personnel grant/admin OIDC session. A fresh readonly whole-record
+post-BFF checkpoint is being prepared before WorkTime activation; WorkTime is
+still false. User's dedicated pilot domain-session IP/readiness remains pending.
+
+Previous checkpoint, 2026-10-28 22:43 UTC (2026-10-29 03:43 Asia/Yekaterinburg):
+Endpoint-only SSO enable1 passed actual preflight/apply/independent verify.
+Exactly one EP false-to-true flag change and one restart call for the two EP
+services; HD unit/env/source/selectors and WorkTime=false were preserved. Whole
+AdminUser/password/scopes + role snapshot remains exact; identity/employee/
+upstream/flow/grant tables remain0. Source, schema0042, loaded env, strict health,
+prepared material10, HD binding and original20 continuity passed. Seventeen
+focused Root checks and short independent review passed; Root caught/resolved
+the pre/post timer budget gap before freezing or native execution.
+Runtimef94b1868e8b0cfaffcaa7d6171c6a70845eb0cd400172409b3c7b5da2f73bbf9,
+freeze923a35df82dfbd5933ab0fffa36d5cf50e8eee1989999673c8b8f5e1b87cfeae;
+protected applyb9dcd2d43f0cf921ab876583750210427a6bc786a524168c5fc7f93be5905954 /
+verifydb69ffa367685ed258dfb72d7cb7cdd49c347b3e98f55e641caa48e09bfa4012.
+HD and EP SSO flags are now true; WorkTime remains false. Genuine EP employee
+OIDC/browser/API/native session acceptance is the next separate gate; no personnel
+grant/admin link/password migration or broader gate claim. A dedicated scoped
+operator provisioner is absent in62, so do not elevate/reset the existing sole
+updates:write admin or link it prematurely. Employee SSO needs no such grant.
+User will prepare a separate genuine pilot domain session for notifications;
+its PC address/readiness is pending. .120 remains outside the domain. No forced
+logout/join, production promotion, fleet rollout, commits or push.
+Employee acceptance in progress: v1 source-only CSRF64 assumption was caught by
+review and fixed to canonical base64url43 before credential submission (real
+canonical-helper/finally-cleanup regression, 16 focused checks). V2 actual run
+stopped at FlowCookieHold with password/OTP0. An independently reviewed metadata
+auth-start proved the cookie correct; redirect authorization/state was not seen
+by the route handler. No cookie/Nginx policy change was made. Preserve both
+unconsumed flow rows and failed v2 receipt4f4cc7a8f02651e1941a443dba5e992e778163686f285c29790470d0c462a3cc.
+Metadata proof f9eea0140d361495c4fba9f240fa7ad5276556b6464c085ef858e4bf1787243a
+contains no values/state and performed password/OTP0. Source-only v3 CDP Fetch
+request-stage replacement covers redirects and blocks307 credential replay;
+11 unit checks plus a real Chromium synthetic-loopback check passed and the
+CDP delta was independently reviewed. Retained-expired-flow qualification and
+v3 probe are being prepared; no replay/new genuine credential submission yet.
+
+Previous checkpoint, 2026-10-28 22:19 UTC (2026-10-29 03:19 Asia/Yekaterinburg):
+Real owned Helpdesk staging OIDC authentication is verified: browser5 sent one
+password and one existing OTP, got callback302, native persisted BFF/UiToken
+verification and requester /me login_method=oidc; T64 and private-visibility DOM
+passed with zero blocked/console/page/5xx errors. The UI logout returned303.
+Original browser5 result remains HOLD/OldCookieStillValid (SHA944ad843a4c653edc81b88c7ba6f844ec5be3090b1cb6cbd4f303d920da39ede);
+do not relabel or replay it. Separate reviewed readonly reconciliation passed:
+exact owned actor UI logout has revoked=true, later cleanup revoked=false,
+same-cookie native-after passed; retained OIDC token is revoked and active0.
+Independent native/source/binding/full20 checks remain exact. This supports a
+logout-response timing race; the precise early GET ordering is not established.
+No strict browser POST-response-wait PASS or upstream RP-logout claim is made.
+Browser25 focused tests/delta review and reconciliation9 focused tests/review
+passed. Reconciler86513d477d6e9c31b28a9ebb5945df995791afba5d0f465f34f84fce1625de67;
+http proofc4c3a2ef13fa458a224fc43babba0c925efb4d163e9a04abaa1ec1881c17cf8e /
+observer proof232f6251758bea13dbb6f0e01523817275d526faf8fd15479e830d6706da4817.
+Earlier immutable attempts: v1 source-only network-repeat P2 fixed before use;
+v2 entry stopped before credentials because Windows PS lacked Get-Acl autoload;
+v3 one UPN password attempt returned Keycloak user_not_found; fresh readonly
+subject/GUID/LDAP sAMAccountName proof qualified fixed same-user SAM formatting;
+v4 accepted password but OTP POST was blocked before send on selectedCredentialId.
+Installed26.8.1 template proof and exact captured-credential gate fixed v5;
+no reset/reimport/provider/binding/OTP changes or unbounded retries occurred.
+Helpdesk SSO remains true, Endpoint SSO/WorkTime false. Owned password flag/roles
+unchanged; migration requires a fresh active OIDC session before its canonical API.
+Next: scoped Endpoint identity/grant setup and remaining WorkTime/consent/device/
+notification gates. No broader six-gate/prod promotion or commits/push.
+Endpoint employee SSO needs no identity-management grant; flag-only EP activation
+is being prepared separately, WorkTime stays off and no EP mutation has run.
+Read-only Windows checks: local PC is domain-joined (console/WTS identity not
+established); dedicated .120 VM is not domain-joined. A user question is pending
+about a separate genuine pilot domain session for future notification acceptance.
+Do not force logout, join the VM to a domain, or fabricate an OS/person mapping.
+
+Previous checkpoint, 2026-10-28 21:55 UTC (2026-10-29 02:55 Asia/Yekaterinburg):
+Helpdesk-only SSO activation1 passed actual preflight/apply/independent verify.
+Exactly one OIDC_ENABLED false-to-true change and one Helpdesk restart; Endpoint
+SSO/WorkTime remain false with both Endpoint processes and env unchanged. Exact
+loaded env, binary/source/selector/unit identities, strict TLS health, immutable
+binding/person/role/password records and original19+sealed20 continuity passed.
+Fourteen focused checks and delta review passed; runtimeefe511e31722d68ba4d9322890b02fd736d3d93b08c0ada96ffdcb28001dc98e,
+freeze3524e4ac60be4fb4b6e53ae50431120677c87beba4abeb5c7483bde2c8ebf3f2.
+Protected applyf70b6b5995164392f37ef557ea53d5d511cea908f6894fafffaf0e6d8a254f8e /
+verify6bcaf84970c855b9369f979ca479d39496a8e2de9f38b4c4bed0916ba2f725ad.
+Real BFF authentication is not yet claimed. A separate owned-browser flow is
+source-only: existing protected synthetic AD credential/DPAPI OTP, actual UI
+SSO link, persisted user OIDC session, T64/private-visibility and UI logout;
+20 focused browser/probe tests pass, source review/native execution pending.
+No password migration, Endpoint grants, RP logout, notifications or broader gate
+completion is claimed. Existing backups/consumed attempts remain immutable.
+No commits/push.
+
+Previous checkpoint, 2026-10-28 21:44 UTC (2026-10-29 02:44 Asia/Yekaterinburg):
+Disabled installer-v2 passed native preflight/install/independent verify: two
+active env swaps and three staging service restarts, exact loaded configuration,
+new processes, source/selector/unit assets, health and all ten prepared files.
+Protected install0181b09c7a79a512637547b96fb06e45659bd4319aaf52f049398f64b4cd7f74 /
+verify64d522d510922a5aa4e40970d1d6c512b7c7b54e83f1395fd2a2ff5aebdc6eb0.
+Twenty-six focused installer/continuity checks and short delta review passed.
+Owned identity binding-v3 then passed preflight/apply/independent verify through
+canonical APIs: exactly one proposal and confirmation, returned IDs and whole
+owned records matched, authorized service resolve succeeded, admin logout passed.
+Protected apply6122f99c9fe7eec474d377e44ad53ec66584bb5d70651ea4fdb30463e020b465 /
+verifyfa76cb7c498660ba08d8cdfcc764b2dbbe7bc31b2b0ee86e4e1bebd3a55ef70c.
+Twenty-six focused binding tests and delta review passed. V2 controller preflight
+stopped on a measured -0.167-second cross-host clock age before .118 transport;
+v3 measures the same authenticated response with monotonic duration, retaining
+the receiver's original 0..120-second age check and all TLS/OIDC checks.
+Original pilot/OTP, requester/person/password/roles, T64 and exact20-event history
+remain preserved. Installed SSO/WorkTime are still false; no real OIDC session
+is claimed. Next: Helpdesk-only staging activation and live BFF acceptance.
+Consent/WorkTime/notifications and broader gates remain open. No commits/push.
+
+Previous checkpoint, 2026-10-28 20:47 UTC (2026-10-29 01:47 Asia/Yekaterinburg):
+Inactive application input delivery-v2 passed native preflight, prepare and
+independent verification on .118. Two disabled candidates/two byte-exact env
+backups/four separate Endpoint secret files/two CA files were created; all ten
+prepared file identities stay bound. Both actual service UIDs validated canonical
+settings, independent Fernet keys and strict CA/TLS using RAM-only enabled
+validation; active envs/PIDs remained unchanged, SSO/WorkTime off. Private client
+material traveled through captured RAM/stdin only; no global dependency/trust change.
+Protected prepare7411fcd50a7c1fe21070b4494c1e394a4f040cb94e55bd3adf4546f81a6b95cc /
+verifyde1409e122089c8aa7768a3ce885243bc9409a3f681740f7404aa85c3e7d0852.
+Actual v1 preflight failed before any path creation because its source DB guard
+used system Python without asyncpg. Independent readback confirmed original
+native/env/history20 and all proposed paths absent; v2 uses the installed HD
+venv. Eighteen focused checks and delta review passed. Known file-adoption and
+foreign-control receipt findings were fixed before native execution.
+Next installer source is frozen but unexecuted: only two disabled env swaps and
+three staging unit reloads, strict health/loaded-env/source/native checks, plus
+explicit original19+approved20 continuity. Twenty-one installer/adapter tests
+passed; independent source review is pending. AD binding and real OIDC/BFF,
+WorkTime/notifications and broader release gates remain open. No commits/push.
+
+Previous checkpoint, 2026-10-28 20:01 UTC (2026-10-29 01:01 Asia/Yekaterinburg):
+Keycloak enable-v2 passed preflight/enable/independent verify (43/94/43 requests).
+Only the three owned staging clients were enabled; production clients, original
+pilot/OTP, secret material and native resources are unchanged. The reviewer found
+a backup-to-validation race in unexecuted v1; v2 moves backup before canonical
+fresh validation. Twelve focused checks include detail/scope/secret drift during
+backup causing zero PUT. Root verified the reviewed eight-file source closure.
+Actual protected enable/verify receipts: 967c8b5ff3776e72179b79ad399470fcbe2488d0712b3f5977871f72c3124ff9 /
+75d6812f7033068be13f84bcf23fed2ee5792fdf709ad3211b37bd95c8b2a6d9.
+Durable backup /var/backups/keycloak/20261028T200133Z.OgwJoe was checked;
+restore was not tested. No replay of any consumed attempt.
+Additional source-only logout preparation: Endpoint staging payload now registers
+only the exact Helpdesk staging /app/login return. RED reproduced its absence;
+25 focused checks and delta review passed. Existing live client is unchanged:
+an anonymous strict-TLS probe returned400/invalid redirect, so native registration
+and RP logout acceptance remain open. Frozen create/enable libraries unchanged.
+Next: separate .118 disabled application candidates/secrets/CA, then reviewed
+installation, explicit owned pilot binding and live BFF/WorkTime acceptance.
+Active .118 environment files/services remain unchanged; SSO/WorkTime off.
+The owned browser20-history extension and broader open gates still apply.
+No commits/push.
+
+Previous checkpoint, 2026-10-28 19:45 UTC (2026-10-29 00:45 Asia/Yekaterinburg):
+browser-v6 passed both owned UI logins, DOM/privacy/tab checks, requester expected
+WSS denial and native support subscribe_ack, zero console/page/5xx/blocked errors,
+owned logout and exact extended20 history/native postcheck. The separate read
+extension stays required for later SSO verification; message delivery is untested.
+Keycloak create-v3 passed fresh preflight, all three disabled-client creates and
+independent verify, with 91/96 prepare requests and production/pilot/OTP/native
+invariance. New independent staging secrets remain only on .19 in protected
+/etc/keycloak/staging-apps-20261027.env. Durable backup19:39 has verified files/TOC;
+restore was not tested. The preceding v2 preflight ProcessLookupError performed
+no client/material writes; fresh independent readback and v3 passed without an
+unproved IO patch. Do not replay any consumed attempt. Enable-v1 is source work.
+Read-only .118 inventory confirms OIDC/WorkTime settings absent (disabled), all
+application identity/flow/OIDC/employee/grant tables empty, and exact DNS/strict
+CA/hostname TLS for SSO and both staging origins. Runtime Endpoint flag is
+ENDPOINT_SSO_ENABLED (not ENDPOINT_OIDC_ENABLED). Next: enabled staging clients,
+separate disabled application configuration/delivery, identity binding and BFF.
+Production application flags, real-person mappings and release gates unchanged.
+No commits/push.
+
+Previous checkpoint, 2026-10-28 19:33 UTC (2026-10-29 00:33 Asia/Yekaterinburg):
+T-000064 completed the owned no-device lifecycle through requester closure.
+Continuation-v3 passed 20 checks/review/native execution and independent SQL
+verification: one physical ticket, three owned messages exactly once, 19 events,
+stable person/UI keys, zero active fixture sessions, one issued public session
+revoked. Original failed v2 record/fence remain unchanged. Browser verification
+then confirmed requester DOM/privacy/strict TLS and its expected WSS subscription
+denial; requester736 polls, while only support/admin may subscribe. Support's
+private note is on a separate UI tab; the next browser delta will select it.
+The allowed support read operation appended one message_read (14756, staff scope,
+cursor14748). Read-only proof validated the exact original 19-event prefix,
+unchanged ticket/identity/consents and one typed owned read receipt. The new
+20-event before-SSO extension is sealed separately at
+/root/helpdesk-owned-browser-history-v1.json (SHA1e3cd438fe8e4ce4676bf410b9b7935df6f5b3b0283eb4685f7d49404eda286d).
+It must be consumed explicitly by browser/after-SSO verification; never rewrite
+the original lifecycle result. Support browser signoff remains pending.
+Endpoint staging admin auth/logout passed once through approved DPAPI with strict
+TLS/exact scope after 30 checks and delta review; no device/update action occurred.
+Keycloak staging-client read-only plan passed 40 requests including actual default
+browser levels1/2, original pilot/OTP and native guards. Three disabled clients and
+their independent secret file are still absent. Creation carrier v1 is unexecuted;
+review requires production readback in finally on uncertain POST, being fixed in
+v2 before use. SSO/WorkTime flags, production clients/services and broader consent,
+Windows update and six release gates remain unchanged/open. No commits/push.
+
+Previous checkpoint, 2026-10-28 18:55 UTC (23:55 Asia/Yekaterinburg): .118 actor
+fixture-v4 completed all nine genuine additive API mutations after 33 tests,
+delta review and successful native preflight. Independent read-only verification
+confirmed three exact roles, two complete profiles/verified links, org rows and
+nine audit events; services/configuration/selectors remained unchanged. Private
+test credentials remain only in protected on-host material.
+Source review found no supported current HTTP producer for new local consent
+rows. The old acceptance helper's nonempty prerequisite was artificial; v2
+preserves exact existing scope, explicitly marks empty coverage/live-consent
+pending, and cannot qualify the six release gates. Ten delta tests/review passed.
+Actual v2 created only T-000064, verified create replay/conflict, foreign/role
+denials and in-progress/premature-close behavior, then held at chat verification.
+Read-only reconciliation proved one requester and one support message each,
+with no active fixture UI sessions or native changes. The helper incorrectly
+read support event_id at top level instead of data.message.event_id. A separate
+one-use continuation is being prepared for this exact ticket; the failed journal
+and fence are retained, and fresh ticket creation is forbidden. A second old
+helper mismatch (device-only messages endpoint for public access) was identified
+before continuation and will use the canonical public-token ticket GET.
+Windows .120 remained Running with the same recovered PID and fresh protected
+status at 18:49 UTC; no handoff/update was attempted. Broader gates remain open.
+No commits/push.
+
+Previous checkpoint, 2026-10-28 18:40 UTC (23:40 Asia/Yekaterinburg): owner console
+acceptance remains passed. The temporary browser transport has ended; original
+owned PIDs and ports 18444/18445 were independently absent. Its graceful cleanup
+receipt did not pass, so only independent absence is claimed. Bootstrap remains
+needed by the pending staging-client/pilot helpers.
+On Windows .120, exact legacy runtime provenance and safe status were qualified.
+One canonical service start recovered fresh strict-TLS production WSS at 18:28 UTC,
+with original authority, selector and ACL unchanged. The healthy original agent
+is left running; it remains 3.2.81, with no staging handoff or update acceptance.
+The earlier child-exit failure's cause remains unproved.
+On .118, actor preparation has not written actors, claim or material. The 121
+deployed web files were compared with the immutable CI archive: 119 byte-identical,
+two differ only in CR-before-LF; bundle ordering also differs by platform. A
+reviewed exact raw-native seal is approved only for staging actor preparation;
+original CI receipts and production promotion remain unchanged. Preflight then
+held at HTTP transport. Read-only reproduction proves duplicate default HTTPS
+and redirect handlers: original GET fails certificate verification (19), while
+one explicit approved-CA handler succeeds. Minimal fixture-v4 correction is being
+prepared; no system trust, runtime service or environment changes are needed.
+Next: owned actors, genuine consent/device flow, requester/support lifecycle and
+then identity/BFF/WorkTime acceptance. Broader gates remain open. No commits/push.
+
+Previous checkpoint, 2026-10-28 17:32 UTC (22:32 Asia/Yekaterinburg): the human
+confirmed the privileged Keycloak console opened. Read-only native correlation
+then matched one fresh selected-owner security-admin-console session after the
+launcher start, while exact administrative roles, immutable AD identity,
+password-only policy, zero stored credentials and native/business/TLS/Nginx
+guards all passed. No session IDs, credentials or OTP material were recorded.
+Direct UI automation could not bind the private Chromium window because its
+app identity conflicts with another Chrome entry; no UI-automation PASS is claimed.
+Bootstrap is retained until the remaining client/pilot helpers, which still use
+its fixed admin-cli grant, finish or receive reviewed replacement authentication.
+Next is owned staging WSS and synthetic requester/support lifecycle on .118,
+then confirmed identity linking and real application BFF/WorkTime acceptance.
+All broader production flags/release gates remain unchanged. No commits/push.
+
+Previous checkpoint, 2026-10-28 17:28 UTC (22:28 Asia/Yekaterinburg): the selected
+owner received the exact master-admin role; a separate native verification
+passed for direct/effective roles, unchanged groups/user, password-only policy,
+identity, zero stored credentials, business data and service/TLS/Nginx guards.
+Grant v2 passed 26 focused tests and delta review. Its phase-local fresh GET
+snapshots and reserved post-write budget fix the rejected source-only v1 budget
+defect without increasing or resetting limits. The grant has its own verified
+durable backup, with restore untested. No role operation is to be replayed.
+The reviewed private launcher v2 is running for human password acceptance,
+with strict TLS and no MFA; temporary SSH/proxy ports are 18444/18445 and its
+lease is 30 minutes. A user completion question is pending. Human privileged
+console acceptance is not yet verified and bootstrap remains retained. Other
+application flags and broader release gates remain unchanged. No commits/push.
+
+Previous checkpoint, 2026-10-28 17:14 UTC (22:14 Asia/Yekaterinburg): the selected
+console password-only policy v3 applied and passed a separate native readback.
+The added minimum/default ACR, owned browser override and CONFIGURE_TOTP action
+were removed; immutable identity, domain password, PKCE, audit, business policy,
+Nginx boundaries and native service/database resources remain verified. There
+are zero stored owner credentials and no administrative role yet. A durable
+backup was verified; its restore was not tested. The prior v2 HTTP400 attempt
+remains consumed and unchanged-state reconciliation passed before v3. The fix
+uses explicit empty wire values because Keycloak merges omitted client fields;
+21 focused tests and short delta review passed. Grant and live password console
+acceptance remain pending; bootstrap is retained. No commits/push.
+
+Previous checkpoint, 2026-10-28 16:53 UTC (21:53 Asia/Yekaterinburg): the user
+explicitly withdrew the MFA requirement for the selected Keycloak console login
+("зачем MFA Он не нужен"). Do not reinstate that requirement from older notes.
+Finish3 had completed TOTP preparation and separate verification; the loopback-only
+Nginx entry deployed and independently passed all seven HTTP boundary cases with
+unchanged master PID/resources. The isolated human browser reached authenticator
+setup, then was closed on the new instruction. Original owned PIDs and both
+temporary ports were independently absent; no graceful receipt was produced.
+No admin role was granted, no bootstrap retirement, no stored OTP reset/deletion.
+Scoped removal of our selected-user action and console MFA attributes/binding is
+being prepared; domain password authentication, PKCE, audit, identity and business
+SSO clients are preserved. Launcher2's explicit password-only proof branch passed
+19 focused tests and delta review. Actual password-only policy/apply, owner grant
+and live password console acceptance remain pending. Other application flags stay
+off and all broader release gates remain open. No commits/push.
+
+Previous checkpoint, 2026-10-28 16:30 UTC (21:30 Asia/Yekaterinburg): finish v2
+passed native preflight and took a verified durable backup, then enabled the
+single-object provider and imported the selected owner with immutable GUID and
+no effective administrative roles. It held before TOTP queue because credentials
+GET includes a virtual LDAP password descriptor. Independent readonly API/SQL
+checks prove actions empty, exactly that descriptor and zero stored credentials.
+The imported subject is preserved; no reimport, credential reset or deletion.
+A queue-only continuation is being reviewed, binding the original four hashes
+and consumed finish-v2 result/context/marker hashes. No client/flow/provider/role
+writes are allowed by that continuation. Human MFA, Nginx entry and bootstrap
+retirement remain pending; Nginx and application flags remain unchanged.
+
+Previous checkpoint, 2026-10-28 16:09 UTC (21:09 Asia/Yekaterinburg): master audit
+remains independently verified. Checked cleanup v2 removed only the never-imported
+disabled v2 provider; cleanup v3 removed only the unused v3 flow tree and disabled
+provider. Both took durable backups and restored the exact observed master metadata
+reference with business/native guards passing. Fresh prepare v4 then applied the
+console MFA binding and GUID mapper, but held before provider enable/import because
+Keycloak adds deprecated consentRequired=false to mapper readback. A separate
+readonly check confirms that is the only difference; all intended fields/config
+match. The source-supported minimum-ACR URN fix passed 22 focused tests. V4 is
+consumed and its HOLD stays immutable; no replay or cleanup of the now-bound flow.
+The provider remains disabled, no owner import/grant/enrollment/bootstrap retirement
+is claimed. A separate one-use finish operation is being prepared from the qualified
+four-hash checkpoint, with no further client/flow writes. Nginx site is unchanged;
+loopback deploy and human MFA remain pending. The isolated Windows launcher files,
+private ACLs, dedicated SSH configuration and existing Chromium156 binary were
+staged and checked; no forward, proxy or browser has started. Application flags
+remain off. Mandatory reviews are limited to deltas; no commits/push.
+
+Previous checkpoint, 2026-10-28 15:52 UTC (20:52 Asia/Yekaterinburg): the user
+selected the domain account as the permanent SSO owner. Master administrative audit
+v4 is enabled with representations disabled; a separate native readback confirms
+the exact expected event settings, OID26068, strict TLS and unchanged six services,
+eight controls/assets. Its verified durable backup is retained. Owner prepare v2
+passed fresh LDAPS/audit preflight, then held after creating only a disabled LDAP
+provider: Keycloak generated full-name/Kerberos default mappers outside the minimal
+mapper allowlist. Read-only reconciliation confirms eight default children,
+disabled provider and no dedicated flows. No owner import, role grant, enrollment
+or bootstrap retirement is claimed. The consumed operation will not be replayed.
+Checked cleanup of that exact never-imported resource and fresh minimal-mapper
+preparation are being reviewed. A private native Nginx boundary proof passed all
+five cases; its private process stopped. Loopback console deploy and human MFA
+browser launch remain pending. All other application/release gates below remain
+open; application SSO/WorkTime flags remain off. No commits or push in this phase.
+
+Previous checkpoint, 2026-10-28 14:34 UTC (19:34 Asia/Yekaterinburg): Helpdesk
 `736f3ae8` has all 18 exact-revision CI layers green and four pinned-provider
 cross-repository tests passed; staging `.118` runs schema151. Production remains
 `6cca48e5`. Full six-scenario receipts for 736, an owned requester/support lifecycle
 and the live Windows gate remain open. Endpoint production `62fb4c83`/schema0042
-has SSO/WorkTime flags off; staging `3e3528fb`/schema0039 now has verified capacity
-and still awaits genuine application-admin/active-work acceptance and a reviewed
-live switch. Endpoint source HEAD `f4120e9e` commits the archive-permission producer
-fix with 14 real tests; previous `44302b59` provides v8 namespace source `2e720674`,
-used in run7 below. Staging candidate62 has 33 exact
-dependencies, pip-check and actual service-user Settings validation passed with
-SSO/WorkTime false, plus offline SQL through0042. Live3e/schema0039/PIDs remain
-unchanged; candidate preparation does not close application deployment gates.
+has SSO/WorkTime flags off. Staging `.118` now runs qualified `62fb4c83` /
+`0042_worktime_companion`: Root separately reviewed preflight, quiesce/backup and
+switch, then verified native schema/runtime and strict CA/hostname HTTPS. The user
+then explicitly authorized creation of the missing staging admin: additive canonical
+Argon2/AdminUser/audit, existing_accounts_modified=false. Genuine UI login and
+read-only dashboard/devices/updates/audit passed (19 devices,7 releases,errors0).
+Current tab3 is staging `/admin`, authenticated; tab1 was closed by the user and
+production tab2 was untouched. Owned WSS, mutating integration and A–F remain open.
+Endpoint source HEAD `bfd24feb` commits v11 isolation from the
+consumed master probe: eight files, 325 Root passes/one existing POSIX skip and
+independent source review. New local pure `promotion_guards.py` and37 tests,
+plus CODEMAP/recovery-doc entries, first added four uncommitted Endpoint files.
+RED missing-helper failure and37 GREEN passed; independent review found no
+findings. Actual default CLI returned PureGuardsOnly/runtime_actions=false.
+The module validates fixed physical-cluster/idle-catalog evidence but performs
+no SQL/service/apply action. Public-promotion source and focused tests add four
+reviewed uncommitted files; the owner observer adds two more (ten paths total).
+V1 was rejected before any
+installation: raw ExecStart included runtime PID/timestamps and would prevent
+recovery after a normal stop. Subsequent pre-consume native refusals exposed the
+installer-relative distribution link, omitted empty EnvironmentFiles (proved
+through typed D-Bus), kernel /var/run socket alias and missing psql line framing.
+V5 passed native observe/preflight and63 focused tests plus delta review. ONE
+Apply consumed and stopped Keycloak, then held before backup/rename because the
+wrapper exited143 and systemd reported failed/PID0. Checked original-only restart
+was reviewed; its first guard refused plain numeric ExecStart status143 before
+start. The second checked attempt started the original but early acceptance held
+ServiceDatabaseOidInvalid; that startup cause remains UNKNOWN. A separate native
+read-only reconciliation now passed three stable bindings to original OID16385,
+strict TLS, current full inventory/purpose allowance, unchanged candidate26068
+and other five services/eight controls/assets. No DB rename or owner grant occurred.
+V6 source passed93 focused tests and independent delta review. Fresh native
+observe/preflight and ONE Apply then completed Promoted; consumed V5 was not
+replayed. Independent read-only postcheck and peer receipt reconciliation confirm
+Keycloak's actual service connection to OID26068, exact final inventory with only
+purpose housekeeping, strict approved-CA TLS, unchanged other five services/eight
+controls/assets and retained idle original16385 with connections disabled. Fresh
+455755-byte backup SHA256 dc51749e43029fb84590e5184fd9a0e12c795810cd290d60064cdb252abaf98c
+has checksums/TOC/fsync, restore_tested=false. Postcheck SHA256
+608ae4570b6a658e2f4f4fc463de9b1e4e292cc5d00f38266a5c0bd58bf54004.
+Public promotion is complete; owner/MFA setup and public synthetic AD/app checks
+remain open. No application flags or owner grants changed during promotion.
+Three-source semantic v2 passed303 full-table comparisons and all22 bounded
+predicates; Root approved only the exact qualified final candidate semantics.
+Dummy-cluster rehearsal v3 passed all six refusal/switch/rollback cases and131
+independent postcheck records. Earlier v1/v2 failures remain preserved.
+Read-only public preparation v2 passed strict TLS using the existing approved
+CA, current metadata/100-table equality and the two-row server_config purpose
+guard. These are preparation observations, not a fresh quiesced switch gate.
+The user selected the domain account as permanent SSO owner with mandatory MFA.
+Read-only native LDAPS matched the selected immutable directory identity and
+enabled state using current Windows credentials. Owner observer v2 passed14 Root
+tests plus3 transport privacy regressions and independent review. ONE native
+observation then passed22 requests: conflict0, master users1, storage providers0,
+TOTP action enabled, required profile attributes0, enabled policies0/known and
+console fullScopeAllowed=true. Fresh LDAPS, actual service/OID26068, strict TLS
+and six units/eight controls/assets were verified before/after. Source allows no
+configuration/provider/user/role writes; bootstrap authentication may write master
+auth sessions/events. Sanitized snapshot is allowlisted metadata; no fresh business
+invariance or post-auth full-final seal equality is claimed. Owner prepare source
+is next. No owner grant, MFA enrollment or bootstrap retirement has occurred.
+Prior SID fix
+`ef6d298f` remains committed; archive-permission producer fix `f4120e9e` has14 real tests.
+Staging62 retains33 exact dependencies and verified service-user Settings:
+operations API=true, module platform=true, module execution=false, OIDC=false,
+WorkTime=false. API215811/ticks78259783 and worker215868/ticks78260117 run as
+UID999/GID988 from the qualified release with `/usr/bin/python3.12`. Same PG16,
+Helpdesk736/schema151/PID186923 and the Root-verified current Nginx213268 remained
+unchanged across this upgrade. Historical Nginx119884 is not continuity evidence;
+its earlier restart cause/actor remains UNKNOWN.
 
 Windows158 source `9423d9c` has actual fresh read-only native READY evidence:
 local processes stable for 98.508769s; the same authenticated Gateway session across
@@ -29,8 +793,9 @@ stable for 70.133513s, same Gateway280.288251s/last-seen270.008612s. Current pro
 four files match across the on-host window ONLY; raw pre-OTA baseline is unavailable,
 so historical exact continuity is unverified. Receipt `d6c3c706` and Endpoint
 report commit `c9421b42` retain 20-minute/notifications/real-user SSO/crash-rollback
-limits. Production update-admin authentication is
-now available through the user's existing login; staging application admin remains pending.
+limits. Production update-admin authentication was available at the earlier
+user-login snapshot; it has not been revalidated on October28. Staging
+genuine admin login/read-only UI passed; owned WSS and mutating integration remain pending.
 
 Keycloak failed candidate OID 20856 retains the original UUID/OTP. Actual run3/v4 ended
 in an unknown refusal; run4/v5 refused `PrivateRuntimeListenerNotLoopback`;
@@ -61,9 +826,202 @@ loopback cases in44.818s with Node controller source `518fec7e`; first two HOLD
 runs retain1pass/2fail each. The original150s deadline and owned cleanup held.
 This is isolated browser transport evidence, not private Keycloak qualification.
 Future recovery gates remain held; failed22159 and failed20856 must be preserved.
+One further fresh preparation passed independent 21/21 checks: candidate
+`keycloak_recovery_20261027_82e14168`, OID 23462, all 101 original tables/schema/
+ACL/sequences and UUID/GUID/OTP exact. Catalogue grew from 7 to 8; both earlier
+forensic databases, all 29 old trees and one valid new forensic backup were preserved.
+Then ONE v9 master-only probe failed at `TokenConstructor` /
+`CandidateTokenMalformed`: unverified token-shape flags for bounded JWT/object/
+IAT/EXP/private18449 master issuer/admin-cli/remaining lifetime>=45s were true;
+`canonical_sid=false` and `signature_verified=false`.
+No realm GET, session inventory, purge, AD or browser phase was entered. All 8
+cleanup flags and independent 05:57:42 reconciliation passed: no private processes,
+group members, listeners on three private ports or candidate PG connections;
+public state and original UUID/GUID/OTP unchanged. OID 23462 is now MODIFIED forensic
+evidence, NEVER pristine or retryable, alongside 20856/22159. This narrower SID refusal does not establish
+the cause of run7's unclassified purge refusal.
+
+Pinned upstream 26.8.1 generates 18 random bytes as 24 unpadded Base64URL ASCII
+characters; the local UUID-only SID restriction is a confirmed source contract
+defect. One stopped-DB aggregate found 18 master-bootstrap online IDs, all canonical
+24-character Base64URL; UUID/other/null counts were zero. It cannot bind the discarded former JWT to any row. The former
+JWT/SID format remains unbound. The subsequent SID source fix is committed as
+`ef6d298ffcf6f42841d4d0533aea015e7004a365`; it did not change scope/openid/lightweight
+configuration. A new preparation24765 passed independent 23/23 checks with all 101
+original tables/schema/ACL/sequences/UUID/OTP exact at preparation. ONE v10
+master-only diagnostic then completed one login, one GET and exact SID count=1,
+all 6 inventory and 8 cleanup checks. This is narrow master-path success only,
+with `signature_verified=false`; no AD/browser/purge/identity API/full private
+qualification or public switch. Fourth24765 is now MODIFIED forensic evidence,
+NEVER pristine or rerunnable; all four consumed databases remain preserved.
+Fresh-preparation v4 subsequently ran ONCE: candidate
+`keycloak_recovery_20261027_beb3f1f0`, OID26068, catalogue9→10, all101 original
+tables/schema/GUID/OTP exact at preparation; independent25/25 checks passed,
+preserving all four old forensic databases. Run8 controller source passed262
+tests; its three-character encoding fix is frozen at `d489902f`, integration
+`fd833c31`, with executable pins unchanged. Three protected Windows buffers
+passed actual hash/ACL checks, and Root's readonly pristine/archive/config/
+capacity preflight passed before ONE full native qualification.
+Run8 completed as `QualifiedUnreviewedDriftHold`, final17 canonical hash
+`056211bbe95f69ccaa138d5b9bba41d1f20b46146e0464d6e133800fe6121476`.
+Independent .19 checks passed34/34 plus8 cleanup checks, with local Windows
+ACL/result and zero-handle observations. Local token `signature_verified=false`
+remains explicit; separate actual same-token authenticated200→401 proof exists.
+The nonce transcript was not independently reconstructed: exact source and
+ordered receipts support that scope. Saved81bb evidence includes reconstructed
+safe output9f141 from executed tool output, NOT exact raw stdout; its provenance
+precision addendum is saved as `provenance-correction-v2.json` (`36803dfa`),
+freeze `5276ea72`; it documents key/trace metadata corrections without changing
+the retained v1 closure, result values or rerunning native checks.
+Candidate26068 is now preserved post-qualification forensic evidence, not pristine,
+not rerunnable and not promoted. Its10 changed tables plus12 historical/current
+tables remain semantically unreviewed. No public switch, MFA, AD-disable or real
+OS-idle acceptance follows from the private qualification.
+
+Semantic v1's installed native inspection refused its schema pin; a bounded
+diagnostic reported `NativeDatabaseOwnerOidSchemaMismatch`. One repeatable-read
+metadata check confirms the original golden matches default user/public context,
+catalog-only does not, and only constraints deparser presentation differs. No
+baseline waiver, expected-hash replacement or semantic approval follows.
+Semantic v2 adapter `f7a72298`/freeze `d3cc2d26` binds catalog parse context and
+CASE-dependent runtime deparser context: 50 Root tests plus independent installer
+review17 equivalent passes. Actual static install validated all5 protected files'
+hashes/modes; ONE native --inspect completed with transport0/stderr0. Original
+audit101/schema binding is exact. Removed2 rows classified
+`ExpirationRealmLoginFailure` with numeric, timestamp-upper-bound and nonnegative
+version checks; Added is `SourceUnavailableHold` because the current targeted
+ledger differs, with current full101 historical match false. This proves the v2
+deparser correction natively; the hold is a source-ledger guard, with no semantic,
+pairwise-fields or switch approval.
+Historical Added scratch v3 subsequently matched BOTH sealed realm/server_config
+Counters exactly before classifying two Added `ExpirationRealmLoginFailure`
+occurrences. Source35a1b114/freeze2b33b3c2 passed53 Root tests and focused independent
+delta review. One native run completed; independent read-only postcheck found PG16
+shut down, distinct system ID, no scratch PID file/process/socket/TCP listener,
+free recovery lock and unchanged six canonical units/controls/forensic metadata.
+All15 commands returned0;440 discarded stderr bytes have unknown semantics, so
+no warning-free claim. V2's pre-initdb missing-output-option failure and its cleanup
+scan refusal remain preserved; v3 fixed only `--file=-` and membership-first scan.
+Receipts: `root-historical-v3-run-result.json` and
+`root-historical-v3-independent-postcheck-v2.json` under the semantic-drift-review
+evidence root. Pairwise fields, global semantic/full101 and public switch remain
+unproved. The next source-only work compares the two exact historical sides
+inside a separately gated new scratch; no consumed namespace is rerunnable.
+That separate pairwise gate subsequently PASSED: both historical sides' two
+Counters matched in one own PG16 database, both keys/three columns matched, only
+value/version changed, and both timestamps/versions advanced. One-step versions
+count0 does not attribute a single writer invocation. Entry1e4fac98/base31de1ee6/
+freeze449768f3 passed24 Root tests and focused source/transport/receipt reviews.
+Independent stopped-cluster/namespace/socket/lock/canonical/backup-pin checks
+passed;22 commands returned0,715 discarded stderr bytes remain unclassified.
+Receipts `root-pairwise-v1-run-result.json` and
+`root-pairwise-v1-independent-postcheck.json` prove narrow
+server_config_pairwise_proven=true; global semantic/full101/switch flags remain
+false. Next source-only work checks availability of BOTH full101 historical row
+multisets before reviewing the remaining table changes. Read-only archive type
+discovery found equal101-table/625-column layouts, five timestamp-without-time-zone
+columns and one OID column (`cluster_event.event_data`); both pinned ledgers have
+zero cluster_event rows. No archive DDL/SQL/restore was executed by that discovery.
+The separately reviewed full101 availability gate then PASSED. Actual archive-parser
+preflight accepted both101/625 layouts (schema38555B/minimalDDL26640B each). One new
+own-PG run matched all202 original/historical row-multiset guards simultaneously
+with202-table/1250-column metadata and empty OID-table checks. Freeze43bd5922 passed
+27 Root tests and focused source/transport/receipt reviews. Independent PG shutdown,
+namespace/socket/port/lock, canonical-resource and dump-pin checks passed;22 commands
+returned0,715 discarded stderr bytes remain unclassified. Receipts under the same
+evidence root: `root-full101-v1-preflight-result.json`, `root-full101-v1-run-result.json`
+and `root-full101-v1-independent-postcheck.json`. Only full101_source_rows_match=true;
+schema/ACL/promotion/global-semantic approval does not follow from minimal replicas.
+Both historical datasets are now available for field review of all12 changed tables.
+The separate qualified-final export v2 then PASSED for forensic candidate26068:
+whole inventory/schema/ACL/sequence JSON equalled the pinned final golden INSIDE
+the exporting read-only PG snapshot; pg_dump used that same snapshot, and a fresh
+read-only check matched again afterward. Dump454892B SHA
+`add83bd1224cd9edea3ee332b054ea236aef8d86d776cfe5e1bb82e665bdf69a`,
+protected context SHA401627a6, producer freeze9ea7d917;48 Root tests passed with
+focused source/transport/receipt reviews. Four new warnings matched the exact
+55-byte /dev/null password-file message; independent postcheck matched one more.
+This does not reclassify old715-byte discarded output. Independent file/header/
+TOC/context, live forensic golden, zero-other-connection, owned client/backend,
+lock and canonical-resource checks passed. No JVM/restore/public switch occurred.
+V1's pre-consume TOC refusal and Root's corrected checker-directory lookup remain
+preserved; no export replay or row-baseline replacement. Receipts:
+`root-qualified-export-v2-{preflight-result,run-result,independent-postcheck}.json`.
+The three-source batch then restored all three pinned archives in its own PG16:
+all303 row guards,303 tables/1875 columns and empty OID tables matched in one
+read-only transaction. Freeze94ff2151 passed40 Root tests plus focused source and
+transport reviews. Final original credentials/users/attributes/role edges and
+server_config are exact; basic-scope additions, LDAP retention values, notBefore
+advances and exact seven source-defined realm defaults passed their predicates.
+Historical identity replacement is diagnostic only. Mapper predicates and
+audit/event/session classification remain HOLD: no actor or semantic approval
+was inferred. Source inspection found that pinned canonical_mapper permits an
+absent false default for an existing mapper; actual cause awaits a new bounded
+predicate proof. Original v1 receipts and all raw guards remain immutable.
+Independent postcheck passed:29 successful commands, stopped PG/no owned namespace,
+sockets or locks, all three dump pins and canonical resources unchanged;990
+discarded stderr bytes remain UNKNOWN. Receipts under the same evidence root:
+`root-three-source-v1-{preflight-result,run-result,independent-postcheck}.json`.
+All v1 producer semantic/full101/promotion flags remain false; public switch did
+not occur. New v2 freeze537ec045 passed55 Root tests and one focused delta review.
+Its separate one-use run matched all303 original row guards and all22 field/shape
+rules, with zero unclassified additions/removals. Actual diagnostics prove one
+original mapper without userinfo.token.claim and two added exact-five mappers on
+each side. The23 removed user/client session pairs have closed local/flag/realm/
+user/client links and no orphan/survivor/unsupported representation. Existing
+audit/event rows remain exact; additions prove shape, not authorship/content.
+Independent postcheck again passed29 commands, PG shutdown, zero owned resources,
+all three dump pins and unchanged canonical resources;990 stderr bytes remain
+UNKNOWN. V1 refusal and raw guards/receipts were not modified. New receipts:
+`root-three-source-v2-{preflight-result,run-result,independent-postcheck}.json`.
+A separate read-only canonical comparison against fixed f92 found structure and
+100/101 tables exact; only the two server_config rows differ. No new baseline or
+DB writes; owned client/backend gone. This snapshot is not a fresh switch gate.
+Root's bounded `root-candidate-semantic-review-decision.json` (b4e09b05) approves
+the exact sealed final candidate's field semantics for promotion PREPARATION;
+independent review confirmed its six evidence hashes and limits. Producer flags
+stay false. Public switch still requires an isolated atomic rename/rollback
+rehearsal, fresh quiesced current/candidate guards, full forensic backup and durable
+one-use journal. Public provider/MFA/AD-disable/application acceptance is pending.
+The first separate dummy rename rehearsal (freeze0df32cb5,29 Root tests and focused
+source/transport reviews) stopped in prepare_fixtures with
+UnclassifiedSqlClientStderrHold, before any of its six cases. It was consumed once
+and is not retryable. Source inspection found superuser-only logging PGOPTIONS
+also applied to the nonsuperuser dummy role; that is a source hypothesis for this
+failure, not a reconstruction of its discarded stderr. Independent failure-only
+postcheck passed:9 commands, interrupted psql record8 with247 stderr bytes, total
+412 discarded stderr bytes still UNKNOWN, PG shut down, namespace0, socket/lock
+gone and six canonical resources unchanged. Receipts:
+`root-promotion-rehearsal-v1-run-result.json` and
+`root-promotion-rehearsal-v1-failure-independent-postcheck.json`. A source-only v2
+plan will test old versus corrected role options in a new namespace, preserving
+normal role privileges and the inherited private server logging policy. Public
+switch, backup/quiesce and owner grants have not occurred.
+Rehearsal v2 freeze7ea48bf2 passed49 Root tests and focused source/transport
+review. Its one native run proved old role options rejected, corrected role
+connected, inherited none/panic/panic logging and unchanged privileges/catalog.
+It then stopped in run_cases / OwnedUnixListenerAmbiguous with cases0; all six
+rename cases remain unexecuted. Independent failure postcheck passed21 commands,
+one classified startup/code2, other commands0, stopped PG/no owned resources and
+unchanged canonical six resources;1072 total stderr bytes are not retroactively
+assigned to the old412 bytes. Current canonical /proc metadata, without a SQL
+connection, shows one main-PID-owned listener with flags65536/type1/state1 and no
+connected pathname rows at that observation. It does not reconstruct the failed
+private socket snapshot. Linux primary source distinguishes listening/connected
+entries by accept flag; source-only v3 preserves inode ownership and will verify
+the held-client before/during/after case. V2 is consumed and not retryable.
+Receipts `root-promotion-rehearsal-v2-run-result.json` and
+`root-promotion-rehearsal-v2-failure-independent-postcheck.json` remain HOLD.
+The human selected the permanent SSO owner; one enabled AD record matched the
+current Windows SID. No owner grants were written; MFA enrollment and bootstrap
+removal remain pending. Access identifiers/credentials are not part of this plan.
 Audit DB 19553 matches all 101 ORIGINAL row multisets;
 only relation-owner/database-ACL structural differences are accounted for.
-The original/current 12-table semantic drift remains UNREVIEWED.
+The historical12-table replacement is diagnostic, not an identity/grant decision
+or a candidate eligible for promotion. Existing source
+uses an inclusive LDAP filter, removeInvalid=false and NO_CACHE; upstream MSAD
+always reads UAC. Live public configuration/AD-disable behavior is not proved;
+preserve original UUID/OTP without reset or re-enrolment.
 
 The user explicitly approved `.118` +10GiB. Fresh v6 capped backups ran 03:54:44–
 03:54:51 UTC and both real PostgreSQL16.15 SCRAM restores completed at 03:55:57 UTC;
@@ -88,17 +1046,69 @@ producer fix is committed as `f4120e9e999dd236dce7a47c53df98b84136edea` with
 14 real regression passes. The immutable old archive was not repacked or redeployed.
 Production Helpdesk6cca's audited0555/0444 release remains unchanged.
 Windows `.120` remains untouched/HOLD except approved passive maintenance
-collection; staging Endpoint application-admin credentials remain pending.
-No account reset or authorization bypass. No handoff, claims, campaigns, real tickets or
+collection; staging Endpoint genuine admin UI acceptance now passed.
+Existing accounts were not changed; no reset, SSO grants, manual sessions or bypass. No handoff, claims, campaigns, real tickets or
 diagnostic mutations were performed on `.120`. Keep all A–F live acceptance gates unchecked.
 
-Next steps: diagnose the preserved run7 purge refusal read-only without cause
-assumptions or retrying either forensic candidate; complete independent private
-recovery qualification/semantic drift review under a new reviewed gate before any public
-switch or new AD-disable window. Staging upgrade preparation proceeds under its
-existing OS authorization and release gates; application-admin integration
-acceptance remains unavailable after invalid credentials in staging tab3.
-Keep active-work/live-switch gates held; do not reset or bypass authentication.
+Next steps: complete semantic review of
+the private qualification/current drift without retrying any forensic candidate;
+finish independent promotion review under a new reviewed gate before any public
+switch or new AD-disable window. The canonical staging39→42 upgrade is complete;
+next complete the separately owned WSS test and mutating integration acceptance.
+The authorized new-admin genuine login/read-only UI passed; current tab3 is
+staging `/admin`, authenticated. Earlier rejected credentials were not retried. The earlier operator-counts amendment/preparation evidence
+below is historical: the helper passed72 Root source tests and was later used for
+actual COUNT-only repeatable-read readiness before/after quiesce. A native PG16 publicVALUES fixture passed OID
+casting/count tests with no application rows or readiness counts read. The actual
+identity observer1d78 was statically installed, then --discover refused; bounded
+705 diagnostics stopped at protected_file:170. Fixed lstat found legacy3e release
+dirs0777/files0666 owner0 while env/unit metadata was safe. Full243-file readonly
+audit source `fe5f494e`/collector4e55 has26 tests and design approval. Root's actual
+read-only audit `faa21567` verified all243 source files, no missing/mismatched/extra
+source paths, 275 root-owned nodes needing chmod (32 directories0777 and243
+files0666), 60 opaque cache nodes already0755/0644 and4200 unchanged venv nodes.
+No deployed code/SQL/private control contents were executed/read by that audit.
+The reviewed chmod-only repair then completed at07:49:22UTC:275 source nodes,
+60 caches and4200 venv nodes unchanged, all three writer scans zero. The retained
+v1 before-snapshot refusal changed zero nodes; its only drift was the `/etc`
+ancestor timestamp pair. Reviewed v2 accepts only the exact old/new observed
+pairs, retaining the original audit and target list and every other comparison.
+Root's reviewed post checker at07:49:53 verified all4535 nodes and555 journal files,
+including275 intent/done pairs. Evidence: `root-repair-v3-apply-result.json` and
+`root-repair-v3-reconcile-result.json` under the legacy-permissions evidence root.
+Actual identity discovery and same-postmaster binding now passed: PG16.15,
+schema39, uniform staging DB/table owner and nonsuperuser application role;
+TCP5432/Unix socket belong to the same stable local postmaster. Root-approved
+native pre-counts passed: blocking/inflight/unknown/inconsistent0, no enabled
+campaigns/live claims, durable89 (82 context +7 steps), other DB backends6 before
+quiescence. That89-row snapshot is historical and grants no HTTP authorization.
+Reviewed Task2v3 freeze `c163728af0235b5e1481d225936fa3cf7246f46fdcdc99695632787b01e02f8e`
+had22 focused passes and then native preflight/quiesce/separate switch PASS.
+Preflight observed durable88; fresh quiesce observed90→90 (83 context+7 steps),
+all bucket deltas0, blocking/inflight/unknown/inconsistent/claims/campaigns0 and
+all other DB backends0 after stop. Queues were preserved. Fresh Endpoint-only
+PG16 dump11067144bytes, SHA256
+`14c91bd7b1f890da3b9412038ff0c42a0dcda07a53ab9cf4139aaa9a2c743c0a`,
+passed pg_restore-list/SHA and postgres0600/private0700 checks; this NEW dump was
+NOT restored. Earlier v6 restores concern a different historical dump.
+The immediate post-upgrade snapshot had schema42/71 public tables,19 new owned
+tables and2 immutable triggers; its2 local admins were unmigrated and confirmed
+identity/employee-session/WorkTime event/state rows were0. That two-admin snapshot
+is historical. Strict HTTPS health200, all3 Console files exact,2 unauthenticated
+admin401 and5 disabled404 checks passed. Later user-authorized additive creation
+of the missing admin used canonical Argon2/AdminUser/audit; existing_accounts_modified=false,
+without reset, SSO grants or manually minted sessions. Genuine browser login and
+read-only dashboard/devices/updates/audit passed:19 devices,7 releases,errors0;
+admin.created and normal admin_session audit entries were visible. Some historical
+device username fields contain U+FFFD; they were retained without correction or
+inference. Historical saved-login rejection remains preserved; it was not retried.
+Owned WSS, mutating integration, SSO/MFA and A–F acceptance remain open.
+Admin receipts under `C:/Temp/endpoint-sso-staging-20261027`:
+`admin-create-authorized-result-20261028.json`, `admin-created-browser-acceptance-20261028.json`
+and `admin-console-readonly-acceptance-20261028.json`.
+Safe Task2 receipts: `root-task2-v3-{preflight,quiesce,switch}-result.json`,
+`root-task2-v3-postcheck-result.json` and `root-task2-v3-browser-readonly-result.json`
+under `C:/Temp/endpoint-sso-staging-20261027/stage-release-plan`.
 Complete the six Helpdesk receipts,
 owned lifecycle, Windows gate and real installed SSO/notification acceptance.
 Current evidence: `docs/superpowers/plans/2026-10-27-sso-worktime.md`. Preserve
@@ -2821,6 +3831,7 @@ Final164 network events without failures, warn/error console empty; exact SHA,
 No production deployment, push, role/schema/dependency change or Endpoint action.
 Report: `docs/UX_SUPPORT_FOLLOWUP_2026-11-02.md`; evidence in task tmp directory.
 
+
 ## Requester onboarding — 2026-11-04
 
 - Goal: guided employee registration with completed profile, generated login and a ready requester home; ticket creation remains a separate explicit action.
@@ -2930,3 +3941,102 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - State: implementation and independent review complete; incorrect Linux intent fixed through failing regression and browser click-through. 64 component checks, build/workspace checks, 11 initial browser cases and final5 home cases at1366/1440/1488/1920/390 pass. No unexpected browser errors/requests or horizontal overflow.
 - Complete: exact881cf704f3b28cd41c9a42c71fd452e4a051c058 deployed canonically after verified154 backup;15source hashes/schema154/strictTLS200/3active services match. Live home/list/profile and Windows/Linux guide checked with console0 and HTTP200; no submission or business-count change. Staging remains available; no required task work remains.
 - Handoff: docs/superpowers/plans/2026-11-05-requester-home-redesign.md; docs/REQUESTER_HOME_DESIGN_QA_2026-11-05.md; private evidence tmp/requester-home-20261105. Production/Endpoint unchanged; full CI not requested.
+
+
+## Requester confirmation controls (2026-11-05)
+
+- Goal: employee always sees solution decisions after scrolling to the end of chat.
+- Cause: real T-000075 is resolved/pending; controls were before messages inside the transcript scroller while the footer showed a read-only notice.
+- Fix: compact bounded footer outside history, also available in description view; existing action flags/access denial preserved. No real ticket decision submitted.
+- Verification:25component cases, build/workspace checks,3browser viewport cases passed; confirmation/reopen dispatch, rating expansion, cached401/403/404, long-history scroll and no overflow covered. Independent review has no blockers.
+- Complete: runtime860c5677f26f5aabc575089819cfa41da1782124 installed over independently deployed Studio dc60; verified155 backup/4source hashes/health200/3active services and unchanged business counts. Live own synthetic requester ticket confirms3buttons stay visible after scrolling. No decision submitted on T-000075. Staging remains available; production unchanged.
+- Evidence: docs/REQUESTER_CONFIRM_CONTROLS_2026-11-05.md and tmp/requester-confirm-controls-20261105. Task is frozen with a private index and its own branch to avoid shared Studio staging.
+
+
+## Service-name search and missing-service intake (2026-11-05)
+
+- Goal: search actual service names, add Электронный бюджет and ЕИС, offer explicit Не знаю when no matches.
+- Cause: search indexed entrances but not offering names; advertised other.unknown was absent from current31published offerings, hiding fallback.
+- Changes: additive service rows expand categories without cached scenario launch; explicit public fallback entry; guarded canonical publication of2maps,3entrances each, inheriting current business-system routing/SLA/policies.
+- Verification:26Python,33frontend,3browser cases and build/workspace checks pass. Reviewer lock-order/hidden-parent issues fixed with regressions. No new schema/dependencies or ticket commands.
+- Complete: runtime f85af9310468780cf87768671043a1e0409684bd installed with verified155 backup,13source hashes,health200 and3active services.2maps published (33offerings); previous74versions/54drafts/76tickets preserved; repeat apply idempotent.26Python/33frontend/3browser checks pass. Real API search/fallback verified; live incomplete-profile guard retained. Staging remains active; production unchanged.
+- Handoff: docs/CATALOG_SERVICE_SEARCH_2026-11-05.md; private tmp/catalog-service-search-20261105. Preserve earlier installed requester controls and shared checkout/index.
+
+
+## Requester symptom search (2026-11-05)
+
+- Goal: ordinary failure/startup/login/opening phrases find different services, keeping named systems/devices specific.
+- Cause: literal per-field token matching omitted related symptom phrases and repeated one offering; no result for printer startup.
+- Change: curated explicit symptom intents plus noun anchors, offering interleaving and visible offering names; no auth/profile/catalog/schema/dependency changes.
+- Verification:53Python/34UI tests, build/workspace and3browser viewport cases pass. Three reviewer precision issues fixed with red/green regressions; followup has no findings.
+- Complete: runtime17327fbc981ba1d3261fa0a77f0fb37b863b8550 installed; verified155backup/6source hashes/health200/3active services, unchanged catalog and business counts. Live API generic20distinct, startup7, login13; network and named systems narrowed. Staging active; production unchanged.
+- Evidence: docs/CATALOG_SYMPTOM_SEARCH_2026-11-05.md and tmp/catalog-symptom-search-20261105. Shared checkout/index preserved through private freeze on ab80b1a2.
+
+
+## Preserve resolution SLA on confirmation (2026-11-06)
+
+- Goal: fix and deploy false overdue after requester acceptance, restore T-000075 from verified stop event.
+- Cause: closing replaced already stopped resolution_at with closed_at; actual05Nov17:42 solution was before18:47 due, confirmed06Nov09:56.
+- Change: preserve stopped SLA, retain close-only fallback and reopen reset. Admin/staging/exact-ticket fingerprinted repair with canonical update and internal audit; no bulk/schema/auth changes.
+- Verification:51focusedPython and3browser viewport cases pass; workspace and independent review pass. RealPG rollback/durable audit/idempotence acceptance remains.
+- Complete: runtimeb765fd6362686a28209e2aa92839363f961f21bd installed with verified155backups/5source hashes/health200. RealPG flushed-update rollback, audited T75repair and repeat-idempotence pass. Original17:42stop now within18:47target; closed/confirmation/5feedback/75other tickets/21old events preserved;1audit added.3browser viewports and live support UI pass. Staging active; production unchanged.
+- Evidence: docs/SLA_CONFIRMATION_FIX_2026-11-06.md and tmp/sla-confirmation-fix-20261106. Private branch/index preserve shared work and prior requester/catalog improvements.
+
+
+## Preserve requester editing spaces (2026-11-06)
+
+- Goal: stop deleting spaces while typing a new request description and other text-like fields; staging.
+- Cause: controlled input rendered normalized string trim() on each keystroke, deleting a trailing space before the next word.
+- Fix: render raw editing strings, retain validation/payload/required normalization and numeric/select/checkbox behavior. No API/schema/data changes.
+- Verification:3regressions red before fix;141UI tests, build/workspace,3browser viewport cases and independent review pass. Character entry, multiline and dynamic preview/answer covered.
+- Complete: runtime587bc6dc3c4bca4b508ece7a5f95514c78f4a49a installed with verified155backup/4source hashes/health200/3active services.141UItests/3browser keyboard-preview-answer cases pass. Real HTTPS shell/assets match installed bytes; all business counts and T75SLArepair preserved. No ticket/profile changes; staging active, production unchanged.
+- Evidence: docs/REQUESTER_TEXT_SPACES_FIX_2026-11-06.md and tmp/requester-spaces-fix-20261106. Private branch/index preserve shared work and accepted SLA/catalog changes.
+
+
+## Requester reopen messages (2026-11-06)
+
+- Goal: requester return reason/comment visible to support and requester; restore2existing T77comments without repeating workflow.
+- Cause: reason persisted only in status/quality facts; normal conversation reads chat_message events.
+- Fix: one stable canonical public requester message in reopen transaction, postcommit WS publication on3routes, explicit requester rollback/conflict. Operator quality notes stay private.
+- Verification:50focusedPython and3browser viewports pass; build/workspace/diff and independent review pass. Recovery source-owner guard tightened with regressions.
+- Complete: runtime99f7428692d9627160eac77e2316c42397716462 installed; verified code/data backups, realPG rollback and idempotent2message recovery pass. All originalT77data/76other tickets preserved. Actual support UI shows both reasons/comments with no console warnings/errors; schema155 and strictHTTPShealth200,3services active. Screenshot-step repair continues independently.
+- Evidence: docs/REQUESTER_REOPEN_MESSAGES_2026-11-06.md and tmp/reopen-message-fix-20261106. Private index/branch preserve shared work and prior accepted fixes.
+
+
+## Optional requester screenshots (2026-11-06)
+
+- Goal: remove mandatory screenshot stage from all active maps; preserve pinned sessions and uploads.
+- Cause: uploads persist separately but evidence_note required scalar blocks32maps.
+- Fix: reviewed legacy effective-definition exception; new canonical publications remove only display stage/coordinate and rewire92edges preserving processing. Batch admin/staging/fingerprint/draft CAS guards; no session retarget or immutable rewrite.
+- Verified:147focusedPython/6browser cases, workspace/diff/build and independent review pass. Fresh actual32active/47historical exact patterns accepted; different retired radio pattern guarded with no sessions. Broader legacy noDB fixture failures documented separately.
+- Complete: runtime9c247da1f5ae65c5ad131eccc305e3891852486e installed; backup/realPG2publication rollback/32map canonical publication and no-op repeat verified.33active maps have no screenshotstage;77oldversions retained. Independent verified-dump comparison preserves56sessions/7assets/77tickets/18491events and other catalog/SLA rows.3actual0/1/2file sessions advance empty and canonicalpreview200oktrue, rolledback unchanged.147Python/6browserpass; actualadminprofilegate preserved. Schema155,strictHTTPShealth200,3services active. FullCI/committedtestticket/livecomplete-profile browser not performed; details in report.
+- Evidence: docs/OPTIONAL_SCREENSHOTS_2026-11-06.md and tmp/optional-screenshots-20261106. Private index preserves shared HEAD/index and prior accepted fixes.
+
+
+## Bell and Web Push notifications (2026-11-06)
+
+- Goal/scope: chat messages and status changes in the shared bell and browser, including a closed tab.
+- Implemented: transactional event-to-notification fanout, actor-scoped SQL reads/counts, durable payload-free VAPID queue, browser opt-in/out and notification-only worker with deduplication/session checks. No new dependencies or Endpoint contracts.
+- Verified: 48 focused backend, 28 frontend and 7 full-Chromium fixture cases; build, workspace, diff, one Alembic head 156, inventory and cleanup-profile audits. Requester/support desktop/mobile screenshots inspected; independent review findings fixed.
+- Complete: user selected current staging192.168.101.118. Frozen release43e81da89c021fb90de3c8770237739e71d09e23 deployed through canonical installer with selector guards/shared flock. Verified155backup/restore, actual156migration, private0600VAPIDkey, trustedHTTPShealth/worker200, source hashes and3active services. Loopback isolatedPostgreSQL replaces unusable example.test test route;69focusedDB/backend/config/deploy and8schema tests pass;3pre-existing cleanup classifications fixed separately.
+- Live acceptance: actualGoogleChrome persistent temporary profile/FCM, no TLS bypass/mocks/CDPpush; both native trusted push events and browser ACKs received with Helpdesk tab closed, both events visible in bell after reopening. Opt-out passed;2synthetic tickets closed,3disposable accounts inactive, no subscriptions/deliveries retained. Production unchanged; fullCI/otherbrowserproviders/fullyterminatedbrowser not accepted.
+- Handoff/evidence: docs/BROWSER_NOTIFICATIONS_STAGING_ACCEPTANCE_2026-11-06.md, docs/BROWSER_NOTIFICATIONS.md, task plan and tmp/browser-notifications-launch-20261106. Preserve concurrent/unrelated dirty changes; private release branch commits, no push.
+
+## Notification attention and login instruction (2026-11-06)
+
+- Scope: user-reported active-chat popups, read events retained in bell, and requested small dismissible instruction at login; current test server only.
+- Cause/fix: unread-only bell query; loaded chat readiness markers and visible/focused/modal-aware shell read/probe; bounded worker confirmation plus safe read-failure fallback. New actor/scoped read_ticket action requires expected_actor_id to reject stale account tabs. Native help modal with explicit opt-in and remembered per-actor/browser dismissal; no automatic permission request.
+- Verification: read-all regression failed before fix; 58 focused UI and 27 backend/real PostgreSQL plus 2 route tests pass, build/workspace pass. Browser coverage includes read-all/reopen, three instruction sizes, native ready-chat silence, emulated unfocused fallback, read-failure fallback and closed-tab push. Independent review findings corrected; final browser/release receipts follow in acceptance report.
+- Complete: runtime2573425f1b85f0e5dd83450e357f0e4d36b5e061 installed via guarded canonical release, verified156backup/restore, unchanged key/env/schema, source hashes andHTTPShealth/worker200,3services active. Native Chrome/FCM active chat produces0notices andread+ACK; closed-tab message/status bothreceived+ACK, reopened bell2events thenread-all/reopenempty. Intro/opt-out pass. TestT84/T85closed,2accountsdisabled, existing1subscription retained. No production changes or new dependencies/schema.
+- Evidence: docs/NOTIFICATION_ATTENTION_STAGING_ACCEPTANCE_2026-11-06.md, task plan and tmp/notification-attention-20261106. Preserve shared HEAD/index/unrelated dirty files. FullCI/otherrealproviders/fullyterminatedbrowser/OSpopupvisual not accepted; first external status wait timed out, per-type rerun passed.
+
+
+## Helpdesk Git publication (2026-11-06)
+
+- User requested publication of latest Helpdesk work, then explicitly authorized fixing the review finding and three frontend failures before sending.
+- Integrate the existing private feature history through212e5e30 into codex/ui-support-001, preserving31f81cec Studio acceptance and all current source/docs. Keep prior feature commits; no history rewriting.
+- Repair notification UI identity aliases across recipient dedup/self suppression, inbox reads/ACKs, browser ownership/fanout and preferences. Unknown principals remain exact-only; ambiguous identities fail closed. No new route/migration/Endpoint contract in this repair.
+- Correct stale requester-shell/upload authorization fixtures, strengthen actual-start upload race assertions, and add explicit disabled push config to five browser fixtures. Private audit screenshots are plain local references.
+- Verified:1072frontend/173files;32browser cases;175focusedPython/1Linux-onlyskip;95DB cases before separate schema-layer setup errors; separate8schema cases pass; final50notificationDB/policy cases pass; workspace/build/inventory/cleanup-profile/diff checks pass. Red-before/green-after identity and frontend regressions recorded. Independent frozen review has no findings.
+- Git-only scope: no deployment or remote service changes; owned local fixtures/PostgreSQL stopped. FullCI/live staging/production signoff not requested. GitNexus unavailable; source/tests reviewed. Machine-local config/temp artifacts remain untracked.
+- Exact commands, migration156/config implications and complete164path snapshot manifest: docs/HELPDESK_GIT_PUBLICATION_2026-11-06.md.

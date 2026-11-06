@@ -325,6 +325,8 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   and refuses downgrade with v3 rows. Document import validates configured active
   queues/calendars without saving or publishing. `service_catalog_search` ranks
   only the authorized published catalog exposed by `/api/service-catalog/current?q=`;
+  explicit Russian symptom families retain device/system anchors, and symptom-only
+  queries interleave offerings before repeating one; `offering_title` labels results.
   requester catalog search opens a selected offering/entry without authority input.
   `approval_policy` resolves a missing requester-manager snapshot through trusted
   Registry/UI identity; policy health and actual creation share canonical approver
@@ -439,6 +441,9 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - `webapp/src/features/requester/dynamic-form/index.tsx` mirrors these boundary
   cases. Invalid checkbox state remains editable but blocks submission; render
   helpers do not turn a bad string into true or crash the requester form.
+  Text-like controls render the raw editing string so trailing spaces and textarea
+  line breaks survive keystrokes. Normalization remains in required/validation
+  and payload helpers. Scenario answer state and dynamic preview keep live values.
 
 ## Compatibility ticket detail UI
 
@@ -554,11 +559,23 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 
 ## Workflow transaction failures
 
+- `quality/reopen_message.py` builds the stable public chat payload for explicit
+  requester/user reopens. `quality/reopen_service.py` persists it atomically with
+  reopen/quality facts; requester and quality/public routes publish the captured
+  event only after commit. Operator notes remain private. The exact T-000077
+  staging recovery helper is documented in `QUALITY_LOOP.md`; no history rewrite.
+
 - `server/tickets/workflow_service.py` separates pure status/timestamp builders
   from waiting effects, gate actions and persistence/finalization. Timestamp
   resets retain their original precedence over explicit resolution metadata.
   All stages run under the same row lock and caller transaction; required
   effects still fail closed before commit.
+  Closing preserves an already stopped `resolution_at`; `closed_at` records
+  independent acceptance/closure. With no stopped SLA, the close-time fallback
+  remains. Reopening clears the prior cycle timestamps. Regression coverage is in
+  `test_workflow_update_builder_no_db.py`; `scripts/helpdesk_repair_t75_sla.py`
+  provides an admin-only, fingerprinted, staging-only T-000075 repair from its
+  verified SLA stop event, with an atomic internal audit and no bulk migration.
 
 - `server/tickets/workflow_service.py` locks and refreshes the ticket before
   policies or lifecycle side effects. A stale `from_status` raises
@@ -699,6 +716,28 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - `server/web_api/registry_handlers.py` creates admin registry people with a
   server-generated UUID, so the identity and audit flows never accept a
   caller-supplied person identifier.
+- `server/web_api/user_account_handlers.py` provides admin-only GET/PUT
+  `/api/web/admin/users/{person_id}/account` for unified profile/account access
+  administration; `app/services/user_accounts.py` owns the transactional command
+  and `web_api/dto/user_account.py` validates bounded secret-safe inputs.
+  Role, verified login linkage, direct queues, groups and audit share one
+  transaction; passwords never enter response/audit projections.
+  `webapp/src/pages/admin/users-page.tsx` composes the Users workspace; the
+  registry page retains device/reference jobs and selected-person advanced tools.
+  Registry presentation, state/actions, dialogs and tab definitions are split
+  across `registry-workspace.tsx`, `use-registry-workspace.ts`,
+  `registry-workspace-dialogs.tsx` and `registry-workspace-tabs.ts` under
+  `webapp/src/features/admin/registry/`; `registry-person-tools.tsx` exposes
+  selected-person advanced operations without another people table. Successful
+  operations invalidate account/access caches; clean cards adopt new state and
+  dirty conflicting drafts require an explicit reload before saving.
+  See [the admin Users workflow](../../docs/ADMIN_USERS_WORKSPACE.md).
+- `app/repos/ui_actor_memberships.py` resolves only the stored/canonical forms
+  of one uniquely matched UI login for read-only membership checks. Access,
+  ticket visibility and saved-view queries use this helper; queue mutation
+  lookups stay exact. Tokens and ticket actor ownership are unchanged, and
+  memberships retain one stored-login row so approvers/operators are not
+  duplicated. Ambiguous UI identities fail closed; non-UI actors remain exact.
 - `server/observer/integrity_service.py` scans and resolves findings only for
   its active checks; retired protocol and local-runtime sources are excluded
   from new scans and leave existing events unchanged. Browser authentication
@@ -720,6 +759,34 @@ This also includes the retired UIA create-ticket harness for the local agent.
   surfaces.
 - `server/tests/test_endpoint_contract_lock.py` protects the consumed Endpoint
   API contract.
+## Browser notifications
+
+- `tickets/browser_notifications.py` projects safe bell/browser messages and
+  creates notifications from deduplicated chat/status events in the event transaction.
+- `tickets/notification_scope.py` applies current ticket read scope in SQL before
+  notification pagination/counting, including membership aliases/unified queues.
+- Notification recipients, inbox acknowledgements, preferences and browser
+  subscriptions reuse `app/repos/ui_actor_memberships.py` for validated stored /
+  normalized UI login aliases, with duplicate/self suppression and exact-only
+  unknown principals; ambiguous UI identities fail closed.
+- `app/repos/web_push_repo.py`, `app/db/web_push_models.py` and migration `156`
+  own actor/browser subscriptions and transactional push deliveries.
+- `tickets/web_push.py` validates provider endpoints and signs payload-free VAPID
+  wakeups; `app/services/web_push_dispatcher.py` owns bounded delivery/retry and
+  startup/cleanup through `server.py`.
+- `web_api/push_handlers.py` exposes `/api/web/notifications/push/*`; the
+  notification-only worker is served at `/helpdesk-notifications-sw.js`.
+- `webapp/src/features/notifications/` owns the shared bell and opt-in controls;
+  `webapp/public/helpdesk-notifications-sw.js` owns closed-tab browser handling.
+- `POST /api/web/notifications/read_ticket` marks only the authenticated actor's
+  currently visible ticket events; `expected_actor_id` rejects stale-account tabs.
+  The bell requests unread-only rows, retaining database history after reads.
+- `use-active-chat-notifications.ts` checks loaded conversation markers, focus,
+  visibility and modal coverage; bounded worker probes confirm active chat before
+  consuming an event without a popup. `notification-introduction.tsx` provides
+  dismissible per-actor/browser help and explicit opt-in without automatic permission.
+- Activation, API, privacy and acceptance boundaries: `docs/BROWSER_NOTIFICATIONS.md`.
+
 # Production security policy
 
 - `shared/production_security.py`: shared dependency-free production transport,
@@ -817,10 +884,23 @@ from `pages/requester/new-request-page.tsx`; legacy offering UI remains default.
 `features/requester/catalog-search.tsx` and `catalog-categories.tsx` provide one
 server-backed search plus category/entrance browsing. Category expansion performs
 no command; explicit leaf selection delegates to `scenario-entrances.tsx`, which
-retains owner-scoped resume selection without a second search field. Ordinary
+retains owner-scoped resume selection for explicit entrances; category browsing
+does not restore a remembered problem before the user chooses it. Service-name
+search rows expand categories; the configured published fallback identifies an
+explicit entrance. `scripts/helpdesk_catalog_service_search.py` publishes the two
+additional information-system maps through canonical audited services. Ordinary
 categories delegate to the existing form panel; drafts and direct links remain.
 `tickets/request_scenario_submission.py` revalidates visited pages and maps typed
 facts/roles into the existing form submission, retaining a support snapshot.
+`tickets/request_scenario_optional_evidence.py` supplies a copied effective
+definition for the exact reviewed legacy `q_evidence` screenshot stage. Pinned
+sessions keep block/field IDs and assets while the two text questions are optional;
+submission derives its final form from the same effective definition. Unrelated
+required fields and semantic references are unchanged. The bounded staging helper
+`scripts/helpdesk_optional_screenshot_stage.py` uses canonical draft CAS,
+preview/token and publication to remove that display-only stage in new versions.
+It preserves incoming transition conditions/processing, rejects draft drift, and
+never retargets existing sessions or rewrites immutable definitions.
 `web_api/requester_handlers.py` exposes caller-transaction create/preview helpers:
 the same profile/device/form checks and policy runtime serve legacy and guided
 requests. Scenario submit locks the owner session, rechecks processing preview,

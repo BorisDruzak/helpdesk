@@ -317,6 +317,19 @@ afterEach(() => {
 });
 
 describe("appRoutes", () => {
+  it("registers the Users workspace and redirects the legacy Access route", () => {
+    expect(collectRoutePaths(appRoutes)).toContain("admin/users");
+    const findRoute = (routes: RouteObject[]): RouteObject | undefined => {
+      for (const route of routes) {
+        if (route.path === "admin/access") return route;
+        const found = findRoute(route.children ?? []);
+        if (found) return found;
+      }
+    };
+    const access = findRoute(appRoutes)?.element as React.ReactElement<{ children: React.ReactElement<{ to: string; replace: boolean }> }>;
+    expect(access.props.children.props.to).toBe("/app/admin/users?tab=access");
+    expect(access.props.children.props.replace).toBe(true);
+  });
   it.each(["/app/admin/request-template-studio", "/app/admin/registry", "/app/tickets", "/app"])(
     "opens only the read-only Studio for an auditor without workspace grants (%s)", async initialPath => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -738,10 +751,10 @@ describe("appRoutes", () => {
     // imports can exceed Testing Library's 1s default before it becomes ready.
     expect(await screen.findByRole("heading", { name: "Мои обращения" }, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.queryByLabelText("Рабочая зона")).not.toBeInTheDocument();
-    expect(screen.getByText("Пользователь")).toBeInTheDocument();
+    expect(screen.getByLabelText("Меню профиля")).toHaveTextContent("requester@example.test");
     expect(screen.queryByText("Requester")).not.toBeInTheDocument();
     expect(screen.queryByText("Requester workspace")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Кабинет пользователя").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Кабинет сотрудника").length).toBeGreaterThan(0);
 
     const mobileNav = screen.getByRole("navigation", { name: "Навигация заявителя" });
     expect(within(mobileNav).getByRole("link", { name: "Главная" })).toHaveAttribute("href", "/app/requester");

@@ -105,7 +105,8 @@ Retired Helpdesk browser pairing and account-session issuance remain unavailable
 | `/app/requester/devices` | Read the requester's existing device bindings and open device binding. | Authenticated Helpdesk requester. | Redacted Registry device projection. |
 | `/app/requester/devices/link` | Enter an Endpoint one-time device code. | Authenticated requester with a complete RegistryPerson profile; Endpoint verifies possession, Registry decides ownership. | Registry binding/claim and bounded audit, never the code. |
 | `/app/requester/new` | Create a Helpdesk ticket. | Authenticated requester and Helpdesk ticket policy. | Ticket/audit record and Endpoint-backed diagnostic facade where applicable. |
-| `/app/admin/registry` | Administer people, bindings, registration claims, profiles and password-reset requests. | Helpdesk RBAC. | Registry audit event with a redacted before/after projection. |
+| `/app/admin/users` | Unified person profile, account, role, direct queues, access groups and password-reset administration. | Helpdesk admin RBAC. | Atomic account/access update and redacted audit; see [Users workflow](ADMIN_USERS_WORKSPACE.md). |
+| `/app/admin/registry` | Administer devices, bindings, registration claims, locations, departments, audiences and policies. | Helpdesk RBAC. | Registry audit event with a redacted before/after projection. |
 
 Endpoint Platform alone owns agent enrollment, agent connectivity and all
 device-control workflows. Helpdesk consumes only the documented Endpoint
@@ -160,6 +161,19 @@ without challenge material. The requests tab labels it “Код привязк�
 and retains separate explicit administrator review for ownership conflicts.
 
 ## Tickets
+
+Catalog search includes service names, section names and individual published
+problems. Choosing a service expands its problems without starting an old cached
+scenario. An empty search offers «Не знаю / моей услуги нет в списке» and opens
+the explicitly configured public Other entrance. A network failure remains an
+error with retry rather than being reported as no matches. Электронный бюджет
+and ЕИС each provide login, signature and general system-error entrances.
+
+Requester solution decisions stay in a compact footer outside the scrolling chat
+history, including the description/history view. Confirmation, optional rating and
+return-to-work remain gated by the server action flags; cached access denial hides
+the footer. Expanded decision forms have bounded scrolling on small screens.
+Read-only text is shown only when no reply or solution action is granted.
 
 Normal forms allow tickets without a computer by default. The historical policy
 key `available_without_agent_binding` remains compatible; explicit `false` still

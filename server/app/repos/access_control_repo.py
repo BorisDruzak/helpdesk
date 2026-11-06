@@ -15,6 +15,7 @@ from app.db.models import (
     TicketQueue,
 )
 from shared.redaction import redact_sensitive_payload
+from app.repos.ui_actor_memberships import ui_actor_membership_ids
 
 
 class AccessControlRepo:
@@ -233,25 +234,28 @@ class AccessControlRepo:
         ]
 
     async def get_actor_group_codes(self, actor_id: str) -> list[str]:
+        actor_ids = await ui_actor_membership_ids(self.session, actor_id)
         result = await self.session.execute(
             select(AccessGroup.code)
             .join(AccessGroupMember, AccessGroupMember.group_id == AccessGroup.id)
-            .where(AccessGroupMember.actor_id == actor_id, AccessGroup.is_active.is_(True))
+            .where(AccessGroupMember.actor_id.in_(actor_ids), AccessGroup.is_active.is_(True))
             .order_by(AccessGroup.code.asc())
         )
-        return [str(item) for item in result.scalars().all()]
+        return sorted({str(item) for item in result.scalars().all()})
 
     async def get_actor_group_permissions(self, actor_id: str) -> list[str]:
+        actor_ids = await ui_actor_membership_ids(self.session, actor_id)
         result = await self.session.execute(
             select(AccessGroupPermission.permission_code)
             .join(AccessGroup, AccessGroup.id == AccessGroupPermission.group_id)
             .join(AccessGroupMember, AccessGroupMember.group_id == AccessGroup.id)
-            .where(AccessGroupMember.actor_id == actor_id, AccessGroup.is_active.is_(True))
+            .where(AccessGroupMember.actor_id.in_(actor_ids), AccessGroup.is_active.is_(True))
             .order_by(AccessGroupPermission.permission_code.asc())
         )
         return sorted({str(item) for item in result.scalars().all()})
 
     async def get_actor_group_queues(self, actor_id: str) -> list[dict]:
+        actor_ids = await ui_actor_membership_ids(self.session, actor_id)
         result = await self.session.execute(
             select(
                 TicketQueue.id,
@@ -262,7 +266,7 @@ class AccessControlRepo:
             .join(AccessGroupQueueMember, AccessGroupQueueMember.queue_id == TicketQueue.id)
             .join(AccessGroup, AccessGroup.id == AccessGroupQueueMember.group_id)
             .join(AccessGroupMember, AccessGroupMember.group_id == AccessGroup.id)
-            .where(AccessGroupMember.actor_id == actor_id, AccessGroup.is_active.is_(True), TicketQueue.is_active.is_(True))
+            .where(AccessGroupMember.actor_id.in_(actor_ids), AccessGroup.is_active.is_(True), TicketQueue.is_active.is_(True))
             .order_by(TicketQueue.code.asc())
         )
         seen: set[int] = set()

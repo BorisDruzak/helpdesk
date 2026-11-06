@@ -79,6 +79,157 @@ def test_legacy_guided_offering_without_named_entrances_remains_searchable():
     assert result['help_mode'] == 'guided'
 
 
+def test_offering_name_is_searchable_even_when_none_of_its_problem_names_match():
+    payload = catalog(("Не удаётся подписать документ", [], "Ошибка при работе с сертификатом"))
+    payload['services'][0]['offerings'][0]['title'] = 'Электронная подпись и сертификаты'
+    result = search(payload, 'электронная подпись')['results']
+    assert result[0]['title'] == 'Электронная подпись и сертификаты'
+    assert result[0]['result_kind'] == 'service'
+    assert result[0]['entry_point_key'] is None
+
+
+def test_service_section_names_find_only_the_public_offering_rows():
+    result = search(catalog(("Не печатает документ", [], "")), 'рабочее место')['results']
+    assert len(result) == 1
+    assert result[0]['title'] == 'Печать'
+    assert result[0]['result_kind'] == 'service'
+
+
+def symptom_catalog():
+    offerings = [
+        ('print', 'Принтеры и МФУ', ['Принтер не печатает', 'Принтер отключён или недоступен', 'Не работает двусторонняя печать']),
+        ('computer', 'Компьютеры и системные блоки', ['Компьютер не включается', 'Ноутбук не включается или не заряжается']),
+        ('software', 'Установка и изменение программ', ['Установить новую программу', 'Программа не запускается']),
+        ('os', 'Windows и ALT Linux', ['Система не загружается', 'Не получается войти в систему']),
+        ('budget', 'Электронный бюджет', ['Электронный бюджет: не удаётся войти', 'Электронный бюджет: ошибка работы системы']),
+        ('eis', 'ЕИС', ['ЕИС: не удаётся войти', 'ЕИС: ошибка электронной подписи']),
+        ('mail', 'Электронная почта', ['Не удаётся открыть почту', 'Не отправляется письмо']),
+        ('network', 'Сеть, интернет и VPN', ['Нет интернета', 'VPN не подключается']),
+        ('meeting', 'Видеосвязь', ['Не получается подключиться к встрече']),
+        ('new', 'Создание учётной записи', ['Создание учётной записи']),
+        ('other', 'Другая проблема', ['Не нашёл свою проблему', 'Нужна консультация ИТ']),
+    ]
+    return {'services': [{'service_code': 'public', 'title': 'Услуги', 'offerings': [
+        {'full_code': 'public.' + code, 'title': title, 'guided_scenario_enabled': True,
+         'catalog_items': [{'entry_point_key': str(i), 'title': entry, 'synonyms': [], 'description': ''}
+                           for i, entry in enumerate(entries)]}
+        for code, title, entries in offerings]}]}
+
+
+@pytest.mark.parametrize('query', ['не работает', 'перестало работать', 'сломалось', 'у меня не работает'])
+def test_general_failure_search_finds_different_services_without_setup_or_fallback_noise(query):
+    rows = search(symptom_catalog(), query)['results']
+    codes = {r['offering_full_code'] for r in rows}
+    assert {'public.print', 'public.computer', 'public.budget', 'public.mail', 'public.network'} <= codes
+    assert not codes & {'public.new', 'public.other'}
+
+
+@pytest.mark.parametrize('query', ['не включается', 'не запускается', 'не могу запустить', 'не загружается'])
+def test_startup_phrases_cross_devices_programs_and_operating_systems(query):
+    codes = {r['offering_full_code'] for r in search(symptom_catalog(), query)['results']}
+    assert {'public.computer', 'public.software', 'public.os'} <= codes
+    assert not codes & {'public.new', 'public.other'}
+
+
+@pytest.mark.parametrize('query', ['не могу войти', 'не пускает', 'ошибка входа', 'не удается авторизоваться'])
+def test_login_phrases_find_multiple_systems_without_conflating_a_meeting_connection(query):
+    codes = {r['offering_full_code'] for r in search(symptom_catalog(), query)['results']}
+    assert {'public.budget', 'public.eis', 'public.os'} <= codes
+    assert 'public.meeting' not in codes
+    assert 'public.eis' not in {r['offering_full_code'] for r in search(symptom_catalog(), query)['results']
+                              if r['entry_point_key'] == '1'}  # signature error is not a login error
+
+
+@pytest.mark.parametrize('query', ['не могу открыть', 'не открывается', 'неоткрывается'])
+def test_opening_phrases_find_the_same_mail_problem(query):
+    assert 'public.mail' in {r['offering_full_code'] for r in search(symptom_catalog(), query)['results']}
+
+
+@pytest.mark.parametrize('query,code', [('не работает электронный бюджет', 'public.budget'),
+    ('не работает ЕИС', 'public.eis'), ('не работает интернет', 'public.network'),
+    ('не работает принтр', 'public.print')])
+def test_symptom_expansion_preserves_named_service_or_device(query, code):
+    rows = search(symptom_catalog(), query)['results']
+    assert rows and {r['offering_full_code'] for r in rows} == {code}
+    assert all(r['offering_title'] for r in rows)
+
+
+def test_named_service_is_browsable_when_its_exact_symptom_is_not_an_entrance():
+    rows = search(symptom_catalog(), 'не включается принтер')['results']
+    assert rows and {r['offering_full_code'] for r in rows} == {'public.print'}
+    assert any(r['result_kind'] == 'service' and r['entry_point_key'] is None for r in rows)
+
+
+def test_generic_symptom_interleaves_offerings_before_repeating_one_with_many_problems():
+    from tickets.service_catalog_search import search_public_catalog
+    payload = symptom_catalog()
+    payload['services'][0]['offerings'][0]['catalog_items'] = [
+        {'entry_point_key': str(i), 'title': f'А {i}: не работает печать'} for i in range(40)]
+    before = deepcopy(payload)
+    rows = search_public_catalog(payload, 'не работает', limit=5)['results']
+    assert len(rows) == 5 and len({r['offering_full_code'] for r in rows}) == 5
+    assert payload == before
+    assert search_public_catalog(payload, 'не работает', limit=5)['results'] == rows
+
+
+def test_semantics_do_not_erase_unknown_entities_or_positive_negative_distinctions():
+    payload = symptom_catalog()
+    for query in ['не работает космопульт', 'не включается единорог', 'включается', 'принтер работает', 'нет принтера']:
+        assert not search(payload, query)['results'], query
+
+
+@pytest.mark.parametrize('query', ['нет интернета', 'пропал интернет', 'нет сети'])
+def test_connection_phrases_keep_the_internet_or_network_entity(query):
+    rows = search(symptom_catalog(), query)['results']
+    assert rows and {r['offering_full_code'] for r in rows} == {'public.network'}
+
+
+def test_generic_failures_do_not_promote_setup_description_with_unrelated_negation():
+    payload = symptom_catalog()
+    payload['services'][0]['offerings'][-2]['description'] = 'Укажите отдел и дату начала работы. Пароли не указывайте.'
+    assert 'public.new' not in {r['offering_full_code'] for r in search(payload, 'не работает')['results']}
+
+
+def test_generic_error_keeps_complete_literal_matches_of_specific_error_families():
+    payload = catalog(('Ошибка входа', [], ''), ('Ошибка электронной подписи', [], ''),
+                      ('Ошибка печати', [], ''), ('Ошибка работы системы', [], ''))
+    assert {r['entry_point_key'] for r in search(payload, 'ошибка')['results']} == {'0', '1', '2', '3'}
+    assert [r['entry_point_key'] for r in search(payload, 'ошибка входа')['results']] == ['0']
+
+
+def test_configured_fallback_must_resolve_to_one_public_published_entrance():
+    from tickets.service_catalog_runtime import configured_requester_fallback
+    offering = {'full_code': 'other.actual', 'service_code': 'other', 'visibility': 'public',
+        'lifecycle_status': 'published', 'metadata': {'requester_fallback': {'entry_point_key': 'not_found'}}}
+    entries = {'other.actual': [{'entry_point_key': 'not_found'}]}
+    assert configured_requester_fallback([offering], entries, {'other'}) == (offering, 'not_found')
+    assert configured_requester_fallback([offering], entries, {'internal'}) is None
+    assert configured_requester_fallback([offering], {}, {'other'}) is None
+    assert configured_requester_fallback([offering, {**offering, 'full_code': 'other.second'}],
+        {**entries, 'other.second': entries['other.actual']}, {'other'}) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('visibility', ['public', 'internal'])
+async def test_runtime_fallback_uses_real_parent_visibility_before_synthetic_defaults(monkeypatch, visibility):
+    from tickets.service_catalog_runtime import ServiceCatalogRuntimeResolver
+    from tickets import request_scenario_catalog
+    offering = {'service_code': 'other', 'code': 'actual', 'full_code': 'other.actual', 'public_title': 'Другая проблема',
+        'visibility': 'public', 'lifecycle_status': 'published', 'metadata': {'requester_fallback': {'entry_point_key': 'not_found'}}}
+    class Repo:
+        async def list_services(self, **kwargs):
+            return [{'code': 'other', 'public_title': 'Другое', 'visibility': visibility, 'lifecycle_status': 'published'}]
+        async def list_offerings(self, **kwargs):
+            return [offering]
+    async def published(session):
+        return {'other.actual': [{'entry_point_key': 'not_found'}]}
+    monkeypatch.setattr(request_scenario_catalog, 'published_catalog_entries', published)
+    resolver = ServiceCatalogRuntimeResolver(None)
+    resolver.repo = Repo()
+    payload = await resolver.current_catalog_for_requester()
+    assert payload['fallback']['full_code'] == ('other.actual' if visibility == 'public' else 'other.unknown')
+
+
 @pytest.mark.asyncio
 async def test_current_handler_searches_only_the_requester_runtime_projection(monkeypatch):
     import json

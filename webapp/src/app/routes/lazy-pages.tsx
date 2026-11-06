@@ -84,9 +84,13 @@ export const AdminAiIntegrationPage = lazy(() =>
   import("../../pages/admin/ai-integration-page").then((module) => ({ default: module.AdminAiIntegrationPage })),
 );
 
-export const AdminAccessPage = lazy(() =>
-  import("../../pages/admin/access-page").then((module) => ({ default: module.AdminAccessPage })),
-);
+export const AdminUsersPage = lazy(async () => {
+  const [users, registry] = await Promise.all([
+    import("../../pages/admin/users-page"),
+    import("../../pages/admin/registry-page"),
+  ]);
+  return { default: () => <users.AdminUsersPage renderOperations={personId => <registry.RegistryPersonOperations personId={personId} />} /> };
+});
 
 export const AdminCapabilitiesPage = lazy(() =>
   import("../../pages/admin/capabilities-page").then((module) => ({ default: module.AdminCapabilitiesPage })),

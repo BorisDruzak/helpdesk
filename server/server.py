@@ -193,6 +193,13 @@ async def on_startup(app: web.Application):
         try:
             await init_db(DATABASE_URL)
             logger.success("✅ Database initialized successfully")
+            from tickets.web_push import load_push_config
+            from app.services.web_push_dispatcher import WebPushDispatcher
+            push_config = load_push_config()
+            if push_config is not None:
+                dispatcher = WebPushDispatcher(push_config)
+                dispatcher.start()
+                app["web_push_dispatcher"] = dispatcher
             
             # PR#7: Start operation watchdog (Этап 5: set_app для advance_after_terminal при timeout)
             logger.info("⏰ Starting operation watchdog...")
@@ -320,6 +327,8 @@ async def on_cleanup(app: web.Application):
     Обработчик события остановки приложения.
     Закрывает подключение к базе данных.
     """
+    if "web_push_dispatcher" in app:
+        await app["web_push_dispatcher"].stop()
     if 'runtime_snapshot_writer' in app:
         logger.info("⏹️ Stopping server runtime snapshot writer...")
         await app['runtime_snapshot_writer'].stop()

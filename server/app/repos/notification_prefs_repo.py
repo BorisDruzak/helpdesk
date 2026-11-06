@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import TicketNotificationPref
+from app.repos.ui_actor_memberships import ui_actor_membership_ids
 
 DEFAULT_MUTE_INTERNAL = False
 DEFAULT_MUTED_EVENT_TYPES: list = []
@@ -23,9 +24,14 @@ class NotificationPrefsRepo:
 
     async def get(self, actor_id: str) -> Optional[TicketNotificationPref]:
         """Получить prefs для actor. None если записи нет."""
+        actor_ids = await ui_actor_membership_ids(self.session, actor_id)
+        if not actor_ids:
+            return None
+        # Prefer the stored account login if both historical spellings have
+        # rows, so password and OIDC sessions observe the same preferences.
         stmt = select(TicketNotificationPref).where(
-            TicketNotificationPref.actor_id == actor_id
-        )
+            TicketNotificationPref.actor_id.in_(actor_ids)
+        ).order_by((TicketNotificationPref.actor_id == actor_ids[0]).desc()).limit(1)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -54,6 +60,9 @@ class NotificationPrefsRepo:
     ) -> TicketNotificationPref:
         """Upsert prefs. Непереданные поля сохраняют текущее значение или default."""
         now = datetime.now(timezone.utc)
+        actor_ids = await ui_actor_membership_ids(self.session, actor_id)
+        if not actor_ids:
+            raise ValueError("Ambiguous notification preference owner")
         existing = await self.get(actor_id)
         if existing:
             if mute_internal is not None:
@@ -67,7 +76,7 @@ class NotificationPrefsRepo:
             return existing
         # Insert с defaults
         pref = TicketNotificationPref(
-            actor_id=actor_id,
+            actor_id=actor_ids[0],
             mute_internal=mute_internal if mute_internal is not None else DEFAULT_MUTE_INTERNAL,
             muted_event_types=muted_event_types if muted_event_types is not None else DEFAULT_MUTED_EVENT_TYPES,
             suppress_self=suppress_self if suppress_self is not None else DEFAULT_SUPPRESS_SELF,

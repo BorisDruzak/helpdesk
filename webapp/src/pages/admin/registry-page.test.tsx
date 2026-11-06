@@ -2,9 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 
-import { AdminRegistryPage } from "./registry-page";
+import { AdminRegistryPage, RegistryPersonOperations } from "./registry-page";
 
 const registryPayload = {
   summary: {
@@ -395,7 +395,12 @@ function jsonResponse(data: unknown) {
   }));
 }
 
-function renderRegistry() {
+function CurrentPath() {
+  const location = useLocation();
+  return <output data-testid="current-path">{location.pathname}{location.search}</output>;
+}
+
+function renderRegistry(operations = false, initialPath = "/app/admin/registry") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -404,8 +409,9 @@ function renderRegistry() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <AdminRegistryPage />
+      <MemoryRouter initialEntries={[initialPath]}>
+        <CurrentPath />
+        {operations ? <RegistryPersonOperations personId="person-1" /> : <AdminRegistryPage />}
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -554,13 +560,91 @@ describe("AdminRegistryPage", () => {
 
   it("does not use window.prompt in registry operator UI", () => {
     expect(readFileSync("src/pages/admin/registry-page.tsx", "utf-8")).not.toContain("window.prompt");
+    expect(readFileSync("src/features/admin/registry/registry-workspace.tsx", "utf-8")).not.toContain("window.prompt");
     expect(readFileSync("src/features/admin/registry/registry-quality-tab.tsx", "utf-8")).not.toContain("window.prompt");
   });
 
-  it("shows production context in the people registry", async () => {
+  it("keeps daily people and access workflows out of Registries", async () => {
     renderRegistry();
+    await screen.findByText("Операционный реестр");
+    expect(screen.queryByRole("button", { name: "Пользователи" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Группы доступа/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Смена пароля" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Схема профиля/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Пользователь" })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Пользователи" }));
+  it("offers selected-person advanced operations without a second people table", async () => {
+    renderRegistry(true);
+    expect(await screen.findByRole("button", { name: "Добавить идентичность" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Слияние дублей" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Архив" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Выбрать всех видимых пользователей" })).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/ФИО, логин, почта/)).not.toBeInTheDocument();
+  });
+
+  it("does not offer the requester-only legacy disable action for a support account", async () => {
+    currentRegistryPayload = { ...registryPayload, ui_users: [{ ...registryPayload.ui_users[0], linked_person_id: "person-1", actor_role: "support" }] };
+    renderRegistry(true);
+    await screen.findByText("ivan@example.test");
+    expect(screen.queryByRole("button", { name: /Отключить вход/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Статус входа настраивается/)).toBeInTheDocument();
+  });
+
+  it("keeps CSV people import in Users advanced tools", async () => {
+    renderRegistry(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Импорт людей" }));
+    expect(screen.getByRole("option", { name: "Пользователи" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Локации" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить импорт" })).toBeDisabled();
+  });
+
+  it("limits CSV imports in Registries to reference records", async () => {
+    renderRegistry();
+    fireEvent.click(await screen.findByRole("button", { name: "Импорт" }));
+    expect(screen.queryByRole("option", { name: "Пользователи" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Локации" })).toBeInTheDocument();
+  });
+
+  it("keeps people bulk assignment behind a target, reason and preview in Users", async () => {
+    renderRegistry(true);
+    fireEvent.click(await screen.findByText("Массовое назначение подразделения"));
+    fireEvent.click(screen.getByLabelText("Петров Иван"));
+    fireEvent.click(screen.getByRole("button", { name: "Назначить подразделение" }));
+    fireEvent.change(screen.getByLabelText("Подразделение"), { target: { value: "dept-1" } });
+    fireEvent.change(screen.getByLabelText("Причина"), { target: { value: "Нормализация отдела" } });
+    expect(screen.getByRole("button", { name: "Применить" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Предпросмотр" }));
+    await screen.findByText("Предпросмотр изменений");
+    const previewCall = fetchMock.mock.calls.find(([url]) => url === "/api/web/admin/registry/bulk/preview");
+    expect(JSON.parse(String(previewCall?.[1]?.body))).toMatchObject({ operation: "people.assign_department", ids: ["person-1"], payload: { department_id: "dept-1" } });
+  });
+
+  it.each([
+    ["people", "people"],
+    ["access_groups", "access"],
+    ["password_reset", "operations"],
+    ["profile_schema", "operations"],
+  ])("redirects the legacy %s registry tab to Users", async (legacyTab, targetTab) => {
+    renderRegistry(false, `/app/admin/registry?tab=${legacyTab}&person=person-1`);
+    await waitFor(() => expect(screen.getByTestId("current-path").textContent).toContain("/app/admin/users?"));
+    const path = new URL(screen.getByTestId("current-path").textContent!, "http://localhost");
+    expect(path.searchParams.get("tab")).toBe(targetTab);
+    expect(path.searchParams.get("person")).toBe("person-1");
+  });
+
+  it("opens person-related quality fixes in the selected Users card", async () => {
+    currentRegistryPayload = { ...registryPayload, data_quality: [{
+      issue_key: "duplicate-1", kind: "duplicate_person", severity: "warning", object_type: "person", object_id: "person-1", person_id: "person-1",
+    }] };
+    renderRegistry();
+    fireEvent.click(await screen.findByRole("button", { name: "Открыть проблему duplicate-1 из очереди Дубли идентичностей" }));
+    await waitFor(() => expect(screen.getByTestId("current-path").textContent).toBe("/app/admin/users?person=person-1&tab=operations"));
+  });
+
+  it("shows production context in the people registry", async () => {
+    renderRegistry(true);
+
 
     expect(await screen.findByText(/R7 Engineer/)).toBeInTheDocument();
     expect(screen.getByText(/Desk R7/)).toBeInTheDocument();
@@ -569,18 +653,16 @@ describe("AdminRegistryPage", () => {
   });
 
   it("shows requester profile completion status in the people registry", async () => {
-    renderRegistry();
+    renderRegistry(true);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Пользователи" }));
 
     expect(await screen.findByText("Нужно заполнить профиль")).toBeInTheDocument();
     expect(screen.getByText("Не хватает: Подразделение, Телефон или внутренний номер")).toBeInTheDocument();
   });
 
   it("submits production context fields from the person edit dialog", async () => {
-    renderRegistry();
+    renderRegistry(true);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Пользователи" }));
     fireEvent.click((await screen.findAllByRole("button", { name: "Править" }))[0]);
 
     fireEvent.change(await screen.findByLabelText("Должность"), { target: { value: "Lead Engineer" } });
@@ -603,9 +685,8 @@ describe("AdminRegistryPage", () => {
   });
 
   it("archives a registry person through an explicit reason dialog", async () => {
-    renderRegistry();
+    renderRegistry(true);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Пользователи" }));
     fireEvent.click((await screen.findAllByRole("button", { name: "Архив" }))[0]);
 
     fireEvent.change(await screen.findByLabelText("Причина"), { target: { value: "Тестовая архивация" } });
@@ -622,7 +703,7 @@ describe("AdminRegistryPage", () => {
   });
 
   it("shows password reset requests in the registry and completes one with a new password", async () => {
-    renderRegistry();
+    renderRegistry(true);
 
     fireEvent.click(await screen.findByRole("button", { name: "Смена пароля" }));
 
@@ -722,22 +803,11 @@ describe("AdminRegistryPage", () => {
     });
   });
 
-  it("shows access groups as a registry summary with a link to the canonical RBAC editor", async () => {
+  it("leaves access group editing to the Users workspace", async () => {
     renderRegistry();
-
-    fireEvent.click(await screen.findByRole("button", { name: /Группы доступа/ }));
-
-    expect(await screen.findByText("Support L1")).toBeInTheDocument();
-    expect(screen.getByText("Первая линия поддержки")).toBeInTheDocument();
-    expect(screen.getByText("Права: 1")).toBeInTheDocument();
-    expect(screen.getByText("Участники: 1")).toBeInTheDocument();
-    expect(screen.getByText("Очереди: 1")).toBeInTheDocument();
-    expect(screen.getByText("Тестовая сводка RBAC")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Открыть RBAC-редактор" })).toHaveAttribute("href", "/app/admin/access");
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      expect.stringMatching(/\/api\/web\/admin\/access\/groups/),
-      expect.objectContaining({ method: expect.stringMatching(/POST|PUT|PATCH|DELETE/) }),
-    );
+    await screen.findByText("Операционный реестр");
+    expect(screen.queryByRole("button", { name: /Группы доступа/ })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/web/admin/access/summary", expect.anything());
   });
 
   it("shows an approval diff for registration claims before admin actions", async () => {
@@ -799,7 +869,7 @@ describe("AdminRegistryPage", () => {
   });
 
   it("edits requester profile schema with protected system fields and controlled custom storage", async () => {
-    renderRegistry();
+    renderRegistry(true);
 
     fireEvent.click(await screen.findByRole("button", { name: "Схема профиля · P1" }));
 

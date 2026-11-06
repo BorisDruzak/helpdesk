@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AdminRegistryPayload } from "../api";
@@ -280,19 +280,17 @@ describe("RegistryOverviewTab", () => {
     const expectedQueues = [
       "Ожидают привязки устройства",
       "Смена владельца и конфликты",
-      "Пользователи без основного компьютера",
       "Устройства без владельца",
-      "Профиль не заполнен",
       "Дубли идентичностей",
     ];
     for (const queue of expectedQueues) {
       expect(screen.getByRole("heading", { name: queue })).toBeInTheDocument();
     }
 
-    expect(within(screen.getByTestId("registry-queue-ui-account-link")).getByText("1")).toBeInTheDocument();
-    expect(screen.getByText("Связать UI-аккаунт с персоной")).toBeInTheDocument();
-    expect(screen.getByText("Сброс / смена UI-пароля")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Открыть RBAC-пользователей" })).toHaveAttribute("href", "/app/admin/access");
+    expect(screen.queryByTestId("registry-queue-ui-account-link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Профиль не заполнен" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Пользователи без основного компьютера" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Пользователи и доступ" })).toHaveAttribute("href", "/app/admin/users");
     expect(screen.queryByText("Сессии после передачи устройства")).not.toBeInTheDocument();
   });
 
@@ -303,9 +301,6 @@ describe("RegistryOverviewTab", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Открыть заявку claim-pending из очереди Ожидают привязки устройства" }));
     expect(onSelect).toHaveBeenCalledWith({ kind: "claim", id: "claim-pending" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Открыть пользователя person-no-primary из очереди Пользователи без основного компьютера" }));
-    expect(onSelect).toHaveBeenCalledWith({ kind: "person", id: "person-no-primary" });
 
     fireEvent.click(screen.getByRole("button", { name: "Открыть устройство device-orphan из очереди Устройства без владельца" }));
     expect(onSelect).toHaveBeenCalledWith({ kind: "device", id: "device-orphan" });

@@ -6,6 +6,7 @@ import { ChatAttachment } from "../../../components/chat-attachment";
 import { ChatAttachmentDrafts, ChatFileDropFeedback, ChatFileDropOverlay, useChatFileDrop } from "../../../components/chat-file-draft";
 
 export type SimpleSupportConversationProps = {
+  ticketId?: string;
   items: SupportWorkspaceTimelineItem[]; mode: "public" | "internal"; text: string;
   canReply: boolean; canNote: boolean; publicReadOnly?: boolean; pending: boolean; loading?: boolean; error?: boolean; uploadError?: string | null;
   replyBlockedReason?: string | null; initialDescription?: string | null;
@@ -51,7 +52,7 @@ export function SimpleSupportConversation(props: SimpleSupportConversationProps)
   const allowed = isInternal ? props.canNote : props.canReply;
   const canSend = allowed && !props.pending && !props.uploading && Boolean(props.text.trim() || props.attachments.length);
   const fileDrop = useChatFileDrop(!allowed || props.pending || tab === "history" || (!isInternal && props.publicReadOnly === true), props.onFiles);
-  return <section className="simple-conversation chat-file-drop-target" aria-label="Переписка обращения" {...fileDrop.handlers}>
+  return <section data-helpdesk-active-chat={!props.loading && !props.error && tab === "dialog" ? props.ticketId : undefined} className="simple-conversation chat-file-drop-target" aria-label="Переписка обращения" {...fileDrop.handlers}>
     <ChatFileDropOverlay active={fileDrop.dragging} />
     <ChatFileDropFeedback message={fileDrop.feedback} />
     <div className="simple-tabs simple-conversation__tabs" role="tablist" aria-label="Лента обращения">

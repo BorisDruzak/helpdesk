@@ -12,6 +12,11 @@ it("preserves the legacy single entrance", () => {
   render(<ScenarioEntrances offering={{ offering_code: "printer", full_code: "it.printer", title: "Printing" }} owner="user" deviceId="" />);
   expect(screen.getByText("Entrance:legacy")).toBeVisible();
 });
+it("does not restore a cached problem while browsing service categories", () => {
+  sessionStorage.setItem("pc_client.scenario.selection:browsing-user:it.printer", "paper");
+  render(<ScenarioEntrances offering={{ offering_code: "printer", full_code: "it.printer", title: "Printing", catalog_items: [{ key: "paper", title: "Бумага застряла", synonyms: [], entry_point_key: "paper", scenario_key: "print", version_id: "v1", target_block_id: "paper" }] }} owner="browsing-user" deviceId="" onBrowse={() => {}} />);
+  expect(screen.queryByText("Entrance:paper")).not.toBeInTheDocument();
+});
 it("remembers the explicit whole-catalog entrance across a page reload", () => {
   sessionStorage.clear();
   const offering = { offering_code: "printer", full_code: "it.printer", title: "Printing", catalog_items: [{ key: "paper", title: "Бумага застряла", synonyms: [], entry_point_key: "paper", scenario_key: "print", version_id: "v1", target_block_id: "paper_block" }] };

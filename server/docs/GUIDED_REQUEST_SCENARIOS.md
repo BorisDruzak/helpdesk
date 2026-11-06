@@ -45,6 +45,26 @@ share the existing 512-terminal coverage cap; exceeding limits fails closed.
 New versions do not retarget existing sessions. Saving remains distinct from
 publication, whose authorization, bound confirmation token and audit are retained.
 
+The reviewed legacy v3 `q_evidence` stage (two fixed screenshot-comment textareas,
+no mappings/conditions/effects, one unconditional transition to `submit`) has a
+bounded compatibility rule in `request_scenario_optional_evidence.py`. Runtime
+copies make its questions optional and final submission derives the form schema
+from this same effective definition. Existing session IDs, immutable version pins,
+history and uploaded assets are retained; normal attachment pruning and claim-once
+submission remain authoritative. Similar stages with different business semantics
+or references are never relaxed.
+
+For new requests, `scripts/helpdesk_optional_screenshot_stage.py` prepares new
+versions without that stage, redirects only incoming edge targets and removes only
+its editor coordinate. All conditions, processing/SLA choices and other layout
+coordinates remain. The staging-only admin callable requires a fresh full-input
+fingerprint and unchanged drafts matching their active version, then uses canonical
+draft revision CAS, readiness preview, bound confirmation token and audited publish
+in one transaction for the complete batch. A failure rolls back the batch; repeated
+apply with a fresh plan is a no-op. It does not modify old version definitions,
+user sessions, answers or assets. Optional attachments remain available at ordinary
+text questions; no screenshot or explanation of its absence is required.
+
 Admin simulation may test the complete reachable portion of a selected entrance
 when unrelated draft errors exist. It keeps every outgoing edge and condition,
 requires unambiguous reachable IDs and runs the unchanged strict graph validator;

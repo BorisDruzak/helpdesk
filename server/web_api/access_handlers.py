@@ -72,7 +72,7 @@ async def _load_queue_memberships(session, actor_id: str) -> list[AccessQueueMem
     repo = TicketAdminConfigRepo(session)
     queues = await repo.list_queues(include_inactive=True)
     for queue in queues:
-        member = await repo.get_queue_member(int(queue.id), actor_id)
+        member = await repo.get_effective_queue_member(int(queue.id), actor_id)
         if member is None:
             continue
         memberships.append(

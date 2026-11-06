@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.repos.ui_actor_memberships import ui_actor_membership_ids
 
 from app.db.models import (
     TicketQueue,
@@ -119,6 +120,15 @@ class TicketAdminConfigRepo:
             )
         )
         return result.scalar_one_or_none()
+
+    async def get_effective_queue_member(self, queue_id: int, actor_id: str) -> Optional[TicketQueueMember]:
+        """Resolve UI token spellings for access checks; mutations stay exact."""
+        actor_ids = await ui_actor_membership_ids(self.session, actor_id)
+        rows = list((await self.session.execute(select(TicketQueueMember).where(
+            TicketQueueMember.queue_id == queue_id,
+            TicketQueueMember.actor_id.in_(actor_ids),
+        ))).scalars().all())
+        return next((row for row in rows if row.actor_id == actor_id), rows[0] if rows else None)
 
     async def put_queue_member(
         self, queue_id: int, actor_id: str, role_in_queue: Optional[str] = None

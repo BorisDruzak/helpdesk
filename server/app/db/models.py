@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 import sqlalchemy as sa
 from app.db.base import Base
+from app.db.web_push_models import WebPushSubscription, WebPushDelivery  # noqa: F401
 from app.db.request_scenario_models import (  # noqa: F401 - register additive Studio metadata
     RequestStudioCategory, RequestStudioScenario, RequestStudioScenarioVersion,
     RequestStudioDraft, RequestStudioSession,

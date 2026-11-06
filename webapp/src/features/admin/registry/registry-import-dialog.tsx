@@ -8,6 +8,7 @@ import type { AdminRegistryImportPreview, AdminRegistryImportType } from "../api
 import { RegistryOperationPreview } from "./registry-operation-preview";
 
 type Props = {
+  scope?: "all" | "people" | "references";
   busy: boolean;
   open: boolean;
   onApply: (payload: { type: AdminRegistryImportType; csv_text: string; preview_id: string; reason: string }) => Promise<AdminRegistryImportPreview>;
@@ -57,8 +58,10 @@ function downloadResult(result: AdminRegistryImportPreview, failedOnly = false) 
   URL.revokeObjectURL(url);
 }
 
-export function RegistryImportDialog({ busy, onApply, onClose, onPreview, open }: Props) {
-  const [type, setType] = useState<AdminRegistryImportType>("people");
+export function RegistryImportDialog({ busy, onApply, onClose, onPreview, open, scope = "all" }: Props) {
+  const availableTypes = importTypes.filter(item => scope === "all" || (scope === "people" ? item.value === "people" : item.value !== "people"));
+  const initialType = availableTypes[0].value;
+  const [type, setType] = useState<AdminRegistryImportType>(initialType);
   const [csvText, setCsvText] = useState("");
   const [reason, setReason] = useState("");
   const [preview, setPreview] = useState<AdminRegistryImportPreview | null>(null);
@@ -70,14 +73,14 @@ export function RegistryImportDialog({ busy, onApply, onClose, onPreview, open }
 
   useEffect(() => {
     if (!open) return;
-    setType("people");
+    setType(initialType);
     setCsvText("");
     setReason("");
     setPreview(null);
     setApplyResult(null);
     setShowFailedOnly(false);
     setError(null);
-  }, [open]);
+  }, [open, initialType]);
 
   if (!open) return null;
 
@@ -93,6 +96,7 @@ export function RegistryImportDialog({ busy, onApply, onClose, onPreview, open }
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-[240px_1fr]">
             <select
+              aria-label="Тип импорта"
               className="field-base h-11 w-full px-3 text-sm"
               onChange={(event) => {
                 setType(event.target.value as AdminRegistryImportType);
@@ -101,7 +105,7 @@ export function RegistryImportDialog({ busy, onApply, onClose, onPreview, open }
               }}
               value={type}
             >
-              {importTypes.map((item) => (
+              {availableTypes.map((item) => (
                 <option key={item.value} value={item.value}>{item.label}</option>
               ))}
             </select>

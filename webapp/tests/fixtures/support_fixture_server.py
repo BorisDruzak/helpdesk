@@ -22,6 +22,7 @@ if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
 from static_pages.webapp_assets import (  # noqa: E402
+    handle_webapp_notification_worker,
     handle_webapp_asset,
     handle_webapp_page,
     handle_webapp_public_asset,
@@ -2855,6 +2856,9 @@ async def handle_notification_preferences(request: web.Request) -> web.Response:
 
 
 async def handle_notifications(request: web.Request) -> web.Response:
+    if "notification_fixture" in request.app:
+        from notification_fixture import notifications
+        return await notifications(request)
     unauthorized = require_session(request)
     if unauthorized:
         return unauthorized
@@ -3082,6 +3086,8 @@ async def handle_admin_device_update_run(request: web.Request) -> web.Response:
 def build_app() -> web.Application:
     app = web.Application()
     app["fixture_state"] = build_fixture_state()
+    from notification_fixture import install
+    install(app)
     app.add_routes(
         [
             web.get("/api/web/session/me", handle_session_me),
@@ -3139,6 +3145,7 @@ def build_app() -> web.Application:
             web.get("/api/artifacts/fixture-preview-support/download", handle_preview_image_fixture),
             web.get("/assets/{asset_path:.*}", handle_webapp_asset),
             web.get("/favicon.svg", handle_webapp_public_asset),
+            web.get("/helpdesk-notifications-sw.js", handle_webapp_notification_worker),
             web.get("/ws_ui", handle_ws_ui),
             web.get("/app", handle_webapp_page),
             web.get("/app/{tail:.*}", handle_webapp_page),

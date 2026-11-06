@@ -3,6 +3,11 @@
 """
 
 from aiohttp import web
+from web_api.push_handlers import (
+    handle_push_config, handle_push_subscribe, handle_push_status,
+    handle_push_unsubscribe, handle_push_messages, handle_push_acknowledge,
+)
+from static_pages.webapp_assets import handle_webapp_notification_worker
 from web_api.admin_endpoint_handlers import (
     handle_admin_endpoint_devices, handle_admin_endpoint_device, handle_admin_endpoint_context_refresh,
     handle_admin_endpoint_collection, handle_admin_endpoint_history, handle_admin_endpoint_compare,
@@ -184,6 +189,7 @@ from tickets.handlers import (
     handle_notifications_list,
     handle_notifications_unread_count,
     handle_notifications_read_all,
+    handle_notifications_read_ticket,
     handle_notification_preferences_get,
     handle_notification_preferences_post,
     handle_notification_mark_read,
@@ -267,6 +273,10 @@ from web_api.session_handlers import (
     handle_web_requester_register,
     handle_web_registration_options,
     handle_web_session_capabilities,
+)
+from web_api.user_account_handlers import (
+    handle_web_admin_user_accounts,
+    handle_web_admin_user_account_save,
 )
 from web_api.access_handlers import (
     handle_web_admin_access_audit,
@@ -542,6 +552,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/', handle_index),
         web.get('/favicon.ico', handle_favicon),
         web.get('/favicon.svg', handle_webapp_public_asset),
+        web.get('/helpdesk-notifications-sw.js', handle_webapp_notification_worker),
         web.get('/assets/{asset_path:.*}', handle_webapp_asset),
         web.get('/app', handle_webapp_page),
         web.get('/app/{tail:.*}', handle_webapp_page),
@@ -680,6 +691,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/access/effective', handle_web_admin_access_effective),
         web.get('/api/web/admin/access/audit', handle_web_admin_access_audit),
         web.post('/api/web/admin/access/users/{user_login}/password', handle_web_admin_access_user_password),
+        web.get('/api/web/admin/users/{person_id}/account', handle_web_admin_user_accounts),
+        web.put('/api/web/admin/users/{person_id}/account', handle_web_admin_user_account_save),
         web.post('/api/web/admin/access/groups', handle_web_admin_access_create_group),
         web.patch('/api/web/admin/access/groups/{group_id}', handle_web_admin_access_update_group),
         web.put('/api/web/admin/access/groups/{group_id}/permissions', handle_web_admin_access_group_permissions),
@@ -943,7 +956,14 @@ def setup_routes(app: web.Application) -> None:
         web.put('/api/web/settings/workflow_profiles', handle_web_settings_workflow_profiles_put),
         web.get('/api/web/notifications', handle_notifications_list),
         web.get('/api/web/notifications/unread_count', handle_notifications_unread_count),
+        web.get('/api/web/notifications/push/config', handle_push_config),
+        web.post('/api/web/notifications/push/subscribe', handle_push_subscribe),
+        web.post('/api/web/notifications/push/status', handle_push_status),
+        web.post('/api/web/notifications/push/unsubscribe', handle_push_unsubscribe),
+        web.post('/api/web/notifications/push/messages', handle_push_messages),
+        web.post('/api/web/notifications/push/acknowledge', handle_push_acknowledge),
         web.post('/api/web/notifications/read_all', handle_notifications_read_all),
+        web.post('/api/web/notifications/read_ticket', handle_notifications_read_ticket),
         web.get('/api/web/notifications/preferences', handle_notification_preferences_get),
         web.post('/api/web/notifications/preferences', handle_notification_preferences_post),
         web.post('/api/web/notifications/{id}/read', handle_notification_mark_read),

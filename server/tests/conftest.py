@@ -1298,6 +1298,9 @@ def ensure_db_ready(request):
 
 
 FULL_CLEANUP_TABLES = (
+    "worktime_session_leases",
+    "worktime_authorization_codes",
+    "web_requester_registrations",
     "oidc_sessions",
     "oidc_flows",
     "identity_migration_candidates",
@@ -1364,6 +1367,8 @@ FULL_CLEANUP_TABLES = (
     "ticket_links",
     "ticket_kb_links",
     "ticket_worklogs",
+    "web_push_deliveries",
+    "web_push_subscriptions",
     "ticket_notifications",
     "ticket_notification_prefs",
     "ticket_public_sessions",

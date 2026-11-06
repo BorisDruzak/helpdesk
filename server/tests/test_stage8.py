@@ -97,6 +97,7 @@ async def test_notify_ticket_event_suppress_self():
     from tickets.notification_service import get_recipients, notify_ticket_event
 
     ticket_repo = AsyncMock()
+    ticket_repo.session = None
     ticket_repo.get_ticket = AsyncMock(return_value=MagicMock(
         queue_id=1, assignee_id=None, requester_id="user-1", device_id="d1"
     ))
@@ -127,6 +128,7 @@ async def test_notification_policy_limits_recipients_by_request_template():
     from tickets.notification_service import notify_ticket_event
 
     ticket_repo = AsyncMock()
+    ticket_repo.session = None
     ticket_repo.get_ticket = AsyncMock(return_value=MagicMock(
         queue_id=1,
         assignee_id="assignee-1",
@@ -254,6 +256,7 @@ async def test_notification_policy_sends_external_channel_and_writes_delivery_au
             return {"status": "sent", "provider_message_id": "email-1"}
 
     ticket_repo = AsyncMock()
+    ticket_repo.session = None
     ticket_repo.get_ticket = AsyncMock(return_value=MagicMock(
         ticket_id="t-external",
         device_id="device-external",
@@ -320,6 +323,7 @@ async def test_notification_external_channel_failure_is_non_blocking_and_audited
             raise RuntimeError("smtp unavailable")
 
     ticket_repo = AsyncMock()
+    ticket_repo.session = None
     ticket_repo.get_ticket = AsyncMock(return_value=MagicMock(
         ticket_id="t-external-fail",
         device_id="device-external-fail",

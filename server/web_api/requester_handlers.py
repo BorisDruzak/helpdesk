@@ -1311,6 +1311,7 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
         payload: dict[str, Any] = {
             "message_id": message_id,
             "sender_role": "user",
+            "sender_actor_id": auth_context.actor_id,
             "sender_display_name": auth_context.actor_id,
             "from": "user",
             "text": text,
@@ -1574,7 +1575,8 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
 
         from_status = str(getattr(ticket, "status", "") or "")
         try:
-            result = await TicketReopenService(session).reopen_ticket(
+            reopen_service = TicketReopenService(session)
+            result = await reopen_service.reopen_ticket(
                 ticket.ticket_id,
                 reason_code=str(data.get("reason_code") or ""),
                 reason_comment=data.get("reason_comment"),
@@ -1583,7 +1585,11 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
                 actor_id=str(getattr(ticket, "requester_id", None) or auth_context.actor_id),
                 actor_role="requester",
             )
+        except WorkflowTransitionConflict as exc:
+            await session.rollback()
+            return _error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
         except ValueError as exc:
+            await session.rollback()
             return _error(str(exc), status=400, error_code="QUALITY_REOPEN_ERROR")
         await _write_requester_web_observer_event(
             session,
@@ -1604,6 +1610,9 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
         )
         await session.commit()
 
+    if reopen_service.public_message_event:
+        message_result, message_payload = reopen_service.public_message_event
+        await _push_ticket_event(request, result['ticket_id'], message_result, 'chat_message', message_payload)
     return _success(
         {
             "ok": True,

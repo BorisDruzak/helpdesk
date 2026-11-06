@@ -33,6 +33,7 @@ from app.db.models import (
 from domain_ports.registry import RequesterRef, RequesterSnapshot, requester_persistence_values
 from tickets.statuses import ACTIVE_OPERATOR_STATUSES, TERMINAL_STATUSES
 from tickets.ticket_context import requester_legacy_scope_clause, requester_neutral_scope_clause
+from app.repos.ui_actor_memberships import ui_actor_membership_ids
 
 
 IDEMPOTENT_TICKET_EVENT_UNIQUE_CONSTRAINTS = frozenset(
@@ -273,6 +274,10 @@ class TicketEventsRepo:
                 f"event_type={event_type} agent_seq={agent_seq} created_at={created_at_result}"
             )
             
+            # Same transaction as the deduplicated event: no phantom or lost alerts.
+            if event_type in {"chat_message", "status_changed"}:
+                from tickets.browser_notifications import enqueue_event_notifications
+                await enqueue_event_notifications(self, ticket_id, event_id_result, event_type, payload)
             return (event_id_result, created_at_result)
         
         except IntegrityError as e:
@@ -1356,11 +1361,12 @@ class TicketEventsRepo:
                 )
             if "support_actor_id" in filters and not unified_queue_enabled():
                 support_actor_id = filters["support_actor_id"]
+                membership_actor_ids = await ui_actor_membership_ids(self.session, support_actor_id)
                 queue_membership_exists = (
                     select(TicketQueueMember.queue_id)
                     .where(
                         TicketQueueMember.queue_id == Ticket.queue_id,
-                        TicketQueueMember.actor_id == support_actor_id,
+                        TicketQueueMember.actor_id.in_(membership_actor_ids),
                     )
                     .exists()
                 )
@@ -1766,9 +1772,10 @@ class TicketEventsRepo:
         return rows
 
     async def is_actor_in_queue(self, queue_id: Optional[int], actor_id: str) -> bool:
+        membership_actor_ids = await ui_actor_membership_ids(self.session, actor_id)
         if unified_queue_enabled():
             stmt = select(UiUser.user_login).where(
-                UiUser.user_login == actor_id,
+                UiUser.user_login.in_(membership_actor_ids),
                 UiUser.is_active.is_(True),
                 UiUser.actor_role.in_(("admin", "support")),
             )
@@ -1778,7 +1785,7 @@ class TicketEventsRepo:
         stmt = select(TicketQueueMember.actor_id).where(
             and_(
                 TicketQueueMember.queue_id == queue_id,
-                TicketQueueMember.actor_id == actor_id,
+                TicketQueueMember.actor_id.in_(membership_actor_ids),
             )
         )
         result = await self.session.execute(stmt)

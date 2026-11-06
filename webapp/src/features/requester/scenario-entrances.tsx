@@ -4,7 +4,7 @@ import { ScenarioSession } from "./scenario-session";
 
 export function ScenarioEntrances({ offering, owner, deviceId, initialEntryPointKey, onBrowse }: { offering: ServiceCatalogOffering; owner: string; deviceId: string; initialEntryPointKey?: string; onBrowse?:()=>void }) {
   const selectionKey = owner ? `pc_client.scenario.selection:${owner}:${offering.full_code}` : null;
-  const [entry, setEntry] = useState<string | undefined>(() => { if (initialEntryPointKey) return initialEntryPointKey; try { return selectionKey ? sessionStorage.getItem(selectionKey) || undefined : undefined; } catch { return undefined; } });
+  const [entry, setEntry] = useState<string | undefined>(() => { if (initialEntryPointKey) return initialEntryPointKey; if (onBrowse) return undefined; try { return selectionKey ? sessionStorage.getItem(selectionKey) || undefined : undefined; } catch { return undefined; } });
   useEffect(() => { if (initialEntryPointKey && selectionKey) { try { sessionStorage.setItem(selectionKey, initialEntryPointKey); } catch { /* Server session remains authoritative. */ } } }, [initialEntryPointKey, selectionKey]);
   function choose(value: string | undefined) { setEntry(value); if (selectionKey) { try { if (value) sessionStorage.setItem(selectionKey, value); else sessionStorage.removeItem(selectionKey); } catch { /* Server session is authoritative. */ } } }
   const items = offering.catalog_items ?? [];

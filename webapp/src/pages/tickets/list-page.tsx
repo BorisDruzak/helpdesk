@@ -3758,6 +3758,7 @@ export function TicketListPage() {
             unifiedQueue={unifiedQueue}
             onManage={openOperatorAction} onQueue={() => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); }}
             conversation={<SimpleSupportConversation key={selectedTicket.id}
+              ticketId={!workspaceQuery.isError ? selectedTicket.id : undefined}
               items={mapSupportTimelineEntries([...(timelineQuery.data?.items ?? workspaceQuery.data.detail.timeline)].sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0)))}
               initialDescription={rawTicket?.description}
               publicReadOnly={Boolean(rawTicket && ["resolved", "closed"].includes(rawTicket.status))}
@@ -4350,7 +4351,7 @@ export function TicketListPage() {
                 ) : null}
               </div>
 
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div data-helpdesk-active-chat={!workspaceQuery.isLoading && !workspaceQuery.isError && !timelineQuery.isLoading && !timelineQuery.isError && (timelineFilter === "all" || timelineFilter === "message") ? selectedTicketId ?? undefined : undefined} className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex items-center gap-5 border-b border-white/10 px-5">
                   {timelineTabs.map((tab) => (
                     <button

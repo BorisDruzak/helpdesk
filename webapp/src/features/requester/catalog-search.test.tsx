@@ -9,10 +9,10 @@ const result = { title: "Принтер не печатает", description: "П
   category: "Оборудование", offering_full_code: "workplace.print", entry_point_key: "no_print",
   service_code: "workplace", help_mode: "guided", match_reason: "Возможно, в запросе опечатка" };
 
-function mount(onSelect = vi.fn()) {
+function mount(onSelect = vi.fn(), fallbackOffering: string | undefined = "general.unknown") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><CatalogSearch onSelect={onSelect}
-    availableOfferings={["workplace.print"]} fallbackOffering="general.unknown"
+    availableOfferings={["workplace.print"]} fallbackOffering={fallbackOffering} fallbackEntryPointKey="not_found"
     categories={[{key:"print",title:"Печать",offeringFullCode:"workplace.print",items:[{key:"no_print",title:"Принтер не печатает",entry_point_key:"no_print"}]}]}
     onCategorySelect={()=>{}} /></QueryClientProvider>);
   return onSelect;
@@ -47,15 +47,49 @@ it("opens categories from the only search field and starts only an explicit prob
   expect(select).toHaveBeenCalledWith("workplace.print","no_print");
 });
 
+it("identifies different services for equally worded symptom results", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", search: {
+    results: [{ ...result, title: "Не запускается", offering_title: "Принтеры и МФУ" },
+      { ...result, title: "Не запускается", offering_title: "Офисные программы", offering_full_code: "workplace.print", entry_point_key: "office" }],
+    suggestions: [], corrected_query: null,
+  } }), { headers: { "Content-Type": "application/json" } })));
+  mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "не запускается" } });
+  await screen.findByText(/Принтеры и МФУ · Оборудование/);
+  expect(screen.getByText(/Офисные программы · Оборудование/)).toBeVisible();
+});
+
 it("shows an empty state and offers the explicit other-problem fallback", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", search: {
     results: [], suggestions: [], corrected_query: null,
   } }), { headers: { "Content-Type": "application/json" } })));
   const onSelect = mount();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "неизвестная проблема" } });
-  await screen.findByText("Подходящих проблем не найдено. Попробуйте другое описание.");
-  fireEvent.click(screen.getByRole("button", { name: "Другая проблема" }));
-  expect(onSelect).toHaveBeenCalledWith("general.unknown", undefined);
+  await screen.findByText(/Услуга или проблема не найдена/);
+  fireEvent.click(screen.getByRole("button", { name: "Не знаю / моей услуги нет в списке" }));
+  expect(onSelect).toHaveBeenCalledWith("general.unknown", "not_found");
+});
+
+it("does not suggest an unavailable fallback for a restricted catalog", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", search: {
+    results: [], suggestions: [], corrected_query: null,
+  } }), { headers: { "Content-Type": "application/json" } })));
+  mount(vi.fn(), "");
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "ЕИС" } });
+  await screen.findByText(/Услуга или проблема не найдена/);
+  expect(screen.queryByText(/Выберите «Не знаю»/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Не знаю / моей услуги нет в списке" })).not.toBeInTheDocument();
+});
+
+it("opens the problems of a matching service without starting a remembered scenario", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok", search: {
+    results: [{ ...result, title: "Печать", result_kind: "service", entry_point_key: null }], suggestions: [], corrected_query: null,
+  } }), { headers: { "Content-Type": "application/json" } })));
+  const select = mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "печать" } });
+  fireEvent.click(await screen.findByRole("button", { name: /^Печать/ }));
+  expect(select).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Принтер не печатает" })).toBeVisible();
 });
 
 it("does not turn a network failure into no matches and can retry", async () => {

@@ -10,7 +10,7 @@ import {
   AdminChangesPage,
   AdminCapabilitiesPage,
   AdminDevicePage,
-  AdminAccessPage,
+  AdminUsersPage,
   AdminFormsPage,
   AdminInventoryPage,
   AdminObserverPage,
@@ -456,9 +456,13 @@ export const appRoutes: RouteObject[] = [
             path: "admin/access",
             element: (
               <WorkspaceAccessGate workspace="admin">
-                <AdminAccessPage />
+                <Navigate replace to="/app/admin/users?tab=access" />
               </WorkspaceAccessGate>
             )
+          },
+          {
+            path: "admin/users",
+            element: <WorkspaceAccessGate workspace="admin"><AdminUsersPage /></WorkspaceAccessGate>
           },
           {
             path: "admin/registry",

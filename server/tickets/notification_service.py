@@ -10,6 +10,7 @@ from loguru import logger
 from app.repos.notification_prefs_repo import DEFAULT_SUPPRESS_SELF
 from app.repos.notification_repo import NotificationRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from app.repos.ui_actor_memberships import ui_actor_membership_ids
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.notification_channels import ExternalNotificationProvider, normalize_delivery_result
 
@@ -218,7 +219,18 @@ async def get_recipients(
                 continue
             add(watcher.actor_id)
 
-    return recipient_ids
+    # Queue grants retain the stored login, while password sessions may also
+    # appear as assignees/watchers under its normalized spelling. One account
+    # must receive one event; arbitrary principals remain exact-only.
+    session = getattr(ticket_repo, "session", None)
+    if session is None:
+        return recipient_ids
+    canonical_ids: list[str] = []
+    for actor_id in recipient_ids:
+        aliases = await ui_actor_membership_ids(session, actor_id)
+        if aliases and aliases[0] not in canonical_ids:
+            canonical_ids.append(aliases[0])
+    return canonical_ids
 
 
 async def notify_ticket_event(
@@ -231,6 +243,7 @@ async def notify_ticket_event(
     initiator_id: Optional[str] = None,
     prefs_repo: Optional["NotificationPrefsRepo"] = None,
     channel_provider: Optional[ExternalNotificationProvider] = None,
+    raise_on_error: bool = False,
 ) -> None:
     """
     Create notification rows for resolved recipients.
@@ -248,8 +261,12 @@ async def notify_ticket_event(
         event_policy,
         channel_provider=channel_provider,
     )
+    initiator_ids = (str(initiator_id),) if initiator_id else ()
+    session = getattr(ticket_repo, "session", None)
+    if initiator_id and session is not None:
+        initiator_ids = await ui_actor_membership_ids(session, str(initiator_id))
     for actor_id in recipients:
-        if initiator_id and str(actor_id) == str(initiator_id):
+        if str(actor_id) in initiator_ids:
             suppress = DEFAULT_SUPPRESS_SELF
             if prefs_repo:
                 _, _, suppress = await prefs_repo.get_or_default(actor_id)
@@ -269,6 +286,8 @@ async def notify_ticket_event(
                 payload=payload,
             )
         except Exception as exc:
+            if raise_on_error:
+                raise
             logger.warning(
                 f"[NotificationService] create failed actor_id={actor_id} ticket_id={ticket_id}: {exc}"
             )

@@ -21,6 +21,7 @@ def _ticket(notification_policy: dict) -> SimpleNamespace:
 
 def _repo(ticket: SimpleNamespace) -> AsyncMock:
     repo = AsyncMock()
+    repo.session = None  # This policy-only fixture has no persisted UI users.
     repo.get_ticket = AsyncMock(return_value=ticket)
     repo.list_queue_member_actor_ids = AsyncMock(return_value=["queue-1", "queue-2"])
     repo.list_watchers = AsyncMock(return_value=[SimpleNamespace(actor_id="watcher-1")])

@@ -258,7 +258,10 @@ export type NotificationItem = {
   actor_id: string;
   ticket_id: string;
   event_type: string;
-  payload: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  title: string;
+  body: string;
+  url: string;
   is_read: boolean;
   created_at: string | null;
   read_at: string | null;

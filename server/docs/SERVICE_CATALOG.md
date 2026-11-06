@@ -38,13 +38,43 @@ The resolver checks lifecycle/visibility for the actor and applies catalog defau
 
 Request-template explicit refs remain strongest. Offering overrides beat service defaults. Policy Health and simulation expose catalog selection and effective policy sources without creating tickets.
 
-P1.1 adds a real requester fallback. Safe catalog projection always exposes `other.unknown` (`Другое / Не знаю`) through `server/tickets/service_catalog_defaults.py`. Explicit invalid `service_code` / `offering_code` remains a validation error; the fallback is used only when the user selects it or when the catalog would otherwise be empty.
+The safe catalog projection can select one explicitly configured current Studio
+fallback: offering metadata `requester_fallback.entry_point_key` must resolve to a
+public entrance under a genuinely public published parent service. The response
+includes its `full_code` and `entry_point_key`. Missing, ambiguous or inaccessible
+configuration retains the legacy `other.unknown` default. Explicit invalid catalog
+selections remain validation errors; fallback is always an explicit user choice.
+
+`GET /api/service-catalog/current?q=...` searches the public offering/section names
+as well as entrance titles, descriptions and synonyms. Additive `result_kind`
+distinguishes a `service` row (choose a problem) from a `problem` entrance. Existing
+ranking, query bounds, layout correction and negation handling remain. The requester
+opens a matching service's problem list without starting a cached scenario; no
+matches offers «Не знаю / моей услуги нет в списке» into the current fallback.
+
+Failure phrases (`не работает`, `не включается`, `не запускается`, `не могу войти`,
+`не могу открыть` and related printing/signing/connection/slowness phrases) also
+match explicit symptom families. Specific phrases take precedence over overlapping
+generic words (a login error is not every error). Remaining device/system words
+must match the public offering/problem context; unknown entities are not dropped.
+For a named service without an exact matching entrance, a service row lets the
+requester browse its published problems. Symptom-only queries interleave offerings
+before repeating one. Additive `offering_title` labels distinguish services on
+problem rows. Literal matches keep their priority within these rounds. This is a
+bounded local vocabulary, not an external semantic service or an ACL bypass.
+
+`scripts/helpdesk_catalog_service_search.py` plans and atomically publishes the
+Электронный бюджет / ЕИС maps under the existing information-systems section. It
+uses canonical service/source lock order, authenticated admin context, staging DB
+guard, source fingerprint and Studio publication readiness. The current published
+business-system intake supplies routing, SLA and policy refs. It also marks the
+existing Other entrance as fallback without rewriting its draft/version/history.
 
 Requester-safe preview is `POST /api/service-catalog/preview`. It wraps the real catalog/form/policy runtime resolvers and returns only requester-safe labels, expected response/resolution text, approval/diagnostic summaries, next action, warnings and blockers. It does not insert tickets, events, approvals, diagnostics, notifications, public sessions or operations.
 
 ## Knowledge Integration
 
-Service Catalog stays a Helpdesk-owned process layer. It no longer calls a local Knowledge service, publishes Knowledge bindings or exposes local Knowledge gap/deflection endpoints. Requester and agent catalog flows continue with the form and `other.unknown` fallback while Knowledge is unavailable.
+Service Catalog stays a Helpdesk-owned process layer. It no longer calls a local Knowledge service, publishes Knowledge bindings or exposes local Knowledge gap/deflection endpoints. Requester flows use the configured public fallback (or the legacy `other.unknown` default) independently of Knowledge availability.
 
 PR-7 may let an external Knowledge Platform consume opaque `service_code`, `offering_code` and `request_template_key` values through [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md). That integration must remain versioned and fail closed; it must not restore local content packs, routes or a database fallback.
 

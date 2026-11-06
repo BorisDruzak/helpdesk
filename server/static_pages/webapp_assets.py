@@ -109,3 +109,13 @@ async def handle_webapp_public_asset(request: web.Request) -> web.Response:
     if not asset_path.exists() or not asset_path.is_file():
         raise web.HTTPNotFound()
     return _read_binary_response(asset_path)
+
+
+async def handle_webapp_notification_worker(request: web.Request) -> web.Response:
+    asset_path = WEBAPP_DIST_DIR / "helpdesk-notifications-sw.js"
+    if not asset_path.is_file():
+        raise web.HTTPNotFound()
+    response = web.Response(body=asset_path.read_bytes(), content_type="application/javascript")
+    response.headers.update(_NO_CACHE_HEADERS)
+    response.headers["Service-Worker-Allowed"] = "/"
+    return response

@@ -25,7 +25,7 @@ describe("AppSidebar", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByText("Доступ")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Пользователи" })).not.toBeInTheDocument();
     expect(screen.queryByText("Модули")).not.toBeInTheDocument();
     expect(screen.queryByText("Конструктор форм")).not.toBeInTheDocument();
 
@@ -46,7 +46,8 @@ describe("AppSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: /Автоматизация/ }));
     fireEvent.click(screen.getByRole("button", { name: /Система/ }));
 
-    expect(screen.getByRole("link", { name: /Доступ/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Пользователи" })).toHaveAttribute("href", "/app/admin/users");
+    expect(screen.queryByRole("link", { name: "Доступ" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Возможности/ })).toBeInTheDocument();
   });
 
@@ -105,7 +106,10 @@ describe("AppSidebar", () => {
 
     expect(screen.queryByRole("button", { name: /Устройства/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Система/ })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: /Доступ/ })).toHaveAttribute("aria-current", "page");
+    const users = screen.getByRole("link", { name: "Пользователи" });
+    expect(users).toHaveAttribute("href", "/app/admin/users");
+    expect(users).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: "Доступ" })).not.toBeInTheDocument();
   });
 
   it("keeps collapsed admin sidebar accessible through labels and titles", () => {
