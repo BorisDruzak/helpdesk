@@ -441,6 +441,9 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - `webapp/src/features/requester/dynamic-form/index.tsx` mirrors these boundary
   cases. Invalid checkbox state remains editable but blocks submission; render
   helpers do not turn a bad string into true or crash the requester form.
+  Text-like controls render the raw editing string so trailing spaces and textarea
+  line breaks survive keystrokes. Normalization remains in required/validation
+  and payload helpers. Scenario answer state and dynamic preview keep live values.
 
 ## Compatibility ticket detail UI
 

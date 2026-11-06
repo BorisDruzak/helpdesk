@@ -26,6 +26,23 @@ const baseOptions = [
   { value: "crm", label: "CRM" },
 ];
 
+describe("text entry whitespace", () => {
+  it.each(["text", "textarea", "phone"] as const)("preserves typed spaces in %s before submission normalization", (type) => {
+    const field: RequestFormField = { key: "details", label: "Описание проблемы", type, required: true };
+    render(<FieldHarness field={field} />);
+    const input = screen.getByRole("textbox", { name: "Описание проблемы" });
+    const text = type === "textarea" ? "  Не открывается  окно.\nНужна помощь " : "  Кабинет  12 ";
+    for (const character of text) {
+      const next = (input as HTMLInputElement).value + character;
+      fireEvent.change(input, { target: { value: next } });
+      expect(input).toHaveValue(next);
+    }
+    expect(input).toHaveValue(text);
+    expect(collectVisiblePayload({ fields: [field] }, { details: text })).toEqual({ details: text.trim() });
+    expect(missingRequiredFields({ fields: [field] }, { details: "  \n " })).toEqual(["Описание проблемы"]);
+  });
+});
+
 describe("email validation", () => {
   const form = { fields: [{ key: "email", label: "Email", type: "email" } satisfies RequestFormField] };
 

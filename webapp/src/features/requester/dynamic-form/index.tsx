@@ -456,7 +456,9 @@ export function RequestFormFieldControl({
 
   const safeLabel = requesterSafeFieldLabel(field.label, "Поле обращения");
   const label = `${safeLabel}${field.required ? " *" : ""}`;
-  const normalizedValue = normalizeEditableFieldValue(field, value);
+  // Keep the DOM editing value intact; normalization belongs to validation/payloads.
+  const normalizedValue = typeof value === "string" && ["text", "textarea", "phone", "email", "url"].includes(field.type)
+    ? value : normalizeEditableFieldValue(field, value);
   const helpText = field.help_text ? <p className="mt-1 text-xs font-normal text-slate-500">{field.help_text}</p> : null;
   const errorText = error ? <p className="mt-1 text-xs font-semibold text-rose-700">{error}</p> : null;
   const invalidProps = {

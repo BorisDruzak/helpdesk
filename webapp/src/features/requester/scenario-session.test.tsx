@@ -82,6 +82,33 @@ function response(data: unknown, status = 200) {
   return new Response(JSON.stringify({ status: "success", data }), { status, headers: { "Content-Type": "application/json" } });
 }
 
+it("keeps spaces and line breaks through character entry and the explicit answer command", async () => {
+  const step = { id: "space-session", revision: 1, state: "active", back_targets: [], block: {
+    id: "details", kind: "form_page", title: "Опишите проблему своими словами", layout: "group",
+    fields: [{ key: "details", type: "textarea", label: "Что произошло?", required: true },
+      { key: "room", type: "text", label: "Кабинет" }],
+  } };
+  const fetcher = vi.fn(async (url: string, _options?: RequestInit) => response(url.endsWith("/answer")
+    ? { ...step, revision: 2, block: { id: "review", kind: "review", title: "Проверьте ответы", answers: [] } } : step));
+  vi.stubGlobal("fetch", fetcher);
+  render(<ScenarioSession offering="other.unknown" />);
+  const description = await screen.findByRole("textbox", { name: "Что произошло?" });
+  const room = screen.getByRole("textbox", { name: "Кабинет" });
+  for (const [input, text] of [[description, "Не открывается  окно\nНужна помощь "], [room, "Кабинет  12 "]] as const) {
+    for (const character of text) {
+      const next = (input as HTMLInputElement).value + character;
+      fireEvent.change(input, { target: { value: next } });
+      expect(input).toHaveValue(next);
+    }
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+  await screen.findByRole("heading", { name: "Проверьте ответы" });
+  const answer = fetcher.mock.calls.find(([url]) => url.endsWith("/answer"));
+  expect(JSON.parse(String(answer?.[1]?.body)).answers).toEqual({
+    details: "Не открывается  окно\nНужна помощь ", room: "Кабинет  12 ",
+  });
+});
+
 it.each([undefined, false, true])("offers instruction escape only when the server grants it (%s)", async allowed => {
   const step = { id: "session", revision: 2, state: "active", back_targets: [], block: {
     id: "instruction", kind: "instruction", title: "Проверьте питание", acknowledgment_required: true,

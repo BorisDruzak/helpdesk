@@ -2970,3 +2970,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verification:51focusedPython and3browser viewport cases pass; workspace and independent review pass. RealPG rollback/durable audit/idempotence acceptance remains.
 - Complete: runtimeb765fd6362686a28209e2aa92839363f961f21bd installed with verified155backups/5source hashes/health200. RealPG flushed-update rollback, audited T75repair and repeat-idempotence pass. Original17:42stop now within18:47target; closed/confirmation/5feedback/75other tickets/21old events preserved;1audit added.3browser viewports and live support UI pass. Staging active; production unchanged.
 - Evidence: docs/SLA_CONFIRMATION_FIX_2026-11-06.md and tmp/sla-confirmation-fix-20261106. Private branch/index preserve shared work and prior requester/catalog improvements.
+
+
+## Preserve requester editing spaces (2026-11-06)
+
+- Goal: stop deleting spaces while typing a new request description and other text-like fields; staging.
+- Cause: controlled input rendered normalized string trim() on each keystroke, deleting a trailing space before the next word.
+- Fix: render raw editing strings, retain validation/payload/required normalization and numeric/select/checkbox behavior. No API/schema/data changes.
+- Verification:3regressions red before fix;141UI tests, build/workspace,3browser viewport cases and independent review pass. Character entry, multiline and dynamic preview/answer covered.
+- Next: verified backup, immutable staging install, source hashes/health/counts and live safe input smoke; leave staging available.
+- Evidence: docs/REQUESTER_TEXT_SPACES_FIX_2026-11-06.md and tmp/requester-spaces-fix-20261106. Private branch/index preserve shared work and accepted SLA/catalog changes.
