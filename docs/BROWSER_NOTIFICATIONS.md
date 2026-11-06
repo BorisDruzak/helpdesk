@@ -16,7 +16,7 @@ Only HTTPS endpoints at FCM, Mozilla Autopush, Apple Web Push and a single-label
 
 ## Server activation
 
-This is a candidate implementation, not evidence of deployment. Use the reviewed Helpdesk release workflow for staging first; do not patch a runtime directory.
+Deployed and enabled on the approved staging server `192.168.101.118` on 2026-11-06. Migration 156 and real FCM delivery for both event types with the Helpdesk tab closed passed. See [staging acceptance](BROWSER_NOTIFICATIONS_STAGING_ACCEPTANCE_2026-11-06.md) for release identity, evidence and limits. Production was not changed. Use the reviewed Helpdesk release workflow; do not patch a runtime directory.
 
 1. Run the isolated PostgreSQL tests and release checks, then apply migration **156** after verifying revision 155 and the required backup evidence. It adds only the two Web Push tables and an actor index. Its downgrade deletes browser subscriptions/delivery metadata; ordinary bell history stays intact. Downgrade is not a routine rollback action.
 2. Create a P-256 PEM outside the checkout and release directory, for example with the new `scripts/generate_web_push_key.py --output <private-path>` provisioning tool. It refuses overwrite and never prints the private key. Ensure only the Helpdesk Unix user can read it (mode 0600); keep it across releases. Do not commit it or rotate it casually.
@@ -41,7 +41,9 @@ Frontend: `pnpm --dir webapp exec vitest run src/features/notifications src/comp
 
 Relevant specifications: [RFC 8030](https://www.rfc-editor.org/rfc/rfc8030), [VAPID RFC 8292](https://www.rfc-editor.org/rfc/rfc8292), [Windows push headers](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/push-notifications/push-request-response-headers).
 
-## Local verification record — 2026-11-06
+## Initial local verification record — 2026-11-06
+
+Historical source-only checkpoint. The database and deployment blockers below were subsequently resolved; the linked staging acceptance record describes the final state.
 
 - Focused backend command listed above: **48 passed**; Authlib emits existing/deprecation notices for its JOSE/httpx integration. Tests cover VAPID signature, endpoint allowlist/WNS headers, HTTPX log redaction, protected routes/verified actor, strict acknowledgement validation, SQL scope/count, projections and existing recipient preferences.
 - Focused frontend command listed above: **28 passed**, including denied permission, server failure, stalled-revocation timeout, logout cleanup and existing session-boundary tests.
@@ -57,4 +59,4 @@ Relevant specifications: [RFC 8030](https://www.rfc-editor.org/rfc/rfc8030), [VA
 
 Task-owned additions are `server/tickets/{browser_notifications,notification_scope,web_push}.py`, `server/web_api/push_handlers.py`, `server/app/db/web_push_models.py`, migration `20261106_156_web_push.py`, `server/app/repos/web_push_repo.py`, `server/app/services/web_push_dispatcher.py`, `scripts/generate_web_push_key.py`, four backend no-DB test modules plus `test_web_push_persistence.py`, `webapp/src/features/notifications/` (API, menu, bell, browser control/helpers and tests), `webapp/public/helpdesk-notifications-sw.js`, `webapp/tests/browser-notifications.spec.ts` and its synthetic `notification_fixture.py`.
 
-Integration edits touch `server/app/db/models.py`, `server/app/repos/{notification_repo,ticket_events_repo}.py`, `server/tickets/{notification_service,handlers}.py`, requester/support message handler payloads, `server/{routes,server}.py`, `server/static_pages/webapp_assets.py`, `server/.env.example`, `server/tests/conftest.py`, `quality/db_table_classification.toml`, `scripts/reset_test_data.py`, the shared topbar/test, auth session provider, notification API type, local browser fixture server, CODEMAP, PLANS and the task plan. Unrelated work in these or other dirty files is preserved. No commit/push was made.
+Integration edits touch `server/app/db/models.py`, `server/app/repos/{notification_repo,ticket_events_repo}.py`, `server/tickets/{notification_service,handlers}.py`, requester/support message handler payloads, `server/{routes,server}.py`, `server/static_pages/webapp_assets.py`, `server/.env.example`, `server/tests/conftest.py`, `quality/db_table_classification.toml`, `scripts/reset_test_data.py`, the shared topbar/test, auth session provider, notification API type, local browser fixture server, CODEMAP, PLANS and the task plan. Launch work also adds guarded key configuration and release-selector/installer-lock checks. Unrelated work in these or other dirty files is preserved. Local release commits and their complete file manifest are recorded in staging acceptance; no Git push was made.
