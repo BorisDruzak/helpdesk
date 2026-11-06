@@ -21,7 +21,7 @@ export function ScenarioRichEditor({ value, disabled, attachments = [], label, o
     editorProps: { attributes: { "aria-label": label, role: "textbox", "aria-multiline": "true", class: "studio-rich-content studio-rich-editable nodrag nopan nowheel" } },
     onUpdate: ({ editor }) => latest.current.onChange(canonicalRichDocument(editor.getJSON() as ScenarioRichDocument)),
   });
-  useEffect(() => { editor?.setEditable(!disabled); }, [editor, disabled]);
+  useEffect(() => { editor?.setEditable(!disabled, false); }, [editor, disabled]);
   useEffect(() => { if (editor && JSON.stringify(canonicalRichDocument(editor.getJSON() as ScenarioRichDocument)) !== JSON.stringify(value)) editor.commands.setContent(value, { emitUpdate: false }); }, [editor, value]);
   if (!editor) return <p role="status">Загрузка визуального редактора…</p>;
   return <section className="space-y-2" aria-label="Визуальный редактор текста"><div className="studio-rich-toolbar" role="toolbar" aria-label="Оформление текста">

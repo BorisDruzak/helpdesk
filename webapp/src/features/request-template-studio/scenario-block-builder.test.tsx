@@ -32,12 +32,12 @@ it("adds blocks, focuses the selected editor, adds a field and supports undo/red
   expect(screen.getByLabelText("Название блока")).toHaveFocus();
   expect(screen.getAllByLabelText("Что спросить?")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Добавить вопрос" }));
-  expect(screen.getAllByLabelText("Что спросить?")).toHaveLength(1);
-  fireEvent.change(screen.getByLabelText("Что спросить?"), { target: { value: "Уточнение" } });
+  expect(screen.getAllByLabelText("Что спросить?")).toHaveLength(2);
+  fireEvent.change(screen.getAllByLabelText("Что спросить?")[1], { target: { value: "Уточнение" } });
   fireEvent.click(screen.getByRole("button", { name: "Отменить изменение" }));
-  expect(screen.getByLabelText("Что спросить?")).toHaveValue("Новый вопрос");
+  expect(screen.getAllByLabelText("Что спросить?")[1]).toHaveValue("Новый вопрос");
   fireEvent.click(screen.getByRole("button", { name: "Повторить изменение" }));
-  expect(screen.getByLabelText("Что спросить?")).toHaveValue("Уточнение");
+  expect(screen.getAllByLabelText("Что спросить?")[1]).toHaveValue("Уточнение");
 });
 it("keeps settings local, permits multiple roles and disables incompatible roles and files", () => {
   render(<Harness />);

@@ -8,6 +8,14 @@ const draft = (): ScenarioDraftDefinition => ({ scenario_key: "test", title: "К
     { id: "done", kind: "finish", title: "Готово" }, { id: "review", kind: "review", title: "Сводка", transitions: [{ to: "ticket" }] }, { id: "ticket", kind: "submit_ticket", title: "Обращение" },
   ] });
 describe("atomic map edits", () => {
+  it("names newly connected buttons independently when targets share the same title", () => {
+    const d = draft(); d.schema_version = 4;
+    d.blocks![0] = { id: "q", kind: "navigation", title: "Выбор", transition_mode: "buttons", transitions: [{ to: "done", button: { key: "first", label: "Готово" } }] };
+    d.blocks![2].title = "Готово";
+    const next = connectBlocks(d, "q", "review");
+    expect(next.blocks![0].transitions?.map(edge => edge.button?.label)).toEqual(["Готово", "Готово · 2"]);
+    expect(next.blocks![0].transitions?.[0].button?.key).toBe("first");
+  });
   it("adds near the visible viewport rather than the graph origin without changing legacy geometry", () => {
     const d = draft(), before = structuredClone(d);
     expect(nearMapPosition(d, { x: 5000, y: -4000 })).toEqual({ x: 4885, y: -4045 });

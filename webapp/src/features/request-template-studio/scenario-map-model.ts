@@ -1,3 +1,4 @@
+import { uniqueButtonLabel } from "./scenario-v4-model";
 import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioTransition } from "./scenario-contract";
 import { addBlock, newBlock, newKey, removeBlock } from "./scenario-builder-model";
 
@@ -85,7 +86,7 @@ export function connectBlocks(definition: ScenarioDraftDefinition, source: strin
   if ((block.transitions?.length ?? 0) >= (block.transition_mode === "buttons" ? 10 : 30)) throw new Error("Достигнут лимит переходов");
   if (block.kind === "sla" && block.transitions?.length) throw new Error("У блока SLA может быть только один следующий шаг");
   let edge:ScenarioTransition={to:target};
-  if (block.transition_mode === "buttons") edge.button = { key: newKey("action"), label: definition.blocks?.find(item => item.id === target)?.title ?? "Продолжить" };
+  if (block.transition_mode === "buttons") edge.button = { key: newKey("action"), label: uniqueButtonLabel(definition.blocks?.find(item => item.id === target)?.title ?? "Продолжить", (block.transitions ?? []).map(edge => edge.button?.label ?? "")) };
   if((definition.schema_version??1)>=2&&block.kind==="resolution_check"){
     const used=(block.transitions??[]).map(item=>item.when&&"value" in item.when?item.when.value:null);
     const value=["yes","no","unknown"].find(item=>!used.includes(item));

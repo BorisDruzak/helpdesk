@@ -85,17 +85,17 @@
 .studio-map-inspector h2 { font-size:18px; }
 .studio-map-workbench.is-inline { position:relative; grid-template-columns:var(--studio-explorer-width,240px) 8px minmax(0,1fr); }
 .studio-map-workbench.is-inline.is-left-collapsed { grid-template-columns:minmax(0,1fr); }
-.studio-map-node.is-expanded { width:560px; max-width:calc(100vw - 80px); z-index:12; background:#fff; }
-.studio-inline-editor { margin-top:14px; border-top:1px solid #dce9e1; padding-top:10px; max-height:540px; overflow:auto; cursor:default; }
+.studio-map-node.is-expanded { width:max-content; max-width:none; z-index:12; background:#fff; }
+.studio-inline-editor { margin-top:14px; border-top:1px solid #dce9e1; padding-top:10px; cursor:default; }
 .studio-inline-editor-actions { display:flex; justify-content:flex-end; gap:6px; }
 .studio-inline-editor button,.studio-inline-editor input,.studio-inline-editor select,.studio-inline-editor textarea { max-width:100%; }
 .studio-node-edit { margin-top:8px; font-size:12px; color:#087443; text-decoration:underline; }
-.studio-map-popover { position:absolute; right:12px; top:12px; z-index:30; width:min(560px,calc(100% - 24px)); max-height:calc(100% - 24px); overflow:auto; border:1px solid #cadfd2; border-radius:16px; background:#fff; padding:18px; box-shadow:0 12px 40px #15372825; }
+.studio-map-popover { position:absolute; right:12px; top:12px; z-index:30; width:max-content; max-width:calc(100% - 24px); overflow:hidden; border:1px solid #cadfd2; border-radius:16px; background:#fff; padding:0; box-shadow:0 12px 40px #15372825; }
 .studio-map-context { position:absolute; z-index:50; display:grid; width:250px; max-height:calc(100% - 12px); overflow:auto; padding:6px; border:1px solid #cadfd2; border-radius:12px; background:#fff; box-shadow:0 12px 40px #15372825; }
 .studio-map-context button { justify-content:flex-start; }
 .studio-full-editor-backdrop { position:fixed; inset:0; z-index:100; background:#12231f66; display:grid; place-items:center; padding:20px; }
-.studio-full-editor { width:min(1040px,100%); max-height:calc(100vh - 40px); overflow:auto; padding:24px; border-radius:18px; background:white; }
-@media(max-width:650px) { .studio-map-workbench.is-inline { grid-template-columns:minmax(0,1fr); } .studio-map-workbench.is-inline > .studio-map-explorer { max-height:170px; } .studio-map-node.is-expanded { width:440px; } .studio-full-editor-backdrop { padding:8px; } }
+.studio-full-editor { max-width:100%; max-height:calc(100dvh - 40px); overflow:hidden; padding:0; border-radius:18px; background:white; }
+@media(max-width:650px) { .studio-map-workbench.is-inline { grid-template-columns:minmax(0,1fr); } .studio-map-workbench.is-inline > .studio-map-explorer { max-height:170px; } .studio-full-editor-backdrop { padding:8px; } }
 .studio-map-inspector label { font-size:13px; }
 .studio-map-inspector details > summary { font-size:12px; }
 
@@ -116,10 +116,48 @@
 .studio-route-label { display:flex; align-items:center; gap:8px; }
 .studio-route-button { border:1px solid #cce2d4; border-radius:8px; padding:5px 10px; background:white; color:#24563d; cursor:pointer; font-size:12px; }
 
-.studio-inline-editor { max-height:min(460px,calc(100vh - 470px)); min-height:100px; }
+.studio-inline-editor { min-width:0; margin-top:0; padding-top:0; border:0; }
 .studio-full-editor .studio-inline-editor { max-height:none; }
 
 .studio-map-explorer [aria-label="Библиотека фрагментов"] button { display:block; width:100%; margin:6px 0; padding:9px 10px; border:1px solid #d3e4da; border-radius:8px; text-align:left; font-size:12px; background:#f8fcfa; color:#164d30; }
 .studio-map-explorer [aria-label="Библиотека фрагментов"] button:disabled { opacity:.5; cursor:default; }
 .studio-map-explorer [aria-label="Библиотека фрагментов"] input:not([type="checkbox"]),.studio-map-explorer [aria-label="Библиотека фрагментов"] select { width:100%; border:1px solid #d3e4da; border-radius:7px; padding:7px; margin:4px 0; }
 .studio-map-explorer [aria-label="Библиотека фрагментов"] h4 { font-weight:600; font-size:12px; margin:10px 0 6px; }.studio-map-explorer [aria-label="Библиотека фрагментов"] p { font-size:12px; color:#597466; }
+
+/* Local editor geometry is independent from persisted map/business geometry. */
+.studio-resizable-editor { display:flex; flex-direction:column; min-width:0; max-width:100%; overflow:hidden; background:white; }
+.studio-resizable-editor__body { flex:1; min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; padding:12px; }
+.studio-editor-resize { flex:none; align-self:stretch; display:flex; justify-content:flex-end; align-items:center; gap:8px; min-height:28px; padding:3px 8px; cursor:nwse-resize; touch-action:none; border-top:1px solid #dce9e1; color:#32674b; background:#f2f8f4; font-size:12px; }
+.studio-editor-resize:focus-visible { outline:2px solid #087443; outline-offset:-2px; }
+.studio-map-node.is-expanded > .studio-resizable-editor { margin-top:12px; border:1px solid #dce9e1; border-radius:10px; }
+.studio-node-editor-content,.studio-question-card { min-width:0; overflow-wrap:anywhere; }
+.studio-node-editor-content .field-base { display:block; width:100%; min-width:0; max-width:100%; }
+.studio-node-editor-content button { max-width:100%; height:auto; min-height:30px; white-space:normal; overflow-wrap:anywhere; }
+.studio-inline-editor-actions,.studio-question-page__toolbar,.studio-question-card__actions,.studio-navigation-modes { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.studio-question-page__toolbar > label { width:150px; font-size:12px; }
+.studio-question-card { border:1px solid #d6e5dc; border-radius:12px; background:#fff; }
+.studio-question-card__actions { padding:8px; background:#f4f9f6; border-radius:12px 12px 0 0; }
+.studio-question-card > fieldset { border:0; padding:12px; }
+.studio-question-card > details { padding:0 12px 12px; }
+.studio-question-drag { cursor:grab; font-size:12px; font-weight:600; color:#38644c; }
+.studio-question-drag:active { cursor:grabbing; }
+.studio-question-card label { min-width:0; }
+.studio-question-card label:has(input[type=radio]),.studio-question-card label:has(input[type=checkbox]) { flex-wrap:wrap; }
+.studio-navigation-card { background:#f5faf7; }
+.studio-navigation-card > label:first-child input { border:1px solid #087443; border-radius:12px; color:#065f46; font-weight:600; background:white; }
+.studio-node-buttons { display:flex; gap:5px; flex-wrap:wrap; margin-top:8px; }
+.studio-node-buttons span { border:1px solid #b8dcc9; background:#edf8f1; border-radius:7px; padding:4px 7px; font-size:11px; overflow-wrap:anywhere; }
+
+/* Keep help editable on the page; reveal its formatting tools when editing it. */
+.studio-question-card .studio-rich-editable { min-height:44px; max-height:none; padding:8px 10px; }
+.studio-question-card section[aria-label="Визуальный редактор текста"] > .studio-rich-toolbar,
+.studio-question-card section[aria-label="Визуальный редактор текста"] > details,
+.studio-question-card section[aria-label="Визуальный редактор текста"] > p { display:none; }
+.studio-question-card section[aria-label="Визуальный редактор текста"]:focus-within > .studio-rich-toolbar { display:flex; }
+.studio-question-card section[aria-label="Визуальный редактор текста"]:focus-within > details,
+.studio-question-card section[aria-label="Визуальный редактор текста"]:focus-within > p { display:block; }
+.studio-question-card .studio-rich-editable p:only-child:empty::before { content:"Подсказка к вопросу…"; color:#7a8c82; pointer-events:none; }
+.studio-question-answer { min-width:0; }
+
+/* The author edits the label above; keep the repeated control label accessible. */
+.studio-question-answer > label > span:first-child { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }

@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { RequestFormFieldControl, type DynamicFormValues } from "../requester/dynamic-form";
 import { ScenarioRichEditor } from "./scenario-rich-editor";
 import { plainRichDocument, richPlainText } from "./scenario-rich-content";
 import { Button } from "../../components/ui/button";
@@ -13,6 +15,7 @@ import { ScenarioAuthorAttachments } from "./scenario-author-attachments";
 
 type Props = { field: ScenarioField; definition: ScenarioDraftDefinition; disabled: boolean; onChange: (field: ScenarioField) => void };
 export function ScenarioFieldEditor({ field, definition, disabled, onChange }: Props) {
+  const [trialAnswer, setTrialAnswer] = useState<DynamicFormValues[string]>(undefined);
   const currentPage = definition.blocks?.find(block => block.kind === "form_page" && block.fields.some(item => item.key === field.key));
   const fields = conditionFields(definition, currentPage?.id ?? "", field.key);
   const roles = field.process_mapping?.roles ?? [];
@@ -22,7 +25,11 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
   }
   return <fieldset aria-label="Редактор вопроса" disabled={disabled} className="min-w-0 space-y-4 rounded-lg border p-4">
     <label className="block">Что спросить?<Input maxLength={300} value={field.label} onChange={event => onChange({ ...field, label: event.target.value })} /></label>
-    <details open><summary className="font-semibold">Настройки вопроса</summary><div className="mt-3 space-y-3">
+    <ScenarioAuthorAttachments blockId={currentPage?.id || ""} fieldKey={field.key} attachments={field.help_attachments} disabled={disabled}>
+      {(field.help_document || definition.schema_version === 4) ? <ScenarioRichEditor label="Подсказка к вопросу" value={field.help_document ?? plainRichDocument(field.help_text ?? "")} attachments={field.help_attachments} disabled={disabled} onChange={help_document => onChange({ ...field, help_document, help_text: richPlainText(help_document).slice(0, 2000) })} /> : <><label className="block">Подсказка<Input maxLength={2000} value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label></>}
+    </ScenarioAuthorAttachments>
+    {!["radio", "multi_select"].includes(field.type) && <div className="studio-question-answer" aria-label="Поле ответа сотрудника"><RequestFormFieldControl field={{ key: field.key, type: field.type, label: field.label, required: field.required, placeholder: field.placeholder, options: field.options }} value={trialAnswer} onChange={setTrialAnswer} /></div>}
+    <details><summary className="font-semibold">Настройки вопроса</summary><div className="mt-3 space-y-3">
     <label className="block">Тип ответа<Select value={field.type} onChange={event => onChange(changeFieldType(field, event.target.value as ScenarioFieldType))}>
       {Object.entries(fieldLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
       <option disabled value="file">Вложение — отдельный тип ответа пока недоступен</option>
@@ -31,9 +38,6 @@ export function ScenarioFieldEditor({ field, definition, disabled, onChange }: P
       <label><input type="checkbox" checked={!!field.required} onChange={event => onChange({ ...field, required: event.target.checked })} /> Обязательный ответ</label>
       <label><input type="checkbox" checked={!!field.allow_unknown} onChange={event => onChange({ ...field, allow_unknown: event.target.checked, process_mapping: { ...field.process_mapping, effects: event.target.checked ? field.process_mapping?.effects : field.process_mapping?.effects?.filter(effect => effect.value !== null) } })} /> Разрешить «Не знаю»</label>
     </div>
-    <ScenarioAuthorAttachments blockId={currentPage?.id || ""} fieldKey={field.key} attachments={field.help_attachments} disabled={disabled}>
-      {field.help_document ? <ScenarioRichEditor label="Подсказка к вопросу" value={field.help_document} attachments={field.help_attachments} disabled={disabled} onChange={help_document => onChange({ ...field, help_document, help_text: richPlainText(help_document).slice(0, 2000) })} /> : <><label className="block">Подсказка<Input maxLength={2000} value={field.help_text ?? ""} onChange={event => onChange({ ...field, help_text: event.target.value })} /></label>{definition.schema_version === 4 && <Button variant="outline" disabled={disabled} onClick={() => onChange({ ...field, help_document: plainRichDocument(field.help_text ?? "") })}>Оформить подсказку визуально</Button>}</>}
-    </ScenarioAuthorAttachments>
     {roles.some(role => role.startsWith("priority_")) && <p className="studio-next-help">Ответ используется действующей политикой Helpdesk.</p>}
     <label className="block">Пример ответа<Input maxLength={500} value={field.placeholder ?? ""} onChange={event => onChange({ ...field, placeholder: event.target.value })} /></label>
     </div></details>

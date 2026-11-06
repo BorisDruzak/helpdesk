@@ -23,6 +23,8 @@ test("legacy SLA projection edits original rules without upgrading schema", asyn
   expect(state.definition().schema_version).toBe(3);
   const updated = state.definition().blocks!.find(block => block.id === "q2")!;
   expect(updated.kind === "form_page" && updated.fields[0].process_mapping?.effects?.[0].facts.impact).toBe("multiple_users");
+  await page.getByRole("button", { name: "Редактировать выбранный блок", exact: true }).click();
+  await page.getByRole("button", { name: "Вся карта", exact: true }).click();
   await page.locator('.react-flow__edge[data-id="q2:0"]').click({ button: "right", force: true });
   const menu = page.getByRole("menu", { name: "Действия на карте" });
   await expect(menu.getByRole("menuitem", { name: "SLA", exact: true })).toBeDisabled();
