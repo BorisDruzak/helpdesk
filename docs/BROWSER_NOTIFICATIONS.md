@@ -6,6 +6,8 @@ The shared requester/support/admin bell shows the latest 30 **unread** events, i
 
 ## Attention and first-login help
 
+Installed staging correction and current evidence: [attention acceptance](NOTIFICATION_ATTENTION_STAGING_ACCEPTANCE_2026-11-06.md).
+
 A loaded requester/support conversation declares a readiness marker only in its chat view, not its loading/error/history view. The shared shell reads events for that ticket while the document is focused and visible and no native or ARIA modal covers it. The worker probes a matching foreground window over MessageChannel (750ms bound), checks the current actor/session, and suppresses the alert only after a positive readiness reply and a successful event read. Failed/unanswered probes or failed reads retain an alert. Another ticket, a background/closed tab, an account mismatch or a covered/unready conversation cannot suppress it.
 
 `POST /api/web/notifications/read_ticket` accepts `ticket_id` and required `expected_actor_id`. It rejects stale-account tabs with409 before database access. Reads apply current actor and SQL visibility scope; other tickets/users are preserved. The shell retries on focus/visibility changes and a five-second timer without requiring Web Push opt-in. The original global read-all action remains unchanged.
