@@ -45,7 +45,7 @@ function RequesterTicketChat({ ticketId }: { ticketId: string | undefined }) {
     if (scroller && followMessages.current && !showDetails && !ticket?.requester_resolution_summary && !chat.canClose && !chat.canRate && !chat.canReopen && !chat.pendingConsents.length) scroller.scrollTop = scroller.scrollHeight;
   }, [messages, events, showDetails, ticket?.requester_resolution_summary, chat.canClose, chat.canRate, chat.canReopen, chat.pendingConsents.length]);
   return (
-    <section aria-label="Чат обращения" className="chat-file-drop-target flex min-h-0 flex-1 flex-col bg-slate-50" {...fileDrop.handlers}>
+    <section aria-label="Чат обращения" data-helpdesk-active-chat={ticket && !detailQuery.isLoading && !detailQuery.isError && !showDetails ? ticketId : undefined} className="chat-file-drop-target flex min-h-0 flex-1 flex-col bg-slate-50" {...fileDrop.handlers}>
       <ChatFileDropOverlay active={fileDrop.dragging} />
       <ChatFileDropFeedback message={fileDrop.feedback} />
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">

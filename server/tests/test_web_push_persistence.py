@@ -27,6 +27,28 @@ async def seed(maker):
 
 
 @pytest.mark.asyncio
+async def test_read_viewed_ticket_preserves_other_tickets_actors_and_revoked_scope(test_engine):
+    from app.repos.notification_repo import NotificationRepo
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket = await seed(maker)
+    other = str(uuid.uuid4())
+    async with maker() as session:
+        session.add(Ticket(ticket_id=other, title="Other ticket", description="Fixture", status="queued", requester_id="elsewhere"))
+        await session.flush()
+        for actor, target in [("push-requester", ticket), ("push-requester", other), ("other-actor", ticket)]:
+            await NotificationRepo(session).create(actor, target, "chat_message", {"visibility": "public"})
+        await session.commit()
+        auth = SimpleNamespace(actor_id="push-requester", actor_role="user", ticket_scope=None)
+        repo = NotificationRepo(session)
+        assert await repo.mark_ticket_read("push-requester", ticket, auth_context=auth) == 1
+        assert await repo.mark_ticket_read("push-requester", ticket, auth_context=auth) == 0
+        assert await repo.mark_ticket_read("push-requester", other, auth_context=auth) == 0
+        rows = (await session.scalars(select(TicketNotification))).all()
+        assert [(row.actor_id, row.ticket_id) for row in rows if row.is_read] == [("push-requester", ticket)]
+        assert await WebPushRepo(session).pending(ENDPOINT, "push-requester", auth_context=auth) == []
+
+
+@pytest.mark.asyncio
 async def test_event_and_browser_delivery_commit_or_rollback_together(test_engine):
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
     ticket = await seed(maker)

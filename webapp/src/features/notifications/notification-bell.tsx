@@ -5,8 +5,11 @@ import { createPortal } from "react-dom";
 import { notificationRequest } from "./api";
 import { checkBrowserNotifications } from "./browser-push";
 import { NotificationMenu } from "./notification-menu";
+import { useActiveChatNotifications } from "./use-active-chat-notifications";
+import { NotificationIntroduction } from "./notification-introduction";
 
 export function NotificationBell({ userLogin, requester }: { userLogin: string; requester: boolean }) {
+  useActiveChatNotifications(userLogin);
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -52,6 +55,7 @@ export function NotificationBell({ userLogin, requester }: { userLogin: string; 
 
   const unread = count.data ?? 0;
   return <div className="relative" ref={root}>
+    <NotificationIntroduction key={userLogin} userLogin={userLogin} />
     <button aria-label="Уведомления" aria-expanded={open} aria-haspopup="dialog" className={requester ? "relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-brand-50" : "relative flex h-11 w-11 items-center justify-center rounded-full border border-border bg-white text-slate-500 hover:text-brand-700"} onClick={() => setOpen(value => !value)} title={count.isError ? "Не удалось обновить уведомления" : "Уведомления"} type="button">
       <Bell aria-hidden="true" className="h-4 w-4" />
       {unread > 0 ? <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-brand-700 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"><span aria-hidden="true">{unread > 99 ? "99+" : unread}</span><span className="sr-only">Новых событий: {unread}</span></span> : null}

@@ -2,7 +2,15 @@
 
 Chat messages and status changes create notification rows in the same transaction as the deduplicated ticket event. Rollback cannot send a browser notification. Existing recipient policy, internal-message visibility, muted events and suppress-self preferences apply. Generated system messages have no human initiator.
 
-The shared requester/support/admin bell shows the latest 30 events, read markers, individual click-through and “Прочитать все”. It polls the existing inbox/count endpoints every 15 seconds. Failed reads have an explicit error state. The API emits a JSON projection with a Russian title, safe summary and internal ticket URL; it does not expose raw chat payloads. Current role, requester ownership, queue membership aliases, direct assignee and unified-queue rules are checked in SQL **before** pagination and counting; badge polls do not load the full unread history into Python.
+The shared requester/support/admin bell shows the latest 30 **unread** events, individual click-through and “Прочитать все”. It requests `unread_only=true`; successful reads disappear on refetch instead of accumulating in the menu. Durable history is retained in the database. It polls the existing inbox/count endpoints every 15 seconds. Failed reads have an explicit error state. The API emits a JSON projection with a Russian title, safe summary and internal ticket URL; it does not expose raw chat payloads. Current role, requester ownership, queue membership aliases, direct assignee and unified-queue rules are checked in SQL **before** pagination and counting; badge polls do not load the full unread history into Python.
+
+## Attention and first-login help
+
+A loaded requester/support conversation declares a readiness marker only in its chat view, not its loading/error/history view. The shared shell reads events for that ticket while the document is focused and visible and no native or ARIA modal covers it. The worker probes a matching foreground window over MessageChannel (750ms bound), checks the current actor/session, and suppresses the alert only after a positive readiness reply and a successful event read. Failed/unanswered probes or failed reads retain an alert. Another ticket, a background/closed tab, an account mismatch or a covered/unready conversation cannot suppress it.
+
+`POST /api/web/notifications/read_ticket` accepts `ticket_id` and required `expected_actor_id`. It rejects stale-account tabs with409 before database access. Reads apply current actor and SQL visibility scope; other tickets/users are preserved. The shell retries on focus/visibility changes and a five-second timer without requiring Web Push opt-in. The original global read-all action remains unchanged.
+
+An introductory native modal appears for supported browsers with configured but inactive notifications. It explains chat/status alerts, closed-tab behavior and the unread bell, with an explicit opt-in button and close/Escape controls. Permission is never requested on login automatically. Dismissal is remembered per actor/browser in localStorage with an in-memory fallback when storage is blocked; an already subscribed browser is not prompted. The existing bell opt-in remains available after closing the help.
 
 ## Opt-in and delivery
 

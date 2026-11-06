@@ -34,3 +34,22 @@ it("does not show an empty success state when notification reads fail", async ()
   expect(screen.queryByText("Уведомлений пока нет")).not.toBeInTheDocument();
   client.clear();
 });
+
+it("requests only unread events and clears the bell after read-all", async () => {
+  let read = false;
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+    const url = String(input); requests.push(url);
+    if (url.endsWith("/read_all")) read = true;
+    const row = { id: 3, title: "Новое сообщение", body: "Откройте обращение", url: "/app/requester/tickets/t77", is_read: read };
+    return Response.json({ status: "ok", notifications: url.includes("unread_only=true") && read ? [] : [row] });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<MemoryRouter><QueryClientProvider client={client}><NotificationMenu userLogin="employee" requester onClose={vi.fn()} /></QueryClientProvider></MemoryRouter>);
+  await screen.findByText("Новое сообщение");
+  fireEvent.click(screen.getByRole("button", { name: "Прочитать все" }));
+  await screen.findByText("Уведомлений пока нет");
+  expect(screen.queryByText("Новое сообщение")).not.toBeInTheDocument();
+  expect(requests).toContain("/api/web/notifications?limit=30&unread_only=true");
+  client.clear();
+});

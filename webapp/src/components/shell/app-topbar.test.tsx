@@ -43,7 +43,7 @@ it("keeps ticket notifications without polling retired agent enrollment routes",
   await waitFor(() => expect(requested).toContain("/api/web/notifications/unread_count"));
   fireEvent.click(screen.getByRole("button", { name: "Уведомления" }));
   await screen.findByRole("heading", { name: "Уведомления" });
-  await waitFor(() => expect(requested).toContain("/api/web/notifications?limit=30"));
+  await waitFor(() => expect(requested).toContain("/api/web/notifications?limit=30&unread_only=true"));
   expect(requested).not.toContain("/api/web/admin/connection_requests");
   view.unmount(); client.clear();
 });

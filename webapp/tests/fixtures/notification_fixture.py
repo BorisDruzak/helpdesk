@@ -8,12 +8,16 @@ def state(request):
 
 async def control(request):
     if request.method == "POST":
-        request.app["notification_fixture"] = {"notifications": (await request.json()).get("notifications", []), "shown": [], "subscribed": False}
+        data = await request.json()
+        request.app["notification_fixture"] = {"notifications": data.get("notifications", []), "shown": [], "subscribed": False, "invalid_read_response": data.get("invalid_read_response", False)}
     return web.json_response(state(request))
 
 
 async def notifications(request):
-    return web.json_response({"status": "ok", "notifications": state(request)["notifications"]})
+    rows = state(request)["notifications"]
+    if request.query.get("unread_only") == "true":
+        rows = [row for row in rows if not row["is_read"]]
+    return web.json_response({"status": "ok", "notifications": rows})
 
 
 async def unread(request):
@@ -21,10 +25,15 @@ async def unread(request):
 
 
 async def read(request):
+    if request.match_info.get("id") and state(request).get("invalid_read_response"):
+        return web.Response(text="not-json", content_type="application/json")
+    ticket = (await request.json()).get("ticket_id") if request.path.endswith("/read_ticket") else None
+    updated = 0
     for row in state(request)["notifications"]:
-        if request.match_info.get("id") in (None, str(row["id"])):
+        if request.match_info.get("id") in (None, str(row["id"])) and (ticket is None or row["ticket_id"] == ticket):
             row["is_read"] = True
-    return web.json_response({"status": "ok"})
+            updated += 1
+    return web.json_response({"status": "ok", "updated": updated})
 
 
 async def push(request):
@@ -48,6 +57,7 @@ def install(app):
         web.get("/__fixtures/notifications", control), web.post("/__fixtures/notifications", control),
         web.get("/api/web/notifications/unread_count", unread),
         web.post("/api/web/notifications/read_all", read),
+        web.post("/api/web/notifications/read_ticket", read),
         web.post("/api/web/notifications/{id}/read", read),
         web.get("/api/web/notifications/push/{action}", push),
         web.post("/api/web/notifications/push/{action}", push),

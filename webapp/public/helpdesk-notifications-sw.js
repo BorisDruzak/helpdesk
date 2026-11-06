@@ -48,6 +48,27 @@ async function currentActor() {
   return payload.data?.user_login ?? payload.user_login;
 }
 
+async function chatIsVisible(notification, actor) {
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const ticket = new URL(notification.url, self.location.origin).pathname.split("/").pop();
+  const matches = client => client.focused && client.visibilityState === "visible" &&
+    new URL(client.url).origin === self.location.origin &&
+    /^\/app\/(?:requester\/)?tickets\/[^/]+\/?$/.test(new URL(client.url).pathname) &&
+    new URL(client.url).pathname.replace(/\/$/, "").endsWith(`/tickets/${ticket}`);
+  const candidates = windows.filter(matches);
+  const replies = await Promise.all(candidates.map(client => new Promise(resolve => {
+    const channel = new MessageChannel();
+    const done = value => { clearTimeout(timer); channel.port1.close(); resolve(value); };
+    const timer = setTimeout(() => done(false), 750);
+    channel.port1.onmessage = event => done(event.data?.active === true);
+    try { client.postMessage({ type: "helpdesk-is-chat-visible", ticket_id: ticket, actor_id: actor }, [channel.port2]); }
+    catch { done(false); }
+  })));
+  // A user may have switched away while the page was answering.
+  const current = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  return candidates.some((client, index) => replies[index] && current.some(item => item.id === client.id && matches(item)));
+}
+
 async function checkNotifications() {
   const version = generation;
   if (paused) return;
@@ -67,6 +88,20 @@ async function checkNotifications() {
     const key = `${payload.actor_id}:${notification.id}`;
     if (!await alreadyShown(key)) {
       // Covers cookie/session changes in another tab as well as local logout.
+      if (await currentActor() !== payload.actor_id || paused || version !== generation) return;
+      const active = await chatIsVisible(notification, payload.actor_id);
+      if (await currentActor() !== payload.actor_id || paused || version !== generation) return;
+      if (active) {
+        try {
+          const read = await fetch(`/api/web/notifications/${notification.id}/read`, { method: "POST", credentials: "same-origin", signal: AbortSignal.timeout(8000) });
+          if (read.ok && (await read.json()).updated) {
+            (await self.registration.getNotifications({ tag: `helpdesk-${key}` })).forEach(item => item.close());
+            await alreadyShown(key, true);
+            acknowledged.push(notification.id);
+            continue;
+          }
+        } catch { /* A failed read must fall back to an alert, not lose the event. */ }
+      }
       if (await currentActor() !== payload.actor_id || paused || version !== generation) return;
       await self.registration.showNotification(notification.title, { body: notification.body, tag: `helpdesk-${key}`, renotify: false, icon: "/favicon.svg", data: { url: notification.url, actor_id: payload.actor_id, id: notification.id } });
       if (paused || version !== generation) {

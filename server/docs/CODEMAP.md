@@ -950,4 +950,11 @@ and paths from the existing admin handler without altering backend contracts.
   notification-only worker is served at `/helpdesk-notifications-sw.js`.
 - `webapp/src/features/notifications/` owns the shared bell and opt-in controls;
   `webapp/public/helpdesk-notifications-sw.js` owns closed-tab browser handling.
+- `POST /api/web/notifications/read_ticket` marks only the authenticated actor's
+  currently visible ticket events; `expected_actor_id` rejects stale-account tabs.
+  The bell requests unread-only rows, retaining database history after reads.
+- `use-active-chat-notifications.ts` checks loaded conversation markers, focus,
+  visibility and modal coverage; bounded worker probes confirm active chat before
+  consuming an event without a popup. `notification-introduction.tsx` provides
+  dismissible per-actor/browser help and explicit opt-in without automatic permission.
 - Activation, API, privacy and acceptance boundaries: `docs/BROWSER_NOTIFICATIONS.md`.

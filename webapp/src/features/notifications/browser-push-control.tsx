@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { notificationRequest } from "./api";
 import { disableBrowserPush, enableBrowserPush, existingPushRegistration, supportsBrowserPush } from "./browser-push";
 
-export function BrowserPushControl({ userLogin }: { userLogin: string }) {
+export function BrowserPushControl({ userLogin, onEnabled }: { userLogin: string; onEnabled?: () => void }) {
   const supported = supportsBrowserPush();
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -29,6 +29,7 @@ export function BrowserPushControl({ userLogin }: { userLogin: string }) {
       if (enabled) await disableBrowserPush();
       else if (config.data?.public_key) await enableBrowserPush(config.data.public_key);
       setEnabled(!enabled);
+      if (!enabled) onEnabled?.();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Не удалось подключить уведомления."); }
     finally { setBusy(false); }
   }

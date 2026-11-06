@@ -2826,6 +2826,20 @@ async def handle_notifications_read_all(request: web.Request) -> web.Response:
         return _json_ok(updated=updated)
 
 
+async def handle_notifications_read_ticket(request: web.Request) -> web.Response:
+    auth_context = _auth(request)
+    data = await _read_json(request)
+    if data.get("expected_actor_id") != auth_context.actor_id:
+        return _json_error("session_changed", status=409)
+    ticket_id = data.get("ticket_id")
+    if not isinstance(ticket_id, str) or not ticket_id or len(ticket_id) > 128:
+        return _validation_error({"ticket_id": "invalid ticket"})
+    async with get_session() as session:
+        updated = await NotificationRepo(session).mark_ticket_read(auth_context.actor_id, ticket_id, auth_context=auth_context)
+        await session.commit()
+        return _json_ok(updated=updated)
+
+
 async def handle_notification_preferences_get(request: web.Request) -> web.Response:
     auth_context = _auth(request)
     async with get_session() as session:

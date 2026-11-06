@@ -7,6 +7,47 @@ const events = [
   { id: 902, ticket_id: "ticket-1", event_type: "status_changed", title: "Изменён статус обращения T-000077", body: "В работе", url: "/app/tickets/ticket-1", is_read: false, created_at: "2026-11-06T07:01:00Z" },
 ];
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("helpdesk-notification-intro-v1:support", "1"));
+});
+
+test("read-all empties the bell and remains empty after reopening", async ({ page, context }) => {
+  await context.request.post("/__fixtures/notifications", { data: { notifications: events } });
+  await context.request.post("/api/web/session/login", { data: { login: "support", password: "secret" } });
+  await page.goto("/app/tickets");
+  await page.getByRole("button", { name: "Уведомления", exact: true }).click();
+  await page.getByRole("button", { name: "Прочитать все" }).click();
+  await expect(page.getByText("Уведомлений пока нет")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Уведомления", exact: true }).click();
+  await expect(page.getByText("Уведомлений пока нет")).toBeVisible();
+  await expect(page.getByText(events[0].title)).toHaveCount(0);
+});
+
+for (const width of [1366, 1920, 390]) {
+  test(`login instruction is dismissible and never requests permission automatically at ${width}`, async ({ page, context }, info) => {
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.setViewportSize({ width, height: 900 });
+    await context.request.post("/__fixtures/notifications", { data: { notifications: [] } });
+    // A different account avoids the test-suite dismissal seed without touching permissions.
+    await context.request.post("/api/web/session/login", { data: { login: "admin", password: "secret" } });
+    await page.goto("/app/tickets");
+    const modal = page.getByRole("dialog", { name: "Не пропускайте ответы по обращениям" });
+    await expect(modal).toBeVisible();
+    expect(await page.evaluate(() => Notification.permission)).toBe("default");
+    await expect(modal.getByRole("button", { name: "Включить уведомления в браузере", exact: true })).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`notification-intro-${width}.png`), fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await modal.getByRole("button", { name: "Закрыть подсказку" }).click();
+    await expect(modal).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Уведомления", exact: true })).toBeVisible();
+    await expect(modal).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+}
+
 for (const width of [1366, 1920, 390]) {
   test(`bell shows events and reads an individual item at ${width}`, async ({ page, context }, info) => {
     const errors: string[] = [], failures: string[] = [];
@@ -106,6 +147,60 @@ test("browser opt-in and opt-out are explicit and update the menu", async ({ pag
   await page.getByRole("button", { name: "Отключить уведомления в этом браузере" }).click();
   await expect(page.getByRole("button", { name: "Включить уведомления в браузере", exact: true })).toBeVisible();
   expect((await (await context.request.get("/__fixtures/notifications")).json()).subscribed).toBe(false);
+});
+
+test("ready focused chat consumes its events silently; a background chat still gets alerts", async ({ page, context, baseURL }, info) => {
+  await context.grantPermissions(["notifications"], { origin: baseURL });
+  await context.request.post("/__fixtures/notifications", { data: { notifications: [] } });
+  await context.request.post("/api/web/session/login", { data: { login: "support", password: "secret" } });
+  await page.route("**/api/web/notifications/read_ticket", route => route.fulfill({ json: { status: "ok", updated: 0 } }));
+  await page.route("**/api/web/support/tickets/ticket-1/timeline**", route => route.fulfill({ json: { status: "success", data: { events: [], timeline: [], next_cursor: null } } }));
+  await page.route("**/api/web/support/tickets/ticket-1/read", route => route.fulfill({ json: { status: "success", data: {} } }));
+  await page.goto("/app/tickets/ticket-1");
+  await expect(page.locator('[data-helpdesk-active-chat="ticket-1"]')).toBeVisible();
+  const cdp = await context.newCDPSession(page);
+  let registrationId = "";
+  cdp.on("ServiceWorker.workerRegistrationUpdated", (event: { registrations: { scopeURL: string; registrationId: string }[] }) => {
+    registrationId = event.registrations.find(item => item.scopeURL === `${baseURL}/`)?.registrationId ?? registrationId;
+  });
+  await cdp.send("ServiceWorker.enable");
+  const workerPromise = context.waitForEvent("serviceworker");
+  await page.evaluate(async () => { await navigator.serviceWorker.register("/helpdesk-notifications-sw.js", { scope: "/" }); await navigator.serviceWorker.ready; });
+  const worker = await workerPromise;
+  await worker.evaluate(() => {
+    Object.defineProperty(ServiceWorkerRegistration.prototype, "pushManager", { configurable: true, get: () => ({ getSubscription: async () => ({ endpoint: "https://fcm.googleapis.com/fcm/send/synthetic-browser" }) }) });
+  });
+  await context.request.post("/__fixtures/notifications", { data: { notifications: events } });
+  await context.request.post("/api/web/notifications/push/subscribe", { data: {} });
+  await page.bringToFront();
+  expect(await page.evaluate(() => document.hasFocus() && document.visibilityState === "visible")).toBe(true);
+  await expect.poll(() => registrationId).not.toBe("");
+  await cdp.send("ServiceWorker.deliverPushMessage", { origin: baseURL!, registrationId, data: "" });
+  await expect.poll(async () => (await (await context.request.get("/__fixtures/notifications")).json()).shown.length).toBe(2);
+  const consumed = (await (await context.request.get("/__fixtures/notifications")).json()).notifications;
+  expect(consumed.every((item: { is_read: boolean }) => item.is_read)).toBe(true);
+  expect(await worker.evaluate(async () => (await self.registration.getNotifications()).length)).toBe(0);
+  const failedRead = events.map(item => ({ ...item, id: item.id + 200, is_read: false }));
+  await context.request.post("/__fixtures/notifications", { data: { notifications: failedRead, invalid_read_response: true } });
+  await context.request.post("/api/web/notifications/push/subscribe", { data: {} });
+  await cdp.send("ServiceWorker.deliverPushMessage", { origin: baseURL!, registrationId, data: "" });
+  await expect.poll(async () => worker.evaluate(async () => (await self.registration.getNotifications()).length)).toBe(2);
+  await worker.evaluate(async () => (await self.registration.getNotifications()).forEach(item => item.close()));
+  // Headless pages stay artificially focused. Exercise the page's negative
+  // visibility reply explicitly; closed-tab delivery has a separate native case.
+  await page.evaluate(() => Object.defineProperty(document, "hasFocus", { configurable: true, value: () => false }));
+  const anchor = await context.newPage();
+  await anchor.goto(`${baseURL}/__fixtures/notifications`);
+  await anchor.bringToFront();
+  await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(false);
+  const background = events.map(item => ({ ...item, id: item.id + 100, is_read: false }));
+  await context.request.post("/__fixtures/notifications", { data: { notifications: background } });
+  await context.request.post("/api/web/notifications/push/subscribe", { data: {} });
+  await cdp.send("ServiceWorker.deliverPushMessage", { origin: baseURL!, registrationId, data: "" });
+  await expect.poll(async () => worker.evaluate(async () => (await self.registration.getNotifications()).length)).toBe(2);
+  const unread = (await (await context.request.get("/__fixtures/notifications")).json()).notifications;
+  expect(unread.every((item: { is_read: boolean }) => !item.is_read)).toBe(true);
+  await info.attach("active-chat-result.json", { body: JSON.stringify({ active_chat_suppressed: true, unfocused_chat_displayed: true, background_focus_emulated: true, transport: "CDP fixture, not external provider" }), contentType: "application/json" });
 });
 
 for (const width of [1366, 390]) {

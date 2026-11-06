@@ -95,6 +95,16 @@ class NotificationRepo:
         result = await self.session.execute(stmt)
         return result.rowcount
 
+    async def mark_ticket_read(self, actor_id: str, ticket_id: str, *, auth_context) -> int:
+        """Mark only currently visible events of this actor's viewed ticket."""
+        from tickets.notification_scope import notification_scope_clause
+        scope = await notification_scope_clause(self.session, auth_context)
+        result = await self.session.execute(update(TicketNotification).where(
+            TicketNotification.actor_id == actor_id, TicketNotification.ticket_id == ticket_id,
+            TicketNotification.is_read.is_(False), scope,
+        ).values(is_read=True, read_at=datetime.now(timezone.utc)))
+        return result.rowcount
+
     async def unread_count(self, actor_id: str, *, auth_context=None) -> int:
         """Количество непрочитанных уведомлений пользователя."""
         stmt = select(func.count(TicketNotification.id)).where(

@@ -19,7 +19,7 @@ export async function notificationRequest<T>(path: string, body?: object, timeou
 }
 
 export async function fetchBellNotifications(): Promise<BellNotification[]> {
-  const result = await notificationRequest<{ notifications: BellNotification[] }>("?limit=30");
+  const result = await notificationRequest<{ notifications: BellNotification[] }>("?limit=30&unread_only=true");
   return Array.isArray(result.notifications) ? result.notifications : [];
 }
 
