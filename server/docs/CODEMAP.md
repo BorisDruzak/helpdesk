@@ -190,6 +190,8 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   Browser login/callback failures return to the fixed login page with a whitelisted
   local category and Russian recovery guidance; JSON API errors keep their status.
   Recovery never binds identities or grants roles.
+  Refresh ID tokens may omit nonce; initial login requires it and a nonce present
+  during refresh must match. See `docs/OIDC_REFRESH_NONCE.md`.
   Configuration/contracts/pilot limits: `docs/SSO_IDENTITY.md`.
   `scripts/configure_helpdesk_sso_password.py` plans/applies the fixed staging
   provider client's password assurance with private backup and exact readback.

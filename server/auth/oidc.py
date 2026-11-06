@@ -96,12 +96,15 @@ def oauth_client(**kwargs):
         trust_env=False, verify=_tls_context(), **kwargs)
 
 
-def validate_id_token(encoded, jwks, nonce, access_token):
+def validate_id_token(encoded, jwks, nonce, access_token, *, refresh=False):
     decoded = jwt.decode(encoded, KeySet.import_key_set(jwks), registry=JWSRegistry(algorithms=["RS256"], strict_check_header=False))
+    # OIDC Core 12.2 permits refresh ID tokens to omit nonce. A nonce that is
+    # present must still match the original; initial login always requires it.
+    expected_nonce = None if refresh and "nonce" not in decoded.claims else nonce
     claims = CodeIDToken(decoded.claims, decoded.header,
         options={"iss": {"essential": True, "value": config.OIDC_ISSUER},
                  "aud": {"essential": True, "value": config.OIDC_CLIENT_ID}},
-        params={"nonce": nonce, "client_id": config.OIDC_CLIENT_ID, "access_token": access_token})
+        params={"nonce": expected_nonce, "client_id": config.OIDC_CLIENT_ID, "access_token": access_token})
     claims.validate(leeway=0)
     parse_identity(claims["iss"], claims["sub"], claims.get(config.OIDC_AD_GUID_CLAIM))
     return claims
@@ -152,7 +155,7 @@ async def validate_oidc_session(session, token_record, user, *, raise_unavailabl
             refresh = _cipher().decrypt(record.refresh_token_encrypted.encode()).decode()
             async with oauth_client() as client:
                 renewed = await client.refresh_token(meta["token_endpoint"], refresh_token=refresh)
-            claims = validate_id_token(renewed["id_token"], await _json(meta["jwks_uri"]), record.nonce, renewed["access_token"])
+            claims = validate_id_token(renewed["id_token"], await _json(meta["jwks_uri"]), record.nonce, renewed["access_token"], refresh=True)
             if (claims["iss"], claims["sub"], claims[config.OIDC_AD_GUID_CLAIM]) != (binding.issuer, binding.subject, binding.ad_object_guid):
                 return False
             if claims.get("sid") != record.upstream_sid:

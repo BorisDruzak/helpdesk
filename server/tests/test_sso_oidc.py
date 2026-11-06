@@ -44,8 +44,9 @@ def oidc_config(monkeypatch):
 
 
 @pytest.mark.no_db
+@pytest.mark.parametrize("refresh", [False, True])
 @pytest.mark.parametrize("defect", ["issuer", "audience", "nonce", "expired", "missing_guid", "subject_type", "signature"])
-def test_authlib_rejects_invalid_id_token(oidc_config, defect):
+def test_authlib_rejects_invalid_id_token(oidc_config, defect, refresh):
     key = RSAKey.generate_key(2048, private=True)
     claims = dict(iss=config.OIDC_ISSUER, aud=config.OIDC_CLIENT_ID, sub="CaseSub", nonce="nonce",
                   iat=int(time.time()), exp=int(time.time()) + 60, ad_object_guid=str(uuid.uuid4()))
@@ -58,7 +59,26 @@ def test_authlib_rejects_invalid_id_token(oidc_config, defect):
     signer = RSAKey.generate_key(2048, private=True) if defect == "signature" else key
     encoded = jwt.encode({"alg": "RS256"}, claims, signer)
     with pytest.raises(Exception):
-        oidc.validate_id_token(encoded, {"keys": [key.as_dict(private=False)]}, "nonce", "access-token")
+        oidc.validate_id_token(encoded, {"keys": [key.as_dict(private=False)]}, "nonce", "access-token", refresh=refresh)
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize("refresh", [False, True])
+@pytest.mark.parametrize("nonce_kind", ["matching", "missing", "mismatch", "null", "empty"])
+def test_nonce_is_optional_only_in_refresh_response(oidc_config, refresh, nonce_kind):
+    from joserfc.errors import MissingClaimError, InvalidClaimError
+    key = RSAKey.generate_key(2048, private=True)
+    claims = dict(iss=config.OIDC_ISSUER, aud=config.OIDC_CLIENT_ID, sub="CaseSub",
+                  iat=int(time.time()), exp=int(time.time()) + 60, ad_object_guid=str(uuid.uuid4()))
+    if nonce_kind != "missing":
+        claims["nonce"] = {"matching": "nonce", "mismatch": "wrong", "null": None, "empty": ""}[nonce_kind]
+    encoded = jwt.encode({"alg": "RS256"}, claims, key)
+    args = (encoded, {"keys": [key.as_dict(private=False)]}, "nonce", "access-token")
+    if nonce_kind == "matching" or refresh and nonce_kind == "missing":
+        assert oidc.validate_id_token(*args, refresh=refresh)["sub"] == "CaseSub"
+    else:
+        with pytest.raises((MissingClaimError, InvalidClaimError)):
+            oidc.validate_id_token(*args, refresh=refresh)
 
 
 @pytest.mark.asyncio
@@ -121,9 +141,12 @@ async def test_bff_pkce_cookie_replay_revocation_migration_and_no_password_bypas
                 verifier = form["code_verifier"][0]
                 from authlib.oauth2.rfc7636 import create_s256_code_challenge
                 assert create_s256_code_challenge(verifier) == provider["challenge"]
-            encoded = jwt.encode({"alg": "RS256"}, dict(iss=issuer, sub=subject, aud=config.OIDC_CLIENT_ID,
+            claims = dict(iss=issuer, sub=subject, aud=config.OIDC_CLIENT_ID,
                 iat=int(time.time()), exp=int(time.time()) + 600, nonce=provider["nonce"], sid=sid,
-                ad_object_guid=guid), key)
+                ad_object_guid=guid)
+            if form["grant_type"] == ["refresh_token"]:
+                claims.pop("nonce")
+            encoded = jwt.encode({"alg": "RS256"}, claims, key)
             return httpx.Response(200, json={"access_token": provider["access"], "token_type": "Bearer",
                 "expires_in": 600, "id_token": encoded, "refresh_token": provider["refresh"]})
         assert request.url.path.endswith("/introspect")
