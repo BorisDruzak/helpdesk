@@ -40,6 +40,20 @@ Support/admin/auditor:
 - Low CSAT creates a QA review. Knowledge failure reasons can create an improvement action for KB updates.
 - Requester action projection uses the same latest-feedback signal for reopen availability: latest positive feedback hides requester reopen controls and blocks direct requester reopen, while latest low CSAT keeps reopen available.
 - Reopen requires a reason code; `other` requires a comment. Reopen uses the existing workflow service and records a first-class reopen event.
+- A requester/user-authored reopen also stores one canonical public `chat_message`
+  with a readable reason and comment in the same transaction. Support sees it as
+  an ordinary incoming message; requester and public pages read the same event.
+  Operator quality notes are not automatically published. `reopen_message.py`
+  owns labels and stable message IDs; routes publish through the existing ticket
+  WebSocket helper only after commit. Requester reopen failures explicitly roll
+  back and conflicts return 409. HTTP response schemas remain unchanged.
+- `scripts/helpdesk_recover_t77_reopen_messages.py` is a bounded admin/staging-only
+  recovery callable for the two diagnosed T-000077 requester facts. It checks exact
+  owner/role/reason/comment evidence and a fresh fingerprint under the ticket lock,
+  appends missing canonical messages at original fact times plus an internal audit,
+  and never rewrites status or original history. Repeated apply is a no-op. Invoke
+  through the approved protected staging procedure after verified backup; no bulk
+  recovery, startup migration or production invocation is supported.
 - Improvement actions are not tickets. They require source, action type, status, priority and audit fields; moving into assigned/in-progress requires an owner and closing requires outcome notes.
 - `TicketFeedbackService` locks the ticket row while replacing latest feedback. Concurrent submissions serialize, old latest rows are marked non-latest, and the DB partial unique index rejects accidental duplicate latest rows.
 - `QualitySnapshotScheduler` runs from server startup when DB persistence is enabled. It recomputes daily and weekly snapshots through `ServiceQualityAnalyticsService`; the manual recompute endpoint remains available for operator/debug use.

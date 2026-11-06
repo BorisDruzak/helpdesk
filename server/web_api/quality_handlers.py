@@ -127,7 +127,8 @@ async def handle_ticket_reopen(request: web.Request) -> web.Response:
             )
             if actor_error is not None:
                 return actor_error
-            result = await TicketReopenService(session).reopen_ticket(
+            reopen_service = TicketReopenService(session)
+            result = await reopen_service.reopen_ticket(
                 request.match_info.get("ticket_id"),
                 reason_code=str(data.get("reason_code") or ""),
                 reason_comment=data.get("reason_comment"),
@@ -137,6 +138,10 @@ async def handle_ticket_reopen(request: web.Request) -> web.Response:
                 actor_role=actor_role,
             )
             await session.commit()
+            if reopen_service.public_message_event:
+                from tickets.handlers import _push_ticket_event
+                event_result, payload = reopen_service.public_message_event
+                await _push_ticket_event(request, result['ticket_id'], event_result, 'chat_message', payload)
             return _ok(ticket_id=result["ticket_id"], ticket_status=result["status"], reopen_id=result["reopen_id"])
     except WorkflowTransitionConflict as exc:
         return _error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")
@@ -193,7 +198,8 @@ async def handle_public_ticket_reopen(request: web.Request) -> web.Response:
     data = await _json(request)
     try:
         async with get_session() as session:
-            result = await TicketReopenService(session).reopen_ticket(
+            reopen_service = TicketReopenService(session)
+            result = await reopen_service.reopen_ticket(
                 request.match_info.get("ticket_id"),
                 reason_code=str(data.get("reason_code") or ""),
                 reason_comment=data.get("reason_comment"),
@@ -202,6 +208,10 @@ async def handle_public_ticket_reopen(request: web.Request) -> web.Response:
                 actor_role="requester",
             )
             await session.commit()
+            if reopen_service.public_message_event:
+                from tickets.handlers import _push_ticket_event
+                event_result, payload = reopen_service.public_message_event
+                await _push_ticket_event(request, result['ticket_id'], event_result, 'chat_message', payload)
             return _ok(ticket_id=result["ticket_id"], ticket_status=result["status"], reopen_id=result["reopen_id"])
     except WorkflowTransitionConflict as exc:
         return _error(str(exc), status=409, error_code="WORKFLOW_CONFLICT")

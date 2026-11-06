@@ -14,6 +14,9 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
       fileURLToPath(new URL("../../server", import.meta.url))], { encoding: "utf8" }));
     expect(closedTimer.completed_at).toBe("2026-11-05T12:42:00+00:00");
     expect(closedTimer.completed_within_target).toBe(true);
+    const reopenPayload = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-X", "utf8", "-c",
+      "import sys,json;from pathlib import Path;sys.path[:0]=[sys.argv[1],str(Path(sys.argv[1]).parent)];from types import SimpleNamespace;from quality.reopen_message import reopen_message_payload;from web_api.requester_handlers import _serialize_message_for_requester;from app.db.models import TicketEvent;from datetime import datetime,timezone;t=SimpleNamespace(ticket_id='synthetic-resolution',requester_id='synthetic-employee',custom_fields={});p=reopen_message_payload(t,reopen_id='synthetic-reopen',reason_code='unclear_instruction',reason_comment='Первый шаг непонятен\\nНужен пример');print(json.dumps(_serialize_message_for_requester(TicketEvent(id=99,event_type='chat_message',payload=p,created_at=datetime(2026,11,6,7,10,tzinfo=timezone.utc)),ticket=t)))",
+      fileURLToPath(new URL("../../server", import.meta.url))], { encoding: "utf8" }));
     const ticket = () => ({ ticket_id: "synthetic-resolution", ticket_code: code, title: "Синтетическая проверка решения", status: phase,
       requester_status_label: phase === "resolved" ? "Проверьте решение" : phase === "closed" ? "Закрыто" : "В работе",
       requester_resolution_summary: "Специалист предложил решение. Проверьте результат.",
@@ -34,7 +37,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
       } else if (path === `/api/web/requester/tickets/${code}`) data = {
         ticket: ticket(), events: [],
         handling: { status_label: ticket().requester_status_label, assignee: { assigned: true, display_name: "Специалист" }, next_action_owner: phase === "closed" ? null : "requester", device: { state: "none" }, sla: { resolution: phase === "closed" ? closedTimer : { status: "paused", remaining_seconds: 3600 } } },
-        messages: Array.from({ length: 45 }, (_, i) => ({ message_id: `m${i}`, from_role: i === 44 || i % 2 ? "support" : "user", text: i === 44 ? "Проблема решена. Для подтверждения используйте одну из кнопок ниже." : `Предыдущее сообщение ${i + 1}. Подробности проверки рабочего места.`, created_at: `2026-11-05T10:${String(i).padStart(2, "0")}:00Z` })),
+        messages: [...Array.from({ length: 45 }, (_, i) => ({ message_id: `m${i}`, from_role: i === 44 || i % 2 ? "support" : "user", text: i === 44 ? "Проблема решена. Для подтверждения используйте одну из кнопок ниже." : `Предыдущее сообщение ${i + 1}. Подробности проверки рабочего места.`, created_at: `2026-11-05T10:${String(i).padStart(2, "0")}:00Z` })),
+          ...(phase === "in_progress" ? [{ ...reopenPayload, from_role: "user", created_at: "2026-11-06T07:10:00Z" }] : [])],
       };
       else { unexpected.push(path); return route.fulfill({ status: 404, json: { status: "error" } }); }
       return route.fulfill({ json: { status: "success", data } });
@@ -66,11 +70,15 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
 
     phase = "resolved"; await page.reload();
     await expect(reject).toBeInViewport(); await reject.click();
-    await bar.getByRole("textbox", { name: "Комментарий для возврата в работу" }).fill("Ошибка повторилась");
+    await bar.getByRole("combobox").selectOption("unclear_instruction");
+    await bar.getByRole("textbox", { name: "Комментарий для возврата в работу" }).fill("Первый шаг непонятен\nНужен пример");
     await bar.getByRole("button", { name: "Вернуть в работу", exact: true }).click();
     await expect(page.getByText("Обращение возвращено в работу", { exact: true })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Ответ заявителя" })).toBeVisible();
-    expect(commands[1]).toMatchObject({ path: `/api/web/requester/tickets/${code}/reopen`, body: { reason_comment: "Ошибка повторилась" } });
+    expect(commands[1]).toMatchObject({ path: `/api/web/requester/tickets/${code}/reopen`, body: { reason_code: "unclear_instruction", reason_comment: "Первый шаг непонятен\nНужен пример" } });
+    await expect(page.getByText(reopenPayload.text, { exact: true })).toBeVisible();
+    await expect(page.getByText(reopenPayload.text, { exact: true })).toHaveCount(1);
+    await page.screenshot({ path: info.outputPath("reopen-comment.png") });
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
   });
 }

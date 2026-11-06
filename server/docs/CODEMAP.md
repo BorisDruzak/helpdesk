@@ -559,6 +559,12 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 
 ## Workflow transaction failures
 
+- `quality/reopen_message.py` builds the stable public chat payload for explicit
+  requester/user reopens. `quality/reopen_service.py` persists it atomically with
+  reopen/quality facts; requester and quality/public routes publish the captured
+  event only after commit. Operator notes remain private. The exact T-000077
+  staging recovery helper is documented in `QUALITY_LOOP.md`; no history rewrite.
+
 - `server/tickets/workflow_service.py` separates pure status/timestamp builders
   from waiting effects, gate actions and persistence/finalization. Timestamp
   resets retain their original precedence over explicit resolution metadata.

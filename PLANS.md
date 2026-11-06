@@ -2980,3 +2980,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verification:3regressions red before fix;141UI tests, build/workspace,3browser viewport cases and independent review pass. Character entry, multiline and dynamic preview/answer covered.
 - Complete: runtime587bc6dc3c4bca4b508ece7a5f95514c78f4a49a installed with verified155backup/4source hashes/health200/3active services.141UItests/3browser keyboard-preview-answer cases pass. Real HTTPS shell/assets match installed bytes; all business counts and T75SLArepair preserved. No ticket/profile changes; staging active, production unchanged.
 - Evidence: docs/REQUESTER_TEXT_SPACES_FIX_2026-11-06.md and tmp/requester-spaces-fix-20261106. Private branch/index preserve shared work and accepted SLA/catalog changes.
+
+
+## Requester reopen messages (2026-11-06)
+
+- Goal: requester return reason/comment visible to support and requester; restore2existing T77comments without repeating workflow.
+- Cause: reason persisted only in status/quality facts; normal conversation reads chat_message events.
+- Fix: one stable canonical public requester message in reopen transaction, postcommit WS publication on3routes, explicit requester rollback/conflict. Operator quality notes stay private.
+- Verification:50focusedPython and3browser viewports pass; build/workspace/diff and independent review pass. Recovery source-owner guard tightened with regressions.
+- Next: verified backup, exact immutable staging install, guarded2message recovery, realPG rollback/idempotence and support UI evidence. Screenshot-step investigation continues independently.
+- Evidence: docs/REQUESTER_REOPEN_MESSAGES_2026-11-06.md and tmp/reopen-message-fix-20261106. Private index/branch preserve shared work and prior accepted fixes.

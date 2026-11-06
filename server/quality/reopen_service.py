@@ -9,6 +9,7 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from quality.contracts import validate_reopen_reason
 from quality.review_service import QualityReviewService
 from quality.serializers import primitive
+from quality.reopen_message import reopen_message_payload
 from tickets.workflow_service import TicketWorkflowService
 
 
@@ -16,6 +17,8 @@ class TicketReopenService:
     def __init__(self, session) -> None:
         self.session = session
         self.repo = TicketEventsRepo(session)
+        # Caller publishes only after committing this transaction.
+        self.public_message_event = None
 
     async def reopen_ticket(
         self,
@@ -28,6 +31,7 @@ class TicketReopenService:
         linked_feedback_id: str | None = None,
         linked_knowledge_item_id: str | None = None,
     ) -> dict[str, Any]:
+        self.public_message_event = None
         code = validate_reopen_reason(reason_code, reason_comment)
         ticket = await self.repo.get_ticket(ticket_id)
         if ticket is None:
@@ -92,6 +96,14 @@ class TicketReopenService:
             actor_id=actor_id,
             trigger_payload={"reopen_id": reopen_row.reopen_id, "reason_code": code},
         )
+        if actor_role in {'requester', 'user'}:
+            payload = reopen_message_payload(ticket, reopen_id=reopen_row.reopen_id,
+                reason_code=code, reason_comment=reopen_row.reason_comment)
+            message_result = await self.repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id,
+                agent_seq=None, event_type='chat_message', payload=payload, event_id=payload['message_id'])
+            if message_result is None:
+                raise ValueError('Requester reopen message was not persisted')
+            self.public_message_event = (message_result, payload)
         await self.session.flush()
         return {
             "ok": True,
