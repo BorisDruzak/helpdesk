@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -5,6 +7,7 @@ class WebSessionCapabilities(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     self_registration_enabled: bool
+    sso_enabled: bool = False
 
 
 class WebSessionPayload(BaseModel):
@@ -13,6 +16,9 @@ class WebSessionPayload(BaseModel):
     user_login: str
     actor_role: str
     auth_type: str
+    login_method: Literal["password", "oidc"] = "password"
+    worktime_portal_url: str | None = None
+    worktime_handoff_enabled: bool = False
     default_workspace: str | None = None
     available_workspaces: list[str] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)

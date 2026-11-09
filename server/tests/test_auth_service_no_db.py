@@ -48,7 +48,9 @@ def persisted_ui_session(monkeypatch):
 
     @asynccontextmanager
     async def session():
-        yield SimpleNamespace()
+        async def execute(stmt):
+            return SimpleNamespace(first=lambda: None)
+        yield SimpleNamespace(execute=execute)
 
     class TokenRepo:
         def __init__(self, session):
@@ -87,6 +89,7 @@ async def test_ui_token_uses_current_user_role_after_demotion(persisted_ui_sessi
         "actor_role": "support",
         "created_at": "2026-01-01T00:00:00+00:00",
         "type": "ui",
+        "login_method": "password",
     }
 
 

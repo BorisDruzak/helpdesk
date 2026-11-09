@@ -1810,6 +1810,38 @@ class Device(Base):
         return self.deleted_at is not None
 
 
+class WorktimeAuthorizationCode(Base):
+    __tablename__ = "worktime_authorization_codes"
+    __table_args__ = (Index("ix_worktime_authorization_codes_expires", "expires_at"),)
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_token_hash: Mapped[str] = mapped_column(String(64), sa.ForeignKey("ui_tokens.token_hash", ondelete="CASCADE"), nullable=False)
+    person_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"), nullable=False)
+    challenge: Mapped[str] = mapped_column(String(43), nullable=False)
+    callback: Mapped[str] = mapped_column(String(512), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class WorktimeSessionLease(Base):
+    __tablename__ = "worktime_session_leases"
+    __table_args__ = (Index("ix_worktime_session_leases_expires", "expires_at"),)
+    handle_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_token_hash: Mapped[str] = mapped_column(String(64), sa.ForeignKey("ui_tokens.token_hash", ondelete="CASCADE"), nullable=False)
+    person_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+
+class WebRequesterRegistration(Base):
+    """Durable signup retry receipt; it is not a login credential."""
+    __tablename__ = "web_requester_registrations"
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_login: Mapped[str] = mapped_column(String(100), sa.ForeignKey("ui_users.user_login", ondelete="CASCADE"), nullable=False, unique=True)
+    person_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"), nullable=False, unique=True)
+    profile_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class RegistryDepartment(Base):
     """Lightweight registry department used by people, assets and routing context."""
     __tablename__ = "registry_departments"
@@ -4149,6 +4181,7 @@ class UiToken(Base):
     token_prefix: Mapped[str] = mapped_column(String(8), nullable=False)  # First 8 chars for logs
     user_login: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     actor_role: Mapped[str] = mapped_column(String(20), nullable=False)
+    auth_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="password")
     
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
@@ -4196,6 +4229,7 @@ class UiUser(Base):
     __tablename__ = "ui_users"
     user_login: Mapped[str] = mapped_column(String(100), primary_key=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_login_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
     actor_role: Mapped[str] = mapped_column(String(20), nullable=False, server_default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
     failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa.text("0"))
@@ -4221,6 +4255,61 @@ class UiUser(Base):
         Index("ix_ui_users_actor_role", "actor_role"),
         Index("ix_ui_users_locked_until", "locked_until"),
     )
+
+
+class ConfirmedIdentityBinding(Base):
+    """Exact OIDC/AD binding; never reuse generic normalized identity aliases."""
+    __tablename__ = "confirmed_identity_bindings"
+    binding_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    person_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="RESTRICT"), nullable=False)
+    user_login: Mapped[str] = mapped_column(String(100), sa.ForeignKey("ui_users.user_login", ondelete="RESTRICT"), nullable=False, unique=True)
+    issuer: Mapped[str] = mapped_column(String(500), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    ad_object_guid: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    confirmed_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    verification_reference: Mapped[str] = mapped_column(Text, nullable=False)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    revoked_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    __table_args__ = (UniqueConstraint("issuer", "subject", name="uq_identity_binding_issuer_subject"), Index("ix_identity_binding_person", "person_id"))
+
+
+class IdentityMigrationCandidate(Base):
+    """Unconfirmed/conflicting operator candidates confer no authentication authority."""
+    __tablename__ = "identity_migration_candidates"
+    candidate_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    person_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    user_login: Mapped[str] = mapped_column(String(100), nullable=False)
+    issuer: Mapped[str] = mapped_column(String(500), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    ad_object_guid: Mapped[str] = mapped_column(String(36), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (sa.CheckConstraint("state IN ('pending','conflict','confirmed')", name="ck_identity_candidate_state"),)
+
+
+class OidcFlow(Base):
+    __tablename__ = "oidc_flows"
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    browser_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    nonce: Mapped[str] = mapped_column(String(100), nullable=False)
+    verifier_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    return_path: Mapped[str] = mapped_column(String(1800),nullable=False,default='/app',server_default='/app')
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, index=True)
+
+
+class OidcSession(Base):
+    __tablename__ = "oidc_sessions"
+    token_hash: Mapped[str] = mapped_column(String(64), sa.ForeignKey("ui_tokens.token_hash", ondelete="CASCADE"), primary_key=True)
+    binding_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("confirmed_identity_bindings.binding_id", ondelete="RESTRICT"), nullable=False)
+    upstream_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    nonce: Mapped[str] = mapped_column(String(100), nullable=False)
+    upstream_sid: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    max_expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    acr: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 class UiUserAudit(Base):

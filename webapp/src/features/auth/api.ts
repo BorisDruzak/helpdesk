@@ -2,6 +2,9 @@ export type WebSession = {
   user_login: string;
   actor_role: string;
   auth_type: string;
+  login_method?: "password" | "oidc";
+  worktime_portal_url?: string | null;
+  worktime_handoff_enabled?: boolean;
   default_workspace: string | null;
   available_workspaces: string[];
   permissions?: string[];
@@ -46,15 +49,17 @@ async function readJson<T>(response: Response): Promise<T | null> {
   return (await response.json()) as T;
 }
 
-export async function fetchSessionCapabilities(): Promise<{ self_registration_enabled: boolean }> {
+export type WebSessionCapabilities = { self_registration_enabled: boolean; sso_enabled: boolean };
+
+export async function fetchSessionCapabilities(): Promise<WebSessionCapabilities> {
   const response = await fetch("/api/web/session/capabilities", {
     credentials: "same-origin", cache: "no-store"
   });
-  const payload = await readJson<SuccessResponse<{ self_registration_enabled: boolean }>>(response);
+  const payload = await readJson<SuccessResponse<WebSessionCapabilities>>(response);
   if (!response.ok || payload?.status !== "success" || typeof payload.data?.self_registration_enabled !== "boolean") {
     throw new WebSessionApiError("Не удалось проверить доступность регистрации", response.status);
   }
-  return { self_registration_enabled: payload.data.self_registration_enabled };
+  return { self_registration_enabled: payload.data.self_registration_enabled, sso_enabled: payload.data.sso_enabled === true };
 }
 
 export async function fetchCurrentSession(): Promise<WebSession | null> {
@@ -183,4 +188,16 @@ export async function logoutWebSession(): Promise<void> {
       payload?.error_code
     );
   }
+}
+
+export function navigateOidcLogout() {
+  // A top-level POST follows the server's optional RP redirect without exposing
+  // upstream tokens or fetching a provider document through the SPA.
+  const form = document.createElement("form");
+  form.method = "post";
+  form.action = "/api/web/session/oidc/logout";
+  form.hidden = true;
+  document.body.append(form);
+  form.submit();
+  form.remove();
 }

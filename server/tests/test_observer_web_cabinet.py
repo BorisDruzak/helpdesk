@@ -2105,16 +2105,28 @@ async def test_web_session_register_writes_web_session_observer_event(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("auth_method", ["password", "oidc"])
 async def test_web_session_logout_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
+    auth_method,
 ) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     login = f"observer-logout-{uuid.uuid4().hex[:8]}@example.test"
     token = f"{TEST_UI_USER_PREFIX}{login}"
     request_id = f"phase-d-logout-{uuid.uuid4().hex[:8]}"
     revoked_tokens: list[str] = []
+    # Logout audit now uses persisted possession, independent of the test
+    # harness's synthetic AuthContext and of upstream session availability.
+    from app.db.models import UiToken, UiUser
+    from app.repos.auth_tokens_repo import AuthTokensRepo
+    async with session_maker() as session:
+        session.add(UiUser(user_login=login, password_hash="unused-test-hash", actor_role="user", is_active=True))
+        await session.flush()
+        session.add(UiToken(token_hash=AuthTokensRepo.hash_token(token), token_prefix=token[:8],
+            user_login=login, actor_role="admin", auth_method=auth_method))
+        await session.commit()
 
     @asynccontextmanager
     async def test_get_session():
@@ -2171,6 +2183,11 @@ async def test_web_session_logout_writes_web_session_observer_event(
     serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
     assert token not in serialized
     assert login not in serialized
+
+    async with session_maker() as session:
+        await session.execute(sa.delete(UiToken).where(UiToken.token_hash == AuthTokensRepo.hash_token(token)))
+        await session.execute(sa.delete(UiUser).where(UiUser.user_login == login))
+        await session.commit()
 
 
 @pytest.mark.asyncio

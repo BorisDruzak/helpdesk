@@ -1,3 +1,74 @@
+# 2026-10-27 SSO + Helpdesk + Endpoint + WorkTime
+
+Latest checkpoint (supersedes earlier progress below): reviewed product changes
+are implemented; independent final security review found no P0/P1 and two P2
+issues. The shared identity-service budget and paginated explanation queue are
+now corrected with focused regressions. Helpdesk current focused PostgreSQL
+38 passed, previous broader PostgreSQL95 passed; updated no_db identity/harness
+51 passed. Full frontend890 passed/2 unrelated FormsBuilder failures, focused
+file rerun5 passed; full no_db1686 passed/2 failures: new-table cleanup assertion
+fixed and verified, unrelated subprocess-start timeout passed on focused retry.
+These results are NOT a green full release gate. Workspace verifier passed.
+Endpoint current PostgreSQL76 passed; UI68 unit/14 browser; native notification
+source smoke returned Later. Keycloak import/bootstrap succeeded after reviewed
+permissions/build-option/export-shape repairs; dedicated service now UP and
+verified corporate-CA HTTPS discovery200. Clients remain disabled pending pilot.
+ALT192.168.101.210 is accessible as osn-admin, WorkstationK11.4, Agent3.2.127,
+active domain user session; local Windows Core149 still requires full Setup157.
+Next: freeze candidate commits, full CI/release evidence, build/sign Windows/ALT157,
+then separately deploy applications and run real AD/OIDC/device pilot. Do not
+claim installed/published157 or completed live SSO/WorkTime acceptance yet.
+
+Goal: implement the supplied six-stage A–F ecosystem spec with independent
+subagent review and focused verification at each stage. User authorizes both
+repositories, Endpoint server deployment, separate agent update, Linux test
+machine and local domain workstation validation. No fleet rollout, bulk AD/GPO
+changes, forced account migration or organization-wide personnel monitoring.
+Design: docs/superpowers/specs/2026-10-27-sso-worktime-design.md. Execution plan:
+docs/superpowers/plans/2026-10-27-sso-worktime.md.
+Current State: Helpdesk starts at6cca48e5 on codex/ui-support-001 (includes main
+plus20 existing fixes). Endpoint implementation is latest-main78d24e9 isolated
+at C:/Users/admin-2/Documents/endpoint/.worktrees/sso-worktime-20261027 on
+codex/sso-worktime-20261027; preserve original dirty outdated checkout.
+Decisions: RegistryPerson is canonical; retain UiUser keys; exact issuer/sub
+and canonical ADGUID require explicit confirmed binding; separate employee/admin
+cookie sessions. No username-derived technical attribution; verified temporal
+device/account mapping required. Authlib1.9.1, opaque BFF sessions, upstream
+introspection failclosed, explicit MFA assurance and per-application grants.
+Next Steps: finish logout observer attribution regression, freeze reviewed
+Helpdesk/Endpoint feature commits, run release gates, configure isolated
+Keycloak realm/LDAPS pilot accounts, deploy compatible applications and build
+signed157 agent Foundation/Core. Then installed Windows/ALT acceptance.
+Verification: initial GitNexus group status checked (Endpoint index1behind),
+source identity reviews complete; DLP regression reproduced technical-admin
+list/detail200 before explicit grant guard, then test passed after403guard.
+AD-MAIN inventory0Keycloak/java and no sso/keycloakDNS. User instructed existing
+KC check on admin-2@192.168.100.11, then separate .19 deployment if absent.
+Infrastructure: corporate CA located on.5, pinned to approved publicCA. Generated
+nonexportable3072RSA machineCSR onAD and issued exact AD-MAIN.sosnadmin.local
+ServerAuth certificate serial1005; installed and refreshed LDAP cert without
+reboot. Verified from.19 TLS1.3+chain+hostname. DNSsso->.19 inAD; user added
+routerDNS, verified server/localresolution. Keycloak26.8.1 installed STOPPED,
+independentPG16/keycloak5544online, configroot:keycloak0640, mainPG5432 and
+Endpoint/Helpdesk services remainactive. Disk12GiB. Infrastructurecommits
+132aa6e79e88a9d397d2b526647dca974b17ca95,
+7bc49c160bef52d88b6c00d1c16d6d489c494aeb,
+a99cf6e298ced146a898b1621231c28a358c26f7.
+Verification: latest Helpdesk focusedPG95pass2deselected +actualprivateCA TLS;
+Endpoint combinedPG71pass including concurrenttimesheet versions/immutability;
+UI Endpoint68unit/14Playwright; Helpdesk67focusedunit/3Playwright. Independent
+reviews reproduced/fixed stalepermissions/MFA/breakglass/refresh/logout, partial
+coverage/history/annotations, DLPstringmodes/pureHRapproval, WindowsABI12/160.
+Companion143pass6skip; addedleasefencing/presentauthorization/backlogprogress,
+current schedules andfreshHelpdesk identity; nativeinstalledacceptanceremains.
+Handoff: product code remainsuncommittedpendingfinalgates; broadEndpointtests
+running (agentendpoint_broad_tests), observerlogoutfixhelpdesk_stage_a,
+ADpilotprovisionhelperkeycloak_infrastructure. OriginaldirtyEndpoint untouched.
+LocalPCactualCore149/installerprovenance79 requires signed157Setuppreflight;
+buildPython312/PyInstaller6.22.3/WiX4available,codesigningcertprivatekeyinstore.
+OldALTips.162/.70unreachable; user gives .210 own-admin, checkingpasswordSSH.
+Context7quotaexhausted officialdocsfallback. No agentupdateorfleetrolloutyet.
+
 # 2026-10-26 Full CI and publication
 
 User authorized full isolated-PostgreSQL CI, fixes, commit and push after checks.
@@ -2533,3 +2604,25 @@ No runtime behavior, production/staging deployment or Endpoint operation changes
 Checks: full unit suite792 passed in hosted CI; local no-DB server1452 passed,
 1 skipped; scripts272 passed; required fast audit layers passed. Full fixture,
 migration/DB and exact-SHA workflow results are recorded in the publication receipt.
+
+
+# 2026-11-09 Production SSO and WorkTime contract port
+
+Explicit user exception authorizes only the required Helpdesk SSO/WorkTime port.
+Endpoint staging and production now both run818d2897/schema0051; their own
+databases, identities, origins, agent177/183 media and Support grants stay separate.
+
+Use the clean production6cca48e5/schema150 baseline in this existing isolated
+checkout, branch codex/worktime-production-sso. Transfer reviewed identity/OIDC,
+callback log hygiene, fixed-environment navigation, domain-password browser flow,
+profile-preserving recovery, one-use PKCE handoff and refresh-nonce fix only.
+Do not transfer Studio, tickets, WebPush, registration UI, account unification or
+other staging features. Preserve canonical migrations151/152/153 unchanged;152
+is an empty registration-retry receipt prerequisite of153 and changes no account
+or profile. Its model/classification are retained solely for DAG compatibility.
+
+Required gates: focused source/authority/browser tests, workspace sanity, current
+exact-SHA CI, isolated real PostgreSQL and full production-clone preservation,
+private backup/config review, canonical release script and genuine live acceptance.
+No raw credentials, guessed account bindings, fabricated sessions or HR records.
+Production services remain running after the authorized deployment.

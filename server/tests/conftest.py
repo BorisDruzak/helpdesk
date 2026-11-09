@@ -1298,6 +1298,13 @@ def ensure_db_ready(request):
 
 
 FULL_CLEANUP_TABLES = (
+    "worktime_session_leases",
+    "worktime_authorization_codes",
+    "web_requester_registrations",
+    "oidc_sessions",
+    "oidc_flows",
+    "identity_migration_candidates",
+    "confirmed_identity_bindings",
     "request_studio_sessions",
     "request_studio_publish_tokens",
     "requester_ticket_create_requests",
@@ -1786,6 +1793,10 @@ CLEANUP_TABLES_BY_PROFILE = {
         "tickets",
     ),
     "registry_access": _cleanup_profile_subset(
+        "oidc_sessions",
+        "oidc_flows",
+        "identity_migration_candidates",
+        "confirmed_identity_bindings",
         "registry_quality_issue_overrides",
         "registry_admin_events",
         "registry_admin_policies",

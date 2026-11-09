@@ -1,5 +1,23 @@
 # Helpdesk server code map
 
+## Selective production SSO and WorkTime port
+
+The production150 baseline receives only the reviewed identity/OIDC and WorkTime
+boundary. Preserve original151/152/153 ancestry, existing people/accounts and the
+independent staging feature set. The old registration UI is retained; its new
+staging implementation is not a dependency of handoff or its isolated DB fixtures.
+See [production port](../../docs/SSO_WORKTIME_PRODUCTION_PORT.md) for the pinned
+current Endpoint contract, qualification requirements and activation bounds.
+
+## Credential-safe HTTP diagnostics
+
+- `observability/access_log.py` provides the path-only JSON logger wired by
+  `server.py`. Its exact OIDC callback error boundary sits inside request-ID
+  middleware and retains status/type without query/header/exception values.
+- `deploy/helpdesk/helpdesk.nginx.conf` assigns a service-specific safe format
+  on HTTP and HTTPS and suppresses raw nginx errors only for the OIDC callback.
+  Authentication and observer audit semantics are unchanged. See `SSO_IDENTITY.md`.
+
 ## Review hardening (2026-10-26)
 
 - `auth/service.py` resolves token privileges from the current active UI user.
@@ -81,6 +99,30 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   This foundation does not yet expose ticket BFF routes or enable the workspace.
 
 ## Entry points
+
+- `auth/identity.py` owns explicit confirmed RegistryPerson / existing UiUser /
+  AD GUID / exact OIDC issuer-sub binding, operator migration and revocation.
+  `auth/identity_handlers.py` exposes the narrow service-only v1 resolve contract
+  and administrator confirmation operations. `auth/oidc.py` uses Authlib PKCE
+  with one-use PostgreSQL flow state and encrypted upstream tokens, issuing the
+  existing opaque cookie authority. Migration 151 preserves legacy ownership;
+  auth verifies current account, identity and upstream session on every SSO
+  operation. All Helpdesk roles use password-level AD SSO without requesting or
+  enforcing MFA ACR; provider client policy is configured separately.
+  Browser login/callback failures return to the fixed login page with a whitelisted
+  local category and Russian recovery guidance; JSON API errors keep their status.
+  Recovery never binds identities or grants roles.
+  Refresh ID tokens may omit nonce; initial login requires it and a nonce present
+  during refresh must match. See `docs/OIDC_REFRESH_NONCE.md`.
+  Configuration/contracts/pilot limits: `docs/SSO_IDENTITY.md`.
+  `scripts/configure_helpdesk_sso_password.py` plans/applies the fixed staging
+  provider client's password assurance with private backup and exact readback.
+  `web_api/session_handlers.py` projects safe SSO capabilities and verified
+  login-method metadata; `WORKTIME_PORTAL_URL` must match the fixed production
+  or staging pair for configured `SERVER_PUBLIC_BASE_URL`. This is employee
+  navigation, never identity authority. `webapp/src/features/auth/`
+  owns the conditional SSO entry, actor-cache logout boundary and shared
+  WorkTime link used by requester desktop/mobile navigation.
 
 - `server/observability/browser_runtime.py` validates the independent public
   browser DSN/rate and reuses backend environment/release identity. Its fixed
@@ -701,3 +743,16 @@ and paths from the existing admin handler without altering backend contracts.
   confirmation with `publish_policies=false`, no shared pack rewrite.
 - `scenario-offering-form.tsx`: explanation, separate-tab template creation and
   explicit template-list refresh preserving local offering draft values.
+
+
+## WorkTime handoff (2026-11-05)
+
+- `auth/worktime_authority.py`: current persisted source token, verified complete
+  own requester identity and Registry/OIDC blocking checks.
+- `auth/worktime_handoff.py`: fixed environment pair, S256 single-use exchange,
+  hashed source-bound leases, closed AD continuation and confidential person read.
+- `auth/worktime_handlers.py`: cookie-only form authorization, strict service
+  payloads, bounded bodies/rates, safe errors and secret-free audit.
+- Migration153: ephemeral code/lease tables and OIDC return_path. Browser entry
+  `/app/worktime/connect` is public/self-gated; session flag wires WorktimeLink.
+- Exact protocol/rollback: `SSO_IDENTITY.md`; no new Endpoint agent contract.

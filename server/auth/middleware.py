@@ -34,6 +34,13 @@ _QUERY_TOKEN_AUTH_ATTEMPTS: deque[dict[str, object]] = deque(maxlen=QUERY_TOKEN_
 
 # Whitelist of endpoints that don't require authentication
 AUTH_WHITELIST = {
+    "/api/integration/v1/identities/resolve",  # Own narrow service authority; no UI AuthContext.
+    "/api/integration/v1/worktime/sessions/exchange",
+    "/api/integration/v1/worktime/sessions/introspect",
+    "/api/integration/v1/worktime/people/resolve",
+    "/api/web/session/worktime/authorize",  # Authorizes only its own actual browser cookie.
+    "/api/web/session/oidc/login",
+    "/api/web/session/oidc/callback",
     "/api/ui_login",  # UI login endpoint
     "/api/web/session/login",
     "/api/web/session/register",
@@ -291,6 +298,7 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     # Try UI token
     token_info = await auth_service.verify_ui_token(token)
     if token_info:
+        request["ui_login_method"] = "oidc" if token_info.get("login_method") == "oidc" else "password"
         return AuthContext(
             actor_id=token_info["user_login"],
             actor_role=token_info["actor_role"],
@@ -429,6 +437,16 @@ async def auth_middleware(request: web.Request, handler):
 
     # Skip authentication for non-API endpoints
     if not request.path.startswith("/api/"):
+        return await handler(request)
+
+    # Local logout consumes only the possessed credential and must remain possible
+    # when the upstream issuer is unavailable or has already revoked its session.
+    if request.method == "POST" and request.path in {"/api/web/session/logout", "/api/web/session/oidc/logout"}:
+        if extract_token_from_web_cookie(request) or not extract_token_from_header(request):
+            origin_error = _same_origin_error(request)
+            if origin_error:
+                code, message = origin_error
+                return web.json_response({"status": "error", "error_code": code, "error": message}, status=403)
         return await handler(request)
     
     # Skip authentication for whitelisted endpoints

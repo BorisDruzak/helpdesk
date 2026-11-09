@@ -113,6 +113,12 @@ class AuthTokensRepo:
         if not token_clean:
             return None
         token_hash = self.hash_token(token_clean)
+        return await self.verify_ui_token_hash(token_hash)
+
+    async def verify_ui_token_hash(self, token_hash: str, *, commit: bool = True) -> Optional[UiToken]:
+        """Validate stored authority references with exactly the normal rotation policy."""
+        if len(token_hash) != 64 or any(c not in '0123456789abcdef' for c in token_hash):
+            return None
         
         stmt = select(UiToken).where(
             UiToken.token_hash == token_hash
@@ -142,7 +148,10 @@ class AuthTokensRepo:
         
         # Update last_used_at
         token_record.last_used_at = datetime.now(timezone.utc)
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         
         return token_record
 

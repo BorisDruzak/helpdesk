@@ -34,6 +34,7 @@ from state_manager import StateManager
 from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, bind_app_value
 from routes import setup_routes
 from observability.sentry import configure_sentry
+from observability.access_log import QuerySafeAccessLogger, safe_oidc_callback_errors
 
 # Import database initialization
 from app.db import get_session, init_db, shutdown_db
@@ -422,6 +423,7 @@ def create_app() -> web.Application:
     # КРИТИЧНО: Регистрируем request/auth middleware ПЕРЕД маршрутами
     from auth.middleware import auth_middleware, request_id_middleware
     app.middlewares.append(request_id_middleware)
+    app.middlewares.append(safe_oidc_callback_errors)
     app.middlewares.append(auth_middleware)
     
     # Регистрируем маршруты
@@ -496,7 +498,7 @@ def main():
     app = create_app()
     observability = configure_sentry(app)
     try:
-        web.run_app(app, host=SERVER_HOST, port=SERVER_PORT)
+        web.run_app(app, host=SERVER_HOST, port=SERVER_PORT, access_log_class=QuerySafeAccessLogger)
     finally:
         observability.close()
 

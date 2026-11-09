@@ -8,3 +8,6 @@ python-dateutil
 python-dotenv
 SQLAlchemy[asyncio]>=2.0,<2.1
 sentry-sdk==2.71.0
+Authlib==1.9.1
+httpx>=0.28.1,<0.29
+cryptography>=46.0.5,<47

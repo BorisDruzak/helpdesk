@@ -128,6 +128,26 @@ _default_secure_cookie = "true" if _strict_profile else ("false" if ALLOW_INSECU
 WEB_SESSION_COOKIE_SECURE = os.getenv("WEB_SESSION_COOKIE_SECURE", _default_secure_cookie).lower() == "true"
 WEB_SESSION_COOKIE_HTTPONLY = os.getenv("WEB_SESSION_COOKIE_HTTPONLY", "true").lower() == "true"
 WEB_SESSION_COOKIE_SAMESITE = (os.getenv("WEB_SESSION_COOKIE_SAMESITE", "Lax") or "Lax").strip()
+# Separate confidential BFF client; no browser-delivered OAuth tokens.
+OIDC_ENABLED = os.getenv("OIDC_ENABLED", "false").lower() == "true"
+# Optional employee navigation, paired with the canonical SERVER_PUBLIC_BASE_URL.
+# Blank or a cross-environment URL keeps the entry hidden.
+WORKTIME_PORTAL_URL = os.getenv("WORKTIME_PORTAL_URL", "").strip()
+WORKTIME_HANDOFF_ENABLED = os.getenv("WORKTIME_HANDOFF_ENABLED", "false").lower() == "true"
+OIDC_ISSUER = os.getenv("OIDC_ISSUER", "").strip()
+OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "").strip()
+OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")
+OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "").strip()
+OIDC_TOKEN_ENCRYPTION_KEY = os.getenv("OIDC_TOKEN_ENCRYPTION_KEY", "")
+# Deprecated compatibility setting; Helpdesk uses domain-password SSO for all roles.
+OIDC_PRIVILEGED_ACR = os.getenv("OIDC_PRIVILEGED_ACR", "").strip()
+OIDC_AD_GUID_CLAIM = os.getenv("OIDC_AD_GUID_CLAIM", "ad_object_guid").strip()
+OIDC_CA_FILE = os.getenv("OIDC_CA_FILE", "").strip()
+OIDC_END_SESSION_ENDPOINT = os.getenv("OIDC_END_SESSION_ENDPOINT", "").strip()
+OIDC_POST_LOGOUT_REDIRECT_URI = os.getenv("OIDC_POST_LOGOUT_REDIRECT_URI", "").strip()
+IDENTITY_RESOLVE_SERVICE_TOKEN = os.getenv("IDENTITY_RESOLVE_SERVICE_TOKEN", "")
+# Shared authenticated service IP: allow department reads and agent polling.
+IDENTITY_RESOLVE_RATE_LIMIT_PER_MINUTE = max(1, min(100000, int(os.getenv("IDENTITY_RESOLVE_RATE_LIMIT_PER_MINUTE", "6000"))))
 WEB_CSRF_SAME_ORIGIN_ENABLED = os.getenv("WEB_CSRF_SAME_ORIGIN_ENABLED", "true").lower() == "true"
 WEB_CSRF_TRUSTED_ORIGINS = os.getenv("WEB_CSRF_TRUSTED_ORIGINS", "").strip()
 LEGACY_UI_TOKEN_LOGIN_ENABLED = os.getenv("LEGACY_UI_TOKEN_LOGIN_ENABLED", "false").lower() == "true"

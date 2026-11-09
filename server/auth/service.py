@@ -7,11 +7,11 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.db.models import RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
+from app.db.models import RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit, UiToken
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.ui_users_repo import DEFAULT_USER_ROLE, VALID_ROLES, UiUsersRepo, normalize_user_login
 from auth.password_service import verify_password
@@ -23,7 +23,7 @@ class AuthService:
     _UI_DB_FAILURE_COOLDOWN_SECONDS: float = 15.0
     _UI_DB_COOLDOWN_UNTIL: float = 0.0
     _REGISTRY_LOGIN_BLOCKING_STATUSES: frozenset[str] = frozenset(
-        {"archived", "inactive", "deactivated", "disabled"}
+        {"archived", "inactive", "deactivated", "disabled", "merged"}
     )
     
     def __init__(self, state_manager):
@@ -132,11 +132,13 @@ class AuthService:
             AUTH_UI_LOCK_MINUTES,
             ALLOW_INSECURE_DEV_DEFAULTS,
             UI_USER_ROLES,
+            OIDC_ENABLED,
         )
-        allow_config_fallback = bool(AUTH_UI_CONFIG_FALLBACK_ENABLED and ALLOW_INSECURE_DEV_DEFAULTS)
-        if AUTH_UI_DB_USERS_ENABLED and self._ui_db_cooldown_active() and not allow_config_fallback:
+        use_db = bool(AUTH_UI_DB_USERS_ENABLED or OIDC_ENABLED)
+        allow_config_fallback = bool(AUTH_UI_CONFIG_FALLBACK_ENABLED and ALLOW_INSECURE_DEV_DEFAULTS and not OIDC_ENABLED)
+        if use_db and self._ui_db_cooldown_active() and not allow_config_fallback:
             raise RuntimeError("UI database authentication unavailable during cooldown")
-        if AUTH_UI_DB_USERS_ENABLED and not self._ui_db_cooldown_active():
+        if use_db and not self._ui_db_cooldown_active():
             try:
                 async with get_session() as session:
                     repo = UiUsersRepo(session)
@@ -145,6 +147,8 @@ class AuthService:
                     if user:
                         if not user.is_active:
                             return False, ""
+                        if not getattr(user, "password_login_enabled", True):
+                            return False, ""
                         if repo.is_locked(user):
                             return False, ""
                         if user.actor_role not in VALID_ROLES:
@@ -152,7 +156,7 @@ class AuthService:
                                 f"[AuthService] UI login rejected due to invalid DB role: login={login}, role={user.actor_role}"
                             )
                             return False, "ROLE_INVALID"
-                        if user.actor_role == DEFAULT_USER_ROLE:
+                        if user.actor_role in VALID_ROLES:
                             block = await self._registry_person_block_for_ui_user(session, user.user_login)
                             if block:
                                 await self._disable_ui_user_for_registry_block(
@@ -232,8 +236,8 @@ class AuthService:
         if expires_hours:
             expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
         
-        from config import ALLOW_INSECURE_DEV_DEFAULTS, AUTH_UI_CONFIG_FALLBACK_ENABLED
-        allow_memory_fallback = bool(ALLOW_INSECURE_DEV_DEFAULTS and AUTH_UI_CONFIG_FALLBACK_ENABLED)
+        from config import ALLOW_INSECURE_DEV_DEFAULTS, AUTH_UI_CONFIG_FALLBACK_ENABLED, OIDC_ENABLED
+        allow_memory_fallback = bool(ALLOW_INSECURE_DEV_DEFAULTS and AUTH_UI_CONFIG_FALLBACK_ENABLED and not OIDC_ENABLED)
 
         if self._ui_db_cooldown_active() and allow_memory_fallback:
             return self._store_legacy_ui_token(
@@ -308,8 +312,8 @@ class AuthService:
         Returns:
             Dict с информацией о токене (user_login, actor_role, created_at) или None
         """
-        from config import ALLOW_INSECURE_DEV_DEFAULTS, AUTH_UI_CONFIG_FALLBACK_ENABLED
-        allow_memory_fallback = bool(ALLOW_INSECURE_DEV_DEFAULTS and AUTH_UI_CONFIG_FALLBACK_ENABLED)
+        from config import ALLOW_INSECURE_DEV_DEFAULTS, AUTH_UI_CONFIG_FALLBACK_ENABLED, OIDC_ENABLED
+        allow_memory_fallback = bool(ALLOW_INSECURE_DEV_DEFAULTS and AUTH_UI_CONFIG_FALLBACK_ENABLED and not OIDC_ENABLED)
 
         if self._ui_db_cooldown_active() and allow_memory_fallback:
             legacy_data = self._LEGACY_TOKEN_STORE.get(token)
@@ -334,12 +338,23 @@ class AuthService:
                 token_record = await repo.verify_ui_token(token)
                  
                 if token_record:
+                    if getattr(token_record, "auth_method", "password") not in {"password", "oidc"}:
+                        return None
                     user_repo = UiUsersRepo(session)
                     user = await user_repo.get_by_login(token_record.user_login)
                     if user is None or not user.is_active or user.actor_role not in VALID_ROLES:
                         await repo.revoke_active_ui_tokens_for_user(token_record.user_login)
                         return None
-                    if user.actor_role == DEFAULT_USER_ROLE:
+                    if getattr(token_record, "auth_method", "password") == "password" and not getattr(user, "password_login_enabled", True):
+                        # A login authenticated just before migration may finish token
+                        # issuance after the bulk revoke; never accept that authority.
+                        await repo.revoke_ui_token(token)
+                        return None
+                    if getattr(token_record, "auth_method", "password") == "oidc":
+                        from auth.oidc import validate_oidc_session
+                        if not await validate_oidc_session(session, token_record, user):
+                            return None
+                    if user.actor_role in VALID_ROLES:
                         block = await self._registry_person_block_for_ui_user(session, token_record.user_login)
                         if block:
                             await self._disable_ui_user_for_registry_block(
@@ -355,7 +370,8 @@ class AuthService:
                         "user_login": token_record.user_login,
                         "actor_role": user.actor_role,
                         "created_at": token_record.created_at.isoformat(),
-                        "type": "ui"
+                        "type": "ui",
+                        "login_method": getattr(token_record, "auth_method", "password"),
                     }
         except Exception as exc:
             self._mark_ui_db_unavailable()
@@ -398,6 +414,24 @@ class AuthService:
                 }
             return None
     
+    @staticmethod
+    async def logout_audit_actor(session, token: str) -> Optional[tuple[str, str]]:
+        """Attribute logout from local possession only; NEVER an authentication result.
+
+        No upstream calls, token-use updates or AuthContext construction. This
+        lookup is deliberately limited to audit metadata for credential disposal.
+        """
+        if not token or len(token) > 1024:
+            return None
+        row = (await session.execute(select(UiUser.user_login, UiUser.actor_role)
+            .join(UiToken, UiToken.user_login == UiUser.user_login)
+            .where(UiToken.token_hash == AuthTokensRepo.hash_token(token.strip()),
+                UiToken.revoked_at.is_(None),
+                or_(UiToken.expires_at.is_(None), UiToken.expires_at > datetime.now(timezone.utc)),
+                UiToken.auth_method.in_(("password", "oidc")),
+                UiUser.is_active.is_(True), UiUser.actor_role.in_(VALID_ROLES)))).first()
+        return (row[0], row[1]) if row else None
+
     async def revoke_ui_token(self, token: str) -> bool:
         """
         Отзывает токен UI через БД.
