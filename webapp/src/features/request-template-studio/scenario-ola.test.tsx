@@ -5,6 +5,7 @@ import { addMapBlock, mapPalette } from "./scenario-map-model";
 import { connectPolicyAttachment, isPolicyAttachment } from "./scenario-policy-attachments-model";
 import { ScenarioOlaEditor, ScenarioTerminalOla, summarizeTerminalOla } from "./scenario-ola";
 import type { ScenarioSimulation } from "./scenario-api";
+import { ScenarioProcessingResult } from "./scenario-processing-result";
 
 vi.mock("./scenario-policy-attachments", () => ({ usePublishedScenarioPolicies: () => ({policies:{ola:[{code:"ola_rule",title:"Правило группы",is_active:true,published_at:"2026-11-10"}]},error:false,retry:vi.fn()}) }));
 const draft = (): ScenarioDraftDefinition => ({ schema_version:4, execution_semantics:3, scenario_key:"s", service_code:"it", offering_full_code:"it.test", title:"Услуга", process_binding:{request_template_key:"it"}, entry_block_id:"first", blocks:[{id:"first",kind:"instruction",title:"Инструкция",content:{body:"Текст"},transitions:[{to:"end"}]},{id:"end",kind:"submit_ticket",title:"Обращение"}] });
@@ -39,5 +40,11 @@ describe("OLA attachment", () => {
   render(<ScenarioTerminalOla definition={d} block={block} disabled={false} onChange={vi.fn()} result={result}/>);
   expect(screen.getByRole("alert")).toHaveTextContent("OLA отключён на сервере");
   expect(screen.queryByText("Проверенный OLA этого пути")).not.toBeInTheDocument();
+ });
+ it("shows OLA durations once in the server result and explains disabled accounting", () => {
+  const result={state:{current_block_id:"end",history:[]},processing:{priority:{priority_class:"P3"},sla:{},routing:{},approval:{required:false},ola:{enabled:false,ack_min:7,processing_min:43}}} as unknown as ScenarioSimulation;
+  render(<ScenarioProcessingResult result={result} definition={draft()}/>);
+  expect(screen.getAllByText(/обработка.*43.*мин/i)).toHaveLength(1);
+  expect(screen.getByText(/OLA отключён на сервере/)).toBeVisible();
  });
 });

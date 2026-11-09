@@ -30,14 +30,13 @@ export function ScenarioProcessingResult({ result, definition }: { result: Scena
     {processing.priority.reason && <AdvancedDisclosure title="Расширенные настройки"><p className="break-words">Основание расчёта: {processing.priority.reason}</p></AdvancedDisclosure>}
     <p>Очередь: {processing.routing.queue_title || processing.routing.queue_code || "Не определена"}</p>
     <p>Первый ответ: {processing.sla.first_response_min ? `${processing.sla.first_response_min} мин.` : "Не определён"}</p>
-    {processing.ola && <p>{processing.ola.enabled === false ? "OLA отключён на сервере. Настроенные сроки:" : "OLA:"} подтверждение {processing.ola.ack_min == null ? "не задано" : `${processing.ola.ack_min} мин.`} · обработка {processing.ola.processing_min == null ? "не задана" : `${processing.ola.processing_min} мин.`}.</p>}
     <p>Срок выполнения: {processing.sla.resolution_min ? `${processing.sla.resolution_min} мин.` : "Не определён"}</p>
     {processing.sla.time_basis && <p>{processing.sla.time_basis === "business" ? "Рабочее время" : "Календарное время"}</p>}
     {slaSource && <p>Источник SLA: {slaSource.kind === "terminal" ? `итоговый выбор в блоке «${definition?.blocks?.find(block => block.id === slaSource.block_id)?.title ?? "Завершение"}»` : actualSourceLabel(definition, slaSource)}.</p>}
     {routingSource && <p>Источник очереди: {actualSourceLabel(definition, routingSource)}.</p>}
     {processing.sla.first_response_due_preview && <p>Ответить до: {deadline(processing.sla.first_response_due_preview)}</p>}
     {processing.sla.resolution_due_preview && <p>Решить до: {deadline(processing.sla.resolution_due_preview)}</p>}
-    {processing.ola?.ack_min || processing.ola?.processing_min ? <p>Подтверждение поддержки: {processing.ola.ack_min ?? "не определено"} мин.; обработка: {processing.ola.processing_min ?? "не определено"} мин.</p> : <p>Внутренние сроки поддержки не настроены.</p>}
+    {processing.ola?.ack_min || processing.ola?.processing_min ? <p>{processing.ola.enabled === false ? "OLA отключён на сервере. Настроенные сроки:" : "OLA:"} подтверждение поддержки: {processing.ola.ack_min ?? "не определено"} мин.; обработка: {processing.ola.processing_min ?? "не определено"} мин.</p> : <p>Внутренние сроки поддержки не настроены.</p>}
     <p>{processing.approval.required ? "Потребуется согласование" : "Согласование не требуется"}</p>
     <ScenarioSimulationTrace result={result} definition={definition} />
     {processing.closure && <p>{processing.closure.requires_public_summary && processing.closure.requires_resolution_code ? "При закрытии обязательны итог для сотрудника и код решения." : processing.closure.requires_public_summary ? "При закрытии обязателен итог для сотрудника." : processing.closure.requires_resolution_code ? "При закрытии обязателен код решения." : "Дополнительные требования закрытия не заданы политикой."}</p>}
