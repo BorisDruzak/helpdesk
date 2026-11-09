@@ -55,7 +55,8 @@ describe("navigation helpers", () => {
     expect(items.find(item => item.isWorkspaceHome)?.to).toBe("/app/tickets");
     expect(items.filter(item => ["/app/tickets", "/app/support"].includes(item.to))).toHaveLength(1);
     expect(getActiveNavItem("/app/support")?.label).toBe("Очередь обращений");
-    expect(items.find(item => item.to === "/app/support/advanced")?.label).toBe("Расширенный центр");
+    expect(items.some(item => item.to === "/app/support/advanced")).toBe(false);
+    expect(getActiveNavItem("/app/support/advanced")?.label).toBe("Очередь обращений");
     expect(getActiveWorkspace("/app/support/advanced")).toBe("support");
   });
   it("hides expert form and policy entry points while retaining permission-checked deep links", () => {

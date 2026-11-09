@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode, type MouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -18,6 +18,8 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
+import "./command-center.css";
+import { getNextActionOwnerLabel } from "../../features/tickets/status-presentation";
 import { Link } from "react-router-dom";
 
 import { fetchSupportWorkspaceSummary, type SupportWorkspaceSummaryPayload } from "../../features/queues/api";
@@ -142,16 +144,16 @@ function countBySection(data: OperatorCommandCenterPayload | undefined, key: Com
 
 function taskTypeLabel(type: SupportActionTaskType) {
   const labels: Record<SupportActionTaskType, string> = {
-    triage_unassigned: "Новый intake",
+    triage_unassigned: "Новое обращение",
     reply_user: "Ответ пользователю",
-    sla_rescue: "SLA rescue",
-    ola_rescue: "OLA rescue",
+    sla_rescue: "Контроль SLA",
+    ola_rescue: "Контроль внутренних сроков",
     operator_next_action: "Действие оператора",
     approval_followup: "Согласование",
-    consent_waiting: "Consent",
+    consent_waiting: "Согласие пользователя",
     operation_failed: "Ошибка операции",
     diagnostics_needed: "Диагностика",
-    agent_offline: "Agent offline",
+    agent_offline: "Устройство не на связи",
     closure_blocker: "Блокер закрытия",
     similar_spike: "Похожие обращения",
   };
@@ -213,7 +215,7 @@ function statusBadgeClass(active: boolean) {
 
 function StatusBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex max-w-full items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+    <span className="support-action-badge inline-flex max-w-full items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
       <span className="truncate">{children}</span>
     </span>
   );
@@ -378,28 +380,29 @@ function TopTaskFilters({
   const filters: Array<{ id: ActionFilterId; label: string; count: number; severity: CommandCenterSeverity }> = [
     { id: "all", label: "Все действия", count: totalTasks, severity: "info" },
     { id: "new_unassigned", label: "Новые без владельца", count: countBySection(data, "new_unassigned"), severity: "warning" },
-    { id: "sla_risk", label: "SLA риск", count: countBySection(data, "sla_risk"), severity: "critical" },
-    { id: "ola_risk", label: "OLA риск", count: countBySection(data, "ola_risk"), severity: "critical" },
+    { id: "sla_risk", label: "Риск SLA", count: countBySection(data, "sla_risk"), severity: "critical" },
+    { id: "ola_risk", label: "Риск внутренних сроков", count: countBySection(data, "ola_risk"), severity: "critical" },
     { id: "unread_user_messages", label: "Сообщения пользователей", count: countBySection(data, "unread_user_messages"), severity: "warning" },
     { id: "operator_action", label: "Действия оператора", count: countBySection(data, "operator_action"), severity: "warning" },
     { id: "pending_approval", label: "Согласования", count: countBySection(data, "pending_approval"), severity: "warning" },
-    { id: "pending_consent", label: "Consent", count: countBySection(data, "pending_consent"), severity: "warning" },
+    { id: "pending_consent", label: "Согласие пользователя", count: countBySection(data, "pending_consent"), severity: "warning" },
     { id: "failed_operation", label: "Ошибки операций", count: countBySection(data, "failed_operation"), severity: "critical" },
-    { id: "agent_offline_active", label: "Agent offline", count: countBySection(data, "agent_offline_active"), severity: "warning" },
+    { id: "agent_offline_active", label: "Устройство не на связи", count: countBySection(data, "agent_offline_active"), severity: "warning" },
     { id: "diagnostics_recommended", label: "Диагностика", count: countBySection(data, "diagnostics_recommended"), severity: "info" },
     { id: "closure_blocked", label: "Блокеры закрытия", count: countBySection(data, "closure_blocked"), severity: "warning" },
     { id: "similar_tickets_spike", label: "Похожие обращения", count: countBySection(data, "similar_tickets_spike"), severity: "warning" },
   ];
 
   return (
-    <section className="flex gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="Фильтры действий">
-      {filters.map((filter) => {
+    <section className="support-action-filters" aria-label="Фильтры действий">
+      {filters.filter(filter => ["all", "new_unassigned", "sla_risk", "unread_user_messages", "operator_action"].includes(filter.id) || filter.count > 0 || filter.id === activeFilter).map((filter) => {
         const active = activeFilter === filter.id;
         return (
           <button
             key={filter.id}
             type="button"
             className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${statusBadgeClass(active)}`}
+            aria-pressed={active}
             onClick={() => onFilterChange(filter.id)}
           >
             <span className={`h-2.5 w-2.5 rounded-full ${severityDotClasses[filter.severity]}`} />
@@ -408,6 +411,7 @@ function TopTaskFilters({
           </button>
         );
       })}
+      <details className="support-action-filters__more"><summary>Другие фильтры</summary><div>{filters.filter(filter => !["all", "new_unassigned", "sla_risk", "unread_user_messages", "operator_action"].includes(filter.id) && filter.count === 0 && filter.id !== activeFilter).map(filter => <button key={filter.id} type="button" aria-pressed={false} onClick={() => onFilterChange(filter.id)}>{filter.label} · {filter.count}</button>)}</div></details>
     </section>
   );
 }
@@ -430,11 +434,11 @@ function ActionCenterLeftPane({
   const views: Array<{ id: ActionFilterId; label: string; detail: string; icon: ReactNode }> = [
     { id: "my_work", label: "Моя работа", detail: "ответы, SLA, операции", icon: <Inbox className="h-4 w-4" /> },
     { id: "team_queue", label: "Командная очередь", detail: "все доступные действия", icon: <ListChecks className="h-4 w-4" /> },
-    { id: "new_unassigned", label: "Новые без владельца", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.unassigned ?? 0} в summary`, icon: <UserPlus className="h-4 w-4" /> },
-    { id: "sla_ola", label: "SLA/OLA", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.sla_risk ?? 0} SLA risk`, icon: <Clock3 className="h-4 w-4" /> },
-    { id: "unread_user_messages", label: "Ответы пользователей", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.requester_replied ?? 0} в summary`, icon: <MessageSquare className="h-4 w-4" /> },
-    { id: "failed_operation", label: "Операции", detail: "ошибки и retry", icon: <Wrench className="h-4 w-4" /> },
-    { id: "pending_approval", label: "Согласования и consent", detail: "approval / consent", icon: <Bell className="h-4 w-4" /> },
+    { id: "new_unassigned", label: "Новые без владельца", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.unassigned ?? 0} в сводке`, icon: <UserPlus className="h-4 w-4" /> },
+    { id: "sla_ola", label: "SLA/OLA", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.sla_risk ?? 0} с риском SLA`, icon: <Clock3 className="h-4 w-4" /> },
+    { id: "unread_user_messages", label: "Ответы пользователей", detail: summaryUnavailable ? "Сводка недоступна" : `${summary?.views.requester_replied ?? 0} в сводке`, icon: <MessageSquare className="h-4 w-4" /> },
+    { id: "failed_operation", label: "Операции", detail: "ошибки и повтор", icon: <Wrench className="h-4 w-4" /> },
+    { id: "pending_approval", label: "Согласования и согласия", detail: "руководитель / пользователь", icon: <Bell className="h-4 w-4" /> },
     { id: "closure_blocked", label: "Закрытие", detail: "блокеры решения", icon: <FileCheck2 className="h-4 w-4" /> },
     { id: "similar_tickets_spike", label: "Похожие обращения", detail: "возможный инцидент", icon: <ShieldAlert className="h-4 w-4" /> },
   ];
@@ -523,17 +527,19 @@ function ActionTaskRow({
   task,
   selected,
   onSelect,
+  onOpenTicket,
 }: {
   task: SupportActionTask;
   selected: boolean;
   onSelect: (task: SupportActionTask) => void;
+  onOpenTicket?: (id: string) => void;
 }) {
   const title = displayText(task.title, "Без названия");
   const requester = displayText(task.requesterName, "Пользователь не указан");
   const timer = formatTimerState(task.primaryItem);
   const unreadMessages = taskUnreadUserMessages(task);
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
+    if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();
       onSelect(task);
     }
@@ -541,7 +547,7 @@ function ActionTaskRow({
 
   return (
     <article
-      className={`border-l-4 ${rowSeverityClasses[task.severity]} rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm transition hover:border-brand-200 hover:bg-slate-50 ${
+      className={`support-action-row border-l-4 ${rowSeverityClasses[task.severity]} rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm transition hover:border-brand-200 hover:bg-slate-50 ${
         selected ? "ring-2 ring-brand-500" : ""
       }`}
       role="button"
@@ -550,7 +556,7 @@ function ActionTaskRow({
       onClick={() => onSelect(task)}
       onKeyDown={handleKeyDown}
     >
-      <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)_auto] xl:items-start">
+      <div className="support-action-row__body">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`h-2.5 w-2.5 rounded-full ${severityDotClasses[task.severity]}`} aria-hidden="true" />
@@ -559,17 +565,17 @@ function ActionTaskRow({
             {task.priority ? <StatusBadge>{task.priority}</StatusBadge> : null}
           </div>
           <h3 className="mt-1 truncate text-sm font-semibold text-slate-950">{title}</h3>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{task.reason}</p>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{presentationLabel(task.reason)}</p>
         </div>
         <div className="min-w-0">
           <div className="flex flex-wrap gap-1.5">
-            <StatusBadge>{task.queue ?? "Очередь не указана"}</StatusBadge>
+            <StatusBadge>{presentationLabel(task.queue)}</StatusBadge>
             <StatusBadge>{task.assignee ? `Исполнитель: ${task.assignee}` : "Без исполнителя"}</StatusBadge>
             <StatusBadge>{requester}</StatusBadge>
             {timer ? <StatusBadge>{timer}</StatusBadge> : null}
             {unreadMessages ? <StatusBadge>Ответ пользователя: {unreadMessages}</StatusBadge> : null}
-            {task.serviceCode ? <StatusBadge>service: {task.serviceCode}</StatusBadge> : null}
-            {task.offeringCode ? <StatusBadge>offering: {task.offeringCode}</StatusBadge> : null}
+
+
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {task.reasonBadges.map((badge) => (
@@ -584,6 +590,7 @@ function ActionTaskRow({
             <Link
               key={action.label}
               to={action.href}
+              onClick={event => openTaskTicket(event, task, onOpenTicket)}
               className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 transition hover:border-brand-300 hover:text-brand-800"
             >
               {action.label}
@@ -599,16 +606,18 @@ function ActionInbox({
   tasks,
   selectedTaskId,
   onSelectTask,
+  onOpenTicket,
 }: {
   tasks: SupportActionTask[];
   selectedTaskId: string | null;
   onSelectTask: (task: SupportActionTask) => void;
+  onOpenTicket?: (id: string) => void;
 }) {
   return (
     <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-950">Action Inbox</h2>
+          <h2 className="text-lg font-semibold text-slate-950">Список действий</h2>
           <p className="mt-1 text-sm text-slate-600">Плотный список задач: что сделать дальше и почему это важно.</p>
         </div>
         <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{tasks.length} действий</span>
@@ -616,7 +625,7 @@ function ActionInbox({
       <div className="mt-4 grid gap-2">
         {tasks.length ? (
           tasks.map((task) => (
-            <ActionTaskRow key={task.id} task={task} selected={selectedTaskId === task.id} onSelect={onSelectTask} />
+            <ActionTaskRow key={task.id} task={task} selected={selectedTaskId === task.id} onSelect={onSelectTask} onOpenTicket={onOpenTicket} />
           ))
         ) : (
           <EmptyTasksState />
@@ -661,23 +670,25 @@ function KanbanActionBoard({
   columns,
   selectedTaskId,
   onSelectTask,
+  onOpenTicket,
 }: {
   columns: KanbanActionColumn[];
   selectedTaskId: string | null;
   onSelectTask: (task: SupportActionTask) => void;
+  onOpenTicket?: (id: string) => void;
 }) {
   return (
     <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-950">Kanban</h2>
-          <p className="mt-1 text-sm text-slate-600">Read-only раскладка тех же задач по состояниям работы.</p>
+          <h2 className="text-lg font-semibold text-slate-950">Доска</h2>
+          <p className="mt-1 text-sm text-slate-600">Те же действия по этапам работы. Изменения выполняются в обращении.</p>
         </div>
         <Columns3 className="h-5 w-5 text-slate-400" />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {columns.map((column) => (
-          <div key={column.key} className="min-h-[180px] rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div key={column.key} className="support-action-board-column min-h-[180px] rounded-lg border border-slate-200 bg-slate-50 p-3">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-950">{column.title}</h3>
               <span className="text-xs font-semibold text-slate-500">{column.tasks.length}</span>
@@ -687,7 +698,7 @@ function KanbanActionBoard({
                 <button
                   key={task.id}
                   type="button"
-                  className={`rounded-lg border bg-white p-3 text-left shadow-sm transition hover:border-brand-300 ${
+                  className={`support-action-board-card rounded-lg border bg-white p-3 text-left shadow-sm transition hover:border-brand-300 ${
                     selectedTaskId === task.id ? "border-brand-500 ring-2 ring-brand-400" : "border-slate-200"
                   }`}
                   onClick={() => onSelectTask(task)}
@@ -709,118 +720,46 @@ function KanbanActionBoard({
   );
 }
 
-function TicketBriefingPanel({ task }: { task: SupportActionTask | null }) {
-  if (!task) {
-    return (
-      <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-950">Ticket Briefing</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600">Выберите задачу слева, чтобы увидеть краткий анализ тикета.</p>
-      </aside>
-    );
+function openTaskTicket(event: MouseEvent<HTMLAnchorElement>, task: SupportActionTask, onOpenTicket?: (id: string) => void) {
+  if (onOpenTicket && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && task.href === `/app/tickets/${task.ticketId}`) {
+    event.preventDefault(); onOpenTicket(task.ticketId);
   }
+}
 
+function presentationLabel(value?: string | null) {
+  const labels: Record<string, string> = { waiting_on_internal_team: "Ожидает внутреннюю группу", waiting_on_vendor: "Ожидает внешнюю сторону", waiting_on_approval: "Ожидает согласование", accepted: "Принято", scheduled: "Запланировано", servicedesk_l1: "Служба поддержки", queued: "В очереди", new: "Новое", assigned: "Назначено", in_progress: "В работе", waiting_on_user: "Ожидает пользователя", waiting_on_support: "Ожидает поддержки", resolved: "Решено", closed: "Закрыто", canceled: "Отменено", breached: "Срок нарушен", risk: "Есть риск", ok: "В срок", unknown: "Неизвестно", support: "Поддержка", requester: "Пользователь", operator: "Оператор", user: "Пользователь", online: "На связи", offline: "Нет связи", connected: "Подключён", disconnected: "Не подключён", requester_denied: "Пользователь отказал", failed: "Ошибка" };
+  return value ? labels[value] ?? value.replaceAll("_", " ") : "Не указано";
+}
+
+function TicketBriefingPanel({ task, onOpenTicket }: { task: SupportActionTask | null; onOpenTicket?: (id: string) => void }) {
+  if (!task) return <aside className="support-action-brief" aria-label="Сводка действия"><p>Выберите действие, чтобы увидеть причину и открыть обращение.</p></aside>;
   const item = task.primaryItem;
-  const title = displayText(task.title, "Без названия");
-  const requester = displayText(task.requesterName, "Пользователь не указан");
   const reasons = taskReasons(task);
-  const operationItem = sourceItem(task, (source) => Boolean(source.operation?.error_summary));
-  const agentItem = sourceItem(task, (source) => Boolean(source.agent?.connection_state));
-  const diagnosticsItem = sourceItem(task, (source) => Boolean(source.diagnostics?.recommended));
-  const closureItem = sourceItem(task, (source) => Boolean(source.closure?.blocked));
-  const similarItem = sourceItem(task, (source) => Boolean(source.similar_group));
-  const operation = operationItem?.operation;
-  const agent = agentItem?.agent;
-  const diagnostics = diagnosticsItem?.diagnostics;
-  const closure = closureItem?.closure;
-  const similarGroup = similarItem?.similar_group;
-
-  return (
-    <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">{taskTypeLabel(task.taskType)}</p>
-          <h2 className="mt-2 break-words text-xl font-semibold text-slate-950">{task.ticketNumber ?? task.ticketId}</h2>
-        </div>
-        <Link to={task.href} className="shrink-0 text-sm font-semibold text-brand-700 hover:text-brand-900">
-          Открыть
-        </Link>
-      </div>
-
-      <h3 className="mt-4 break-words text-base font-semibold text-slate-950">{title}</h3>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <StatusBadge>{task.status}</StatusBadge>
-        {task.priority ? <StatusBadge>{task.priority}</StatusBadge> : null}
-        <StatusBadge>{task.queue ?? "Очередь не указана"}</StatusBadge>
-        <StatusBadge>{task.assignee ? `Исполнитель: ${task.assignee}` : "Без исполнителя"}</StatusBadge>
-      </div>
-
-      <div className="mt-5 space-y-4 text-sm leading-6 text-slate-700">
-        <BriefingBlock title="Почему в центре действий">
-          <ul className="grid gap-1">
-            {(reasons.length ? reasons : [task.reason]).map((reason) => (
-              <li key={reason} className="flex gap-2">
-                <span className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${severityDotClasses[task.severity]}`} />
-                <span>{reason}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {task.reasonBadges.map((badge) => (
-              <span key={badge} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                {badge}
-              </span>
-            ))}
-          </div>
-        </BriefingBlock>
-        <BriefingBlock title="Контекст тикета">
-          <dl className="grid gap-2">
-            <BriefingRow label="Инициатор" value={requester} />
-            <BriefingRow label="service/offering" value={[task.serviceCode, task.offeringCode].filter(Boolean).join(" / ") || "не указано"} />
-            <BriefingRow label="SLA" value={item.sla?.due_at ? `${item.sla.state ?? "unknown"} · ${formatDateTime(item.sla.due_at)}` : "нет данных"} />
-            <BriefingRow label="OLA" value={item.ola?.due_at ? `${item.ola.state ?? "unknown"} · ${formatDateTime(item.ola.due_at)}` : "нет данных"} />
-            <BriefingRow label="Следующий владелец" value={item.next_action_owner ?? "не указан"} />
-            <BriefingRow label="Следующее действие" value={formatDateTime(item.next_action_due_at)} />
-          </dl>
-        </BriefingBlock>
-        {operation?.error_summary ? (
-          <BriefingBlock title="Ошибка операции">
-            <p>{operation.tool_name ?? operation.id ?? "операция"}: {operation.error_summary}</p>
-          </BriefingBlock>
-        ) : null}
-        {agent?.connection_state ? (
-          <BriefingBlock title="Agent state">
-            <p>
-              {agent.connection_state}; последнее соединение {formatDateTime(agent.last_seen_at)}.
-            </p>
-          </BriefingBlock>
-        ) : null}
-        {diagnostics?.recommended ? (
-          <BriefingBlock title="Диагностика">
-            <p>{diagnostics.reason ?? diagnostics.profile_code ?? "Рекомендована диагностика"}</p>
-          </BriefingBlock>
-        ) : null}
-        {closure?.blocked ? (
-          <BriefingBlock title="Блокер закрытия">
-            <p>{closure.primary_blocker ?? `Нужно закрыть ${closure.missing_count ?? 1} требований`}</p>
-          </BriefingBlock>
-        ) : null}
-        {similarGroup ? (
-          <BriefingBlock title="Похожие обращения">
-            <p>
-              {similarGroup.count} обращений за {similarGroup.window_hours} ч. Причина: {similarGroup.reason}.
-            </p>
-          </BriefingBlock>
-        ) : null}
-      </div>
-
-      <Link
-        to={task.href}
-        className="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800"
-      >
-        Открыть guided workspace
-      </Link>
-    </aside>
-  );
+  const operation = sourceItem(task, source => Boolean(source.operation?.error_summary))?.operation;
+  const agent = sourceItem(task, source => Boolean(source.agent?.connection_state))?.agent;
+  const diagnostics = sourceItem(task, source => Boolean(source.diagnostics?.recommended))?.diagnostics;
+  const closure = sourceItem(task, source => Boolean(source.closure?.blocked))?.closure;
+  const similar = sourceItem(task, source => Boolean(source.similar_group))?.similar_group;
+  return <aside className="support-action-brief" aria-label="Сводка действия">
+    <div className="support-action-brief__title"><div><p>{taskTypeLabel(task.taskType)}</p><h2>{task.ticketNumber ?? "Обращение"}</h2></div><StatusBadge>{task.priority ?? "Без приоритета"}</StatusBadge></div>
+    <h3>{displayText(task.title, "Без названия")}</h3>
+    <div className="support-action-brief__badges"><StatusBadge>{presentationLabel(task.status)}</StatusBadge><StatusBadge>{task.assignee ?? "Без исполнителя"}</StatusBadge></div>
+    <BriefingBlock title="Почему нужно действие"><ul>{(reasons.length ? reasons : [task.reason]).map(reason => <li key={reason}>{presentationLabel(reason)}</li>)}</ul></BriefingBlock>
+    <dl className="support-action-brief__facts"><BriefingRow label="Инициатор" value={displayText(task.requesterName, "Не указан")} /><BriefingRow label="Следующий шаг" value={getNextActionOwnerLabel(item.next_action_owner)} />
+      <BriefingRow label="SLA" value={item.sla?.due_at ? `${presentationLabel(item.sla.state)} · ${formatDateTime(item.sla.due_at)}` : "Нет данных"} />
+      {item.ola?.due_at ? <BriefingRow label="Внутренний срок" value={`${presentationLabel(item.ola.state)} · ${formatDateTime(item.ola.due_at)}`} /> : null}</dl>
+    <Link to={task.href} onClick={event => openTaskTicket(event, task, onOpenTicket)} className="simple-button simple-button--primary support-action-brief__open">Открыть обращение</Link>
+    <details><summary>Подробности действия</summary><div className="support-action-brief__details">
+      <BriefingRow label="Очередь" value={presentationLabel(task.queue)} />
+      <BriefingRow label="Услуга" value={presentationLabel(task.offeringCode ?? task.serviceCode)} />
+      {item.next_action_due_at ? <BriefingRow label="Действие до" value={formatDateTime(item.next_action_due_at)} /> : null}
+      {operation?.error_summary ? <BriefingBlock title="Ошибка операции"><p>{presentationLabel(operation.error_summary)}</p></BriefingBlock> : null}
+      {agent?.connection_state ? <BriefingBlock title="Связь с устройством"><p>{presentationLabel(agent.connection_state)} · {formatDateTime(agent.last_seen_at)}</p></BriefingBlock> : null}
+      {diagnostics?.recommended ? <BriefingBlock title="Диагностика"><p>{presentationLabel(diagnostics.reason ?? diagnostics.profile_code)}</p></BriefingBlock> : null}
+      {closure?.blocked ? <BriefingBlock title="Мешает закрытию"><p>{presentationLabel(closure.primary_blocker) || "Проверьте требования закрытия"}</p></BriefingBlock> : null}
+      {similar ? <BriefingBlock title="Похожие обращения"><p>{similar.count} за {similar.window_hours} ч. {similar.reason}</p></BriefingBlock> : null}
+    </div></details>
+  </aside>;
 }
 
 function BriefingBlock({ title, children }: { title: string; children: ReactNode }) {
@@ -862,19 +801,19 @@ function ErrorState() {
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
         <div>
           <h2 className="font-semibold">Не удалось загрузить Центр действий</h2>
-          <p className="mt-1 text-sm">Проверьте доступ к support API и повторите обновление.</p>
+          <p className="mt-1 text-sm">Проверьте подключение и повторите обновление.</p>
         </div>
       </div>
     </section>
   );
 }
 
-export function SupportCommandCenterPage() {
+export function SupportCommandCenterPage({ embedded = false, search = "", queueCode = "", onOpenTicket }: { embedded?: boolean; search?: string; queueCode?: string; onOpenTicket?: (id: string) => void } = {}) {
   const [scope, setScope] = useState<CommandCenterScope>("team");
   const [queue, setQueue] = useState("");
   const [queryDraft, setQueryDraft] = useState("");
   const [query, setQuery] = useState("");
-  const [limitPerSection, setLimitPerSection] = useState(8);
+  const [limitPerSection, setLimitPerSection] = useState(embedded ? 25 : 8);
   const [activeFilter, setActiveFilter] = useState<ActionFilterId>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("inbox");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -883,21 +822,25 @@ export function SupportCommandCenterPage() {
     queryKey: ["support-workspace-summary", "command-center"],
     queryFn: () => fetchSupportWorkspaceSummary(1000),
     staleTime: 30_000,
+    enabled: !embedded,
   });
 
+  const effectiveQuery = embedded ? search.trim() : query;
+  const effectiveQueue = embedded ? queueCode : queue;
   const commandCenterQuery = useQuery({
-    queryKey: ["operator-command-center", scope, queue, query, limitPerSection],
+    queryKey: ["operator-command-center", scope, effectiveQueue, effectiveQuery, limitPerSection],
     queryFn: () =>
       fetchOperatorCommandCenter({
         scope,
-        queue: queue || undefined,
-        query: query || undefined,
+        queue: effectiveQueue || undefined,
+        query: effectiveQuery || undefined,
         limit_per_section: limitPerSection,
         window_hours: 24,
         sla_risk_minutes: 120,
         ola_risk_minutes: 60,
       }),
     refetchOnWindowFocus: false,
+    retry: false,
   });
 
   const data = commandCenterQuery.data;
@@ -931,8 +874,25 @@ export function SupportCommandCenterPage() {
 
   const refreshAll = () => {
     void commandCenterQuery.refetch();
-    void summaryQuery.refetch();
+    if (!embedded) void summaryQuery.refetch();
   };
+
+  if (embedded) return <section className="simple-actions" aria-label="Действия очереди">
+    <div className="simple-actions__controls">
+      <label>Показывать<select aria-label="Охват действий" value={scope} onChange={event => setScope(event.target.value as CommandCenterScope)}>{scopeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      <div className="simple-tabs" aria-label="Режим действий"><button type="button" aria-pressed={viewMode === "inbox"} onClick={() => setViewMode("inbox")}>Список</button><button type="button" aria-pressed={viewMode === "kanban"} onClick={() => setViewMode("kanban")}>Доска</button></div>
+      <button className="simple-button" type="button" disabled={commandCenterQuery.isFetching} onClick={refreshAll}><RefreshCcw size={14} aria-hidden />Обновить действия</button>
+      <details><summary>Параметры списка</summary><label>На категорию<select aria-label="Действий на категорию" value={limitPerSection} onChange={event => setLimitPerSection(Number(event.target.value))}>{limitOptions.map(limit => <option key={limit} value={limit}>{limit}</option>)}</select></label></details>
+    </div>
+    {data?.metadata?.scope_fallback_reason ? <p role="status" className="simple-notice">Охват ограничен вашей ролью: показаны доступные действия команды.</p> : null}
+    {commandCenterQuery.isError ? <p role="alert" className="simple-notice simple-risk">{data ? "Не удалось обновить действия. Показаны ранее загруженные данные." : "Не удалось загрузить действия. Попробуйте обновить список."}</p> : null}
+    {data ? <><TopTaskFilters data={data} totalTasks={tasks.length} activeFilter={activeFilter} onFilterChange={setActiveFilter} />
+      <p className="simple-actions__source">Сводка действий: {tasks.length}. В каждой категории — до {limitPerSection}; счётчики категорий могут включать одни и те же обращения. Обновлено: {formatDateTime(data.generated_at)}.</p></> : null}
+    {!data && commandCenterQuery.isPending ? <p role="status" className="simple-empty">Загружаем действия…</p> : null}
+    {data ? <div className="simple-actions__workspace"><div className="simple-actions__list"><NextActionSummary tasks={filteredTasks} />
+      {viewMode === "inbox" ? <ActionInbox tasks={filteredTasks} selectedTaskId={selectedTaskId} onSelectTask={task => setSelectedTaskId(task.id)} onOpenTicket={onOpenTicket} /> : <KanbanActionBoard columns={kanbanColumns} selectedTaskId={selectedTaskId} onSelectTask={task => setSelectedTaskId(task.id)} onOpenTicket={onOpenTicket} />}
+    </div><TicketBriefingPanel task={selectedTask} onOpenTicket={onOpenTicket} /></div> : null}
+  </section>;
 
   return (
     <main className="min-h-screen bg-app px-4 py-5 text-slate-900 md:px-6 lg:px-8">
@@ -943,7 +903,7 @@ export function SupportCommandCenterPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">Поддержка</p>
               <h1 className="mt-2 break-words text-3xl font-semibold tracking-tight text-slate-950">Центр действий</h1>
               <p className="mt-2 max-w-4xl break-words text-sm leading-6 text-slate-600">
-                Рабочее место оператора: что сделать дальше, почему это важно, кому принадлежит задача и куда открыть guided workspace.
+                Рабочее место оператора: что сделать дальше, почему это важно, кому принадлежит задача и как открыть обращение.
               </p>
             </div>
             <HeaderControls
@@ -1000,7 +960,7 @@ export function SupportCommandCenterPage() {
                   onClick={() => setViewMode("inbox")}
                 >
                   <ListChecks className="h-4 w-4" />
-                  Inbox
+                  Список
                 </button>
                 <button
                   type="button"
@@ -1008,7 +968,7 @@ export function SupportCommandCenterPage() {
                   onClick={() => setViewMode("kanban")}
                 >
                   <Columns3 className="h-4 w-4" />
-                  Kanban
+                  Доска
                 </button>
               </div>
             </div>
@@ -1021,12 +981,12 @@ export function SupportCommandCenterPage() {
               <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-sm text-slate-500">Загружаем Центр действий...</div>
             ) : null}
           </div>
-          <TicketBriefingPanel task={selectedTask} />
+          <TicketBriefingPanel task={selectedTask} onOpenTicket={onOpenTicket} />
         </section>
 
         <footer className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600">
           <Inbox className="h-4 w-4" />
-          <span>Центр действий не заменяет guided workspace: сложные действия открываются в карточке тикета.</span>
+          <span>Сложные действия и подтверждения выполняются в карточке обращения.</span>
           <span className="inline-flex items-center gap-1">
             <MessageSquare className="h-4 w-4" />
             Сообщения

@@ -100,10 +100,10 @@ const ACTION_LABEL_BY_TYPE: Record<SupportActionTaskType, string> = {
   ola_rescue: "Спасти OLA",
   operator_next_action: "Выполнить действие",
   approval_followup: "Проверить согласование",
-  consent_waiting: "Проверить consent",
+  consent_waiting: "Проверить согласие пользователя",
   operation_failed: "Повторить операцию",
   diagnostics_needed: "Запустить диагностику",
-  agent_offline: "Проверить agent offline",
+  agent_offline: "Проверить связь с устройством",
   closure_blocker: "Снять блокер закрытия",
   similar_spike: "Проверить всплеск",
 };
@@ -198,7 +198,7 @@ function buildTaskFromEntries(groupKey: string, entries: TaskSourceEntry[]): Sup
   const taskType = TASK_TYPE_BY_SECTION[primaryEntry.section.key];
   const sourceItems = entries.map((entry) => entry.item);
   const sectionKeys = uniqueValues(sortedEntries.map((entry) => entry.section.key));
-  const reasonBadges = uniqueValues(sortedEntries.map((entry) => entry.section.title));
+  const reasonBadges = uniqueValues(sortedEntries.map((entry) => ({ pending_consent: "Нужно согласие пользователя", agent_offline_active: "Устройство не на связи", pending_approval: "Нужно согласование", sla_risk: "Риск SLA", ola_risk: "Риск внутренних сроков" } as Partial<Record<CommandCenterSection["key"], string>>)[entry.section.key] ?? entry.section.title));
   const severity = highestSeverity(entries.map((entry) => entry.section.severity));
   const similarKey = primaryItem.similar_group?.group_key;
 
@@ -301,13 +301,13 @@ export function filterSupportActionTasks(tasks: SupportActionTask[], filter: Sup
 }
 
 const KANBAN_COLUMNS: Array<{ key: KanbanActionColumnKey; title: string; types: SupportActionTaskType[] }> = [
-  { key: "intake", title: "Intake", types: ["triage_unassigned"] },
-  { key: "needs_operator", title: "Needs operator", types: ["reply_user", "operator_next_action"] },
-  { key: "waiting", title: "Waiting / Approval", types: ["approval_followup", "consent_waiting"] },
-  { key: "operations", title: "Operations / Diagnostics", types: ["operation_failed", "diagnostics_needed", "agent_offline"] },
-  { key: "closure", title: "Closure", types: ["closure_blocker"] },
-  { key: "similar", title: "Similar spike", types: ["similar_spike"] },
-  { key: "sla", title: "SLA risk", types: ["sla_rescue", "ola_rescue"] },
+  { key: "intake", title: "Новые обращения", types: ["triage_unassigned"] },
+  { key: "needs_operator", title: "Нужно действие", types: ["reply_user", "operator_next_action"] },
+  { key: "waiting", title: "Ожидание и согласования", types: ["approval_followup", "consent_waiting"] },
+  { key: "operations", title: "Операции и диагностика", types: ["operation_failed", "diagnostics_needed", "agent_offline"] },
+  { key: "closure", title: "Завершение", types: ["closure_blocker"] },
+  { key: "similar", title: "Похожие обращения", types: ["similar_spike"] },
+  { key: "sla", title: "Риск SLA", types: ["sla_rescue", "ola_rescue"] },
 ];
 
 export function groupSupportActionTasksForKanban(tasks: SupportActionTask[]): KanbanActionColumn[] {

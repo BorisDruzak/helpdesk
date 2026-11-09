@@ -87,8 +87,9 @@ test("operator sees unavailable reads instead of an empty healthy workspace", as
   }
 
   await loginSupport(page);
-  await expect(page.getByRole("heading", { name: "Не удалось загрузить Центр действий" })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("Не удалось загрузить сводку рабочего пространства");
+  await page.goto("/app/support/advanced");
+  await expect(page).toHaveURL(/\/app\/tickets\?view=actions$/);
+  await expect(page.getByRole("alert")).toContainText("Не удалось загрузить действия");
   await expect(page.getByText("Нет срочных действий")).toBeHidden();
   await expect(page.getByText("Нет задач после фильтра")).toBeHidden();
   await expect(page.getByText("0 в summary")).toHaveCount(0);
@@ -96,7 +97,7 @@ test("operator sees unavailable reads instead of an empty healthy workspace", as
   expect(pageErrors).toEqual([]);
   expect(unexpectedResponses).toEqual([]);
   expect(expectedFailures).toContain("503 /api/web/support/command-center");
-  expect(expectedFailures).toContain("503 /api/web/support/workspace/summary");
+  // The integrated view no longer issues a separate workspace-summary read.
   expect(consoleErrors.filter((message) => !message.includes("503"))).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("support-read-unavailable.png"), fullPage: true });
   await testInfo.attach("read-degradation-evidence", {

@@ -87,7 +87,7 @@ describe("buildSupportActionTasks", () => {
     expect(tasks[0].taskType).toBe("sla_rescue");
     expect(tasks[0].actionLabel).toBe("Спасти SLA");
     expect(tasks[0].severity).toBe("critical");
-    expect(tasks[0].reasonBadges).toEqual(["SLA риск", "Ошибки операций", "Сообщения пользователей"]);
+    expect(tasks[0].reasonBadges).toEqual(["Риск SLA", "Ошибки операций", "Сообщения пользователей"]);
     expect(tasks[0].sectionKeys).toEqual(["sla_risk", "failed_operation", "unread_user_messages"]);
   });
 
@@ -180,8 +180,8 @@ describe("groupSupportActionTasksForKanban", () => {
 
     const groups = groupSupportActionTasksForKanban(tasks);
 
-    expect(groups.map((group) => group.title)).toContain("Intake");
-    expect(groups.map((group) => group.title)).toContain("Closure");
+    expect(groups.map((group) => group.title)).toContain("Новые обращения");
+    expect(groups.map((group) => group.title)).toContain("Завершение");
     expect(groups.find((group) => group.key === "intake")?.tasks.map((task) => task.ticketId)).toEqual(["ticket-1"]);
   });
 });

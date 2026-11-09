@@ -59,7 +59,7 @@ describe("AppSidebar", () => {
     );
 
     expect(screen.getByRole("link", { name: /Очередь обращений/ })).toHaveAttribute("href", "/app/tickets");
-    expect(screen.getByRole("link", { name: /Расширенный центр/ })).toHaveAttribute("href", "/app/support/advanced");
+    expect(screen.queryByRole("link", { name: /Расширенный центр/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Тикеты/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Устройства")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();

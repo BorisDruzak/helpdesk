@@ -12,6 +12,21 @@ const rows = [
 const queue = { tickets: rows, summary: { visible_count: 3, queue_counts: [] } } as unknown as SupportQueuePayload;
 
 describe("simple support queue", () => {
+  it("shows actions within the primary queue with one shared search", () => {
+    const mode = vi.fn(); const search = vi.fn();
+    render(<SimpleSupportQueue queue={queue} canWork filter="open" search="VPN" view="actions" onViewChange={mode}
+      actionCenter={<div>Приоритетные действия</div>} onFilterChange={vi.fn()} onSearchChange={search}
+      onOpenTicket={vi.fn()} onTakeTicket={vi.fn()} onAdvanced={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: "Действия" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Приоритетные действия")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("searchbox")).toHaveLength(1);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Принтер" } });
+    expect(search).toHaveBeenCalledWith("Принтер");
+    fireEvent.click(screen.getByRole("tab", { name: "Обращения" }));
+    expect(mode).toHaveBeenCalledWith("tickets");
+  });
+
   it("keeps SLA risk and list collapse available beside the ticket", () => {
     const filter = vi.fn(); const toggle = vi.fn();
     const props = { queue, compact: true, actorId: "operator", canWork: true, filter: "open" as const, search: "", onFilterChange: filter,

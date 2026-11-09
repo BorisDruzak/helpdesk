@@ -3083,3 +3083,8 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 
 - User requests catalogue entrances as map roots, metadata/settings in publication, no redundant incoming card for standalone navigation blocks, and simplified toolbar. Preserve schema1–4, existing services/drafts and staging-only release; no migration/runtime change.
 - UI implementation and native1366/1920 regression are being verified over installed90fe32ec; task source baseline and73existing maps/drafts,111versions captured. Exact acceptance and final SHA will be recorded in docs/STUDIO_ENTRY_FIRST_STAGING_ACCEPTANCE_2026_11_09.md.
+
+### Support queue actions — in progress (2026-11-09)
+
+- Integrate compact localized action list/detail into the primary queue with shared search, wrapping filters and compatible advanced-route redirect. Preserve approvals, operations, assignees, services and Studio edits.
+- Verification and staging receipt will be recorded in docs/SUPPORT_QUEUE_ACTIONS_STAGING_ACCEPTANCE_2026_11_09.md.

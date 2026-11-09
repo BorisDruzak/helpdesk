@@ -35,7 +35,6 @@ import {
   RequesterTicketsPage,
   RequesterTicketChatPage,
   SettingsPage,
-  SupportCommandCenterPage,
   TicketDetailPage,
   TicketListPage,
   TicketPassportPrintPage,
@@ -368,7 +367,7 @@ export const appRoutes: RouteObject[] = [
             path: "support/advanced",
             element: (
               <WorkspaceAccessGate workspace="support">
-                <SupportCommandCenterPage />
+                <Navigate to="/app/tickets?view=actions" replace />
               </WorkspaceAccessGate>
             )
           },

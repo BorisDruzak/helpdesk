@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useIsFetching } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Archive,
@@ -134,6 +134,7 @@ import {
   type WorkspaceRightTab,
 } from "./workspace-types";
 import { getTicketsWorkspaceUrlState } from "./url-state";
+import { SupportCommandCenterPage } from "../support/command-center-page";
 import { SimpleSupportQueue, type SimpleQueueFilter } from "./components/simple-support-queue";
 import { TicketRequestContext } from "./components/ticket-request-context";
 import { TicketRequesterContext } from "./components/ticket-requester-context";
@@ -1257,8 +1258,10 @@ function SupportWorkspaceTopbar({ theme, onToggleTheme, onRefresh, refreshing }:
 export function TicketListPage() {
   const navigate = useNavigate();
   const params = useParams<{ ticketId?: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const simpleQueueView = searchParams.get("view") === "actions" ? "actions" : "tickets";
   const queryClient = useQueryClient();
+  const actionsRefreshing = useIsFetching({ queryKey: ["operator-command-center"] }) > 0;
   const { session } = useSession();
   const panelAccount=session?.user_login??"";
   const [ticketListCollapsed,setTicketListCollapsed]=useState(()=>loadPanelPreferences(panelAccount,"support").ticketListCollapsed);
@@ -2205,7 +2208,8 @@ export function TicketListPage() {
   function refreshAll() {
     void Promise.all([
       queueQuery.refetch(),
-      workspaceQuery.refetch(),
+      ...(selectedTicketId ? [workspaceQuery.refetch()] : []),
+      queryClient.invalidateQueries({ queryKey: ["operator-command-center"], refetchType: "active" }),
       ...(sidebarTab === "sla" && slaWorkspaceTab === "history" ? [slaHistoryQuery.refetch()] : []),
     ]);
   }
@@ -3674,14 +3678,16 @@ export function TicketListPage() {
         theme={workspaceTheme}
         onToggleTheme={toggleWorkspaceTheme}
         onRefresh={refreshAll}
-        refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
+        refreshing={queueQuery.isFetching || workspaceQuery.isFetching || actionsRefreshing}
       />
 
       {!simpleMode ? <button className="simple-advanced-return" type="button" onClick={() => { setSimpleMode(true); setWorkspaceMode(selectedTicketId ? "ticket" : "queue"); }}>← Вернуться к обычной работе</button> : null}
       {simpleMode ? <div className="support-simple" data-view={workspaceMode === "queue" ? "queue" : "ticket"} data-testid="simple-support-workspace">
         {workspaceMode === "queue" || !selectedTicketId ? <>
           {actionError ? <p className="simple-notice simple-risk" role="alert">{actionError instanceof Error ? actionError.message : "Действие не выполнено"}</p> : null}
-          <SimpleSupportQueue {...simpleQueueProps} onAdvanced={() => { setSimpleMode(false); setWorkspaceMode("queue"); }} />
+          <SimpleSupportQueue {...simpleQueueProps} view={simpleQueueView} onViewChange={view => { shouldKeepQueueRouteRef.current = true; setSearchParams(current => { const next = new URLSearchParams(current); if (view === "actions") next.set("view", "actions"); else next.delete("view"); return next; }); }}
+            actionCenter={simpleQueueView === "actions" ? <SupportCommandCenterPage embedded onOpenTicket={openTicket} search={deferredSearch} queueCode={unifiedQueue ? "" : activeQueueId ?? ""} /> : undefined}
+            onAdvanced={() => { setSimpleMode(false); setWorkspaceMode("queue"); }} />
         </> : <div className="simple-workspace" data-list-collapsed={effectiveListCollapsed} style={{ "--simple-left": `${workspaceColumns.left}px`, "--simple-right": `${workspaceColumns.right}px` } as CSSProperties}>
           {(["left", "right"] as const).map((pane) => <button hidden={pane === "left" && effectiveListCollapsed} key={pane} type="button" role="separator" aria-orientation="vertical" aria-label={pane === "left" ? "Ширина списка обращений" : "Ширина панели сведений"}
             aria-valuenow={workspaceColumns[pane]} aria-valuemin={pane === "left" ? 260 : 300} aria-valuemax={pane === "left" ? 420 : 460}

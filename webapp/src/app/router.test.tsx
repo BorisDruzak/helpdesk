@@ -432,7 +432,7 @@ describe("appRoutes", () => {
     renderApp(["/app"], fetchMock as typeof fetch);
 
     expect(await screen.findByTestId("compact-queue-route")).toBeInTheDocument();
-    expect((await screen.findAllByRole("link", { name: /Расширенный центр/ })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: /Расширенный центр/ })).not.toBeInTheDocument();
     expect((await screen.findAllByRole("link", { name: /Очередь обращений/ })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: "Тикеты" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Устройства/ })).not.toBeInTheDocument();
@@ -468,8 +468,9 @@ describe("appRoutes", () => {
 
     const { router } = renderApp(["/app/support/advanced"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/app/support/advanced");
+    expect(await screen.findByTestId("compact-queue-route")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/app/tickets");
+    expect(router.state.location.search).toBe("?view=actions");
   });
 
   it("returns support user from /app/admin to tickets after login", async () => {

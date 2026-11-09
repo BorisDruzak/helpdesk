@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -82,7 +82,7 @@ function payload(overrides: Partial<OperatorCommandCenterPayload> = {}): Operato
       },
       {
         key: "sla_risk",
-        title: "SLA риск",
+        title: "Риск SLA",
         description: "Срок ответа близок к нарушению.",
         severity: "critical",
         count: 1,
@@ -209,6 +209,42 @@ afterEach(() => {
 });
 
 describe("SupportCommandCenterPage", () => {
+  it.each([
+    ["waiting_on_vendor", "vendor", "Ожидает внешнюю сторону", "Внешняя сторона"],
+    ["waiting_on_internal_team", "internal_team", "Ожидает внутреннюю группу", "Внутренняя группа"],
+    ["waiting_on_approval", "approver", "Ожидает согласование", "Согласующий"],
+    ["closed", "system", "Закрыто", "Система"],
+  ])("localizes actual status %s and its owner", async (status, owner, statusLabel, ownerLabel) => {
+    const value = payload();
+    for (const section of value.sections) for (const item of section.items) { item.status = status; item.next_action_owner = owner; }
+    vi.mocked(fetchOperatorCommandCenter).mockResolvedValue(value);
+    vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue(summary());
+    renderPage();
+    expect(await screen.findByText(ownerLabel)).toBeInTheDocument();
+    expect(screen.getByText(statusLabel)).toBeInTheDocument();
+    expect(screen.queryByText(status)).not.toBeInTheDocument();
+  });
+
+  it("embeds localized actions with the queue search and no duplicate page heading", async () => {
+    vi.mocked(fetchOperatorCommandCenter).mockResolvedValue(payload());
+    vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue(summary());
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter>
+      <SupportCommandCenterPage embedded search="VPN" queueCode="servicedesk_l1" />
+    </MemoryRouter></QueryClientProvider>);
+    const region = await screen.findByRole("region", { name: "Действия очереди" });
+    expect(region).toBeInTheDocument();
+    await waitFor(() => expect(fetchOperatorCommandCenter).toHaveBeenCalledWith(expect.objectContaining({ query: "VPN", queue: "servicedesk_l1" })));
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(screen.queryByText("SLA RESCUE")).not.toBeInTheDocument();
+    expect(screen.queryByText("queued")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Фильтры действий" })).getByRole("button", { name: /Риск SLA/ })).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(within(screen.getByRole("region", { name: "Фильтры действий" })).getByRole("button", { name: /Риск SLA/ }));
+    expect(within(screen.getByRole("region", { name: "Фильтры действий" })).getByRole("button", { name: /Риск SLA/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("link", { name: "Открыть обращение" })).toHaveAttribute("href", "/app/tickets/ticket-1");
+  });
+
   it("shows unavailable state without claiming there are no tasks", async () => {
     vi.mocked(fetchOperatorCommandCenter).mockRejectedValue(new Error("Unavailable"));
     vi.mocked(fetchSupportWorkspaceSummary).mockRejectedValue(new Error("Unavailable"));
@@ -248,10 +284,10 @@ describe("SupportCommandCenterPage", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Action Inbox" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Список действий" })).toBeInTheDocument();
     expect(await screen.findByText("Спасти SLA")).toBeInTheDocument();
     expect(screen.getAllByText("Настроить VPN").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("SLA риск").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Риск SLA").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Сообщения пользователей").length).toBeGreaterThan(0);
     expect(screen.getByText("Сначала:")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ответить" })).toHaveAttribute("href", "/app/tickets/ticket-1");
@@ -279,9 +315,9 @@ describe("SupportCommandCenterPage", () => {
     fireEvent.click(await screen.findByText("Настроить VPN"));
 
     expect(screen.getByRole("heading", { name: "T-000001" })).toBeInTheDocument();
-    expect(screen.getByText("Почему в центре действий")).toBeInTheDocument();
+    expect(screen.getByText("Почему нужно действие")).toBeInTheDocument();
     expect(screen.getAllByText("Иван Петров").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "Открыть guided workspace" })).toHaveAttribute("href", "/app/tickets/ticket-1");
+    expect(screen.getByRole("link", { name: "Открыть обращение" })).toHaveAttribute("href", "/app/tickets/ticket-1");
   });
 
   it("shows empty state when there are no tasks", async () => {
@@ -313,7 +349,7 @@ describe("SupportCommandCenterPage", () => {
     renderPage();
 
     expect(await screen.findByText("Нет срочных действий")).toBeInTheDocument();
-    expect(screen.getByText("Выберите задачу слева, чтобы увидеть краткий анализ тикета.")).toBeInTheDocument();
+    expect(screen.getByText("Выберите действие, чтобы увидеть причину и открыть обращение.")).toBeInTheDocument();
   });
 
   it("Kanban mode renders grouped columns", async () => {
@@ -321,12 +357,12 @@ describe("SupportCommandCenterPage", () => {
     vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue(summary());
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Kanban" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Доска" }));
 
-    expect(screen.getByRole("heading", { name: "Kanban" })).toBeInTheDocument();
-    expect(screen.getByText("SLA risk")).toBeInTheDocument();
-    expect(screen.getByText("Operations / Diagnostics")).toBeInTheDocument();
-    expect(screen.getByText("Closure")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Доска" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Риск SLA" })).toBeInTheDocument();
+    expect(screen.getByText("Операции и диагностика")).toBeInTheDocument();
+    expect(screen.getByText("Завершение")).toBeInTheDocument();
   });
 
   it("passes search query and section limit to the typed API", async () => {
