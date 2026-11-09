@@ -121,7 +121,7 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
         simulation["map_processing"] = deepcopy(scenario_snapshot["map_processing"])
     if scenario_snapshot is not None:
         selected_sla = scenario_snapshot.get("sla_selection")
-        if scenario_snapshot.get("map_processing") is not None:
+        if (scenario_snapshot.get("map_processing") or {}).get("sla_profile") is not None:
             profile = scenario_snapshot["map_processing"]["sla_profile"]
             selected_sla = {"kind": "profile", "key": profile["key"], "source": profile["source"]}
         sla = simulation.setdefault("sla", {})
@@ -129,7 +129,7 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
         if selected_sla:
             sla["selection"] = deepcopy(selected_sla)
         selected_route = scenario_snapshot.get("routing_selection")
-        if scenario_snapshot.get("map_processing") is not None:
+        if (scenario_snapshot.get("map_processing") or {}).get("route") is not None:
             route = scenario_snapshot["map_processing"]["route"]
             selected_route = {"kind": "route", "key": route["key"], "source": route["source"]}
         if selected_route:
@@ -166,6 +166,8 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
     # The pre-create approver guarantee belongs to map-owned v3 processing.
     # Historical scenarios retain their canonical approval-wait behavior.
     map_processing = scenario_snapshot.get("map_processing") if scenario_snapshot is not None else None
+    if isinstance(map_processing, dict) and any(_minutes_label(sla.get(key)) is None for key in ("first_response_min", "resolution_min")):
+        blockers.append("Срок SLA недоступен. Обратитесь в поддержку.")
     if isinstance(map_processing, dict) and approval.get("required") and not approval.get("approvers"):
         blockers.append("Не удалось определить согласующего. Обратитесь в поддержку.")
 

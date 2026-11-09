@@ -53,7 +53,7 @@ export function ScenarioPolicyAttachmentEditor({ block, definition, disabled, on
   {!block.attached_to && <p className="text-sm">Прикрепите настройку к шагу или результату перед публикацией.</p>}
   {targetError && <p role="alert">{targetError}</p>}
   {block.kind === "sla_attachment" && <ProcessingFactsEditor value={block.processing_facts} disabled={disabled} onChange={processing_facts => update({ ...block, processing_facts })} />}
-  <label className="block">{definition.processing ? isSla ? "Профиль SLA" : "Маршрут обработки" : isSla ? "Правило SLA" : "Правило маршрутизации"}<Select value={selected} onChange={event => select(event.target.value)}><option value="">{isSla ? "Не менять сроки" : "Не менять маршрут"}</option>
+  <label className="block">{definition.processing ? isSla ? "Профиль SLA" : "Маршрут обработки" : isSla ? "Правило SLA" : "Правило маршрутизации"}<Select value={selected} onChange={event => select(event.target.value)}><option value="">{isSla ? definition.schema_version === 4 && definition.processing ? "Не менять ранее выбранные сроки" : "Не менять сроки" : "Не менять маршрут"}</option>
    {selected && !available && <option value={selected}>{definition.processing ? "Сохранённая настройка недоступна" : "Сохранённое правило недоступно"}</option>}
    {definition.processing ? Object.entries(mapChoices).map(([key, item]) => <option key={key} value={key}>{item.title}</option>) : choices.map(item => <option key={item.code} value={item.code}>{item.title}</option>)}
   </Select></label>
@@ -62,10 +62,7 @@ export function ScenarioPolicyAttachmentEditor({ block, definition, disabled, on
   {!definition.processing && policies && !choices.length && <p>Нет опубликованных правил для выбора.</p>}
   {profile && <p className="text-sm">Первый ответ: {profile.first_response_minutes} мин. · решение: {profile.resolution_minutes} мин. · {profile.time_basis === "business" ? "Рабочее время" : "Календарное время"}.</p>}
   {route && <p className="text-sm">Очередь: {route.queue_code}.</p>}
-  {definition.processing && selected && available && <div className="space-y-2">
-   <p className="text-sm">{(isSla ? definition.processing.defaults.sla_profile : definition.processing.defaults.route) === selected ? "Эта настройка также применяется по умолчанию для карты." : "На остальных путях действуют текущие настройки карты по умолчанию."}</p>
-   <Button variant="outline" disabled={(isSla ? definition.processing.defaults.sla_profile : definition.processing.defaults.route) === selected} onClick={() => onChange({ ...definition, processing: { ...definition.processing!, defaults: { ...definition.processing!.defaults, [isSla ? "sla_profile" : "route"]: selected } } })}>{isSla ? "Использовать профиль SLA по умолчанию" : "Использовать направление по умолчанию"}</Button>
-  </div>}
+  {definition.schema_version === 4 && definition.processing && isSla && <p className="text-sm">Пустой выбор сохраняет ранее назначенный профиль на пройденном пути или резервный профиль карты. Если профиль нигде не назначен, сервер рассчитывает приоритет и SLA по масштабу, срочности, важности и действующим правилам услуги. Явный профиль — необязательное уточнение сроков; он заменяет предыдущий выбор на этом пути. Общие резервные настройки находятся на странице публикации.</p>}
   {definition.processing && <ScenarioMapProcessing key={`${block.id}:${selected}`} definition={definition} disabled={disabled} onChange={onChange} section={isSla ? "sla" : "route"} itemKey={selected} onCreated={(next, key) => onChange({ ...next, blocks: next.blocks?.map(item => item.id !== block.id ? item : item.kind === "sla_attachment" ? { ...item, sla_profile: key } : item.kind === "routing_attachment" ? { ...item, route: key } : item) })} />}
   {!definition.processing && <p className="text-sm">{isSla ? "Сроки" : "Очередь"} определит сервер по ответам и опубликованному правилу. Точные значения доступны в проверке пути.</p>}
  </fieldset>;

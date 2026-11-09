@@ -143,7 +143,8 @@ def map_processing(definition, state):
                 sources[key] = {"kind": "terminal", "block_id": terminal.id}
     result = {"assignment_mode": config.assignment_mode, "trace": trace, "condition_trace": condition_trace}
     for kind, items in (("route", config.routes), ("sla_profile", config.sla_profiles)):
-        result[kind] = {"key": selected[kind], **items[selected[kind]].model_dump(mode="json"), "source": sources[kind]}
+        result[kind] = ({"key": selected[kind], **items[selected[kind]].model_dump(mode="json"), "source": sources[kind]}
+                        if selected[kind] else None)
     if "approval_required" in selected:
         result["approval_required"] = selected["approval_required"]
         result["approval_source"] = sources["approval_required"]
@@ -171,6 +172,8 @@ def build_scenario_submission(definition, state, *, session_id, version_id, sour
             facts[fact] = deepcopy(answers[item.key])
             roles[fact] = list(item.process_mapping.roles)
     projected = state.__class__(state.current_block_id, state.revision, answers, list(state.history), deepcopy(state.results), state.state)
+    selected_map = (map_processing(definition, projected)
+                    if definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None else None)
     summary = project_step(definition, projected)["block"]["answers"]
     description = "\n".join(f"{item['label']}: {item['display_value']}" for item in summary)
     payload = {
@@ -185,7 +188,8 @@ def build_scenario_submission(definition, state, *, session_id, version_id, sour
         "answers": answers, "facts": facts, "field_roles": roles, "summary": summary,
         "history": list(state.history),
         "policy_refs": {kind: code for kind, code in definition.process_binding.policy_refs.items()
-                        if not (definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None) or kind not in {"routing", "sla"}},
+                        if kind not in {"routing", "sla"} or not selected_map
+                        or definition.schema_version == 4 and selected_map["route" if kind == "routing" else "sla_profile"] is None},
         "diagnostics": {key: value for key, value in state.results.items() if key in runtime.blocks and runtime.blocks[key].kind == "diagnostic"},
         "reported_context": deepcopy(state.results.get("_entry_point")),
     }
@@ -211,9 +215,9 @@ def build_scenario_submission(definition, state, *, session_id, version_id, sour
     if definition.schema_version >= 2:
         snapshot["processing_facts"] = processing_facts(definition, projected)
     if definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None:
-        snapshot["map_processing"] = map_processing(definition, projected)
+        snapshot["map_processing"] = selected_map
         profile = snapshot["map_processing"]["sla_profile"]
-        if source_snapshot is not None and profile["time_basis"] == "business":
+        if source_snapshot is not None and profile is not None and profile["time_basis"] == "business":
             from tickets.request_scenario_processing import validated_scenario_calendar
             frozen = next((item for item in source_snapshot.get("business_calendars", []) if item["id"] == profile["calendar_id"]), None)
             snapshot["map_processing"]["calendar_snapshot"] = validated_scenario_calendar(frozen)

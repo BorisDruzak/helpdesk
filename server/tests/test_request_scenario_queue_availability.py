@@ -40,7 +40,8 @@ async def test_legacy_preview_keeps_existing_route_behavior(monkeypatch):
     ({"version_id": "v3", "map_processing": {}}, ["canonical-approver"], True),
 ])
 async def test_only_trusted_v3_processing_blocks_unresolved_approver(monkeypatch, snapshot, approvers, expected):
-    simulation = {"routing": {"queue_id": 9}, "approval": {"required": True, "approvers": approvers}}
+    simulation = {"routing": {"queue_id": 9}, "approval": {"required": True, "approvers": approvers},
+                  "sla": {"first_response_min": 10, "resolution_min": 30}}
     monkeypatch.setattr(module, "simulate_service_catalog_processing", AsyncMock(return_value=(SimpleNamespace(service={}, offering={}), simulation)))
     session = SimpleNamespace(scalar=AsyncMock(return_value=SimpleNamespace(is_active=True)))
     # Even a forged public payload marker cannot opt a legacy request into v3

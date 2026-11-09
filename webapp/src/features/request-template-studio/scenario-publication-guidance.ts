@@ -1,0 +1,17 @@
+import type {ScenarioPublicationPreview} from "./scenario-api";
+type Issue=ScenarioPublicationPreview['readiness']['issues'][number];
+
+/** Explain the failed check without turning a policy-derived SLA into a manual one. */
+export function publicationIssueGuidance(issue:Issue):{title:string;help?:string}{
+ const path=issue.path??'';
+ if(issue.code==='processing_default_missing')return path.includes('sla_profile')
+  ?{title:'Не выбран резервный SLA',help:'Проверьте резервный SLA в настройках публикации. Назначение в блоке или на пройденном пути учитывается отдельно; в новой модели срок также может рассчитываться по правилам услуги.'}
+  :{title:'Не выбрано резервное направление',help:'Откройте настройки обработки в публикации: выберите резервное направление или назначьте маршрут на нужном пути. Само наличие направления в списке не назначает его заявке.'};
+ if(issue.code==='processing_reference_unknown')return{title:issue.message,help:'Сохранённая ссылка больше не ведёт к существующей настройке. Выберите действующую настройку в указанном блоке.'};
+ if(issue.code==='sla_unavailable')return{title:'Не удалось рассчитать SLA для пути',help:'Параметры SLA-блока передаются правилам услуги. Проверьте действующее правило SLA и его срок решения либо явно назначенный профиль на этом пути; дополнительный ручной профиль не требуется, если правило уже рассчитывает сроки.'};
+ if(issue.code==='routing_unavailable')return{title:'Для пути не определена действующая очередь',help:'Проверьте правило маршрутизации услуги, подключённый блок «Маршрут» или резервное направление в публикации.'};
+ if(issue.code==='visibility_missing')return{title:'Не настроена видимость созданного обращения',help:'Это правило определяет, какие поля и статусы обращения видит сотрудник. Выберите или создайте его в настройках обработки здесь, на странице публикации; это отдельная настройка от видимости услуги в каталоге.'};
+ if(issue.code==='closure_missing')return{title:'Не настроено закрытие обращения',help:'В настройках обработки публикации выберите правило закрытия: какие данные заполняет поддержка и нужно ли подтверждение сотрудника.'};
+ if(issue.code==='submission_unreachable')return{title:'Нет проверяемого пути к созданию обращения',help:'Проверьте связь от входа из каталога до завершающего блока «Создать обращение». Причина относится к маршруту, а не к наличию SLA-блока.'};
+ return{title:issue.message};
+}

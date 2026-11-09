@@ -35,7 +35,9 @@ def test_strict_runtime_and_simulation_still_reject_incomplete_draft():
 
 def test_preview_walks_both_buttons_and_stops_at_unfinished_leaf():
     runtime,scope=engine();state=runtime.initial_state()
-    assert {'processing_default_missing','missing_fallback'} <= {issue['code'] for issue in scope['issues']}
+    codes = {issue['code'] for issue in scope['issues']}
+    assert 'missing_fallback' in codes
+    assert 'processing_default_missing' not in codes  # V4 omissions inherit service processing.
     state=runtime.advance(state,answer(state,{'name':'Тест'},'a'))
     assert state.current_block_id=='a' and state.history==['q'] and state.state=='active'
     assert runtime.stop_for(state)=={'code':'missing_continuation','block_id':'a'}

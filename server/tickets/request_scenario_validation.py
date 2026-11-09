@@ -45,7 +45,8 @@ def validate_scenario(definition):
             add("processing_missing", "processing", "Настройте направления и сроки обработки карты.")
         else:
             for kind, choices in (("route", config.routes), ("sla_profile", config.sla_profiles)):
-                if getattr(config.defaults, kind) not in choices:
+                value = getattr(config.defaults, kind)
+                if (definition.schema_version == 3 or value) and value not in choices:
                     add("processing_default_missing", f"processing.defaults.{kind}", "Выберите существующее значение по умолчанию.")
                 for block in definition.blocks:
                     for index, edge in enumerate(block.transitions):

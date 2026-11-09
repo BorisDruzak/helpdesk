@@ -90,7 +90,8 @@
 .studio-inline-editor-actions { display:flex; justify-content:flex-end; gap:6px; }
 .studio-inline-editor button,.studio-inline-editor input,.studio-inline-editor select,.studio-inline-editor textarea { max-width:100%; }
 .studio-node-edit { margin-top:8px; font-size:12px; color:#087443; text-decoration:underline; }
-.studio-map-popover { position:absolute; right:12px; top:12px; z-index:30; width:max-content; max-width:calc(100% - 24px); overflow:hidden; border:1px solid #cadfd2; border-radius:16px; background:#fff; padding:0; box-shadow:0 12px 40px #15372825; }
+.studio-map-popover { position:absolute; right:12px; top:12px; z-index:30; width:max-content; max-width:calc(100% - 24px); overflow:visible; border:0; border-radius:16px; background:transparent; padding:0; pointer-events:none; }
+.studio-map-popover > .studio-resizable-editor { border:1px solid #cadfd2; box-shadow:0 12px 40px #15372825; pointer-events:auto; }
 .studio-map-context { position:absolute; z-index:50; display:grid; width:250px; max-height:calc(100% - 12px); overflow:auto; padding:6px; border:1px solid #cadfd2; border-radius:12px; background:#fff; box-shadow:0 12px 40px #15372825; }
 .studio-map-context button { justify-content:flex-start; }
 .studio-full-editor-backdrop { position:fixed; inset:0; z-index:100; background:#12231f66; display:grid; place-items:center; padding:20px; }
@@ -143,7 +144,7 @@
 .studio-editor-resize.is-nw { top:calc(var(--studio-resize-corner,28px)*-.9); left:calc(var(--studio-resize-corner,28px)*-.9); cursor:nwse-resize; }.studio-editor-resize.is-se { bottom:calc(var(--studio-resize-corner,28px)*-.9); right:calc(var(--studio-resize-corner,28px)*-.9); cursor:nwse-resize; }
 .studio-editor-resize.is-se::after { content:""; position:absolute; top:calc(var(--studio-resize-corner,28px)*.1 - var(--studio-resize-grip,10px)); left:calc(var(--studio-resize-corner,28px)*.1 - var(--studio-resize-grip,10px)); width:var(--studio-resize-grip,10px); height:var(--studio-resize-grip,10px); border-right:var(--studio-resize-stroke,2px) solid #579c78; border-bottom:var(--studio-resize-stroke,2px) solid #579c78; opacity:.7; }
 .studio-editor-resize:hover::after,.studio-editor-resize:focus-visible::after { opacity:1; }
-.studio-resizable-editor__body :is(button,input,textarea,select,[contenteditable],summary),.studio-map-node > .studio-node-edit,.studio-map-node > .studio-node-add { position:relative; z-index:6; }
+.studio-resizable-editor__body :is(button,input,textarea,select,[contenteditable],summary),.studio-map-node .studio-node-edit,.studio-map-node > .studio-node-add { position:relative; z-index:6; }
 .studio-editor-resize:focus-visible { outline:2px solid #087443; outline-offset:1px; background:#cce6d6; }
 .studio-full-editor,.studio-map-popover { overflow:visible; background:transparent; }
 /* ReactFlow elevates selected node wrappers to inline z-index:1000. Keep

@@ -95,7 +95,7 @@ async def resolve_effective_ticket_policy(
     # and routing are immutable ticket inputs; approval keeps its canonical
     # approver source while the traversed branch selects whether it is required.
     scenario = request_template.get("scenario_processing")
-    if isinstance(scenario, dict) and kind in {"routing", "sla"}:
+    if isinstance(scenario, dict) and kind in {"routing", "sla"} and scenario.get("route" if kind == "routing" else "sla_profile") is not None:
         return policy
     def branch_approval(config):
         if kind == "approval" and isinstance(scenario, dict) and "approval_required" in scenario:
@@ -254,12 +254,15 @@ async def apply_effective_registry_policies(
     scenario = pinned.get("scenario_processing")
     if isinstance(scenario, dict):
         for kind in ("routing", "sla"):
+            if scenario.get("route" if kind == "routing" else "sla_profile") is None:
+                continue
             template_context[kind + "_policy"] = deepcopy(pinned[kind + "_policy"])
             template_context.pop(kind + "_policy_code", None)
             for field in ("policy_refs", "effective_policy_sources", "effective_policy_snapshots"):
                 if isinstance(template_context.get(field), dict):
                     template_context[field].pop(kind, None)
-        template_context.pop("sla_policy_id", None)
+        if scenario.get("sla_profile") is not None:
+            template_context.pop("sla_policy_id", None)
         if "approval_required" in scenario:
             template_context.setdefault("approval_policy", {})["required"] = scenario["approval_required"]
 

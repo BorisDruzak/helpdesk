@@ -153,7 +153,7 @@ class ScenarioPublicationService:
                     add("category_unavailable", "Категория и её родители должны быть опубликованы и доступны сотруднику.", "category_id")
                     break
                 category_id = category["parent_id"]
-        definition = None
+        definition, traversal_complete = None, False
         try:
             definition = ScenarioDefinition.model_validate(draft.definition)
             from tickets.request_scenario_processing import scenario_sla_reference_issues
@@ -173,6 +173,7 @@ class ScenarioPublicationService:
             process_fields = {field.key for block in definition.blocks for field in getattr(block, "fields", ())
                               if (field.process_mapping.fact_key or field.key) in actual_fields or field.process_mapping.effects}
             states = submission_variants(definition, process_fields=process_fields)
+            traversal_complete = True
         except ValidationError:
             add("incomplete_graph", "Добавьте вопросы, начальный шаг и допустимые завершения.", "blocks")
             states = []
@@ -183,11 +184,20 @@ class ScenarioPublicationService:
             add("coverage_unproven", str(exc), "blocks")
             states = []
         submit_ids = {block.id for block in definition.blocks if block.kind == "submit_ticket"} if definition else set()
-        if not any(state.current_block_id in submit_ids for state in states):
+        if traversal_complete and not any(state.current_block_id in submit_ids for state in states):
             add("submission_unreachable", "Нет проверяемой ветви обращения в поддержку.", "blocks")
+        block_labels = {block.id: block.title.strip() or block.id for block in definition.blocks} if definition else {}
         for state in states:
             checked += 1
             entry_key = (state.results.get("_entry_point") or {}).get("key")
+            path = " → ".join(block_labels.get(identifier, identifier) for identifier in [*state.history, state.current_block_id])
+            terminal_label = block_labels.get(state.current_block_id, state.current_block_id)
+            target = f"blocks.{state.current_block_id}"
+            def unavailable(kind):
+                if kind == "routing":
+                    add("routing_unavailable", f"Для завершения «{terminal_label}» не определена действующая очередь. Назначьте направление в ветке или настройте маршрут услуги. Путь: {path}.", target)
+                else:
+                    add("sla_unavailable", f"Для завершения «{terminal_label}» не определён срок SLA. Назначьте SLA в ветке или настройте действующую политику SLA услуги. Путь: {path}.", target)
             if state.state == "completed_self_service":
                 outcomes.append({"terminal": state.current_block_id, "kind": "self_service", "entry_point_key": entry_key})
                 continue
@@ -199,17 +209,27 @@ class ScenarioPublicationService:
                 _, result = await simulate_service_catalog_processing(self.session, payload, scenario_snapshot=snapshot, **preview_authority)
                 routing, sla, approval = result["routing"], result["sla"], result["approval"]
                 if routing.get("queue_id") not in active_queue_ids:
-                    add("routing_unavailable", "Одна из ветвей не попадает в действующую очередь.")
-                if ((definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None) or "sla" in snapshot["policy_refs"] or not (template.get("config") or {}).get("no_sla")) and not sla.get("resolution_min"):
-                    add("sla_unavailable", "Одна из ветвей не имеет срока выполнения по действующей политике.")
+                    unavailable("routing")
+                invalid_v4_sla = (definition.schema_version == 4 and definition.processing is not None
+                    and any(type(sla.get(key)) is not int or sla[key] < 1 for key in ("first_response_min", "resolution_min")))
+                if invalid_v4_sla or (((definition.schema_version == 3 or definition.schema_version == 4 and definition.processing is not None) or "sla" in snapshot["policy_refs"] or not (template.get("config") or {}).get("no_sla")) and not sla.get("resolution_min")):
+                    unavailable("sla")
                 if approval.get("required") and not approval.get("approvers"):
                     add("approval_unavailable", "Согласование требуется, но действующий источник не определил согласующих.")
                 outcomes.append({"terminal": state.current_block_id, "kind": "ticket", "entry_point_key": entry_key, "priority": result["priority"], "routing": routing,
                                  "sla": {key: value for key, value in sla.items() if not key.endswith("preview")}, "approval_required": bool(approval.get("required")),
                                  **({"map_processing": result["map_processing"]} if "map_processing" in result else {})})
-            except ValueError:
-                add("processing_invalid", "Ответы одной из ветвей несовместимы с опубликованной формой или обработкой.",
-                    f"entry_points.{entry_key}" if entry_key else "process_binding")
+            except ValueError as exc:
+                details = getattr(exc, "details", exc.args[0] if exc.args else {})
+                details = details.get("form_payload", details) if isinstance(details, dict) else {}
+                kind = next((kind for kind, keys in (("routing", {"policy_refs.routing", "processing.route"}),
+                    ("sla", {"policy_refs.sla", "processing.sla_profile", "processing.calendar"}))
+                    if isinstance(details, dict) and keys.intersection(details)), None)
+                if kind:
+                    unavailable(kind)
+                else:
+                    add("processing_invalid", "Ответы одной из ветвей несовместимы с опубликованной формой или обработкой.",
+                        f"entry_points.{entry_key}" if entry_key else "process_binding")
         unique = {definition_hash(issue): issue for issue in issues}
         return {"health": health, "readiness": {"can_publish": not unique, "issues": list(unique.values()), "variants_checked": checked}, "outcomes": outcomes}
 

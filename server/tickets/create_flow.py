@@ -452,6 +452,10 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
         logger.warning("[create] required initialization failed stage=sla")
         raise TicketInitializationError("sla") from exc
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+    context = (getattr(ticket, "custom_fields", None) or {}).get("request_template") or {}
+    if (require_active_queue and isinstance(context.get("scenario_processing"), dict)
+            and (not getattr(ticket, "first_response_due_at", None) or not getattr(ticket, "resolution_due_at", None))):
+        raise TicketInitializationError("sla")
     try:
         await start_ola_for_ticket(session, ticket, trigger="ticket_created")
     except Exception as exc:

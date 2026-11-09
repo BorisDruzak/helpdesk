@@ -40,8 +40,8 @@ export type ScenarioConditionEvaluation = { op: string; matched: boolean; source
 export type ProcessingSource = { kind: "default" | "transition" | "terminal" | "block" | "server" | "attachment"; block_id?: string; attached_to?: string; transition_index?: number };
 export type ScenarioMapProcessingResult = {
   assignment_mode: "last_matching_branch";
-  route: { key: string; title: string; queue_code: string; source: ProcessingSource };
-  sla_profile: { key: string; title: string; first_response_minutes: number; resolution_minutes: number; time_basis: "calendar" | "business"; calendar_id?: number | null; source: ProcessingSource };
+  route: { key: string; title: string; queue_code: string; source: ProcessingSource } | null;
+  sla_profile: { key: string; title: string; first_response_minutes: number; resolution_minutes: number; time_basis: "calendar" | "business"; calendar_id?: number | null; source: ProcessingSource } | null;
   approval_required?: boolean;
   trace: { block_id: string; transition_index: number; to: string; matched: boolean; assignments: { route?: string; sla_profile?: string; approval_required?: boolean } }[];
   condition_trace?: { block_id: string; transition_index: number; to: string; selected: boolean; condition_evaluation: ScenarioConditionEvaluation }[];

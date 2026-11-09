@@ -4,18 +4,19 @@ import type { ScenarioDraftDefinition } from "./scenario-contract";
 import { ScenarioPolicyAttachmentEditor } from "./scenario-policy-attachments";
 import { fetchHelpdeskModelRegistry } from "../forms-builder/api";
 import { ScenarioRequesterPreview } from "./scenario-requester-preview";
+import { summarizeTerminalSla } from "./scenario-terminal-sla-model";
 const draft = (): ScenarioDraftDefinition => ({ schema_version: 4, scenario_key: "test", title: "Карта", service_code: "it", offering_full_code: "it.test", process_binding: { request_template_key: "test" }, entry_block_id: "end", blocks: [
  { id: "end", kind: "submit_ticket", title: "Обращение" }, { id: "sla", kind: "sla_attachment", title: "SLA" }, { id: "route", kind: "routing_attachment", title: "Маршрут" },
 ], processing: { defaults: { route: "desk", sla_profile: "normal" }, routes: { desk: { title: "Поддержка", queue_code: "support" } }, sla_profiles: { normal: { title: "Рабочий SLA", first_response_minutes: 15, resolution_minutes: 240, time_basis: "business", calendar_id: 3 } } } });
 vi.mock("../forms-builder/api", () => ({ fetchHelpdeskModelRegistry: vi.fn(async () => ({ policies: { sla: [{ code: "sla", title: "Опубликованный SLA", is_active: true, published_at: "now" }], routing: [{ code: "route", title: "Опубликованный маршрут", is_active: true, published_at: "now" }, { code: "draft", title: "Черновик маршрута", is_active: true }] } })) }));
 vi.mock("../settings/api",()=>({fetchWebSettingsPayload:vi.fn(async()=>({queues:[{code:"support",name:"Поддержка",is_active:true}],calendars:[{id:3,name:"Рабочая неделя",is_active:true}]}))}));
-it("explicitly sets a selected route as map default without touching other references",async()=>{
+it("keeps service-wide defaults off the per-block route editor",async()=>{
  const definition=draft(); definition.processing!.defaults.route="";
  const change=vi.fn();
  render(<ScenarioPolicyAttachmentEditor block={{...definition.blocks![2],kind:"routing_attachment",route:"desk"}} definition={definition} disabled={false} onChange={change}/>);
  expect(change).not.toHaveBeenCalled();
- fireEvent.click(screen.getByRole("button",{name:"Использовать направление по умолчанию"}));
- expect(change.mock.lastCall![0]).toEqual({...definition,processing:{...definition.processing,defaults:{...definition.processing!.defaults,route:"desk"}}});
+ expect(screen.queryByRole("button",{name:"Использовать направление по умолчанию"})).not.toBeInTheDocument();
+ expect(change).not.toHaveBeenCalled();
  await waitFor(()=>expect(screen.getByLabelText("Очередь Helpdesk")).toBeEnabled());
 });
 it("edits the selected SLA in its attachment without route settings", async()=>{
@@ -39,12 +40,30 @@ it("chooses a target and an existing SLA profile without creating duration defau
  const definition = draft(), change = vi.fn();
  render(<ScenarioPolicyAttachmentEditor block={definition.blocks![1]} definition={definition} disabled={false} onChange={change} />);
  expect(change).not.toHaveBeenCalled();
+ expect(screen.getByRole("option",{name:"Не менять ранее выбранные сроки"})).toBeInTheDocument();
  fireEvent.change(screen.getByLabelText("Применять к блоку"), { target: { value: "end" } });
  expect(change.mock.lastCall![0].blocks[1]).toMatchObject({ attached_to: "end" });
  fireEvent.change(screen.getByLabelText("Профиль SLA"), { target: { value: "normal" } });
  expect(change.mock.lastCall![0].blocks[1]).toMatchObject({ sla_profile: "normal" });
  expect(change.mock.lastCall![0].processing).toEqual(definition.processing);
  expect(screen.queryByRole("option", { name: "Маршрут" })).not.toBeInTheDocument();
+});
+it("clears only the attachment override and retains a manual profile assigned earlier on the path", async () => {
+ const definition = draft(), change = vi.fn();
+ definition.entry_block_id = "earlier";
+ definition.processing!.defaults.sla_profile = "";
+ definition.blocks!.unshift({ id: "earlier", title: "Ранее выбранные сроки", kind: "sla", sla_profile: "normal", transitions: [{ to: "end" }] });
+ const attachment = { ...definition.blocks![2], kind: "sla_attachment" as const, attached_to: "end", sla_profile: "normal" };
+ definition.blocks![2] = attachment;
+ render(<ScenarioPolicyAttachmentEditor block={attachment} definition={definition} disabled={false} onChange={change} />);
+ fireEvent.change(screen.getByLabelText("Профиль SLA"), { target: { value: "" } });
+ const next = change.mock.lastCall![0] as ScenarioDraftDefinition;
+ expect(next.processing).toEqual(definition.processing);
+ expect(next.blocks![0]).toEqual(definition.blocks![0]);
+ expect(next.blocks![2]).not.toHaveProperty("sla_profile");
+ expect(summarizeTerminalSla(next, "end").alternatives[0].selection).toMatchObject({ kind: "profile", key: "normal" });
+ expect(screen.getByText(/Пустой выбор сохраняет ранее назначенный профиль/)).toBeVisible();
+ await screen.findByRole("option", { name: "Рабочая неделя" });
 });
 it("does not render attachment cards as employee steps", () => {
  const definition = draft();

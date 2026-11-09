@@ -40,23 +40,17 @@ it.each([["routing_unavailable", "Маршрут и очередь"], ["sla_unav
   const change = mount(code, "process_binding");
   fireEvent.click(await screen.findByRole("button", { name: `Исправить: ${label}` }));
   await waitFor(() => expect(screen.getByLabelText(label)).toHaveFocus());
-  expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Название услуги")).not.toBeVisible();
   expect(screen.getByRole("heading", { name: "Обработка услуги" })).toBeVisible();
-  expect(screen.getAllByRole("combobox")[0]).toHaveAccessibleName(label);
-  fireEvent.click(screen.getByRole("button", { name: "К настройкам услуги" }));
-  expect(screen.getByLabelText("Название услуги")).toBeVisible();
-  // Repeating the same remediation must open processing again.
-  fireEvent.click(screen.getByRole("button", { name: "Опубликовать" }));
-  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
-  fireEvent.click(await screen.findByRole("button", { name: `Исправить: ${label}` }));
+  expect(screen.getByRole("region", { name: "Публикация сценария" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: `Исправить: ${label}` }));
   await waitFor(() => expect(screen.getByLabelText(label)).toHaveFocus());
-  expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
   expect(change).not.toHaveBeenCalled();
 });
 it("opens processing for an unavailable policy without choosing a start block", async () => {
   const change = mount("policy_reference_unavailable", "process_binding.policy_refs");
   fireEvent.click(await screen.findByRole("button", { name: "Исправить: Обработка обращения" }));
   expect(await screen.findByLabelText("Закрытие обращения")).toBeVisible();
-  expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Название услуги")).not.toBeVisible();
   expect(change).not.toHaveBeenCalled();
 });

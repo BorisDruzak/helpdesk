@@ -27,6 +27,6 @@ export function ScenarioStartEditor({ section, onSection, onEntry, onConnect, on
       <Button variant="outline" onClick={() => onProcessing(["visibility"])}>Видимость обращения</Button>
       <Button variant="outline" onClick={() => onProcessing(["priority", "ola", "approval", "notification", "closure"])}>Правила обработки</Button>
     </div>
-    <p className="text-sm text-slate-500">Направления и сроки настраиваются в отдельных блоках «Маршрут обработки» и «Настройка SLA». Видимость обращения определяет поля и статусы после создания.</p>
+    <p className="text-sm text-slate-500">Направления и сроки настраиваются в отдельных блоках «Маршрут обработки» и «Настройка SLA». Общие правила обработки и видимость обращения открываются на странице публикации.</p>
   </section>;
 }

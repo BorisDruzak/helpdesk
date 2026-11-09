@@ -85,13 +85,16 @@ it("an unbound v2 map needs no canonical type picker",()=>{
  expect(screen.queryByLabelText("Тип обращения")).not.toBeInTheDocument();
  expect(screen.getByLabelText("Название услуги")).toBeVisible();
 });
-it("policy remediation leaves preview and entrance selection for service processing",async()=>{
- vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
- const change=vi.fn();const view=render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change}/></MemoryRouter>);
- fireEvent.click(screen.getByRole("button",{name:"Выбрать связь входа"}));fireEvent.click(screen.getByRole("tab",{name:"Как у сотрудника"}));
- view.rerender(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change} issuePolicy="routing"/></MemoryRouter>);
- expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");await screen.findByLabelText("Маршрут и очередь");await waitFor(()=>expect(screen.getByLabelText("Маршрут и очередь")).toHaveFocus());expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();expect(screen.queryByRole("heading",{name:"Связь с началом"})).not.toBeInTheDocument();expect(change).not.toHaveBeenCalled();
+it("opens service-wide rules through publication callback without mounting generic processing",()=>{
+ const change=vi.fn(), openRules=vi.fn();
+ render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={change} onPublicationRules={openRules}/></MemoryRouter>);
+ fireEvent.click(screen.getByRole("button",{name:"Правила услуги на публикации"}));
+ expect(openRules).toHaveBeenCalledTimes(1);
+ expect(screen.queryByLabelText("Маршрут и очередь")).not.toBeInTheDocument();
+ expect(screen.queryByRole("heading",{name:"Обработка услуги"})).not.toBeInTheDocument();
+ expect(change).not.toHaveBeenCalled();
 });
+
 it("a missing-route hint reveals editing controls from employee preview",()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
  render(<MemoryRouter><ScenarioMapWorkbench definition={definition} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);

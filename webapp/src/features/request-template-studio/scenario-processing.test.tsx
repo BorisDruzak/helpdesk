@@ -7,6 +7,18 @@ vi.mock("../settings/api",()=>({fetchWebSettingsPayload:vi.fn(async()=>({queues:
 
 const definition: ScenarioDraftDefinition = { scenario_key: "p", title: "Печать", service_code: "it", offering_full_code: "it.print", process_binding: { request_template_key: "p", policy_refs: { routing: "route" } }, blocks: [] };
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("offers canonical service routing and SLA policies beside map overrides without profile CRUD", async () => {
+ vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: { sla: [{ code: "standard", title: "Сроки по приоритету", is_active: true, published_at: "2026-11-09" }] } } }), { headers: { "content-type": "application/json" } })));
+ const change = vi.fn();
+ const value = { ...definition, schema_version: 4 as const, processing: { routes: {}, sla_profiles: {}, defaults: { route: "", sla_profile: "" } } };
+ render(<ScenarioProcessing definition={value} serviceWide disabled={false} onChange={change} focusPolicy="sla" />);
+ const select = await screen.findByLabelText("Сроки обслуживания");
+ expect(select).toHaveFocus();
+ expect(screen.getByLabelText("Маршрут и очередь")).toBeVisible();
+ expect(screen.queryByRole("button", { name: "Добавить профиль SLA" })).not.toBeInTheDocument();
+ fireEvent.change(select, { target: { value: "standard" } });
+ expect(change).toHaveBeenCalledWith({ ...value, process_binding: { ...value.process_binding, policy_refs: { routing: "route", sla: "standard" } } });
+});
 it("shows a focused rule group without map route or SLA settings",async()=>{
  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
  render(<ScenarioProcessing definition={{...definition,processing:{routes:{},sla_profiles:{},defaults:{route:"",sla_profile:""}}}} disabled={false} onChange={vi.fn()} policyKinds={["visibility"]}/>);

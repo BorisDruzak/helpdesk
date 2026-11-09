@@ -110,4 +110,15 @@ describe("terminal SLA path summary", () => {
   definition.blocks![0].transitions![0].processing = { route: "special" };
   expect(summarizeTerminalSla(definition, "end").alternatives[0].routing).toMatchObject({ key: "special", queue_code: "special" });
  });
+ it("shows service policy inheritance for empty v4 fallbacks without inventing durations", () => {
+  const definition = slaDefinition();
+  definition.processing!.defaults = { route: "", sla_profile: "" };
+  definition.blocks![0].transitions = [{ to: "end" }];
+  definition.process_binding.policy_refs = { sla: "priority-sla", routing: "service-route" };
+  const alternative = summarizeTerminalSla(definition, "end").alternatives[0];
+  expect(alternative.selection).toMatchObject({ kind: "policy", key: "priority-sla" });
+  expect(alternative.routingSelection).toMatchObject({ kind: "policy", key: "service-route" });
+  expect(alternative.profile).toBeUndefined();
+  expect(terminalSlaSummary(definition, definition.blocks![1])).toContain("сроки в проверке пути");
+ });
 });

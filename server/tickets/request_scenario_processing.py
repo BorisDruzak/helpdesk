@@ -80,33 +80,39 @@ async def apply_scenario_map_processing(session, validated, selection):
         return validated
     from app.db.models import TicketQueue, TicketBusinessCalendar
     from web_api.dto.request_scenario import ScenarioRoute, ScenarioSlaProfile
-    route = ScenarioRoute.model_validate({key: value for key, value in selection["route"].items() if key not in {"key", "source"}})
-    profile = ScenarioSlaProfile.model_validate({key: value for key, value in selection["sla_profile"].items() if key not in {"key", "source"}})
-    if profile.first_response_minutes < 1 or profile.resolution_minutes < 1:
+    route = (ScenarioRoute.model_validate({key: value for key, value in selection["route"].items() if key not in {"key", "source"}})
+             if selection.get("route") is not None else None)
+    profile = (ScenarioSlaProfile.model_validate({key: value for key, value in selection["sla_profile"].items() if key not in {"key", "source"}})
+               if selection.get("sla_profile") is not None else None)
+    if profile is not None and (profile.first_response_minutes < 1 or profile.resolution_minutes < 1):
         raise ValueError({"processing.sla_profile": "Укажите положительные сроки обработки."})
-    queue = await session.scalar(select(TicketQueue).where(TicketQueue.code == route.queue_code).execution_options(populate_existing=True))
-    if queue is None or not queue.is_active:
-        raise ScenarioProcessingUnavailable({"processing.route": "Выбранная очередь отключена или недоступна."})
+    queue = None
+    if route is not None:
+        queue = await session.scalar(select(TicketQueue).where(TicketQueue.code == route.queue_code).execution_options(populate_existing=True))
+        if queue is None or not queue.is_active:
+            raise ScenarioProcessingUnavailable({"processing.route": "Выбранная очередь отключена или недоступна."})
     calendar = None
-    if profile.calendar_id is not None:
+    if profile is not None and profile.calendar_id is not None:
         current = await session.get(TicketBusinessCalendar, profile.calendar_id, populate_existing=True)
         try:
             calendar = validated_scenario_calendar(current)
         except ValueError as exc:
             raise ScenarioProcessingUnavailable(*exc.args) from exc
-    elif profile.time_basis == "business":
+    elif profile is not None and profile.time_basis == "business":
         raise ValueError({"processing.sla_profile": "Для рабочих сроков необходим рабочий календарь."})
     result = deepcopy(validated)
     context = result.setdefault("template_context", {})
-    context["routing_policy"] = {"fallback": {"queue_id": queue.id, "queue_code": queue.code}}
-    context["sla_policy"] = {"code": selection["sla_profile"]["key"], "source": "request_scenario.processing",
-        "targets": {"first_response": {priority: profile.first_response_minutes for priority in ("P0", "P1", "P2", "P3", "P4")},
-                    "resolution": {priority: profile.resolution_minutes for priority in ("P0", "P1", "P2", "P3", "P4")}}}
-    if profile.time_basis == "business":
-        context["sla_policy"]["calendar"] = (validated_scenario_calendar({"is_active": True, **selection["calendar_snapshot"]})
-            if "calendar_snapshot" in selection else calendar)
-    context.pop("sla_policy_id", None)
-    for kind in ("routing", "sla"):
+    if route is not None:
+        context["routing_policy"] = {"fallback": {"queue_id": queue.id, "queue_code": queue.code}}
+    if profile is not None:
+        context["sla_policy"] = {"code": selection["sla_profile"]["key"], "source": "request_scenario.processing",
+            "targets": {"first_response": {priority: profile.first_response_minutes for priority in ("P0", "P1", "P2", "P3", "P4")},
+                        "resolution": {priority: profile.resolution_minutes for priority in ("P0", "P1", "P2", "P3", "P4")}}}
+        if profile.time_basis == "business":
+            context["sla_policy"]["calendar"] = (validated_scenario_calendar({"is_active": True, **selection["calendar_snapshot"]})
+                if "calendar_snapshot" in selection else calendar)
+        context.pop("sla_policy_id", None)
+    for kind in (["routing"] if route is not None else []) + (["sla"] if profile is not None else []):
         context.pop(kind + "_policy_code", None)
         for field in ("policy_refs", "effective_policy_sources", "effective_policy_snapshots"):
             if isinstance(context.get(field), dict):

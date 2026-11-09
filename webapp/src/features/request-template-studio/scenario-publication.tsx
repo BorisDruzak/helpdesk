@@ -12,9 +12,9 @@ import { ScenarioPublicationDiff } from "./scenario-publication-diff";
 import "./scenario-publication.css";
 
 type Props = { id: string; revision: number; dirty: boolean; disabled: boolean; definition?: ScenarioDraftDefinition; offeringTitle?: string;
-  onIssue?: (destination: ScenarioIssueDestination) => void; onBack?: () => void; catalogVisibility?: ReactNode; offeringVisibility?: string };
+  onIssue?: (destination: ScenarioIssueDestination) => void; onBack?: () => void; catalogVisibility?: ReactNode; settingsPanel?: ReactNode; offeringVisibility?: string };
 function validExpiry(preview: ScenarioPublicationPreview) { return !!preview.expires_at && new Date(preview.expires_at).getTime() > Date.now(); }
-export function ScenarioPublication({ id, revision, dirty, disabled, definition, offeringTitle, onIssue, onBack, catalogVisibility, offeringVisibility }: Props) {
+export function ScenarioPublication({ id, revision, dirty, disabled, definition, offeringTitle, onIssue, onBack, catalogVisibility, settingsPanel, offeringVisibility }: Props) {
   const cache = useQueryClient();
   const [preview, setPreview] = useState<ScenarioPublicationPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -85,6 +85,7 @@ export function ScenarioPublication({ id, revision, dirty, disabled, definition,
     {dirty && <p role="status">Сначала сохраните изменения.</p>}
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4">{error}</p>}{message && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">{message}</p>}
     {catalogVisibility && <div className="scenario-publication-section">{catalogVisibility}</div>}
+    {settingsPanel}
     {published && <a className="inline-block text-brand-700 underline" target="_blank" rel="noopener noreferrer" href={`/app/requester/new?${new URLSearchParams({ offering: published.offering_full_code })}`}>Открыть сценарий сотрудника</a>}
     {!preview && !published && <section className="scenario-publication-section" aria-label="Готовность к проверке"><h2>Готовность к публикации</h2><p>{busy ? "Сервер проверяет допустимые ветви, очереди и действующие правила обработки." : "Нажмите «Подготовить публикацию», чтобы проверить все допустимые исходы на сервере."}</p><p className="text-sm text-slate-500">Проверка не создаёт обращения и не публикует черновик.</p></section>}
     {preview && <>

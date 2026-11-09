@@ -12,12 +12,12 @@ export function summarizeTerminalSla(definition: ScenarioDraftDefinition, blockI
  const result: TerminalSlaPaths = { alternatives: [], truncated: false, cyclic: false, explored: 0 };
  const blocks = new Map((definition.blocks ?? []).map(block => [block.id, block]));
  if (blocks.get(blockId)?.kind !== "submit_ticket") return result;
- const initial: TerminalSlaSelection = definition.processing
+ const initial: TerminalSlaSelection = definition.processing && (definition.processing.defaults.sla_profile || definition.schema_version !== 4)
   ? { kind: "profile", key: definition.processing.defaults.sla_profile, source: "настройки карты по умолчанию" }
   : definition.process_binding.policy_refs?.sla
    ? { kind: "policy", key: definition.process_binding.policy_refs.sla, source: "правило обработки услуги" }
    : { kind: "server", source: "действующая серверная политика услуги" };
- const initialRouting: TerminalSlaSelection = definition.processing ? { kind: "profile", key: definition.processing.defaults.route, source: "настройки карты по умолчанию" } : definition.process_binding.policy_refs?.routing ? { kind: "policy", key: definition.process_binding.policy_refs.routing, source: "правило маршрутизации услуги" } : { kind: "server", source: "действующая серверная политика услуги" };
+ const initialRouting: TerminalSlaSelection = definition.processing && (definition.processing.defaults.route || definition.schema_version !== 4) ? { kind: "profile", key: definition.processing.defaults.route, source: "настройки карты по умолчанию" } : definition.process_binding.policy_refs?.routing ? { kind: "policy", key: definition.process_binding.policy_refs.routing, source: "правило маршрутизации услуги" } : { kind: "server", source: "действующая серверная политика услуги" };
  type Pending = { id: string; visited: string[]; route: string[]; conditional: boolean; selection: TerminalSlaSelection; routingSelection: TerminalSlaSelection };
  const entrances = [
   ...(definition.entry_block_id ? [{ id: definition.entry_block_id, title: "Начало карты" }] : []),
@@ -82,10 +82,10 @@ export function terminalActualSla(definition: ScenarioDraftDefinition, block: Sc
  if (block.kind !== "submit_ticket" || !result?.processing || result.processing_error || (result.current_step?.id ?? result.current_block?.id ?? result.state.current_block_id) !== block.id) return null;
  const sla: ActualSla = result.processing.sla;
  const map = result.map_processing ?? result.processing.map_processing;
- const source = sla.source ?? sla.selection?.source ?? map?.sla_profile.source;
+ const source = sla.source ?? sla.selection?.source ?? map?.sla_profile?.source;
  const routing = result.processing.routing;
  const routeIds = [...(result.state.history ?? [])]; if (routeIds.at(-1) !== block.id) routeIds.push(block.id);
- return { sla, source: actualSourceLabel(definition, source), routingSource: actualSourceLabel(definition, routing.source ?? routing.selection?.source ?? map?.route.source), route: routeIds.filter(id => !isPolicyAttachment(definition.blocks?.find(item => item.id === id)?.kind ?? "instruction")).map(id => definition.blocks?.find(item => item.id === id)?.title ?? "Шаг сценария"), queue: routing.queue_title ?? routing.queue_code ?? map?.route.title };
+ return { sla, source: actualSourceLabel(definition, source), routingSource: actualSourceLabel(definition, routing.source ?? routing.selection?.source ?? map?.route?.source), route: routeIds.filter(id => !isPolicyAttachment(definition.blocks?.find(item => item.id === id)?.kind ?? "instruction")).map(id => definition.blocks?.find(item => item.id === id)?.title ?? "Шаг сценария"), queue: routing.queue_title ?? routing.queue_code ?? map?.route?.title };
 }
 
 export function terminalSlaSummary(definition: ScenarioDraftDefinition, block: ScenarioBlock, simulation?: ScenarioSimulation): string {

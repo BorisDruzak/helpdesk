@@ -4,6 +4,14 @@ import { ScenarioProcessingResult } from "./scenario-processing-result";
 import type { ScenarioSimulation } from "./scenario-api";
 
 afterEach(cleanup);
+it("renders canonical service policy results when map overrides are null", () => {
+ const result = { state: { history: [], current_block_id: "submit", answers: {}, results: {} }, map_processing: { assignment_mode: "last_matching_branch", route: null, sla_profile: null, trace: [] }, processing: { priority: { priority_class: "P2" }, routing: { queue_title: "Общая поддержка", source: { kind: "server" } }, sla: { first_response_min: 23, resolution_min: 95, source: { kind: "server" } }, approval: { required: false }, would_create_ticket: false } } as unknown as ScenarioSimulation;
+ render(<ScenarioProcessingResult result={result} />);
+ expect(screen.getByText("Первый ответ: 23 мин.")).toBeVisible();
+ expect(screen.getByText("Срок выполнения: 95 мин.")).toBeVisible();
+ expect(screen.getByText("Источник SLA: серверная политика услуги.")).toBeVisible();
+ expect(screen.getByText(/SLA рассчитывается по ответам и действующей политике услуги/)).toBeVisible();
+});
 it("shows actual SLA durations, time basis and terminal override source", () => {
  const result = {state:{history:["question"],current_block_id:"submit",answers:{},results:{}},processing:{priority:{priority_class:"P2"},routing:{queue_code:"support"},sla:{first_response_min:17,resolution_min:83,time_basis:"business",source:{kind:"terminal",block_id:"submit"},selection:{kind:"policy",key:"published",source:{kind:"terminal",block_id:"submit"}}},approval:{required:false},would_create_ticket:false}} as unknown as ScenarioSimulation;
  render(<ScenarioProcessingResult result={result} definition={{scenario_key:"map",service_code:"it",offering_full_code:"it.print",title:"Print",process_binding:{request_template_key:"printer"},blocks:[{id:"submit",title:"Отправка",kind:"submit_ticket"}]}} />);

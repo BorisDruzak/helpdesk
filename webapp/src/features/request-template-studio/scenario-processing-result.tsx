@@ -15,8 +15,8 @@ export function ScenarioProcessingResult({ result, definition }: { result: Scena
   if (currentId && history.at(-1) !== currentId) history.push(currentId);
   const branch = history.filter(id => !!id && !isPolicyAttachment(definition?.blocks?.find(item => item.id === id))).map(id => definition?.blocks?.find(item => item.id === id)?.title || "Шаг сценария");
   const map = result.map_processing ?? processing.map_processing;
-  const slaSource = processing.sla.source ?? processing.sla.selection?.source ?? map?.sla_profile.source;
-  const routingSource = processing.routing.source ?? processing.routing.selection?.source ?? map?.route.source;
+  const slaSource = processing.sla.source ?? processing.sla.selection?.source ?? map?.sla_profile?.source;
+  const routingSource = processing.routing.source ?? processing.routing.selection?.source ?? map?.route?.source;
   function display(key: string, value: unknown) {
     const field = fields.find(item => (item.process_mapping?.fact_key || item.key) === key);
     function one(item: unknown): string { return field?.options?.find(option => option.value === item)?.label || (item === true ? "Да" : item === false ? "Нет" : item === null ? "Не знаю" : typeof item === "string" || typeof item === "number" ? String(item) : "Проверенный контекст"); }

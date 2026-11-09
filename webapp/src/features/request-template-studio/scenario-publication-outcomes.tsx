@@ -13,8 +13,8 @@ export function ScenarioPublicationOutcomes({ outcomes, definition, onIssue }: {
       const terminal = definition?.blocks?.find(block => block.id === outcome.terminal);
       const entrance = definition?.entry_points?.find(entry => entry.key === outcome.entry_point_key);
       const sla = outcome.sla;
-      const slaSource = sla?.source ?? sla?.selection?.source ?? outcome.map_processing?.sla_profile.source;
-      const routeSource = outcome.routing?.source ?? outcome.routing?.selection?.source ?? outcome.map_processing?.route.source;
+      const slaSource = sla?.source ?? sla?.selection?.source ?? outcome.map_processing?.sla_profile?.source;
+      const routeSource = outcome.routing?.source ?? outcome.routing?.selection?.source ?? outcome.map_processing?.route?.source;
       return <li key={index} className="scenario-publication-outcome"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm text-slate-500">Исход {index + 1} · {outcome.kind === "ticket" ? "Обращение в поддержку" : "Без обращения в поддержку"}</p><h3>{terminal?.title ?? "Завершение сценария"}</h3></div>{onIssue && terminal && <Button variant="ghost" onClick={() => onIssue({ step: 1, blockId: terminal.id, label: terminal.title })}>На карте</Button>}</div>
         <dl className="scenario-publication-facts"><div><dt>Вход из каталога</dt><dd>{entrance?.title ?? (outcome.entry_point_key ? "Дополнительный вход" : "Основной вход")}</dd></div>
           {outcome.kind === "ticket" && <><div><dt>Очередь</dt><dd>{outcome.routing?.queue_title || outcome.routing?.queue_code || "Не определена"}</dd></div><div><dt>Первый ответ</dt><dd>{minutes(sla?.first_response_min)}</dd></div><div><dt>Срок выполнения</dt><dd>{minutes(sla?.resolution_min)}</dd></div><div><dt>Учёт времени</dt><dd>{sla?.time_basis === "business" ? "Рабочее время" : sla?.time_basis === "calendar" ? "Календарное время" : "Не определён"}</dd></div><div><dt>Согласование</dt><dd>{outcome.approval_required === undefined ? "Не определено" : outcome.approval_required ? "Требуется" : "Не требуется"}</dd></div></>}
