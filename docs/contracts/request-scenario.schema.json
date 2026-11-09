@@ -874,6 +874,77 @@
       "title": "Negation",
       "type": "object"
     },
+    "OlaAttachment": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "attached_to": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attached To"
+        },
+        "kind": {
+          "const": "ola_attachment",
+          "title": "Kind",
+          "type": "string"
+        },
+        "targets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScenarioOlaTargets"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "policy_ref": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy Ref"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind"
+      ],
+      "title": "OlaAttachment",
+      "type": "object"
+    },
     "PendingCatalogEntrance": {
       "additionalProperties": false,
       "properties": {
@@ -1697,6 +1768,29 @@
       "title": "ScenarioField",
       "type": "object"
     },
+    "ScenarioOlaTargets": {
+      "additionalProperties": false,
+      "properties": {
+        "ack_minutes": {
+          "maximum": 525600,
+          "minimum": 1,
+          "title": "Ack Minutes",
+          "type": "integer"
+        },
+        "processing_minutes": {
+          "maximum": 525600,
+          "minimum": 1,
+          "title": "Processing Minutes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ack_minutes",
+        "processing_minutes"
+      ],
+      "title": "ScenarioOlaTargets",
+      "type": "object"
+    },
     "ScenarioProcessing": {
       "additionalProperties": false,
       "properties": {
@@ -2069,6 +2163,32 @@
           "title": "Kind",
           "type": "string"
         },
+        "ola_targets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScenarioOlaTargets"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ola_policy_ref": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ola Policy Ref"
+        },
         "route": {
           "anyOf": [
             {
@@ -2382,6 +2502,7 @@
             "form_page": "#/$defs/FormPage",
             "instruction": "#/$defs/Instruction",
             "navigation": "#/$defs/Navigation",
+            "ola_attachment": "#/$defs/OlaAttachment",
             "resolution_check": "#/$defs/ResolutionCheck",
             "review": "#/$defs/Review",
             "routing_attachment": "#/$defs/RoutingAttachment",
@@ -2406,6 +2527,9 @@
           },
           {
             "$ref": "#/$defs/SlaAttachment"
+          },
+          {
+            "$ref": "#/$defs/OlaAttachment"
           },
           {
             "$ref": "#/$defs/RoutingAttachment"

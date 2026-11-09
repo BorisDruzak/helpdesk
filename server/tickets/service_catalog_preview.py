@@ -98,6 +98,8 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
             validated = apply_scenario_processing_facts(validated, scenario_snapshot.get("processing_facts"))
             from tickets.request_scenario_processing import apply_scenario_map_processing
             validated = await apply_scenario_map_processing(session, validated, scenario_snapshot.get("map_processing"))
+            from tickets.request_scenario_ola import apply_scenario_ola
+            validated = apply_scenario_ola(validated, scenario_snapshot.get("ola_selection"))
     except ValueError as exc:
         from tickets.request_scenario_processing import ScenarioProcessingUnavailable
         details = exc.args[0] if exc.args else "invalid form payload"
@@ -120,6 +122,10 @@ async def simulate_service_catalog_processing(session: Any, payload: dict[str, A
     if scenario_snapshot and scenario_snapshot.get("map_processing") is not None:
         simulation["map_processing"] = deepcopy(scenario_snapshot["map_processing"])
     if scenario_snapshot is not None:
+        if scenario_snapshot.get("ola_selection"):
+            ola = simulation.setdefault("ola", {})
+            ola["selection"] = deepcopy(scenario_snapshot["ola_selection"])
+            ola["source"] = deepcopy(scenario_snapshot["ola_selection"]["source"])
         selected_sla = scenario_snapshot.get("sla_selection")
         if (scenario_snapshot.get("map_processing") or {}).get("sla_profile") is not None:
             profile = scenario_snapshot["map_processing"]["sla_profile"]

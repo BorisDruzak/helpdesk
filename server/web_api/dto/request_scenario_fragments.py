@@ -19,6 +19,7 @@ class FragmentMappings(StrictModel):
     routes: dict[Key, Key] = Field(default_factory=dict, max_length=64)
     sla_profiles: dict[Key, Key] = Field(default_factory=dict, max_length=64)
     sla_policy_refs: dict[CatalogCode, CatalogCode] = Field(default_factory=dict, max_length=64)
+    ola_policy_refs: dict[CatalogCode, CatalogCode] = Field(default_factory=dict, max_length=64)
     routing_policy_refs: dict[CatalogCode, CatalogCode] = Field(default_factory=dict, max_length=64)
     # Legacy SLA mappings remain accepted for saved fragments and older clients.
     policy_refs: dict[CatalogCode, CatalogCode] = Field(default_factory=dict, max_length=64)

@@ -194,6 +194,18 @@ def _target_from_policy_map(target_map: object, priority: str) -> int | None:
     return None
 
 
+def ola_target_preview(targets: Optional[tuple[int, int]], now: datetime) -> dict:
+    """Distinguish configured durations from effective timers when OLA is off."""
+    result = {"enabled": TICKET_OLA_ENABLED}
+    if targets:
+        ack_min, processing_min = targets
+        result.update(ack_min=ack_min, processing_min=processing_min)
+        if TICKET_OLA_ENABLED:
+            result.update(ack_due_preview=(now + timedelta(minutes=ack_min)).isoformat(),
+                          processing_due_preview=(now + timedelta(minutes=processing_min)).isoformat())
+    return result
+
+
 def _targets_from_ola_policy(policy: dict, priority: str) -> Optional[tuple[int, int]]:
     if not isinstance(policy, dict):
         return None

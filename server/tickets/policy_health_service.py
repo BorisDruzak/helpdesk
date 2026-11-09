@@ -15,7 +15,7 @@ from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from tickets.approval_policy import _approval_mode, _resolve_approvers
 from tickets.diagnostic_policy import collect_diagnostic_policy_auto_run_triggers
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies, resolve_effective_ticket_policy
-from tickets.ola_service import _targets_from_ola_policy, get_ola_targets_for_queue
+from tickets.ola_service import _targets_from_ola_policy, get_ola_targets_for_queue, ola_target_preview
 from tickets.priority_policy import compute_priority_from_policy
 from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
@@ -375,17 +375,8 @@ class PolicyHealthService:
         ola_targets = _targets_from_ola_policy(ola_policy, priority_class)
         if ola_targets is None and ticket.queue_id is not None:
             ola_targets = await get_ola_targets_for_queue(self.session, ticket.queue_id, priority_class)
-        ola_payload: dict[str, Any] = {"policy_code": _policy_code(ola_policy, template_context, "ola")}
-        if ola_targets:
-            ack_min, processing_min = ola_targets
-            ola_payload.update(
-                {
-                    "ack_min": ack_min,
-                    "processing_min": processing_min,
-                    "ack_due_preview": sla_service._due_at(now, ack_min, None).isoformat(),
-                    "processing_due_preview": sla_service._due_at(now, processing_min, None).isoformat(),
-                }
-            )
+        ola_payload: dict[str, Any] = {"policy_code": _policy_code(ola_policy, template_context, "ola"),
+                                      **ola_target_preview(ola_targets, now)}
 
         approval_policy = await resolve_effective_ticket_policy(self.session, ticket, "approval")
         source_type, approvers = await _resolve_approvers(self.session, ticket, approval_policy)

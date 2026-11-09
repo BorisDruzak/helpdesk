@@ -5,7 +5,7 @@ export const blockLabels: Record<ScenarioBlock["kind"], string> = {
   form_page: "Страница вопросов", instruction: "Инструкция", decision: "Условие",
   resolution_check: "Проверка результата", diagnostic: "Диагностика",
   review: "Просмотр ответов", submit_ticket: "Создание обращения", finish: "Завершение без обращения",
-  navigation: "Переходы", sla: "SLA · последовательный блок", sla_attachment: "SLA", routing_attachment: "Маршрут",
+  navigation: "Переходы", sla: "SLA · последовательный блок", sla_attachment: "SLA", ola_attachment: "OLA", routing_attachment: "Маршрут",
 };
 export const fieldLabels: Record<ScenarioFieldType, string> = {
   text: "Короткий текст", textarea: "Длинный текст", select: "Список", multi_select: "Несколько вариантов",
@@ -41,7 +41,7 @@ export function editFieldOption(field: ScenarioField, index: number, value: stri
     process_mapping: { ...field.process_mapping, effects: (field.process_mapping?.effects ?? []).flatMap(effect => effect.value !== old.value ? [effect] : value === null ? [] : [{ ...effect, value }]) } };
 }
 export function newBlock(kind: ScenarioBlock["kind"]): ScenarioBlock {
-  if (kind === "sla_attachment" || kind === "routing_attachment") return { id: newKey("block"), title: blockLabels[kind], kind };
+  if (kind === "sla_attachment" || kind === "ola_attachment" || kind === "routing_attachment") return { id: newKey("block"), title: blockLabels[kind], kind };
   const base = { id: newKey("block"), title: blockLabels[kind], transitions: [] };
   switch (kind) {
     case "navigation": return { ...base, kind, transition_mode: "buttons" };

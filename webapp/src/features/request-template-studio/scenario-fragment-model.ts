@@ -2,6 +2,7 @@ import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioProcessingFacts } 
 import { newKey } from "./scenario-builder-model";
 import { requireAcyclic, stableMapPositions } from "./scenario-map-model";
 export const builtinFragments = [
+  { key: "ola", title: "OLA: подтверждение и обработка" },
   { key: "details", title: "Описание проблемы со скриншотом" },
   { key: "instruction", title: "Инструкция → проверка результата" },
   { key: "impact", title: "Влияние на SLA — масштаб" },
@@ -14,7 +15,8 @@ export function insertBuiltinFragment(definition: ScenarioDraftDefinition, key: 
   const id = () => newKey("block"), fieldKey = newKey("field"), entry = id(), end = id();
   const ending: ScenarioBlock = { id: end, kind: "submit_ticket", title: "Создание обращения", transitions: [] };
   let blocks: ScenarioBlock[];
-  if (key === "details") blocks = [{ id: entry, kind: "form_page", title: "Опишите проблему", layout: "single", fields: [{ key: fieldKey, type: "textarea", label: "Что произошло?", help_text: "Опишите действия и добавьте скриншот, если он поможет объяснить проблему.", required: true }], transitions: [{ to: end }] }, ending];
+  if (key === "ola") blocks = [{id:entry,kind:"instruction",title:"Обработка группой",content:{body:"Опишите действия группы поддержки"},transitions:[{to:end}]}, ending, {id:id(),kind:"ola_attachment",title:"OLA группы",attached_to:entry,targets:{ack_minutes:15,processing_minutes:240}}];
+  else if (key === "details") blocks = [{ id: entry, kind: "form_page", title: "Опишите проблему", layout: "single", fields: [{ key: fieldKey, type: "textarea", label: "Что произошло?", help_text: "Опишите действия и добавьте скриншот, если он поможет объяснить проблему.", required: true }], transitions: [{ to: end }] }, ending];
   else if (key === "navigation") blocks = [{ id: entry, kind: "navigation", title: "Выберите дальнейшее действие", transition_mode: "buttons", transitions: [{ to: end, button: { key: newKey("action"), label: "Обратиться в поддержку" } }] }, ending];
   else if (key === "instruction") {
     const check = id(), finish = id();

@@ -18,6 +18,7 @@ export function scenarioMapHints(definition: ScenarioDraftDefinition): MapHint[]
   for(const entry of definition.editor_layout?.pending_entrances??[])add("unconnected_catalog_entry",`«${entry.title}»: потяните связь от входа к первому блоку.`);
   const targets = new Set<string>();
   for(const item of all.filter(isPolicyAttachment)) {
+    if(item.kind === "ola_attachment" && !item.targets && !item.policy_ref) add("ola_unconfigured",`«${item.title}»: укажите сроки подтверждения и обработки или опубликованное правило OLA.`,item.id);
     if(!item.attached_to || !ids.has(item.attached_to)) add("attachment_target_invalid",`«${item.title}»: подключите настройку к обычному блоку карты.`,item.id);
     else { const key=`${item.kind}:${item.attached_to}`; if(targets.has(key)) add("duplicate_attachment",`«${item.title}»: у этого блока уже есть такая настройка.`,item.id); targets.add(key); }
   }

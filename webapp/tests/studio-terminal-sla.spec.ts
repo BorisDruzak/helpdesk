@@ -44,7 +44,7 @@ for (const width of [1366,1920]) test(`publication metadata and terminal SLA ${w
   await expect(page.locator('[data-id="end"] [aria-label="Итог завершения"]')).toContainText("SLA проверенного пути");
   await expect(page.locator('[data-id="end"] [aria-label="Итог завершения"]')).toContainText("Поддержка печати");
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await expect(page.getByRole("button",{name:"Сохранить черновик",exact:true})).toBeInViewport();
+  await expect(page.getByRole("button",{name:"Опубликовать",exact:true})).toBeInViewport();
   await page.screenshot({path:info.outputPath(`terminal-path-${width}.png`),fullPage:true});
   expect(state.errors).toEqual([]);expect(state.unexpected).toEqual([]);
 });

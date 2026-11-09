@@ -35,8 +35,8 @@ def _validate_field_identities(blocks):
 def _processing_references(block):
     """Registry codes are unique within a policy kind, not across kinds."""
     for field, kind in (("sla_profile", "sla_profile"), ("route", "route"),
-                        ("policy_ref", "routing_policy_ref" if block["kind"] == "routing_attachment" else "sla_policy_ref"),
-                        ("routing_policy_ref", "routing_policy_ref")):
+                        ("policy_ref", "routing_policy_ref" if block["kind"] == "routing_attachment" else "ola_policy_ref" if block["kind"] == "ola_attachment" else "sla_policy_ref"),
+                        ("routing_policy_ref", "routing_policy_ref"), ("ola_policy_ref", "ola_policy_ref")):
         if block.get(field):
             yield field, kind
 
@@ -94,9 +94,9 @@ def insert_fragment(destination, fragment, *, position, mappings):
     source, dependencies = extract_fragment(fragment, [block['id'] for block in fragment['blocks']])
     available_fields = {field['key'] for block in target['blocks'] for field in block.get('fields', [])}
     processing = target.get('processing') or {}
-    targets = {'attachment_target': {block['id'] for block in target['blocks'] if block['kind'] not in {'sla_attachment', 'routing_attachment'}}, 'field': available_fields, 'route': set(processing.get('routes', {})),
+    targets = {'attachment_target': {block['id'] for block in target['blocks'] if block['kind'] not in {'sla_attachment', 'ola_attachment', 'routing_attachment'}}, 'field': available_fields, 'route': set(processing.get('routes', {})),
                'sla_profile': set(processing.get('sla_profiles', {}))}
-    names = {'attachment_target': 'blocks', 'field': 'fields', 'route': 'routes', 'sla_profile': 'sla_profiles', 'sla_policy_ref': 'sla_policy_refs', 'routing_policy_ref': 'routing_policy_refs', 'calendar': 'calendars', 'fact': 'facts'}
+    names = {'attachment_target': 'blocks', 'field': 'fields', 'route': 'routes', 'sla_profile': 'sla_profiles', 'sla_policy_ref': 'sla_policy_refs', 'routing_policy_ref': 'routing_policy_refs', 'ola_policy_ref': 'ola_policy_refs', 'calendar': 'calendars', 'fact': 'facts'}
     resolved, missing = {}, []
     dependency_keys = {(dep['kind'], dep['key']) for dep in dependencies}
     for dep in dependencies:

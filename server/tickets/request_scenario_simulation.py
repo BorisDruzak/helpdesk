@@ -36,7 +36,7 @@ def simulation_definition(raw, entry_point_key=None, *, author_preview=False):
         pending.extend(edge.to for edge in blocks[identifier].transitions)
     # Settings belong to the selected target without becoming traversal edges.
     reached.update(block.id for block in draft.blocks
-                   if block.kind in {"sla_attachment", "routing_attachment"} and block.attached_to in reached)
+                   if block.kind in {"sla_attachment", "ola_attachment", "routing_attachment"} and block.attached_to in reached)
     selected = draft.model_dump(mode="json")
     selected.update(entry_block_id=start,
         blocks=[block.model_dump(mode="json") for block in draft.blocks if block.id in reached],

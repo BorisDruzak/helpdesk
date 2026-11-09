@@ -2111,6 +2111,8 @@ async def create_requester_ticket_in_session(request, data, session, *, request_
                 validated_submission = apply_scenario_processing_facts(validated_submission, scenario_snapshot.get("processing_facts"))
                 from tickets.request_scenario_processing import apply_scenario_map_processing
                 validated_submission = await apply_scenario_map_processing(session, validated_submission, scenario_snapshot.get("map_processing"))
+                from tickets.request_scenario_ola import apply_scenario_ola
+                validated_submission = apply_scenario_ola(validated_submission, scenario_snapshot.get("ola_selection"))
             extra_custom_fields.update(build_form_custom_fields(validated_submission))
             catalog_process_fields = (
                 validated_submission.get("catalog_fields")

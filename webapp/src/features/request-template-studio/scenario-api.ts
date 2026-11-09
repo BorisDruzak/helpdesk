@@ -53,7 +53,7 @@ export type ScenarioSimulation = { revision: number; current_block: ScenarioBloc
   simulation_scope?: { limited_scope: boolean; excluded_block_ids: string[]; issues: { code: string; path: string; message: string }[] };
   current_step?: ScenarioStepDisplay;
   processing?: { priority: { priority_class: string; reason?: string | null }; routing: { queue_title?: string | null; queue_code?: string; queue_id?: number; source?: ProcessingSource; selection?: { kind: "policy" | "route"; key: string; source: ProcessingSource } };
-    sla: { first_response_min?: number; resolution_min?: number; time_basis?: "calendar" | "business"; policy_code?: string | null; source?: ProcessingSource; selection?: { kind: "policy" | "profile"; key: string; source: ProcessingSource }; first_response_due_preview?: string | null; resolution_due_preview?: string | null }; map_processing?: ScenarioMapProcessingResult; ola?: { policy_code?: string | null; ack_min?: number; processing_min?: number };
+    sla: { first_response_min?: number; resolution_min?: number; time_basis?: "calendar" | "business"; policy_code?: string | null; source?: ProcessingSource; selection?: { kind: "policy" | "profile"; key: string; source: ProcessingSource }; first_response_due_preview?: string | null; resolution_due_preview?: string | null }; map_processing?: ScenarioMapProcessingResult; ola?: { enabled?: boolean; policy_code?: string | null; ack_min?: number; processing_min?: number };
     approval: { required: boolean }; closure?: { requires_public_summary: boolean; requires_resolution_code: boolean };
     validated_facts?: Record<string, unknown>; notification?: { would_send: false; recipient_groups: string[]; channels: { channel: string; enabled: boolean; available: boolean }[] };
     would_create_ticket: false } | null;
@@ -63,6 +63,7 @@ export type ScenarioPublicationOutcome = {
   priority?: { priority_class: string; reason?: string | null };
   routing?: NonNullable<ScenarioSimulation["processing"]>["routing"];
   sla?: NonNullable<ScenarioSimulation["processing"]>["sla"];
+  ola?: NonNullable<ScenarioSimulation["processing"]>["ola"];
   approval_required?: boolean; map_processing?: ScenarioMapProcessingResult;
 };
 export type ScenarioPublicationPreview = {

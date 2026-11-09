@@ -208,6 +208,12 @@ class ScenarioPublicationService:
                     preview_authority["allow_hidden_offering"] = True
                 _, result = await simulate_service_catalog_processing(self.session, payload, scenario_snapshot=snapshot, **preview_authority)
                 routing, sla, approval = result["routing"], result["sla"], result["approval"]
+                ola_selection = snapshot.get("ola_selection")
+                if (ola_selection and ola_selection["source"]["kind"] in {"attachment", "terminal"}
+                        and (result.get("ola") or {}).get("enabled") is False):
+                    add("ola_unavailable", "OLA отключён на сервере: включите учёт OLA перед публикацией выбранных сроков.",
+                        "blocks." + ola_selection["source"]["block_id"])
+
                 if routing.get("queue_id") not in active_queue_ids:
                     unavailable("routing")
                 invalid_v4_sla = (definition.schema_version == 4 and definition.processing is not None
@@ -217,7 +223,7 @@ class ScenarioPublicationService:
                 if approval.get("required") and not approval.get("approvers"):
                     add("approval_unavailable", "Согласование требуется, но действующий источник не определил согласующих.")
                 outcomes.append({"terminal": state.current_block_id, "kind": "ticket", "entry_point_key": entry_key, "priority": result["priority"], "routing": routing,
-                                 "sla": {key: value for key, value in sla.items() if not key.endswith("preview")}, "approval_required": bool(approval.get("required")),
+                                 "sla": {key: value for key, value in sla.items() if not key.endswith("preview")}, "ola": result.get("ola", {}), "approval_required": bool(approval.get("required")),
                                  **({"map_processing": result["map_processing"]} if "map_processing" in result else {})})
             except ValueError as exc:
                 details = getattr(exc, "details", exc.args[0] if exc.args else {})

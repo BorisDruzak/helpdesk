@@ -1,3 +1,4 @@
+import { ScenarioOlaEditor } from "./scenario-ola";
 import { useEffect, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
@@ -26,6 +27,12 @@ export function ScenarioPolicyAttachmentEditor({ block, definition, disabled, on
  const { policies, error, retry } = usePublishedScenarioPolicies(!definition.processing && isPolicyAttachment(block));
  const [targetError, setTargetError] = useState<string | null>(null);
  if (!isPolicyAttachment(block)) return null;
+ if (block.kind === "ola_attachment") return <fieldset disabled={disabled} className="space-y-4" aria-label="Прикреплённая настройка OLA">
+  <p className="text-sm">Потяните пунктирную связь от OLA к шагу или результату. Настройка применяется при прохождении этого блока, без отдельного шага сотрудника.</p>
+  <label className="block">Применять OLA к блоку<Select value={block.attached_to ?? ""} onChange={event => { try { onChange(event.target.value ? connectPolicyAttachment(definition, block.id, event.target.value) : detachPolicyAttachment(definition, block.id)); setTargetError(null); } catch (error) { setTargetError(error instanceof Error ? error.message : "Не удалось прикрепить OLA"); } }}><option value="">Не прикреплено</option>{definition.blocks?.filter(item=>!isPolicyAttachment(item)).map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
+  {targetError && <p role="alert">{targetError}</p>}
+  <ScenarioOlaEditor key={block.id} value={block} disabled={disabled} onChange={value => { const next = {...block}; delete next.targets; delete next.policy_ref; onChange({...definition,blocks:definition.blocks?.map(item=>item.id===block.id?{...next,...value}:item)}); }}/>
+ </fieldset>;
  const isSla = block.kind === "sla_attachment", kind = isSla ? "sla" : "routing";
  const choices = policies?.[kind] ?? [];
  const selected = definition.processing ? (block.kind === "sla_attachment" ? block.sla_profile : block.route) ?? "" : block.policy_ref ?? "";
@@ -39,7 +46,7 @@ export function ScenarioPolicyAttachmentEditor({ block, definition, disabled, on
   if (block.kind === "sla_attachment") {
    const next = { ...block }; delete next.sla_profile; delete next.policy_ref;
    if (value) { if (definition.processing) next.sla_profile = value; else next.policy_ref = value; } update(next);
-  } else {
+  } else if (block.kind === "routing_attachment") {
    const next = { ...block }; delete next.route; delete next.policy_ref;
    if (value) { if (definition.processing) next.route = value; else next.policy_ref = value; } update(next);
   }

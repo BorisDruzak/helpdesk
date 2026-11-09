@@ -210,6 +210,14 @@ def build_scenario_submission(definition, state, *, session_id, version_id, sour
         terminal = runtime.blocks[state.current_block_id]
         for kind, field in (("sla", "policy_ref"), ("routing", "routing_policy_ref")):
             select_policy(kind, getattr(terminal, field), {"kind": "terminal", "block_id": terminal.id})
+    from tickets.request_scenario_ola import select_scenario_ola
+    ola = select_scenario_ola(definition, state)
+    if ola is not None:
+        snapshot["ola_selection"] = ola
+        if ola["kind"] == "policy":
+            snapshot["policy_refs"]["ola"] = ola["key"]
+        else:
+            snapshot["policy_refs"].pop("ola", None)
     if (definition.execution_semantics if definition.schema_version == 4 else definition.schema_version) >= 2:
         snapshot["form_schema"] = derive_scenario_form(definition, projected)
     if definition.schema_version >= 2:

@@ -9,12 +9,12 @@ import { newKey } from "./scenario-builder-model";
 import { archiveScenarioFragment, createScenarioFragment, emptyFragmentMappings, fetchScenarioFragment, fetchScenarioFragments, insertSavedScenarioFragment, type FragmentDetail, type FragmentMappings, type FragmentSummary } from "./scenario-fragment-api";
 
 type Props = { definition: ScenarioDraftDefinition; detail: ScenarioDetail | null; dirty: boolean; selectedBlockId?: string; disabled: boolean; position: {x:number;y:number}; onLocalInsert: (next: ScenarioDraftDefinition) => void; onInserted: (detail: ScenarioDetail & {inserted_block_ids?:string[]}) => void; onBusy?: (busy:boolean) => void };
-const mappingNames = {attachment_target:"blocks",field:"fields",route:"routes",sla_profile:"sla_profiles",policy_ref:"policy_refs",sla_policy_ref:"sla_policy_refs",routing_policy_ref:"routing_policy_refs",calendar:"calendars",fact:"facts"} as const;
-const kindLabels: Record<string,string> = {attachment_target:"Блок для настройки",field:"Поле",route:"Маршрут",sla_profile:"Профиль SLA",policy_ref:"Правило SLA",sla_policy_ref:"Правило SLA",routing_policy_ref:"Правило маршрутизации",calendar:"Календарь",fact:"Назначение ответа"};
+const mappingNames = {attachment_target:"blocks",field:"fields",route:"routes",sla_profile:"sla_profiles",policy_ref:"policy_refs",sla_policy_ref:"sla_policy_refs",routing_policy_ref:"routing_policy_refs",ola_policy_ref:"ola_policy_refs",calendar:"calendars",fact:"facts"} as const;
+const kindLabels: Record<string,string> = {attachment_target:"Блок для настройки",field:"Поле",route:"Маршрут",sla_profile:"Профиль SLA",policy_ref:"Правило SLA",sla_policy_ref:"Правило SLA",routing_policy_ref:"Правило маршрутизации",ola_policy_ref:"Правило OLA",calendar:"Календарь",fact:"Назначение ответа"};
 export function ScenarioFragments({ definition, detail, dirty, selectedBlockId, disabled, position, onLocalInsert, onInserted, onBusy }: Props) {
  const [list,setList] = useState<FragmentSummary[]>([]), [chosen,setChosen] = useState<FragmentDetail|null>(null), [builtin,setBuiltin] = useState<BuiltinFragmentKey|null>(null);
  const [selected,setSelected] = useState<string[]>(selectedBlockId ? [selectedBlockId] : []), [title,setTitle] = useState(""), [mappings,setMappings] = useState<FragmentMappings>(emptyFragmentMappings);
- const [policies,setPolicies] = useState<Record<"sla"|"routing",AdminHelpdeskPolicyItem[]>>({sla:[],routing:[]}), [calendars,setCalendars] = useState<{id:number;name:string}[]>([]), [message,setMessage] = useState(""), [busy,setBusy] = useState(false);
+ const [policies,setPolicies] = useState<Record<"sla"|"ola"|"routing",AdminHelpdeskPolicyItem[]>>({sla:[],ola:[],routing:[]}), [calendars,setCalendars] = useState<{id:number;name:string}[]>([]), [message,setMessage] = useState(""), [busy,setBusy] = useState(false);
  const generation = useRef(0), selectedRequest = useRef(0), busyCallback = useRef(onBusy); busyCallback.current = onBusy;
  const scope = `${detail?.scenario.id ?? "new"}:${disabled}`;
  useEffect(() => { const current = ++generation.current; selectedRequest.current++; setChosen(null); setList([]); setMappings(emptyFragmentMappings()); setMessage(""); setBusy(false);
@@ -23,7 +23,7 @@ export function ScenarioFragments({ definition, detail, dirty, selectedBlockId, 
  }, [scope]);
  useEffect(() => { setSelected(selectedBlockId ? [selectedBlockId] : []); }, [selectedBlockId, scope]);
  useEffect(() => { if (!chosen) return; let active = true;
-   if (chosen.external_dependencies.some(d => ["policy_ref", "sla_policy_ref", "routing_policy_ref"].includes(d.kind))) void fetchHelpdeskModelRegistry().then(data => {if(active) setPolicies({sla:(data.policies.sla ?? []).filter(p => p.is_active && !!p.published_at), routing:(data.policies.routing ?? []).filter(p => p.is_active && !!p.published_at)});}).catch(() => {if(active) setMessage("Не удалось загрузить правила SLA и маршрутизации.");});
+   if (chosen.external_dependencies.some(d => ["policy_ref", "sla_policy_ref", "ola_policy_ref", "routing_policy_ref"].includes(d.kind))) void fetchHelpdeskModelRegistry().then(data => {if(active) setPolicies({ola:(data.policies.ola ?? []).filter(p => p.is_active && !!p.published_at),sla:(data.policies.sla ?? []).filter(p => p.is_active && !!p.published_at), routing:(data.policies.routing ?? []).filter(p => p.is_active && !!p.published_at)});}).catch(() => {if(active) setMessage("Не удалось загрузить правила SLA и маршрутизации.");});
    if (chosen.external_dependencies.some(d => d.kind === "calendar")) void fetchWebSettingsPayload().then(data => {if(active) setCalendars(data.calendars.filter(c => c.is_active));}).catch(() => {if(active) setMessage("Не удалось загрузить календари.");});
    return () => {active = false;};
  }, [chosen]);
@@ -41,6 +41,7 @@ export function ScenarioFragments({ definition, detail, dirty, selectedBlockId, 
   if(kind === "route") return Object.entries(definition.processing?.routes ?? {}).map(([key,v]) => ({value:key,label:v.title}));
   if(kind === "sla_profile") return Object.entries(definition.processing?.sla_profiles ?? {}).map(([key,v]) => ({value:key,label:v.title}));
   if(kind === "policy_ref" || kind === "sla_policy_ref") return policies.sla.map(p => ({value:p.code,label:p.title}));
+  if(kind === "ola_policy_ref") return policies.ola.map(p => ({value:p.code,label:p.title}));
   if(kind === "routing_policy_ref") return policies.routing.map(p => ({value:p.code,label:p.title}));
   if(kind === "calendar") return calendars.map(c => ({value:String(c.id),label:c.name}));
   return [];

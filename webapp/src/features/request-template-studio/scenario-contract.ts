@@ -42,18 +42,20 @@ export type ScenarioProcessing = {sla_profiles:Record<string,ScenarioSlaProfile>
 export type ScenarioTransition = { to: string; when?: ScenarioCondition | null; priority?: number | null; processing_facts?:ScenarioProcessingFacts|null;processing?:ScenarioBranchProcessing|null; button?: { key: string; label: string } | null };
 type BlockBase = { id: string; title: string; transitions?: ScenarioTransition[]; transition_mode?: "automatic" | "buttons" };
 // Common editor envelopes may carry transitions; the strict server DTO rejects them on policy attachments.
+export type ScenarioOlaTargets = { ack_minutes: number; processing_minutes: number };
 export type ScenarioBlock = BlockBase & (
   | { kind: "form_page"; layout?: "single" | "group" | "section"; fields: ScenarioField[] }
   | { kind: "instruction"; content: { format?: "markdown" | "plain"; body: string; attachments?: ScenarioAttachment[]; rich_document?: ScenarioRichDocument | null }; acknowledgment_required?: boolean }
   | { kind: "navigation" }
   | { kind: "sla"; processing_facts?: ScenarioProcessingFacts | null; sla_profile?: string | null; policy_ref?: string | null }
   | { kind: "sla_attachment"; attached_to?: string | null; processing_facts?: ScenarioProcessingFacts | null; sla_profile?: string | null; policy_ref?: string | null }
+  | { kind: "ola_attachment"; attached_to?: string | null; targets?: ScenarioOlaTargets | null; policy_ref?: string | null }
   | { kind: "routing_attachment"; attached_to?: string | null; route?: string | null; policy_ref?: string | null }
   | { kind: "decision" }
   | { kind: "resolution_check" }
   | { kind: "diagnostic"; capability?: string; require_consent?: boolean; timeout_seconds?: number; execution_mode?: "unavailable" }
   | { kind: "review" }
-  | { kind: "submit_ticket"; route?: string | null; routing_policy_ref?: string | null; sla_profile?: string | null; policy_ref?: string | null }
+  | { kind: "submit_ticket"; ola_targets?: ScenarioOlaTargets | null; ola_policy_ref?: string | null; route?: string | null; routing_policy_ref?: string | null; sla_profile?: string | null; policy_ref?: string | null }
   | { kind: "finish"; message?: string }
 );
 export type ScenarioPolicyKind = "priority" | "routing" | "sla" | "ola" | "approval" | "notification" | "closure" | "visibility";

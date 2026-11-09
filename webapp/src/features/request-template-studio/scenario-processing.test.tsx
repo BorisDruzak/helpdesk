@@ -13,7 +13,7 @@ it("offers canonical service routing and SLA policies beside map overrides witho
  const value = { ...definition, schema_version: 4 as const, processing: { routes: {}, sla_profiles: {}, defaults: { route: "", sla_profile: "" } } };
  render(<ScenarioProcessing definition={value} serviceWide disabled={false} onChange={change} focusPolicy="sla" />);
  const select = await screen.findByLabelText("Сроки обслуживания");
- expect(select).toHaveFocus();
+ await waitFor(() => expect(select).toHaveFocus());
  expect(screen.getByLabelText("Маршрут и очередь")).toBeVisible();
  expect(screen.queryByRole("button", { name: "Добавить профиль SLA" })).not.toBeInTheDocument();
  fireEvent.change(select, { target: { value: "standard" } });
@@ -53,7 +53,7 @@ it("selects only published rules while preserving other processing and map data"
   const change = vi.fn();
   const view = render(<ScenarioProcessing definition={definition} disabled={false} onChange={change} focusPolicy="closure" />);
   const select = await screen.findByLabelText("Закрытие обращения");
-  expect(select).toHaveFocus();
+  await waitFor(() => expect(select).toHaveFocus());
   expect(screen.queryByRole("option", { name: "Не опубликовано" })).not.toBeInTheDocument();
   fireEvent.change(select, { target: { value: "close" } });
   const next = change.mock.calls[0][0];

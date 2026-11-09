@@ -9,7 +9,7 @@ from tickets.request_scenario_conditions import evaluate_condition, finite_numbe
 DIAGNOSTIC_CAPABILITIES = frozenset({"endpoint.context.diagnostic.collect"})
 DIAGNOSTIC_FAILURE_STATUSES = ("unavailable", "denied", "timeout", "capability_absent")
 AUTHORITY_KEYS = frozenset({"actor_id", "actor_role", "owner_actor_id", "requester_id", "queue_id", "priority", "priority_class", "sla_policy_code", "sla_policy_id", "ola_policy_code", "deadline", "consent_token", "auth_token"})
-MODIFIER_KINDS = frozenset({"sla_attachment", "routing_attachment"})
+MODIFIER_KINDS = frozenset({"sla_attachment", "ola_attachment", "routing_attachment"})
 PRIORITY_TYPES = frozenset({"select", "radio", "number", "checkbox"})
 
 
@@ -187,6 +187,13 @@ def validate_scenario(definition):
                     add("invalid_processing_source", f"blocks.{block.id}.{policy_field}", f"Map-owned {label} cannot select a registry policy")
                 if profile and definition.processing is None:
                     add("processing_reference_unknown", f"blocks.{block.id}.{profile_field}", f"{label} value requires map processing")
+        if block.kind in {"ola_attachment", "submit_ticket"} and definition.schema_version == 4:
+            targets = block.targets if block.kind == "ola_attachment" else block.ola_targets
+            policy = block.policy_ref if block.kind == "ola_attachment" else block.ola_policy_ref
+            if targets is not None and policy:
+                add("invalid_ola", f"blocks.{block.id}", "Выберите сроки OLA или опубликованное правило OLA, одновременно выбрать нельзя.")
+            if block.kind == "ola_attachment" and targets is None and not policy:
+                add("ola_unconfigured", f"blocks.{block.id}", "Укажите сроки подтверждения и обработки или выберите опубликованное правило OLA.")
         if block.kind in MODIFIER_KINDS:
             continue
         terminal = block.kind in {"finish", "submit_ticket"}

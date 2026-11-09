@@ -3114,3 +3114,6 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 ## Settings separation — 2026-11-10
 
 Goal: fix audited settings defects, separate personal/service configuration, deploy and verify staging. Plan: docs/SETTINGS_REFACTOR_2026_11_10.md. Preserve unrelated dirty checkout; create task-only immutable candidate over live staging parent. Next: regression RED/GREEN, split components/routes, checks, review, staging/browser.
+
+### Studio OLA blocks
+- 2026-11-10: Add v4 OLA policy attachments, retained-route/terminal precedence, published-rule or manual calendar-minute targets, typed fragments, server simulation/publication and guarded staging enablement. Preserve old schemas, services, drafts and support UI. Focused/backend/frontend/native/browser validation recorded in tmp/studio-ola-block-20261110 and docs/STUDIO_OLA_BLOCKS.md.

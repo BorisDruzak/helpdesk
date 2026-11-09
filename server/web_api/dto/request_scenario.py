@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator, model_serializer
+from pydantic import StrictInt, BaseModel, ConfigDict, Field, StrictBool, model_validator, model_serializer
 
 Key = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_]*$")]
 CatalogCode = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9_-]*$")]
@@ -321,6 +321,17 @@ class SlaAttachment(PolicyAttachmentBase):
     policy_ref: CatalogCode | None = None
 
 
+class ScenarioOlaTargets(StrictModel):
+    ack_minutes: Annotated[StrictInt, Field(ge=1, le=525600)]
+    processing_minutes: Annotated[StrictInt, Field(ge=1, le=525600)]
+
+
+class OlaAttachment(PolicyAttachmentBase):
+    kind: Literal["ola_attachment"]
+    targets: ScenarioOlaTargets | None = None
+    policy_ref: CatalogCode | None = None
+
+
 class RoutingAttachment(PolicyAttachmentBase):
     kind: Literal["routing_attachment"]
     route: Key | None = None
@@ -349,6 +360,8 @@ class Review(BlockBase):
 
 class SubmitTicket(BlockBase):
     kind: Literal["submit_ticket"]
+    ola_targets: ScenarioOlaTargets | None = None
+    ola_policy_ref: CatalogCode | None = None
     route: Key | None = None
     routing_policy_ref: CatalogCode | None = None
     sla_profile: Key | None = None
@@ -357,7 +370,7 @@ class SubmitTicket(BlockBase):
     @model_serializer(mode="wrap")
     def omit_inherited_sla(self, handler):
         raw = handler(self)
-        for key in ("sla_profile", "policy_ref", "route", "routing_policy_ref"):
+        for key in ("sla_profile", "policy_ref", "route", "routing_policy_ref", "ola_targets", "ola_policy_ref"):
             if raw.get(key) is None:
                 raw.pop(key, None)
         return raw
@@ -368,7 +381,7 @@ class Finish(BlockBase):
     message: str = Field(default="Проблема решена без обращения", max_length=2000)
 
 
-Block = Annotated[FormPage | Instruction | Navigation | Sla | SlaAttachment | RoutingAttachment | Decision | ResolutionCheck | Diagnostic | Review | SubmitTicket | Finish, Field(discriminator="kind")]
+Block = Annotated[FormPage | Instruction | Navigation | Sla | SlaAttachment | OlaAttachment | RoutingAttachment | Decision | ResolutionCheck | Diagnostic | Review | SubmitTicket | Finish, Field(discriminator="kind")]
 
 
 class ProcessBinding(StrictModel):
@@ -458,7 +471,7 @@ class ScenarioDraftDefinition(StrictModel):
         if self.schema_version == 4 and self.execution_semantics is None:
             self.execution_semantics = 3
         if self.schema_version < 4 and (self.execution_semantics is not None or any(
-            b.kind in {"navigation", "sla", "sla_attachment", "routing_attachment"} or b.kind == "submit_ticket" and (b.sla_profile is not None or b.policy_ref is not None or b.route is not None or b.routing_policy_ref is not None)
+            b.kind in {"navigation", "sla", "sla_attachment", "ola_attachment", "routing_attachment"} or b.kind == "submit_ticket" and (b.sla_profile is not None or b.policy_ref is not None or b.route is not None or b.routing_policy_ref is not None or b.ola_targets is not None or b.ola_policy_ref is not None)
             or b.transition_mode is not None or any(e.button is not None for e in b.transitions)
             or (b.kind == "instruction" and b.content.rich_document is not None)
             or any(f.help_document is not None for f in getattr(b, "fields", ())) for b in self.blocks)):

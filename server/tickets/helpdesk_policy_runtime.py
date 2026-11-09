@@ -94,6 +94,8 @@ async def resolve_effective_ticket_policy(
     # This marker exists only in trusted scenario composition. Map-owned SLA
     # and routing are immutable ticket inputs; approval keeps its canonical
     # approver source while the traversed branch selects whether it is required.
+    if kind == "ola" and isinstance(request_template.get("scenario_ola"), dict):
+        return policy
     scenario = request_template.get("scenario_processing")
     if isinstance(scenario, dict) and kind in {"routing", "sla"} and scenario.get("route" if kind == "routing" else "sla_profile") is not None:
         return policy
@@ -266,6 +268,13 @@ async def apply_effective_registry_policies(
         if "approval_required" in scenario:
             template_context.setdefault("approval_policy", {})["required"] = scenario["approval_required"]
 
+    if isinstance(pinned.get("scenario_ola"), dict):
+        template_context["ola_policy"] = deepcopy(pinned["ola_policy"])
+        template_context["scenario_ola"] = deepcopy(pinned["scenario_ola"])
+        template_context.pop("ola_policy_code", None)
+        for field in ("policy_refs", "effective_policy_sources", "effective_policy_snapshots"):
+            if isinstance(template_context.get(field), dict):
+                template_context[field].pop("ola", None)
     result = deepcopy(validated_submission)
     result["template_context"] = template_context
     return result

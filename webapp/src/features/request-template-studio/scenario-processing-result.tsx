@@ -30,6 +30,7 @@ export function ScenarioProcessingResult({ result, definition }: { result: Scena
     {processing.priority.reason && <AdvancedDisclosure title="Расширенные настройки"><p className="break-words">Основание расчёта: {processing.priority.reason}</p></AdvancedDisclosure>}
     <p>Очередь: {processing.routing.queue_title || processing.routing.queue_code || "Не определена"}</p>
     <p>Первый ответ: {processing.sla.first_response_min ? `${processing.sla.first_response_min} мин.` : "Не определён"}</p>
+    {processing.ola && <p>{processing.ola.enabled === false ? "OLA отключён на сервере. Настроенные сроки:" : "OLA:"} подтверждение {processing.ola.ack_min == null ? "не задано" : `${processing.ola.ack_min} мин.`} · обработка {processing.ola.processing_min == null ? "не задана" : `${processing.ola.processing_min} мин.`}.</p>}
     <p>Срок выполнения: {processing.sla.resolution_min ? `${processing.sla.resolution_min} мин.` : "Не определён"}</p>
     {processing.sla.time_basis && <p>{processing.sla.time_basis === "business" ? "Рабочее время" : "Календарное время"}</p>}
     {slaSource && <p>Источник SLA: {slaSource.kind === "terminal" ? `итоговый выбор в блоке «${definition?.blocks?.find(block => block.id === slaSource.block_id)?.title ?? "Завершение"}»` : actualSourceLabel(definition, slaSource)}.</p>}

@@ -1,3 +1,4 @@
+import { summarizeTerminalOla } from "./scenario-ola-model";
 import type { ScenarioBlock, ScenarioDraftDefinition, ScenarioRoute, ScenarioSlaProfile } from "./scenario-contract";
 import type { ScenarioSimulation } from "./scenario-api";
 import { isPolicyAttachment, policyAttachmentsFor } from "./scenario-policy-attachments-model";
@@ -36,7 +37,7 @@ export function summarizeTerminalSla(definition: ScenarioDraftDefinition, blockI
    if (attachment.kind === "sla_attachment") {
     if (definition.processing && attachment.sla_profile) selection = { kind: "profile", key: attachment.sla_profile, source };
     if (!definition.processing && attachment.policy_ref) selection = { kind: "policy", key: attachment.policy_ref, source };
-   } else {
+   } else if (attachment.kind === "routing_attachment") {
     if (definition.processing && attachment.route) routingSelection = { kind: "profile", key: attachment.route, source };
     if (!definition.processing && attachment.policy_ref) routingSelection = { kind: "policy", key: attachment.policy_ref, source };
    }
@@ -88,7 +89,7 @@ export function terminalActualSla(definition: ScenarioDraftDefinition, block: Sc
  return { sla, source: actualSourceLabel(definition, source), routingSource: actualSourceLabel(definition, routing.source ?? routing.selection?.source ?? map?.route?.source), route: routeIds.filter(id => !isPolicyAttachment(definition.blocks?.find(item => item.id === id)?.kind ?? "instruction")).map(id => definition.blocks?.find(item => item.id === id)?.title ?? "Шаг сценария"), queue: routing.queue_title ?? routing.queue_code ?? map?.route?.title };
 }
 
-export function terminalSlaSummary(definition: ScenarioDraftDefinition, block: ScenarioBlock, simulation?: ScenarioSimulation): string {
+function slaSummary(definition: ScenarioDraftDefinition, block: ScenarioBlock, simulation?: ScenarioSimulation): string {
  if (block.kind === "finish") return "Завершение без обращения · SLA не применяется";
  if (block.kind !== "submit_ticket") return "";
  const actual = terminalActualSla(definition, block, simulation);
@@ -103,4 +104,19 @@ export function terminalSlaSummary(definition: ScenarioDraftDefinition, block: S
  const label = first.profile ? `SLA: ${first.profile.title} · ответ ${first.profile.first_response_minutes} мин., решение ${first.profile.resolution_minutes} мин. · ${first.profile.time_basis === "business" ? "рабочее" : "календарное"} время`
   : first.selection.kind === "profile" ? "SLA: выбранный профиль недоступен" : "SLA по политике · сроки в проверке пути";
  return `${queue} · ${label}${result.truncated || result.cyclic ? " · обзор неполный" : ""}`;
+}
+
+/** Existing cards keep their SLA text; an OLA assignment adds an independent summary. */
+export function terminalSlaSummary(definition: ScenarioDraftDefinition, block: ScenarioBlock, simulation?: ScenarioSimulation): string {
+ const sla = slaSummary(definition, block, simulation);
+ if (block.kind !== "submit_ticket") return sla;
+ const actual = terminalActualSla(definition, block, simulation) ? simulation?.processing?.ola : undefined;
+ if (actual?.enabled === false) return `${sla} · OLA отключён на сервере`;
+ if (actual && (actual.ack_min != null || actual.processing_min != null)) return `${sla} · OLA: подтверждение ${actual.ack_min ?? "не задано"} мин., обработка ${actual.processing_min ?? "не задана"} мин.`;
+ const paths = summarizeTerminalOla(definition, block.id);
+ if (!paths.alternatives.some(item => item.targets || item.policy_ref)) return sla;
+ const selections = new Set(paths.alternatives.map(item => JSON.stringify([item.targets, item.policy_ref])));
+ if (selections.size !== 1 || paths.truncated || paths.cyclic) return `${sla} · OLA зависит от пути · проверьте варианты`;
+ const first = paths.alternatives[0];
+ return `${sla} · ${first.targets ? `OLA: подтверждение ${first.targets.ack_minutes} мин., обработка ${first.targets.processing_minutes} мин.` : "OLA по правилу · сроки в проверке пути"}`;
 }

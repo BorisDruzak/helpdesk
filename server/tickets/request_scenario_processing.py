@@ -149,6 +149,8 @@ async def scenario_sla_reference_issues(session, definition):
             references.append(("sla", "policy_ref"))
         if block.kind in {"routing_attachment", "submit_ticket"}:
             references.append(("routing", "routing_policy_ref" if block.kind == "submit_ticket" else "policy_ref"))
+        if block.kind in {"ola_attachment", "submit_ticket"}:
+            references.append(("ola", "ola_policy_ref" if block.kind == "submit_ticket" else "policy_ref"))
         for kind, field in references:
             code = getattr(block, field)
             if not code:
