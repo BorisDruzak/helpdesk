@@ -17,6 +17,26 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("inspector becomes a drawer when expanded navigation narrows the workspace at 1280", async ({ page }, info) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await login(page);
+  await page.getByRole("button", { name: "T-200001", exact: true }).click();
+  const toggle = page.getByRole("button", { name: "Сведения", exact: true });
+  const facts = page.getByRole("complementary", { name: "Сведения об обращении", exact: true });
+  await expect(toggle).toBeVisible();
+  await expect(facts).toBeHidden();
+  await toggle.click();
+  await expect(facts).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(facts).toBeHidden();
+  await expect(page.getByRole("button", { name: "Взять в работу", exact: true })).toBeInViewport();
+  const main = await page.locator(".simple-ticket__main").boundingBox();
+  const composer = await page.locator(".simple-composer").boundingBox();
+  expect(composer!.x + composer!.width).toBeLessThanOrEqual(main!.x + main!.width);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: info.outputPath("unified-ticket-drawer-1280.png"), fullPage: true });
+});
+
 for (const width of [1366, 1920]) {
   test(`legacy work requires an explicit self-claim before resolution at ${width}`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 });
