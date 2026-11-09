@@ -2608,7 +2608,7 @@ describe("TicketListPage", () => {
 
 
 describe("UI-SUPPORT-001 default workspace", () => {
-  it("starts with miniatures and collapses the queue after successfully starting work",async()=>{
+  it("previews with the queue open and collapses only after successfully starting work",async()=>{
     const workspace=workspacePayload();
     workspace.detail.ticket.status="queued";workspace.detail.ticket.assignee_id=null;
     workspace.detail.actions.status_options=[{value:"in_progress",label:"В работе"}];
@@ -2616,11 +2616,25 @@ describe("UI-SUPPORT-001 default workspace", () => {
     postSupportTicketStatusMock.mockResolvedValue({} as Awaited<ReturnType<typeof postSupportTicketStatus>>);
     renderTicketListPage("/app/tickets/ticket-1",false);
     await screen.findByRole("button",{name:"Взять в работу"});
-    expect(screen.getByRole("button",{name:"Свернуть очередь"})).toHaveAttribute("aria-pressed","true");
-    fireEvent.click(screen.getByRole("button",{name:"Очередь рядом"}));
+    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
     fireEvent.click(screen.getByRole("button",{name:"Взять в работу"}));
     await waitFor(()=>expect(postSupportTicketStatusMock).toHaveBeenCalled());
     await waitFor(()=>expect(screen.getByRole("button",{name:"Свернуть очередь"})).toHaveAttribute("aria-pressed","true"));
+  });
+  it("keeps the adjacent queue open when previewing another ticket without starting work",async()=>{
+    const queue=queuePayload();
+    queue.tickets.push({...queue.tickets[0],ticket_id:"ticket-2",ticket_code:"T-000002",title:"Другой тикет"});
+    fetchSupportQueueMock.mockResolvedValue(queue);
+    fetchSupportTicketWorkspaceMock.mockImplementation(async id=>{const w=workspacePayload();w.detail.ticket.ticket_id=id;return w;});
+    renderTicketListPage("/app/tickets",false);
+    fireEvent.click(await screen.findByRole("button",{name:"T-000001"}));
+    await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
+    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
+    fireEvent.click(within(screen.getByRole("region",{name:"Моя рабочая очередь"})).getByRole("button",{name:/T-000002/}));
+    await waitFor(()=>expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
+    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
+    expect(postSupportTicketStatusMock).not.toHaveBeenCalled();
+    expect(postSupportTicketAssignMock).not.toHaveBeenCalled();
   });
   it("does not read hidden messages from A when opening B from the full queue",async()=>{
     const queue=queuePayload();

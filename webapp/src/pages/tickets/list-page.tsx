@@ -1268,9 +1268,9 @@ export function TicketListPage() {
   const panelAccount=session?.user_login??"";
   const [ticketListCollapsed,setTicketListCollapsed]=useState(()=>{
     const initial=getTicketsWorkspaceUrlState(searchParams);
-    return searchParams.get("advanced")!=="1" && (!initial.smartView || initial.smartView==="all") ? true : loadPanelPreferences(panelAccount,"support").ticketListCollapsed;
+    return searchParams.get("advanced")!=="1" && (!initial.smartView || initial.smartView==="all") ? false : loadPanelPreferences(panelAccount,"support").ticketListCollapsed;
   });
-  useEffect(()=>setTicketListCollapsed(simpleMode ? true : loadPanelPreferences(panelAccount,"support").ticketListCollapsed),[panelAccount]);
+  useEffect(()=>setTicketListCollapsed(simpleMode ? false : loadPanelPreferences(panelAccount,"support").ticketListCollapsed),[panelAccount]);
   const initialUrlStateRef = useRef(getTicketsWorkspaceUrlState(searchParams));
   const [simpleMode, setSimpleMode] = useState(() => searchParams.get("advanced") !== "1" && (!initialUrlStateRef.current.smartView || initialUrlStateRef.current.smartView === "all"));
   const [simpleFilter, setSimpleFilter] = useState<SimpleQueueFilter>("open");
@@ -1333,7 +1333,6 @@ export function TicketListPage() {
 
   useEffect(() => {
     if (params.ticketId) {
-      if(simpleMode && params.ticketId!==selectedTicketId)setQueueCollapsed(true);
       setSelectedTicketId(params.ticketId);
       if (simpleMode) setWorkspaceMode("ticket");
     } else if (simpleMode) {
@@ -2000,7 +1999,7 @@ export function TicketListPage() {
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", ticketId] }),
       ]);
-      openTicket(ticketId);
+      openTicket(ticketId, true);
     },
   });
 
@@ -2206,9 +2205,9 @@ export function TicketListPage() {
     },
   });
 
-  function openTicket(ticketId: string) {
+  function openTicket(ticketId: string, afterWorkStarted = false) {
     startTransition(() => {
-      if(simpleMode)setQueueCollapsed(true);
+      if(simpleMode && (afterWorkStarted || workspaceMode === "queue"))setQueueCollapsed(afterWorkStarted);
       setWorkspaceMode("ticket");
       navigate(`/app/tickets/${ticketId}`);
     });

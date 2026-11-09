@@ -54,7 +54,7 @@ describe("simple support queue", () => {
     fireEvent.click(screen.getByRole("button", { name: "Скрыть список заявок" }));
     expect(toggle).toHaveBeenCalledOnce();
     view.rerender(<SimpleSupportQueue {...props} collapsed />);
-    expect(screen.queryByText("Принтер")).not.toBeInTheDocument();
+    expect(screen.getByText("Принтер")).toBeVisible();
     expect(screen.getByRole("button", { name: "Показать список заявок" })).toHaveAttribute("aria-expanded", "false");
     const miniature=screen.getByRole("button",{name:/T-001.*В очереди.*SLA/});
     expect(within(miniature).getByText("T-001")).toBeVisible();
