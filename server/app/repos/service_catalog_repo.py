@@ -119,6 +119,10 @@ def serialize_offering(row: HelpdeskServiceOffering, *, service_code: str | None
     }
 
 
+class CatalogVisibilityConflict(ValueError):
+    """The offering visibility changed after the administrator loaded it."""
+
+
 class ServiceCatalogRepo:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -334,6 +338,29 @@ class ServiceCatalogRepo:
         return (
             await self.session.execute(select(HelpdeskServiceOffering).where(HelpdeskServiceOffering.full_code == full_code))
         ).scalar_one_or_none()
+
+    async def set_offering_visibility(self, full_code_value: str, *, visibility: str, expected_visibility: str,
+                                      actor_id: str | None, actor_role: str | None) -> dict[str, Any] | None:
+        """Independent audited visibility change; retain lifecycle and processing."""
+        if visibility not in {"public", "internal", "restricted"} or expected_visibility not in {"public", "internal", "restricted"}:
+            raise ValueError("invalid visibility")
+        row = await self.session.scalar(select(HelpdeskServiceOffering).where(
+            HelpdeskServiceOffering.full_code == full_code_value).with_for_update().execution_options(populate_existing=True))
+        if row is None:
+            return None
+        if row.visibility != expected_visibility:
+            raise CatalogVisibilityConflict()
+        service = await self.session.get(HelpdeskService, row.service_id)
+        before = serialize_offering(row, service_code=service.code if service else None)
+        if row.visibility == visibility:
+            return before
+        row.visibility = visibility
+        row.updated_by, row.updated_at = actor_id, datetime.now(timezone.utc)
+        await self.session.flush()
+        after = serialize_offering(row, service_code=service.code if service else None)
+        await self.append_audit(object_type="offering", object_code=row.full_code, action="visibility_changed",
+            actor_id=actor_id, actor_role=actor_role, before=before, after=after)
+        return after
 
     async def upsert_offering_draft(
         self,

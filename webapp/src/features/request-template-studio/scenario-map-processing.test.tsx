@@ -47,3 +47,28 @@ it("lists all upstream questions and marks questions bypassed by a specialized e
  { id: "logic", kind: "decision", title: "Условие" } ] };
  expect(conditionFieldAvailability(definition, "logic").map(item => [item.field.key, item.mayBeMissing])).toEqual([["a", true], ["b", true], ["c", false]]);
 });
+it("shows only route settings in a route scope and defaults new routes to the configured unified queue", async () => {
+ vi.mocked(fetchWebSettingsPayload).mockResolvedValueOnce({ queues: [{code:"shared",name:"Общая очередь",is_active:true},{code:"old",name:"Старая очередь",is_active:true}], calendars: [], ticket_settings: {operational_flags:{queue_mode:"unified",take_queue_common_code:"shared"}} } as never);
+ const change=vi.fn();
+ render(<ScenarioMapProcessing definition={draft} section="route" disabled={false} onChange={change}/>);
+ await waitFor(()=>expect(screen.getByRole("button",{name:"Добавить направление"})).toBeEnabled());
+ expect(screen.queryByText("Сроки обработки")).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button",{name:"Добавить направление"}));
+ expect(Object.values(change.mock.lastCall![0].processing.routes)).toEqual([{title:"Новое направление",queue_code:"shared"}]);
+});
+it("keeps historical queue visible but offers only configured common queue in unified mode", async () => {
+ vi.mocked(fetchWebSettingsPayload).mockResolvedValueOnce({ queues: [{code:"shared",name:"Общая очередь",is_active:true},{code:"old",name:"Старая очередь",is_active:true}], calendars: [], ticket_settings: {operational_flags:{queue_mode:"unified",take_queue_common_code:"shared"}} } as never);
+ const change=vi.fn();
+ render(<ScenarioMapProcessing definition={{...draft,processing:{...draft.processing!,routes:{old:{title:"Сохранённое",queue_code:"old"}}}}} section="route" itemKey="old" disabled={false} onChange={change}/>);
+ await screen.findByRole("option",{name:"Общая очередь"});
+ expect(screen.getByLabelText("Очередь Helpdesk")).toHaveValue("old");
+ expect(screen.getByRole("option",{name:/Сохранённая очередь/})).toBeDisabled();
+ expect(screen.queryByRole("option",{name:"Старая очередь"})).not.toBeInTheDocument();
+ expect(screen.queryByLabelText("Направление по умолчанию")).not.toBeInTheDocument();
+ expect(change).not.toHaveBeenCalled();
+});
+it("prevents deleting a profile still used by a historical terminal",async()=>{
+ render(<ScenarioMapProcessing definition={{...draft,blocks:[{id:"end",kind:"submit_ticket",title:"Обращение",sla_profile:"normal"}],processing:{routes:{},defaults:{route:"",sla_profile:""},sla_profiles:{normal:{title:"Рабочий",first_response_minutes:5,resolution_minutes:60,time_basis:"calendar"}}}}} section="sla" disabled={false} onChange={vi.fn()}/>);
+ expect(screen.getByRole("button",{name:"Удалить профиль"})).toBeDisabled();
+ await waitFor(()=>expect(screen.queryByText("Загрузка очередей и календарей…")).not.toBeInTheDocument());
+});

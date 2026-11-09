@@ -18,7 +18,7 @@ from web_api.dto.request_scenario import CatalogCode, StrictModel
 from web_api.dto.request_scenario_admin import CategoryInput, Identifier, RevisionInput, ScenarioCreate, ScenarioSave, SimulationInput, ScenarioPublish, ScenarioRollback
 from tickets.request_scenario_publication import ScenarioPublicationService
 from tickets.request_studio_publication import RequestStudioConfirmationError
-from web_api.dto.request_scenario_admin import ScenarioDocumentInput, ServiceScenarioCreate, ScenarioConversionInput
+from web_api.dto.request_scenario_admin import ScenarioDocumentInput, ServiceScenarioCreate, ScenarioConversionInput, ScenarioCatalogVisibility
 
 
 class CatalogQuery(StrictModel):
@@ -236,6 +236,13 @@ async def handle_scenario_detail(request):
         row, draft = await repo.detail(_id(request))
         return {"scenario": serialize(row), "draft": serialize(draft)}
     return await _run(request, operation)
+
+
+@require_auth("admin")
+async def handle_scenario_catalog_visibility(request):
+    async def operation(repo):
+        return await repo.set_catalog_visibility(_id(request), await _payload(request, ScenarioCatalogVisibility))
+    return await _run(request, operation, write=True)
 
 
 @require_auth("admin")

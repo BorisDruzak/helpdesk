@@ -131,8 +131,9 @@ class ScenarioPublicationService:
         for key in ("service", "offering"):
             item = source.get(key) or {}
             candidate = key == "offering" and draft.definition.get("publish_offering") is True and item.get("lifecycle_status") == "draft"
-            if (item.get("lifecycle_status") != "published" and not candidate) or item.get("visibility") != "public":
-                add(key + "_unavailable", "Услуга и раздел должны быть опубликованы и доступны сотруднику.")
+            valid_visibility = item.get("visibility") in ({"public", "internal", "restricted"} if key == "offering" else {"public"})
+            if (item.get("lifecycle_status") != "published" and not candidate) or not valid_visibility:
+                add(key + "_unavailable", "Услуга и раздел должны быть опубликованы; раздел должен быть доступен сотруднику.")
         candidate_offering = draft.definition.get("publish_offering") is True and (source.get("offering") or {}).get("lifecycle_status") == "draft"
         if candidate_offering:
             validation = await ServiceCatalogPublicationService(self.session).validate_offering(row.offering_full_code)
@@ -192,7 +193,10 @@ class ScenarioPublicationService:
                 continue
             try:
                 payload, snapshot = build_scenario_submission(definition, state, session_id="readiness", version_id="draft")
-                _, result = await simulate_service_catalog_processing(self.session, payload, scenario_snapshot=snapshot, **({"allow_draft_offering": True} if candidate_offering else {}))
+                preview_authority = {"allow_draft_offering": True} if candidate_offering else {}
+                if (source.get("offering") or {}).get("visibility") in {"internal", "restricted"}:
+                    preview_authority["allow_hidden_offering"] = True
+                _, result = await simulate_service_catalog_processing(self.session, payload, scenario_snapshot=snapshot, **preview_authority)
                 routing, sla, approval = result["routing"], result["sla"], result["approval"]
                 if routing.get("queue_id") not in active_queue_ids:
                     add("routing_unavailable", "Одна из ветвей не попадает в действующую очередь.")
@@ -220,7 +224,8 @@ class ScenarioPublicationService:
         result["diff"] = scenario_diff(before, draft.definition)
         if draft.definition.get("publish_offering") is True and (source.get("offering") or {}).get("lifecycle_status") == "draft":
             result["diff"].append({"path": "offering.lifecycle_status", "before": "draft", "after": "published"})
-        result.update(confirmation_token=None, expires_at=None, source_hash=definition_hash(source), revision=draft.revision)
+        result.update(confirmation_token=None, expires_at=None, source_hash=definition_hash(source), revision=draft.revision,
+                      catalog_visibility=(source.get("offering") or {}).get("visibility"))
         if issue_token and result["readiness"]["can_publish"]:
             token, expiry = await self.tokens.issue_bound_confirmation_token(self._binding(row, draft, source), scope=SCOPE, auth_context=self.repo.auth, summary={"scenario_id": row.id, "revision": draft.revision})
             result.update(confirmation_token=token, expires_at=expiry.isoformat())

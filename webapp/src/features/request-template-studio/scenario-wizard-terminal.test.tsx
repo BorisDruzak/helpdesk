@@ -1,6 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render as renderView, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ScenarioWizard } from "./scenario-wizard";
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderView(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
+}
 vi.mock("./scenario-map-workbench",()=>({ScenarioMapWorkbench:({simulationResult,onTest,inspectorPanel}:any)=><div><button onClick={onTest}>Открыть тест</button><output data-testid="result">{simulationResult?.revision??"нет"}</output>{inspectorPanel}</div>}));
 vi.mock("./scenario-simulation",()=>({ScenarioSimulationPanel:({revision,onState}:any)=><button onClick={()=>onState("end",["q"],{revision,state:{current_block_id:"end"}})}>Получить результат</button>}));
 vi.mock("./scenario-author-attachments",()=>({ScenarioAuthorAttachmentProvider:({children}:any)=>children}));

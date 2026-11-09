@@ -19,7 +19,7 @@ const descriptions: Record<ScenarioPolicyKind, string> = {
   closure: "Какие данные и подтверждения нужны, чтобы завершить обращение.",
   visibility: "Какие поля и статусы созданного обращения видит сотрудник. Это не публикация услуги в каталоге.",
 };
-export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy }: { definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioDraftDefinition) => void; focusPolicy?: ScenarioPolicyKind }) {
+export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy, policyKinds }: { definition: ScenarioDraftDefinition; disabled: boolean; onChange: (value: ScenarioDraftDefinition) => void; focusPolicy?: ScenarioPolicyKind; policyKinds?: ScenarioPolicyKind[] }) {
   const policyRef = useRef<HTMLSelectElement>(null);
   const [policies, setPolicies] = useState<Record<string, AdminHelpdeskPolicyItem[]> | null>(null);
   const [error, setError] = useState(false);
@@ -34,12 +34,12 @@ export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy
   }, [attempt]);
   return <div className="min-w-0 space-y-4">
     <h2 className="text-lg font-semibold">Обработка услуги</h2>
-    {definition.processing ? <ScenarioMapProcessing definition={definition} disabled={disabled} onChange={onChange} /> : <><p className="text-sm">Эти правила действуют для обращений, созданных через эту услугу. Выбирайте готовое опубликованное правило, только если нужно изменить действующую обработку.</p>
+    {definition.processing && (!policyKinds || policyKinds.some(kind => kind === "routing" || kind === "sla")) ? <ScenarioMapProcessing section={policyKinds?.includes("routing") && !policyKinds.includes("sla") ? "route" : policyKinds?.includes("sla") && !policyKinds.includes("routing") ? "sla" : "all"} definition={definition} disabled={disabled} onChange={onChange} /> : <><p className="text-sm">Эти правила действуют для обращений, созданных через эту услугу. Выбирайте готовое опубликованное правило, только если нужно изменить действующую обработку.</p>
     <p className="text-sm text-slate-500">«Использовать действующие правила» сохраняет серверное наследование. Оно не создаёт недостающие правила: их наличие проверяется перед публикацией.</p></>}
-    {definition.processing && <details><summary>Обработка существующих ветвей</summary><div className="space-y-3">{definition.blocks?.flatMap(block => (block.transitions ?? []).map((edge, index) => <details key={`${block.id}:${index}`}><summary>{block.title} → {definition.blocks?.find(item => item.id === edge.to)?.title ?? "Следующий блок"}</summary><ScenarioBranchProcessingEditor hideSla definition={definition} value={edge.processing} disabled={disabled} onChange={processing => onChange({ ...definition, blocks: definition.blocks?.map(item => item.id === block.id ? { ...item, transitions: item.transitions?.map((old, i) => i === index ? { ...old, processing } : old) } : item) })} /></details>))}</div></details>}
-    {focusPolicy && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Проверьте настройку «{labels[focusPolicy]}» ниже: выберите готовое правило или создайте новое, затем сохраните черновик. Затем повторите проверку публикации.</p>}
+    {definition.processing && !policyKinds && <details><summary>Обработка существующих ветвей</summary><div className="space-y-3">{definition.blocks?.flatMap(block => (block.transitions ?? []).map((edge, index) => <details key={`${block.id}:${index}`}><summary>{block.title} → {definition.blocks?.find(item => item.id === edge.to)?.title ?? "Следующий блок"}</summary><ScenarioBranchProcessingEditor hideSla definition={definition} value={edge.processing} disabled={disabled} onChange={processing => onChange({ ...definition, blocks: definition.blocks?.map(item => item.id === block.id ? { ...item, transitions: item.transitions?.map((old, i) => i === index ? { ...old, processing } : old) } : item) })} /></details>))}</div></details>}
+    {focusPolicy && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">Проверьте настройку «{labels[focusPolicy]}» ниже: {definition.processing && (focusPolicy === "routing" || focusPolicy === "sla") ? "выберите и настройте значение карты" : "выберите готовое правило или создайте новое"}, затем сохраните черновик. Затем повторите проверку публикации.</p>}
     {error ? <div role="alert"><p>Не удалось загрузить политики обработки.</p><Button variant="outline" onClick={() => setAttempt(value => value + 1)}>Повторить загрузку политик</Button></div> : !policies ? <p role="status">Загрузка политик обработки…</p> : <div className="grid min-w-0 gap-4">
-      {(Object.keys(labels) as ScenarioPolicyKind[]).filter(kind => !definition.processing || !["routing", "sla"].includes(kind)).sort((a, b) => Number(b === focusPolicy) - Number(a === focusPolicy)).map(kind => {
+      {(Object.keys(labels) as ScenarioPolicyKind[]).filter(kind => (!policyKinds || policyKinds.includes(kind)) && (!definition.processing || !["routing", "sla"].includes(kind))).sort((a, b) => Number(b === focusPolicy) - Number(a === focusPolicy)).map(kind => {
         const choices = (policies[kind] || []).filter((item, index, items) => item.is_active && !!item.published_at && items.findIndex(other => other.code === item.code && other.is_active && !!other.published_at) === index);
         const code = definition.process_binding.policy_refs?.[kind] || "";
         return <div key={kind} className={`min-w-0 rounded border p-3 ${kind === focusPolicy ? "border-amber-400 bg-amber-50" : ""}`}>
@@ -61,9 +61,9 @@ export function ScenarioProcessing({ definition, disabled, onChange, focusPolicy
         </div>;
       })}
     </div>}
-    <section aria-label="Ответы для обработки" className="space-y-2"><h3 className="font-semibold">Ответы для обработки</h3>
+    {!policyKinds && <section aria-label="Ответы для обработки" className="space-y-2"><h3 className="font-semibold">Ответы для обработки</h3>
       {(definition.blocks || []).flatMap(block => block.kind === "form_page" ? block.fields : []).filter(field => field.process_mapping?.roles?.some(role => role !== "display_only")).map(field => <div key={field.key} className="rounded border p-3"><p>{field.label}</p><p>Ответ передаётся выбранным политикам и проверяется сервером в тестовом прогоне.</p><AdvancedDisclosure title="Расширенные настройки"><p className="break-all">Проверенный факт: {field.process_mapping?.fact_key || field.key}</p><p className="break-all">Роли: {field.process_mapping?.roles?.join(", ")}</p></AdvancedDisclosure></div>)}
-    </section>
+    </section>}
     {editor && <ScenarioPolicyEditor key={editor.kind} kind={editor.kind} serviceTitle={definition.title} source={editor.source} disabled={disabled} onClose={() => setEditor(null)}
       onRegistered={policy => setPolicies(current => ({...current, [policy.kind]: [policy, ...(current?.[policy.kind] ?? []).filter(item => item.code !== policy.code)]}))}
       onApply={policy => { onChange({...definition, process_binding: {...definition.process_binding, policy_refs: {...definition.process_binding.policy_refs, [policy.kind]: policy.code}}}); setEditor(null); }} />}

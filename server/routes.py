@@ -379,7 +379,7 @@ from web_api.request_scenario_admin_handlers import (
     handle_scenario_upgrade_v4, handle_scenario_catalog, handle_scenario_category_create, handle_scenario_category_update,
     handle_scenario_category_archive, handle_scenario_create, handle_scenario_detail,
     handle_scenario_service_create, handle_scenario_convert_forms, handle_scenario_document_validate, handle_scenario_document_export,
-    handle_scenario_draft_save, handle_scenario_archive, handle_scenario_versions, handle_scenario_simulate,
+    handle_scenario_draft_save, handle_scenario_catalog_visibility, handle_scenario_archive, handle_scenario_versions, handle_scenario_simulate,
     handle_scenario_readiness, handle_scenario_publish_preview, handle_scenario_publish, handle_scenario_rollback_draft,
 )
 from web_api.request_scenario_asset_handlers import (
@@ -777,6 +777,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/request-studio/scenarios/{identifier}/document', handle_scenario_document_export),
         web.get('/api/web/admin/request-studio/scenarios/{identifier}', handle_scenario_detail),
         web.put('/api/web/admin/request-studio/scenarios/{identifier}/draft', handle_scenario_draft_save),
+        web.post('/api/web/admin/request-studio/scenarios/{identifier}/catalog-visibility', handle_scenario_catalog_visibility),
         web.post('/api/web/admin/request-studio/scenarios/{identifier}/upgrade-v4', handle_scenario_upgrade_v4),
         web.post('/api/web/admin/request-studio/scenarios/{identifier}/archive', handle_scenario_archive),
         web.get('/api/web/admin/request-studio/scenarios/{identifier}/versions', handle_scenario_versions),

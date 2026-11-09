@@ -9,7 +9,7 @@ from sqlalchemy import select, text, exists, or_, func
 
 from app.db.models import RequestTemplate, HelpdeskServiceOffering
 from app.db.request_scenario_models import RequestStudioCategory, RequestStudioDraft, RequestStudioScenario, RequestStudioScenarioVersion, RequestStudioSession
-from app.repos.service_catalog_repo import ServiceCatalogRepo
+from app.repos.service_catalog_repo import ServiceCatalogRepo, CatalogVisibilityConflict
 from tickets.request_studio_catalog_projection import offering_cards
 from tickets.request_scenario_runtime import ScenarioRuntime
 from tickets.request_scenario_validation import validate_scenario
@@ -34,6 +34,19 @@ def definition_hash(definition):
     return hashlib.sha256(json.dumps(definition, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
+def _needs_common_route_default(definition):
+    processing = definition.processing
+    return processing is not None and not processing.routes and not processing.defaults.route
+
+
+def _set_common_route_default(definition, common):
+    """Fill a new blank map's route only; retain explicit routes and all SLA."""
+    from web_api.dto.request_scenario import ScenarioRoute
+    if _needs_common_route_default(definition):
+        definition.processing.routes["default"] = ScenarioRoute(title=common.name, queue_code=common.code)
+        definition.processing.defaults.route = "default"
+
+
 class RequestScenarioRepo:
     def __init__(self, session, auth):
         self.session, self.auth = session, auth
@@ -43,6 +56,7 @@ class RequestScenarioRepo:
         """Create the internal catalog binding with the map, in one transaction."""
         from web_api.dto.request_scenario import ScenarioDraftDefinition, CatalogCode, _bounded_input
         from pydantic import TypeAdapter
+        from tickets.queue_mode import unified_queue_enabled, unified_queue_code
         _bounded_input(raw)
         version = raw.get("schema_version", 2)
         if type(version) is not int or version not in {1, 2, 3, 4}:
@@ -60,7 +74,14 @@ class RequestScenarioRepo:
             incoming = deepcopy(raw)
             incoming.setdefault("publish_offering", False)
             incoming = ScenarioDraftDefinition.model_validate({**incoming, "offering_full_code": row.offering_full_code,
-                "process_binding": {**incoming.get("process_binding", {}), "request_template_key": draft.definition["process_binding"]["request_template_key"]}}).model_dump(mode="json")
+                "process_binding": {**incoming.get("process_binding", {}), "request_template_key": draft.definition["process_binding"]["request_template_key"]}})
+            if unified_queue_enabled() and _needs_common_route_default(incoming):
+                from app.db.models import TicketQueue
+                common = await self.session.scalar(select(TicketQueue).where(TicketQueue.code == unified_queue_code(), TicketQueue.is_active.is_(True)))
+                if common is None:
+                    raise ScenarioAdminError("COMMON_QUEUE_UNAVAILABLE", 409)
+                _set_common_route_default(incoming, common)
+            incoming = incoming.model_dump(mode="json")
             incoming.update(offering_full_code="", publish_offering=False)
             incoming["process_binding"]["request_template_key"] = ""
             rebindings = None
@@ -105,11 +126,21 @@ class RequestScenarioRepo:
         bound = {**raw, "schema_version": max(2, version), "offering_full_code": code + "." + offering_code,
                  "process_binding": {**(raw.get("process_binding") or {}), "request_template_key": template_key}, "publish_offering": True}
         definition = ScenarioDraftDefinition.model_validate(bound)
+        queue_defaults = {}
+        if unified_queue_enabled():
+            from app.db.models import TicketQueue
+            common = await self.session.scalar(select(TicketQueue).where(TicketQueue.code == unified_queue_code(), TicketQueue.is_active.is_(True)))
+            if common is None:
+                raise ScenarioAdminError("COMMON_QUEUE_UNAVAILABLE", 409)
+            queue_defaults["default_queue_id"] = common.id
+            # Only a genuinely new blank route receives the common default.
+            # Explicit routing and historical map definitions remain untouched.
+            _set_common_route_default(definition, common)
         await self._category(definition.category_id, code)
         await self.catalog.upsert_offering_draft({"service_code": code, "code": offering_code,
             "public_title": definition.title, "short_description": definition.description, "lifecycle_status": "draft",
             "visibility": "public", "request_template_key": template_key, "ticket_type_code": template["ticket_type"],
-            "request_type": "request", "metadata": {"studio_catalog": {"category_id": definition.category_id}, "studio_map_source": definition.scenario_key}},
+            "request_type": "request", **queue_defaults, "metadata": {"studio_catalog": {"category_id": definition.category_id}, "studio_map_source": definition.scenario_key}},
             actor_id=self.auth.actor_id, actor_role=self.auth.actor_role)
         return await self.create(definition, copy_source_id=copy_source_id)
 
@@ -302,6 +333,21 @@ class RequestScenarioRepo:
         if not draft:
             raise ScenarioAdminError("DRAFT_NOT_FOUND", 409)
         return row, draft
+
+    async def set_catalog_visibility(self, identifier, payload):
+        row, _ = await self.detail(identifier)
+        await self._service_lock(row.service_code)
+        # The catalog repository locks and compares the persisted offering. No
+        # graph, draft revision, published version or parent visibility changes.
+        try:
+            offering = await self.catalog.set_offering_visibility(row.offering_full_code,
+                visibility=payload.visibility, expected_visibility=payload.expected_visibility,
+                actor_id=self.auth.actor_id, actor_role=self.auth.actor_role)
+        except CatalogVisibilityConflict as exc:
+            raise ScenarioAdminError("VISIBILITY_CONFLICT", 409) from exc
+        if offering is None:
+            raise ScenarioAdminError("OFFERING_NOT_FOUND", 404)
+        return {"offering": offering}
 
     @staticmethod
     def _draft_audit(row, draft):
@@ -503,7 +549,9 @@ class RequestScenarioRepo:
         entries = offering_cards(offerings, scenarios, categories, services, query=query, status=status,
             service_code=service_code, offering_code=offering_code, selected=selected)
         page = entries[offset:offset + limit]
+        from tickets.queue_mode import unified_queue_enabled, unified_queue_code
         return {"categories": categories, "entries": page,
+            "queue_mode": "unified" if unified_queue_enabled() else "partitioned", "common_queue_code": unified_queue_code(),
             "scenarios": [scenario for item in page for scenario in item["scenarios"]],
             "legacy_offerings": [item["offering"] for item in page if not any(not scenario["archived"] for scenario in item["scenarios"])], "total": len(entries),
             "offset": offset, "limit": limit, "services": services, "offerings": offerings}

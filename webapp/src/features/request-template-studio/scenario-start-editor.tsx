@@ -1,13 +1,14 @@
+import type { ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { ScenarioPurpose } from "./scenario-purpose";
 import { isPolicyAttachment } from "./scenario-policy-attachments-model";
 import type { ScenarioCatalog } from "./scenario-api";
-import type { ScenarioDraftDefinition } from "./scenario-contract";
+import type { ScenarioDraftDefinition, ScenarioPolicyKind } from "./scenario-contract";
 
 export type StartSection = "service" | "catalog" | "entries";
-type Props = { definition: ScenarioDraftDefinition; catalog: ScenarioCatalog; disabled: boolean; existing: boolean; section: StartSection; onSection: (section: StartSection) => void; onChange: (next: ScenarioDraftDefinition) => void; onEntry: (key: string, target: string) => void; onConnect: (target: string) => void; onProcessing: () => void; onAddEntrance?:()=>void };
-export function ScenarioStartEditor({ section, onSection, onEntry, onConnect, onProcessing, onAddEntrance, ...props }: Props) {
+type Props = { definition: ScenarioDraftDefinition; catalog: ScenarioCatalog; disabled: boolean; existing: boolean; section: StartSection; onSection: (section: StartSection) => void; onChange: (next: ScenarioDraftDefinition) => void; onEntry: (key: string, target: string) => void; onConnect: (target: string) => void; onProcessing: (kinds?: ScenarioPolicyKind[]) => void; catalogVisibility?: ReactNode; onAddEntrance?:()=>void };
+export function ScenarioStartEditor({ section, onSection, onEntry, onConnect, onProcessing, onAddEntrance, catalogVisibility, ...props }: Props) {
   const { definition, disabled } = props;
   return <section aria-label="Подпункты начала" className="min-w-0 space-y-3">
     <ScenarioPurpose {...props} section={section} onSection={onSection} />
@@ -21,6 +22,11 @@ export function ScenarioStartEditor({ section, onSection, onEntry, onConnect, on
         <details><summary>Подключение с клавиатуры</summary><label className="block">Добавить вход к шагу<Select disabled={disabled} value="" onChange={event => onConnect(event.target.value)}><option value="">Выберите блок на карте</option>{(definition.blocks ?? []).filter(block=>!isPolicyAttachment(block)).map(block => <option key={block.id} value={block.id}>{block.title}</option>)}</Select></label></details>
       </div>
     </details>
-    <Button variant="outline" onClick={onProcessing}>Обработка и SLA</Button>
+    {catalogVisibility && <section aria-label="Видимость услуги в каталоге" className="space-y-2 rounded border p-3"><h3 className="font-semibold">Видимость услуги в каталоге</h3>{catalogVisibility}</section>}
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" onClick={() => onProcessing(["visibility"])}>Видимость обращения</Button>
+      <Button variant="outline" onClick={() => onProcessing(["priority", "ola", "approval", "notification", "closure"])}>Правила обработки</Button>
+    </div>
+    <p className="text-sm text-slate-500">Направления и сроки настраиваются в отдельных блоках «Маршрут обработки» и «Настройка SLA». Видимость обращения определяет поля и статусы после создания.</p>
   </section>;
 }

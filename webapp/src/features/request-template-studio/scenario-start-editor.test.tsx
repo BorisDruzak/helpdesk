@@ -12,7 +12,17 @@ it("groups start settings and opens an existing entry without changing the draft
   expect(screen.getByText("Входы в каталог", { selector: "summary" })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Настроить вход Не работает чат" }));
   expect(entry).toHaveBeenCalledWith("entry", "q");
-  fireEvent.click(screen.getByRole("button", { name: "Обработка и SLA" }));
+  fireEvent.click(screen.getByRole("button", { name: "Правила обработки" }));
   expect(processing).toHaveBeenCalled();
   expect(change).not.toHaveBeenCalled();
+});
+it("separates catalog availability from ticket visibility and opens focused rules",()=>{
+ const processing=vi.fn();
+ const definition={scenario_key:"s",title:"Карта",service_code:"s",process_binding:{request_template_key:"t"}} as ScenarioDraftDefinition;
+ render(<ScenarioStartEditor definition={definition} catalog={{services:[],categories:[],offerings:[]} as never} disabled={false} existing section="service" onSection={vi.fn()} onChange={vi.fn()} onEntry={vi.fn()} onConnect={vi.fn()} onProcessing={processing} catalogVisibility={<button>Скрыть услугу</button>}/>);
+ expect(screen.getByRole("region",{name:"Видимость услуги в каталоге"})).toHaveTextContent("Скрыть услугу");
+ fireEvent.click(screen.getByRole("button",{name:"Видимость обращения"}));
+ expect(processing).toHaveBeenLastCalledWith(["visibility"]);
+ fireEvent.click(screen.getByRole("button",{name:"Правила обработки"}));
+ expect(processing).toHaveBeenLastCalledWith(["priority","ola","approval","notification","closure"]);
 });

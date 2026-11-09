@@ -32,6 +32,11 @@ class RevisionInput(StrictModel):
     revision: Annotated[StrictInt, Field(ge=1)]
 
 
+class ScenarioCatalogVisibility(StrictModel):
+    visibility: Literal["public", "internal", "restricted"]
+    expected_visibility: Literal["public", "internal", "restricted"]
+
+
 class SimulationInput(RevisionInput):
     author_preview: bool = False
     entry_point_key: Key | None = None

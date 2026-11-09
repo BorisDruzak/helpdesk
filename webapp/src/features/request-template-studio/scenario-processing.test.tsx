@@ -3,9 +3,25 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioProcessing } from "./scenario-processing";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
+vi.mock("../settings/api",()=>({fetchWebSettingsPayload:vi.fn(async()=>({queues:[],calendars:[]}))}));
 
 const definition: ScenarioDraftDefinition = { scenario_key: "p", title: "Печать", service_code: "it", offering_full_code: "it.print", process_binding: { request_template_key: "p", policy_refs: { routing: "route" } }, blocks: [] };
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("shows a focused rule group without map route or SLA settings",async()=>{
+ vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
+ render(<ScenarioProcessing definition={{...definition,processing:{routes:{},sla_profiles:{},defaults:{route:"",sla_profile:""}}}} disabled={false} onChange={vi.fn()} policyKinds={["visibility"]}/>);
+ await screen.findByLabelText("Видимость обращения");
+ expect(screen.queryByLabelText("Приоритет по ответам")).not.toBeInTheDocument();
+ expect(screen.queryByLabelText("Обработка этой карты")).not.toBeInTheDocument();
+ expect(screen.queryByLabelText("Ответы для обработки")).not.toBeInTheDocument();
+});
+it("opens a route issue directly in map route settings without SLA",async()=>{
+ vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({status:"success",data:{policies:{}}}),{headers:{"content-type":"application/json"}})));
+ render(<ScenarioProcessing definition={{...definition,processing:{routes:{desk:{title:"Поддержка",queue_code:"saved"}},sla_profiles:{},defaults:{route:"desk",sla_profile:""}}}} disabled={false} onChange={vi.fn()} policyKinds={["routing"]} focusPolicy="routing"/>);
+ expect(screen.getByLabelText("Очередь Helpdesk")).toHaveValue("saved");
+ expect(screen.queryByText("Сроки обработки")).not.toBeInTheDocument();
+ await waitFor(()=>expect(screen.queryByText("Загрузка очередей и календарей…")).not.toBeInTheDocument());
+});
 it.each([["closure", "Закрытие обращения", "Описание решения для сотрудника обязательно"], ["visibility", "Видимость обращения", "Статус «Обращение принято»"]])("opens a real %s editor without leaving or changing the service", async (_kind, label, control) => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: { policies: {} } }), { headers: { "content-type": "application/json" } })));
   const change = vi.fn();

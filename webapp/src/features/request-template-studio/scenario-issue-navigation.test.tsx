@@ -19,7 +19,7 @@ const definition: ScenarioDraftDefinition = { scenario_key: "print", service_cod
 ] };
 function mount(code: string, path: string) {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify({ status: "success", data: url.endsWith("/publish-preview") ? {
-    health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [{ code, path, message: "Исправьте ошибку" }] }, diff: [], confirmation_token: null,
+    revision: 2, health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [{ code, path, message: "Исправьте ошибку" }] }, diff: [], confirmation_token: null,
   } : { policies: {} } }), { headers: { "Content-Type": "application/json" } })));
   const change = vi.fn();
   render(<MemoryRouter><QueryClientProvider client={new QueryClient()}><ScenarioWizard definition={definition} detail={{ scenario: { id: "scenario" }, draft: { revision: 2, definition } } as ScenarioDetail} catalog={{ offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер" }], categories: [], services: [], scenarios: [] } as unknown as ScenarioCatalog} dirty={false} disabled={false} onChange={change} /></QueryClientProvider></MemoryRouter>);

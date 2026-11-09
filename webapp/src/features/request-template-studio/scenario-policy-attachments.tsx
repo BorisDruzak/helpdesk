@@ -4,6 +4,7 @@ import { Select } from "../../components/ui/select";
 import { fetchHelpdeskModelRegistry, type AdminHelpdeskPolicyItem } from "../forms-builder/api";
 import type { ScenarioBlock, ScenarioDraftDefinition } from "./scenario-contract";
 import { ProcessingFactsEditor } from "./scenario-processing-facts";
+import { ScenarioMapProcessing } from "./scenario-map-processing";
 import { connectPolicyAttachment, detachPolicyAttachment, isPolicyAttachment } from "./scenario-policy-attachments-model";
 
 /** Shared published-registry chooser: never substitutes a made-up policy or duration. */
@@ -61,6 +62,11 @@ export function ScenarioPolicyAttachmentEditor({ block, definition, disabled, on
   {!definition.processing && policies && !choices.length && <p>Нет опубликованных правил для выбора.</p>}
   {profile && <p className="text-sm">Первый ответ: {profile.first_response_minutes} мин. · решение: {profile.resolution_minutes} мин. · {profile.time_basis === "business" ? "Рабочее время" : "Календарное время"}.</p>}
   {route && <p className="text-sm">Очередь: {route.queue_code}.</p>}
+  {definition.processing && selected && available && <div className="space-y-2">
+   <p className="text-sm">{(isSla ? definition.processing.defaults.sla_profile : definition.processing.defaults.route) === selected ? "Эта настройка также применяется по умолчанию для карты." : "На остальных путях действуют текущие настройки карты по умолчанию."}</p>
+   <Button variant="outline" disabled={(isSla ? definition.processing.defaults.sla_profile : definition.processing.defaults.route) === selected} onClick={() => onChange({ ...definition, processing: { ...definition.processing!, defaults: { ...definition.processing!.defaults, [isSla ? "sla_profile" : "route"]: selected } } })}>{isSla ? "Использовать профиль SLA по умолчанию" : "Использовать направление по умолчанию"}</Button>
+  </div>}
+  {definition.processing && <ScenarioMapProcessing key={`${block.id}:${selected}`} definition={definition} disabled={disabled} onChange={onChange} section={isSla ? "sla" : "route"} itemKey={selected} onCreated={(next, key) => onChange({ ...next, blocks: next.blocks?.map(item => item.id !== block.id ? item : item.kind === "sla_attachment" ? { ...item, sla_profile: key } : item.kind === "routing_attachment" ? { ...item, route: key } : item) })} />}
   {!definition.processing && <p className="text-sm">{isSla ? "Сроки" : "Очередь"} определит сервер по ответам и опубликованному правилу. Точные значения доступны в проверке пути.</p>}
  </fieldset>;
 }

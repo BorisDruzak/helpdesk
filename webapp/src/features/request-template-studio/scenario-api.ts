@@ -58,10 +58,19 @@ export type ScenarioSimulation = { revision: number; current_block: ScenarioBloc
     validated_facts?: Record<string, unknown>; notification?: { would_send: false; recipient_groups: string[]; channels: { channel: string; enabled: boolean; available: boolean }[] };
     would_create_ticket: false } | null;
 };
+export type ScenarioPublicationOutcome = {
+  terminal: string; kind: "ticket" | "self_service"; entry_point_key?: string | null;
+  priority?: { priority_class: string; reason?: string | null };
+  routing?: NonNullable<ScenarioSimulation["processing"]>["routing"];
+  sla?: NonNullable<ScenarioSimulation["processing"]>["sla"];
+  approval_required?: boolean; map_processing?: ScenarioMapProcessingResult;
+};
 export type ScenarioPublicationPreview = {
   revision: number; source_hash: string; health: { health_status: string };
+  catalog_visibility?: "public" | "internal" | "restricted";
   readiness: { can_publish: boolean; variants_checked: number; issues: { code: string; path?: string; message: string }[] };
   diff: { path: string; before: unknown; after: unknown }[];
+  outcomes?: ScenarioPublicationOutcome[];
   confirmation_token: string | null; expires_at: string | null;
 };
 const root = "/api/web/admin/request-studio";

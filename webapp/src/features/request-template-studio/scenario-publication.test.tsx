@@ -12,7 +12,7 @@ function mount(dirty = false) {
 }
 it("describes publication changes without exposing internal paths and template keys", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: {
-    health: { health_status: "ok" }, readiness: { can_publish: true, variants_checked: 1, issues: [] },
+    revision: 2, health: { health_status: "ok" }, readiness: { can_publish: true, variants_checked: 1, issues: [] },
     diff: [{ path: "blocks.instruction.transitions", before: null, after: [{ to: "internal_block_123" }] },
       { path: "process_binding.request_template_key", before: null, after: "internal_template_456" }], confirmation_token: null,
   } }), { headers: { "Content-Type": "application/json" } })));
@@ -25,7 +25,7 @@ it("requires reviewed diff and explicit confirmation before publishing saved rev
     const body = JSON.parse(String(init?.body));
     if (url.endsWith("/publish-preview")) {
       expect(body).toEqual({ revision: 2 });
-      return new Response(JSON.stringify({ status: "success", data: { health: { health_status: "ok" }, readiness: { can_publish: true, issues: [], variants_checked: 3 },
+      return new Response(JSON.stringify({ status: "success", data: { revision: 2, health: { health_status: "ok" }, readiness: { can_publish: true, issues: [], variants_checked: 3 },
         diff: [{ path: "title", before: "Старое", after: "Новое" }], confirmation_token: "opaque-token", expires_at: "2099-01-01T00:00:00Z" } }), { headers: { "Content-Type": "application/json" } });
     }
     expect(body).toEqual({ revision: 2, confirm: true, confirmation_token: "opaque-token" });
@@ -52,7 +52,7 @@ it("requires reviewed diff and explicit confirmation before publishing saved rev
 
 it("does not treat Health OK as publication readiness", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "success", data: {
-    health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [{ code: "missing_route", message: "Нет маршрута" }] }, diff: [], confirmation_token: null,
+    revision: 2, health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [{ code: "missing_route", message: "Нет маршрута" }] }, diff: [], confirmation_token: null,
   } }), { headers: { "Content-Type": "application/json" } })));
   mount();
   fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));

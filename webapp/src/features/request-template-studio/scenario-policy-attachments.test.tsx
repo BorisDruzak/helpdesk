@@ -8,6 +8,33 @@ const draft = (): ScenarioDraftDefinition => ({ schema_version: 4, scenario_key:
  { id: "end", kind: "submit_ticket", title: "Обращение" }, { id: "sla", kind: "sla_attachment", title: "SLA" }, { id: "route", kind: "routing_attachment", title: "Маршрут" },
 ], processing: { defaults: { route: "desk", sla_profile: "normal" }, routes: { desk: { title: "Поддержка", queue_code: "support" } }, sla_profiles: { normal: { title: "Рабочий SLA", first_response_minutes: 15, resolution_minutes: 240, time_basis: "business", calendar_id: 3 } } } });
 vi.mock("../forms-builder/api", () => ({ fetchHelpdeskModelRegistry: vi.fn(async () => ({ policies: { sla: [{ code: "sla", title: "Опубликованный SLA", is_active: true, published_at: "now" }], routing: [{ code: "route", title: "Опубликованный маршрут", is_active: true, published_at: "now" }, { code: "draft", title: "Черновик маршрута", is_active: true }] } })) }));
+vi.mock("../settings/api",()=>({fetchWebSettingsPayload:vi.fn(async()=>({queues:[{code:"support",name:"Поддержка",is_active:true}],calendars:[{id:3,name:"Рабочая неделя",is_active:true}]}))}));
+it("explicitly sets a selected route as map default without touching other references",async()=>{
+ const definition=draft(); definition.processing!.defaults.route="";
+ const change=vi.fn();
+ render(<ScenarioPolicyAttachmentEditor block={{...definition.blocks![2],kind:"routing_attachment",route:"desk"}} definition={definition} disabled={false} onChange={change}/>);
+ expect(change).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Использовать направление по умолчанию"}));
+ expect(change.mock.lastCall![0]).toEqual({...definition,processing:{...definition.processing,defaults:{...definition.processing!.defaults,route:"desk"}}});
+ await waitFor(()=>expect(screen.getByLabelText("Очередь Helpdesk")).toBeEnabled());
+});
+it("edits the selected SLA in its attachment without route settings", async()=>{
+ const definition=draft(),change=vi.fn();
+ render(<ScenarioPolicyAttachmentEditor block={{...definition.blocks![1],kind:"sla_attachment",sla_profile:"normal"}} definition={definition} disabled={false} onChange={change}/>);
+ expect(screen.getByLabelText("Первый ответ")).toHaveValue(15);
+ expect(screen.queryByLabelText("Очередь Helpdesk")).not.toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText("Срок решения"),{target:{value:"300"}});
+ expect(change.mock.lastCall![0].processing.sla_profiles.normal.resolution_minutes).toBe(300);
+ await screen.findByRole("option",{name:"Рабочая неделя"});
+});
+it("edits the selected route in its attachment without SLA settings", async()=>{
+ const definition=draft(),change=vi.fn();
+ render(<ScenarioPolicyAttachmentEditor block={{...definition.blocks![2],kind:"routing_attachment",route:"desk"}} definition={definition} disabled={false} onChange={change}/>);
+ await waitFor(()=>expect(screen.getByLabelText("Очередь Helpdesk")).toBeEnabled());
+ expect(screen.queryByLabelText("Первый ответ")).not.toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText("Название направления"),{target:{value:"Дежурная поддержка"}});
+ expect(change.mock.lastCall![0].processing.routes.desk.title).toBe("Дежурная поддержка");
+});
 it("chooses a target and an existing SLA profile without creating duration defaults", () => {
  const definition = draft(), change = vi.fn();
  render(<ScenarioPolicyAttachmentEditor block={definition.blocks![1]} definition={definition} disabled={false} onChange={change} />);
