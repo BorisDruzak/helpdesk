@@ -8,13 +8,19 @@ const context: SupportTicketInventoryContext = { status: "available", error_code
 describe("Ticket Endpoint device context", () => {
   it("links only to the exact provider UUID", () => {
     render(<MemoryRouter><TicketDeviceAgentPanel inventoryContext={context} /></MemoryRouter>);
-    expect(screen.getByText(/ONLINE/)).toBeInTheDocument();
+    expect(screen.getByText("В сети")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Открыть карточку устройства" })).toHaveAttribute("href", `/app/admin/device?device=${id}`);
-    expect(screen.queryByText(/Версия агента/)).not.toBeInTheDocument();
+    expect(screen.getByText("Версия агента")).toBeInTheDocument();
   });
   it.each(["unmapped", "unavailable"] as const)("shows UNKNOWN for %s and never a local card link", (status) => {
     render(<MemoryRouter><TicketDeviceAgentPanel inventoryContext={{ status, error_code: "unavailable", context: null, registry: null }} /></MemoryRouter>);
-    expect(screen.getByText(/UNKNOWN/)).toBeInTheDocument();
+    expect(screen.getByText(status === "unmapped" ? "Нет подтверждённой привязки Endpoint" : "Контекст устройства временно недоступен")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Открыть карточку устройства" })).not.toBeInTheDocument();
+  });
+  it("uses the ticket agent version without treating an unknown connection as offline", () => {
+    render(<MemoryRouter><TicketDeviceAgentPanel deviceSnapshot={{ device_id: id, hostname: "PC", os: "Windows", agent_version: "3.2.172", last_seen_at: null, online: false, connection_state: "unknown" }} /></MemoryRouter>);
+    expect(screen.getByText("3.2.172")).toBeInTheDocument();
+    expect(screen.getByText("Неизвестно")).toBeInTheDocument();
+    expect(screen.queryByText("Не в сети")).not.toBeInTheDocument();
   });
 });

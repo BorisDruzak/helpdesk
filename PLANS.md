@@ -3068,3 +3068,13 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Verification: read-all regression failed before fix; 58 focused UI and 27 backend/real PostgreSQL plus 2 route tests pass, build/workspace pass. Browser coverage includes read-all/reopen, three instruction sizes, native ready-chat silence, emulated unfocused fallback, read-failure fallback and closed-tab push. Independent review findings corrected; final browser/release receipts follow in acceptance report.
 - Deployment gate: verified full staging156 backup/restore at current43e81da89c021fb90de3c8770237739e71d09e23; frozen task-only release must retain existing key/subscriber, schema and unrelated accepted work. No production changes or new dependencies/schema.
 - Evidence: docs/superpowers/plans/2026-11-06-notification-attention-fixes.md and tmp/notification-attention-20261106. Preserve shared HEAD/index/unrelated dirty files.
+
+
+## Unified support ticket — 2026-11-09
+
+- User's nine browser comments: merge ordinary dialogue with queue/next action,
+  service/requester/device context, Russian quality, full SLA/tools/passport inspector.
+- Keep existing mutations and authorization; preserve parallel Studio/catalog changes.
+- Implemented inspector composition, compact action, collapse/risk queue, profile/device
+  merge and deadline-specific history. Verification and staging receipt:
+  `docs/UNIFIED_TICKET_2026_11_09.md` (updated after checks).

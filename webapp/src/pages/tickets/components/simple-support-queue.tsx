@@ -2,26 +2,30 @@ import type { SupportQueuePayload } from "../../../features/queues/api";
 import { mapWorkspaceTicketItems } from "../../../features/queues/support-workspace-mappers";
 import "./simple-support.css";
 
-export type SimpleQueueFilter = "open" | "new" | "mine" | "waiting" | "completed";
+export type SimpleQueueFilter = "open" | "new" | "mine" | "waiting" | "completed" | "sla_risk";
 export type SimpleSupportQueueProps = {
   queue?: SupportQueuePayload; actorId?: string; canWork: boolean; filter: SimpleQueueFilter;
   search: string; loading?: boolean; error?: boolean; pending?: boolean; compact?: boolean;
-  selectedTicketId?: string | null; activeQueueId?: string | null;
+  collapsed?: boolean; onToggleCollapsed?: () => void; selectedTicketId?: string | null; activeQueueId?: string | null;
   onFilterChange: (filter: SimpleQueueFilter) => void; onSearchChange: (value: string) => void;
   onOpenTicket: (id: string) => void; onTakeTicket: (id: string) => void; onAdvanced: () => void;
   onOpenQueue?: () => void;
   onQueueChange?: (id: string | null) => void;
 };
-const FILTERS: Array<[SimpleQueueFilter, string]> = [["open", "Открытые"], ["new", "Новые"], ["mine", "Мои"], ["waiting", "Ожидают ответа"], ["completed", "Завершённые"]];
+const FILTERS: Array<[SimpleQueueFilter, string]> = [["open", "Открытые"], ["new", "Новые"], ["mine", "Мои"], ["waiting", "Ожидают ответа"], ["completed", "Завершённые"], ["sla_risk", "SLA риск"]];
 
 export function SimpleSupportQueue(props: SimpleSupportQueueProps) {
   const { queue, compact, selectedTicketId, actorId, canWork, pending, onOpenTicket, onTakeTicket } = props;
   const tickets = mapWorkspaceTicketItems(queue, selectedTicketId ?? null);
+  if (compact && props.collapsed) return <section className="simple-queue simple-queue--compact simple-queue--collapsed" aria-label="Список заявок">
+    <button className="simple-button" aria-label="Показать список заявок" aria-expanded={false} onClick={props.onToggleCollapsed} type="button">☰</button><span>{tickets.length}</span>
+  </section>;
   return <section className={`simple-queue${compact ? " simple-queue--compact" : ""}`} aria-label={compact ? "Моя рабочая очередь" : "Очередь обращений"}>
+    {compact && props.onToggleCollapsed ? <button className="simple-button simple-queue__expand" aria-expanded type="button" onClick={props.onToggleCollapsed}>Скрыть список заявок</button> : null}
     <div className="simple-queue__heading"><div><p className="simple-eyebrow">Рабочее место / заявки</p><h2>{compact ? "Моя рабочая очередь" : "Очередь обращений"}</h2>
       {!compact ? <p className="simple-muted">Выберите обращение, посмотрите приоритет и возьмите его в работу.</p> : null}</div>
       {compact && props.onOpenQueue ? <button className="simple-button simple-queue__expand" type="button" onClick={props.onOpenQueue}>Открыть всю очередь ↗</button> : null}
-      {!compact ? <button className="simple-button" onClick={props.onAdvanced} type="button">Дополнительно</button> : null}</div>
+      {!compact ? <button className="simple-button" onClick={props.onAdvanced} type="button">Виды и действия очереди</button> : null}</div>
     {queue?.queue_mode === "unified" ? <p className="simple-queue__mode">Единая очередь · все операторы поддержки</p> : null}
     <div className="simple-queue__toolbar">
       <div className="simple-tabs" role="tablist" aria-label="Фильтры обращений">{FILTERS.map(([id, label]) => <button type="button" role="tab" aria-selected={props.filter === id} key={id} onClick={() => props.onFilterChange(id)}>{label}</button>)}</div>
@@ -32,11 +36,11 @@ export function SimpleSupportQueue(props: SimpleSupportQueueProps) {
     {props.error ? <p role="alert" className="simple-notice">{queue ? "Не удалось обновить очередь. Показаны ранее загруженные обращения." : "Не удалось загрузить очередь. Обновите список."}</p> : null}
     {props.loading && !queue ? <p role="status" className="simple-empty">Загружаем обращения…</p> : null}
     {!props.loading && !props.error && tickets.length === 0 ? <p className="simple-empty">В этой очереди пока нет обращений. Измените фильтр или поиск.</p> : null}
-    {compact ? <div className="simple-queue__cards">{tickets.map((ticket) => <button className="simple-queue__card" aria-current={ticket.active ? "true" : undefined} type="button" key={ticket.id} onClick={() => onOpenTicket(ticket.id)}>
+    {compact ? <><p className="simple-queue__count">Рабочий список · {tickets.length}</p><div className="simple-queue__cards">{tickets.map((ticket) => <button className="simple-queue__card" aria-current={ticket.active ? "true" : undefined} type="button" key={ticket.id} onClick={() => onOpenTicket(ticket.id)}>
       <span className="simple-queue__card-top"><b>{ticket.code}</b><span className="simple-badge" data-tone={ticket.statusTone}>{ticket.statusLabel}</span></span>
-      <strong>{ticket.subject}</strong><span className="simple-muted">{ticket.requester}</span>
-      <span className="simple-queue__card-top"><span className="simple-badge" data-tone={ticket.priorityTone}>{ticket.priority}</span><span className="simple-muted">{ticket.nextDueLabel}</span>{ticket.unread ? <span aria-label="Есть непрочитанные сообщения" className="simple-unread" /> : null}</span>
-    </button>)}</div> : tickets.length ? <div className="simple-queue__table-wrap"><table><thead><tr>{["Номер", "Тема", "Сотрудник", "Приоритет", "Статус", "Исполнитель", "SLA", "Сообщения", "Действие"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
+      <strong>{ticket.subject}</strong><span className="simple-muted">{ticket.requester}</span>{ticket.hiddenFromWorkspace ? <span className="simple-badge">Скрыт</span> : null}{ticket.archivedAt ? <span className="simple-badge">Архив</span> : null}
+      <span className="simple-queue__card-top"><span className="simple-badge" data-tone={ticket.priorityTone}>{ticket.priority}</span><span className={ticket.slaRisk ? "simple-risk" : "simple-muted"}>{ticket.nextDueLabel}</span>{ticket.unread ? <span aria-label="Есть непрочитанные сообщения" className="simple-unread" /> : null}</span>
+    </button>)}</div></> : tickets.length ? <div className="simple-queue__table-wrap"><table><thead><tr>{["Номер", "Тема", "Сотрудник", "Приоритет", "Статус", "Исполнитель", "SLA", "Сообщения", "Действие"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
       <tbody>{tickets.map((ticket, index) => {
         const raw = queue!.tickets[index];
         const take = canWork && raw.take_in_work?.allowed === true && !raw.assignee_id && ["new", "queued"].includes(raw.status);

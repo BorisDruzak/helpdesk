@@ -210,6 +210,25 @@
 .simple-ticket__facts [aria-label="Разделы правой панели"] button { min-width:0; flex:1 1 auto; padding:7px 9px; }
 .simple-ticket__facts [data-testid="support-inspector-summary"] { padding:12px; }
 .simple-ticket__facts section { overflow-wrap:anywhere; }
+.simple-next-action { display:flex; flex-shrink:0; justify-content:space-between; gap:10px; margin:0 0 10px; padding:9px 12px; border:1px solid var(--simple-border); border-radius:9px; background:var(--simple-soft); font-size:12px; }
+.simple-next-action > div { min-width:0; }
+.simple-next-action p { color:var(--simple-muted); margin-top:3px; }
+.simple-next-action > div:last-child { display:flex; flex-direction:column; align-items:flex-end; gap:3px; text-align:right; }
+.simple-next-action[data-tone="danger"] { border-color:#f1b7ba; }
+.simple-workspace[data-list-collapsed="true"] { grid-template-columns:52px minmax(0,1fr); }
+.simple-queue--collapsed { padding:8px 5px; text-align:center; }
+.simple-column-resizer[hidden] { display:none; }
+.simple-queue--collapsed .simple-button { width:100%; padding:8px 4px; margin-bottom:8px; }
+.simple-queue--compact .simple-tabs { flex-wrap:wrap; }
+.simple-queue__count { margin-top:12px; font-size:11px; color:var(--simple-muted); }
+.simple-ticket__facts:has([data-testid="support-inspector-panel"]) { overflow:hidden; }
+.simple-ticket__facts [data-testid="support-inspector-panel"] > nav { flex-shrink:0; }
+.simple-ticket__facts .simple-ticket-context { margin-bottom:12px; }
+.simple-ticket__facts .simple-ticket-context .simple-facts { display:grid; font-size:13px; }
+.simple-ticket-context__service { margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--simple-border); }
+.simple-ticket-context__service h4 { font-size:15px; margin:5px 0 12px; }
+@media(max-width:760px) { .simple-workspace[data-list-collapsed="true"] { grid-template-columns:minmax(0,1fr); } .simple-next-action { flex-direction:column; gap:4px; } .simple-next-action > div:last-child { flex-direction:row; justify-content:space-between; align-items:start; text-align:left; } }
+@media(max-width:760px) { .simple-next-action { gap:0; padding:6px 9px; margin-bottom:6px; font-size:11px; line-height:1.4; } .simple-next-action p { margin-top:0; } }
 @media(max-width:1100px) { .simple-column-resizer[data-pane="right"] { display:none; } }
 @media(max-width:760px) { .simple-column-resizer { display:none; } }
 

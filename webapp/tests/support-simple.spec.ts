@@ -1,5 +1,22 @@
 import { expect, test, type Page } from "playwright/test";
 
+// The fixture's workspace owns its current timeline; these two live routes are
+// absent from that fixture. Keep the browser exercising the real filtered reads.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("helpdesk-notification-intro-v1:support", "1"));
+  await page.route("**/api/web/problems?ticket_id=*", route => route.fulfill({ json: { status: "ok", items: [] } }));
+  await page.route("**/api/web/support/tickets/*/read", route => route.fulfill({ json: { status: "success", data: { last_read_event_id: 0 } } }));
+  await page.route("**/api/web/support/tickets/*/timeline?*", async route => {
+    const url = new URL(route.request().url());
+    const response = await route.fetch({ url: url.origin + url.pathname.replace(/\/timeline$/, "/workspace") });
+    const payload = await response.json();
+    const filter = url.searchParams.get("filter");
+    const items = (payload.data.detail.timeline ?? []).filter((item: { event_type: string; visibility: string }) => filter === "all" ||
+      (filter === "messages" ? item.event_type === "chat_message" && item.visibility === "public" : filter === "internal" ? item.visibility === "internal" : item.event_type !== "chat_message"));
+    await route.fulfill({ json: { status: "success", data: { items, total: items.length, limit: 200, filter } } });
+  });
+});
+
 for (const width of [1366, 1920]) {
   test(`legacy work requires an explicit self-claim before resolution at ${width}`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 });
@@ -73,8 +90,8 @@ test("unified queue keeps the full list reachable and restores the resizable ins
   await login(page);
   await page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "T-200001", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Сведения об обращении", exact: true })).toBeVisible();
-  await expect(page.getByTestId("support-inspector-panel")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "SLA · Срок решения", exact: true })).toBeVisible();
+  await expect(page.getByTestId("support-inspector-panel")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Следующее действие", exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Очередь", exact: true })).toHaveCount(0);
   const left = page.getByRole("separator", { name: "Ширина списка обращений" });
   const right = page.getByRole("separator", { name: "Ширина панели сведений" });
@@ -85,13 +102,20 @@ test("unified queue keeps the full list reachable and restores the resizable ins
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
   await page.mouse.down(); await page.mouse.move(handle.x + 70, handle.y + handle.height / 2); await page.mouse.up();
   expect(Number(await left.getAttribute("aria-valuenow"))).toBeGreaterThan(260);
-  await page.locator(".simple-menu > summary").click();
-  await page.getByRole("button", { name: "Дополнительные возможности", exact: true }).click();
-  await expect(page.getByTestId("support-inspector-panel")).toBeVisible();
-  await page.getByRole("button", { name: "Open SLA inspector" }).click();
-  await expect(page.getByRole("heading", { name: "SLA режим", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Дополнительные возможности", exact: true })).toHaveCount(0);
+  const navigation = page.getByRole("navigation", { name: "Разделы правой панели" });
+  await navigation.getByRole("button", { name: "SLA", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "История сроков", exact: true })).toBeVisible();
+  await navigation.getByRole("button", { name: "Качество", exact: true }).click();
+  await expect(page.getByText("Оценка обслуживания", { exact: true })).toBeVisible();
+  await expect(page.getByText("Experience signals", { exact: true })).toHaveCount(0);
+  await navigation.getByRole("button", { name: "Контекст", exact: true }).click();
+  await page.getByRole("button", { name: "Скрыть список заявок", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Показать список заявок", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Показать список заявок", exact: true }).click();
+  await page.getByRole("tab", { name: "SLA риск", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "SLA риск", exact: true })).toHaveAttribute("aria-selected", "true");
   await page.screenshot({ path: info.outputPath("unified-inspector-1920.png"), fullPage: true });
-  await page.getByRole("button", { name: "← Вернуться к обычной работе", exact: true }).click();
   await expect(page.getByTestId("simple-support-workspace")).toBeVisible();
   await page.getByRole("button", { name: /Открыть всю очередь/ }).click();
   await expect(page.getByRole("heading", { name: "Очередь обращений", exact: true })).toBeVisible();
@@ -308,7 +332,7 @@ test("legacy code-only requirements allow completion without manual code entry",
   expect(commands).toHaveLength(1);
 });
 
-test("explicit evidence requirement keeps the advanced passport fallback", async ({ page }) => {
+test("explicit evidence requirement opens the passport inside the ordinary ticket", async ({ page }) => {
   let commands = 0;
   await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
   await page.route("**/api/web/support/tickets/ticket-1/workspace", async route => {
@@ -328,8 +352,9 @@ test("explicit evidence requirement keeps the advanced passport fallback", async
   await expect(dialog.getByText("Для решения также требуются:", { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Доказательство решения", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByTestId("simple-support-workspace")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Паспорт решения", exact: true })).toBeVisible();
+  await expect(page.getByTestId("simple-support-workspace")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Разделы правой панели" }).getByRole("button", { name: "Паспорт", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("link", { name: "Открыть паспорт", exact: true })).toBeVisible();
   expect(commands).toBe(0);
 });
 

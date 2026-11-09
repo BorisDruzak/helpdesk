@@ -1058,3 +1058,20 @@ Studio authoring metadata: PendingCatalogEntrance/ScenarioEditorLayout in reques
 Studio publication workbench: `scenario-wizard` keeps the canvas mounted while full-width `scenario-publication` renders authoritative checks, branch outcomes, diff and confirmation; visibility invalidates preview. `scenario-catalog-visibility` calls admin-only POST `/api/web/admin/request-studio/scenarios/{identifier}/catalog-visibility` with strict expected_visibility and visibility; RequestScenarioRepo delegates to row-locked audited ServiceCatalogRepo comparison/update, leaving draft/version/lifecycle unchanged. Hidden offerings can be checked/published through server-only preview allowance without weakening requester gates. Configured unified queue mode/common code are exposed in scenario catalogue and applied only to new service routes/default queue; historical queue rows/references remain intact. Route/SLA attachments own scoped ScenarioMapProcessing editors; Start separates catalogue availability, ticket visibility and other service policies.
 
 Studio publication guidance: schema4 blank map route/SLA selections independently inherit canonical service policies; explicit last path/terminal selections remain authoritative and schema3 defaults remain required. request_scenario_publication.py reports actual path queue/SLA blockers without derivative unreachable errors; request_scenario_processing.py, request_scenario_submission.py and helpdesk_policy_runtime.py preserve per-kind inheritance; service_catalog_preview.py/create_flow.py reject missing effective deadlines before side effects. Map selection result members may be null; scenario-publication-settings.tsx owns service rules/fallbacks and scenario-publication-definitions.tsx retains scoped legacy/unbound direction/profile editing and scenario-publication-guidance.ts explains repairs. Movable editor owns its frame/hit area; no empty map popover. See docs/UNIFIED_SERVICE_SCENARIOS.md. No new routes, migrations or definition rewrite.
+
+
+## Unified support ticket (2026-11-09)
+
+The ordinary ticket composes the retained inspector directly in `SimpleSupportTicket`.
+`selectRightTab` and the selected inspector tab expose full tools/SLA/passport content
+without replacing the conversation. The inspector has one navigation row.
+`ticket-request-context.tsx` owns the submitted service title, form answers,
+description and public result; `ticket-requester-context.tsx` uses the actor-scoped
+profile/account projection. `TicketDeviceAgentPanel` merges provider inventory
+and ticket agent presence/version, distinguishing unmapped/unavailable/no-device states.
+Compact next-action and collapsible queue retain persisted widths, SLA-risk filtering,
+visibility markers and access to saved views/bulk queue actions. Extra ticket actions
+reuse existing authorized mutations. Quality labels reuse the Russian quality dictionary;
+problem-read failures remain distinct from empty links. SLA history has a separate
+filtered history read and displays only SLA/OLA event types. No new API, migration,
+dependency or change to Endpoint contracts. See `docs/UNIFIED_TICKET_2026_11_09.md`.

@@ -16,6 +16,7 @@ import {
   mapWorkspaceTicketItems,
   mapWorkspaceSlices,
   mapWorkspaceTimeline,
+  mapWorkspaceContext,
 } from "./support-workspace-mappers";
 
 const NOW = new Date("2026-05-05T10:00:00+05:00");
@@ -944,6 +945,16 @@ describe("support workspace mappers", () => {
       service: "Корпоративный сайт",
       similarTicketsCount: 0,
     });
+  });
+
+  it("uses the submitted service title instead of registry gaps or raw IDs", () => {
+    const detail = detailPayload();
+    detail.ticket.service_id = 123;
+    detail.ticket.category_id = 456;
+    detail.ticket.ticket_type = "incident";
+    detail.request_form = { request_kind: "incident", form_key: "printer", form_title: "Настройка принтера", rows: [] };
+    detail.snapshot.registry = { ...detail.snapshot.registry!, service_name: null, service_source: null };
+    expect(mapWorkspaceContext(detail)?.classification).toMatchObject({ service: "Настройка принтера", category: "Не указана", ticketType: "Инцидент" });
   });
 
   it("builds passport readiness from missing facts", () => {

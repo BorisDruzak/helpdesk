@@ -288,6 +288,7 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
       actions: {
         status_options: [{ value: "waiting_on_user", label: "Ждёт пользователя" }],
         can_send_internal_note: true,
+        can_send_public_message: true,
         take_in_work: { allowed: true, reason_code: null, reason: null },
         can_hide_from_workspace: true,
         can_unhide_from_workspace: false,
@@ -406,6 +407,7 @@ function renderTicketListPage(initialEntry = "/app/tickets", advanced = true) {
 }
 
 beforeEach(() => {
+  fetchTicketProblemLinksMock.mockResolvedValue([]);
   postSupportTicketReadMock.mockResolvedValue({} as Awaited<ReturnType<typeof postSupportTicketRead>>);
   fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [], total: 0 }));
   fetchSupportQueueSavedViewsMock.mockResolvedValue({
@@ -446,10 +448,12 @@ describe("TicketListPage", () => {
     const workspace = workspacePayload();
     workspace.detail.ticket.status = "in_progress";
     workspace.detail.ticket.assignee_id = null;
+    workspace.detail.actions.can_send_public_message = false;
     workspace.detail.actions.take_in_work = { allowed: true, reason_code: null, reason: null };
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
     postSupportTicketAssignMock.mockImplementation(async () => {
       workspace.detail.ticket.assignee_id = "support-test";
+      workspace.detail.actions.can_send_public_message = true;
       return { ticket_id: "ticket-1" } as any;
     });
     renderTicketListPage("/app/tickets/ticket-1", false);
@@ -464,31 +468,65 @@ describe("TicketListPage", () => {
     expect(screen.getByRole("heading", { name: "Очередь обращений" })).toBeInTheDocument();
   });
 
-  it("shows plain requester facts and SLA by default while keeping the full inspector in advanced mode", async () => {
+  it("unifies context, quality and full SLA inside the ordinary ticket without switching layouts", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     const workspace = workspacePayload();
     workspace.detail.ticket.device_id = null;
     workspace.detail.snapshot.device.device_id = null;
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
     renderTicketListPage("/app/tickets/ticket-1", false);
-    await screen.findByRole("heading", { name: "SLA · Срок решения" });
+    await screen.findByTestId("support-inspector-panel");
     expect(screen.getByText("Александр Смирнов")).toBeInTheDocument();
     expect(screen.getByText("+7 (495) 123-45-67")).toBeInTheDocument();
-    expect(screen.getByText("Без агента — обычную заявку можно обработать.")).toBeInTheDocument();
-    expect(screen.queryByTestId("support-inspector-panel")).not.toBeInTheDocument();
-    expect(screen.queryByText("Observer · подробности")).not.toBeInTheDocument();
-    expect(screen.queryByText("browser_no_device")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("Действия ▾"));
-    fireEvent.click(screen.getByRole("button", { name: "Дополнительные возможности" }));
-    expect(screen.queryByTestId("simple-support-workspace")).not.toBeInTheDocument();
-    expect(screen.getByTestId("support-inspector-panel")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Следующее действие" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Контекст обращения" })).toBeInTheDocument();
     expect(screen.getByText("Observer · подробности")).toBeInTheDocument();
+    expect(screen.queryByText("browser_no_device")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Дополнительные возможности" })).not.toBeInTheDocument();
+    const navigation = screen.getByRole("navigation", { name: "Разделы правой панели" });
+    fireEvent.click(within(navigation).getByRole("button", { name: "Качество" }));
+    expect(screen.getByText("Оценка обслуживания")).toBeInTheDocument();
+    expect(screen.queryByText("Experience signals")).not.toBeInTheDocument();
+    fireEvent.click(within(navigation).getByRole("button", { name: "SLA" }));
+    expect(screen.getByRole("tab", { name: "История сроков" })).toBeInTheDocument();
+    expect(screen.getByTestId("simple-support-workspace")).toBeInTheDocument();
+  });
+
+  it("loads actual deadline history separately from dialogue and excludes unrelated diagnostics", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportTicketTimelineMock.mockImplementation(async (_id, filter) => timelinePayload({ filter, items: filter === "history" ? [
+      { ...timelinePayload().items[0], event_id: 701, event_type: "sla_recalculated", event_category: "history", from_role: "system", visibility: "system", text: "Срок решения пересчитан" },
+      { ...timelinePayload().items[0], event_id: 702, event_type: "tool_call_result", event_category: "diagnostics", from_role: "system", visibility: "system", text: "Посторонняя диагностика" },
+    ] : [] }));
+    renderTicketListPage("/app/tickets/ticket-1", false);
+    const inspector = await screen.findByTestId("support-inspector-panel");
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Разделы правой панели" })).getByRole("button", { name: "SLA" }));
+    fireEvent.click(screen.getByRole("tab", { name: "История сроков" }));
+    expect(await within(inspector).findByText("Срок решения пересчитан")).toBeInTheDocument();
+    expect(within(inspector).queryByText("Посторонняя диагностика")).not.toBeInTheDocument();
+    expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "history");
+    expect(screen.getByTestId("simple-support-workspace")).toBeInTheDocument();
+  });
+
+  it("closes the ordinary ticket inspector with Escape after opening diagnostics", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    renderTicketListPage("/app/tickets/ticket-1", false);
+    await screen.findByTestId("support-inspector-panel");
+    fireEvent.click(screen.getByText("Действия ▾"));
+    fireEvent.click(screen.getByRole("button", { name: "Диагностика" }));
+    const facts = screen.getByRole("complementary", { name: "Сведения об обращении" });
+    expect(facts).toHaveAttribute("data-open", "true");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(facts).toHaveAttribute("data-open", "false");
   });
 
   it.each(["resolved", "closed"])("keeps %s public chat read-only without losing the private note draft or attachment", async (status) => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     const workspace = workspacePayload();
     workspace.detail.ticket.status = status;
+    workspace.detail.actions.can_send_public_message = false;
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
     fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [
       { ...timelinePayload().items[0], event_id: 501, event_type: "chat_message", event_category: "message", from_role: "support", visibility: "public", text: "Публичный итог работы" },
@@ -536,8 +574,8 @@ describe("TicketListPage", () => {
     renderTicketListPage("/app/tickets/ticket-1", false);
     fireEvent.click(await screen.findByRole("button", { name: "Решить обращение" }));
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Доказательство решения" }));
-    expect(screen.queryByTestId("simple-support-workspace")).not.toBeInTheDocument();
-    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-mode", "passport");
+    expect(screen.getByTestId("simple-support-workspace")).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Разделы правой панели" })).getByRole("button", { name: "Паспорт" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it.each([true, false])("submits the server-authorized combined close flag (%s)", async (combined) => {
@@ -581,6 +619,7 @@ describe("TicketListPage", () => {
     const view = renderTicketListPage("/app/tickets/ticket-1");
     await screen.findByTestId("support-reply-composer");
     fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["log"], "ticket-one.txt")] } });
+    await waitFor(() => expect(uploadSupportTicketAttachmentMock).toHaveBeenCalledWith("ticket-1", expect.objectContaining({ name: "ticket-one.txt" })));
     fireEvent.click(await screen.findByText("Второе обращение"));
     await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
     fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Reply for ticket two" } });
@@ -613,10 +652,12 @@ describe("TicketListPage", () => {
     const view = renderTicketListPage("/app/tickets/ticket-1");
     await screen.findByTestId("support-reply-composer");
     fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["A"], "ticket-a.txt")] } });
+    await waitFor(() => expect(uploadSupportTicketAttachmentMock).toHaveBeenNthCalledWith(1, "ticket-1", expect.objectContaining({ name: "ticket-a.txt" })));
     fireEvent.click(await screen.findByText("Второе обращение"));
     await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
     fireEvent.change(await screen.findByTestId("support-reply-composer"), { target: { value: "Reply while B uploads" } });
     fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["B"], "ticket-b.txt")] } });
+    await waitFor(() => expect(uploadSupportTicketAttachmentMock).toHaveBeenNthCalledWith(2, "ticket-2", expect.objectContaining({ name: "ticket-b.txt" })));
     const attach = screen.getByRole("button", { name: "Прикрепить файлы" });
     expect(attach).toBeDisabled();
     expect(attach).toHaveAttribute("title", "Прикрепляем...");
@@ -640,6 +681,7 @@ describe("TicketListPage", () => {
     const view = renderTicketListPage("/app/tickets/ticket-1");
     await screen.findByTestId("support-reply-composer");
     fireEvent.change(view.container.querySelector('input[type="file"]')!, { target: { files: [new File(["old"], "previous-visit-a.txt")] } });
+    await waitFor(() => expect(uploadSupportTicketAttachmentMock).toHaveBeenCalledWith("ticket-1", expect.objectContaining({ name: "previous-visit-a.txt" })));
     fireEvent.click(await screen.findByText("Второе обращение"));
     await waitFor(() => expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
     fireEvent.click(screen.getByText("Проверить OLA очередь"));
@@ -1145,6 +1187,7 @@ describe("TicketListPage", () => {
     );
     const unassignedPayload = workspacePayload();
     unassignedPayload.detail.ticket.assignee_id = null;
+    unassignedPayload.detail.actions.can_send_public_message = false;
     fetchSupportTicketWorkspaceMock.mockResolvedValue(unassignedPayload);
     postSupportTicketStatusMock.mockResolvedValue({ ticket_id: "ticket-1", status: "waiting_on_user", status_label: "Ждёт пользователя" });
     postSupportTicketQueueMock.mockResolvedValue({
@@ -1730,28 +1773,7 @@ describe("TicketListPage", () => {
         },
       }),
     );
-    fetchTicketProblemLinksMock.mockResolvedValue([
-      {
-        problem: {
-          problem_id: "problem-1",
-          problem_key: "PRB-000001",
-          title: "Repeated VPN outage",
-          description: "Repeated VPN outage",
-          status: "investigating",
-          severity: "high",
-          priority: "high",
-          service_code: "network",
-          offering_code: "network.vpn_issue",
-        },
-        link: {
-          link_id: "problem-link-1",
-          problem_id: "problem-1",
-          ticket_id: "ticket-1",
-          link_type: "confirmed",
-          evidence_summary: "Same symptom",
-        },
-      },
-    ]);
+
 
     renderTicketListPage("/app/tickets/ticket-1");
 
@@ -1850,6 +1872,28 @@ describe("TicketListPage", () => {
   });
 
   it("shows support ticket quality signals in the active workspace", async () => {
+    fetchTicketProblemLinksMock.mockResolvedValue([
+      {
+        problem: {
+          problem_id: "problem-1",
+          problem_key: "PRB-000001",
+          title: "Repeated VPN outage",
+          description: "Repeated VPN outage",
+          status: "investigating",
+          severity: "high",
+          priority: "high",
+          service_code: "network",
+          offering_code: "network.vpn_issue",
+        },
+        link: {
+          link_id: "problem-link-1",
+          problem_id: "problem-1",
+          ticket_id: "ticket-1",
+          link_type: "confirmed",
+          evidence_summary: "Same symptom",
+        },
+      },
+    ]);
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     const baseWorkspace = workspacePayload();
     fetchSupportTicketWorkspaceMock.mockResolvedValue(
@@ -1916,13 +1960,14 @@ describe("TicketListPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Качество" }));
 
     const qualityPanel = await screen.findByTestId("support-quality-panel");
-    expect(within(qualityPanel).getByText("Latest CSAT")).toBeInTheDocument();
-    expect(within(qualityPanel).getByText("2/5 (negative)")).toBeInTheDocument();
+    expect(within(qualityPanel).getByText("Последняя оценка")).toBeInTheDocument();
+    expect(within(qualityPanel).getByText("2/5")).toBeInTheDocument();
     expect(within(qualityPanel).getByText("Problem returned after closure.")).toBeInTheDocument();
-    expect(within(qualityPanel).getAllByText("low_csat").length).toBeGreaterThan(0);
+    expect(within(qualityPanel).getAllByText("Низкая оценка пользователя").length).toBeGreaterThan(0);
     expect(within(qualityPanel).getByText("Review reopened ticket")).toBeInTheDocument();
     expect(await within(qualityPanel).findByText("PRB-000001")).toBeInTheDocument();
-    expect(within(qualityPanel).getByText("Repeated VPN outage / confirmed")).toBeInTheDocument();
+    expect(within(qualityPanel).getByText("Исследуется")).toBeInTheDocument();
+    expect(within(qualityPanel).getByText("Repeated VPN outage")).toBeInTheDocument();
   });
 
   it("opens passport focus guidance from a closure blocker action", async () => {
@@ -2571,6 +2616,7 @@ describe("UI-SUPPORT-001 default workspace", () => {
   it("requires successful take-in-work before enabling a public reply and keeps status on conflict", async () => {
     const workspace = workspacePayload();
     workspace.detail.ticket.status = "queued";
+    workspace.detail.actions.can_send_public_message = false;
     workspace.detail.ticket.status_label = "В очереди";
     workspace.detail.ticket.assignee_id = null;
     workspace.detail.actions.status_options = [{ value: "in_progress", label: "В работе" }];

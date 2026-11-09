@@ -1,4 +1,5 @@
-import { useId, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { TicketRequestContext } from "./ticket-request-context";
 import { X } from "lucide-react";
 import type { SupportTicketDetailPayload } from "../../../features/queues/api";
 import type { SupportWorkspaceContext, SupportWorkspaceSelectedTicket } from "../../../features/queues/support-workspace-model";
@@ -7,15 +8,13 @@ export type SimpleSupportTicketProps = {
   detail: SupportTicketDetailPayload; ticket?: SupportWorkspaceSelectedTicket | null; context?: SupportWorkspaceContext | null;
   actorId?: string; isAdmin?: boolean; canWork: boolean; canAssign?: boolean; pending?: boolean; error?: string | null;
   onStatus: (value: string) => void; onClaim?: () => void; onResolve: () => void; onAdvanced: (mode?: "passport" | "tools" | "sla" | "ticket") => void;
-  inspector?: ReactNode; unifiedQueue?: boolean; onQueue: () => void; onManage?: (kind: "queue" | "priority") => void; conversation: ReactNode;
+  inspector?: ReactNode; inspectorOpen?: boolean; onInspectorOpen?: () => void; onInspectorClose?: () => void; additionalActions?: ReactNode; unifiedQueue?: boolean; onQueue: () => void; onManage?: (kind: "queue" | "priority") => void; conversation: ReactNode;
 };
 export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
   const { detail, context, ticket, actorId, isAdmin, canWork, onStatus, onAdvanced } = props;
   const raw = detail.ticket;
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const resultId = useId();
-  const [expandedResultTicket, setExpandedResultTicket] = useState<string | null>(null);
-  const resultExpanded = expandedResultTicket === raw.ticket_id;
+  const factsOpen = props.inspectorOpen ?? detailsOpen;
   const mine = Boolean(actorId && raw.assignee_id === actorId);
   const other = Boolean(raw.assignee_id && !mine);
   const allowed = (status: string) => canWork && detail.actions.status_options.some((option) => option.value === status);
@@ -40,9 +39,6 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
     primary = { label: "Переоткрыть обращение", hint: "Обращение вернётся в работу с сохранением переписки и истории.", run: () => onStatus("in_progress") };
   }
   const sla = ticket?.timers.find((item) => item.key === "resolution") ?? ticket?.timers.find((item) => item.key === "first_response");
-  const rows = detail.request_form?.rows ?? [];
-  const comparable = (value: string) => value.replace(/[\s?:]+/g, "").trim();
-  const descriptionIsAnswers = rows.length > 0 && comparable(raw.description ?? "") === comparable(rows.map((row) => `${row.label}: ${row.value}`).join(" "));
   return <div className="simple-ticket">
     <main className="simple-ticket__main">
       <header className="simple-ticket__header">
@@ -52,27 +48,24 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
           <details className="simple-menu"><summary className="simple-button">Действия ▾</summary><div>
             {raw.status === "in_progress" && allowed("waiting_on_user") && (mine || isAdmin) ? <button type="button" onClick={() => onStatus("waiting_on_user")}>Ожидать ответа сотрудника</button> : null}
             {props.onManage && canWork ? <>{!props.unifiedQueue ? <button type="button" onClick={() => props.onManage?.("queue")}>Изменить очередь</button> : null}<button type="button" onClick={() => props.onManage?.("priority")}>Изменить приоритет</button></> : null}
-            <button type="button" onClick={() => onAdvanced("tools")}>Диагностика</button><button type="button" onClick={() => onAdvanced("ticket")}>Дополнительные возможности</button>
+            {props.additionalActions}<button type="button" onClick={() => { setDetailsOpen(true); onAdvanced("tools"); }}>Диагностика</button>
           </div></details>
-          <button className="simple-button simple-ticket__details-toggle" type="button" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((value) => !value)}>Сведения</button>
+          <button className="simple-button simple-ticket__details-toggle" type="button" aria-expanded={Boolean(factsOpen)} onClick={() => { if (factsOpen) props.onInspectorClose?.(); else props.onInspectorOpen?.(); setDetailsOpen(!factsOpen); }}>Сведения</button>
         </div>
       </header>
       {props.error ? <p role="alert" className="simple-notice simple-risk">{props.error}</p> : null}
       {takeReason ? <p className="simple-notice simple-take-reason">{takeReason}</p> : other && !isAdmin ? <p className="simple-notice">Назначено другому оператору. Доступен просмотр; изменение исполнителя выполняется отдельно с проверкой прав.</p> : raw.status === "resolved" ? <p className="simple-notice">{detail.actions.requester_confirmation_required ? "Решение отправлено сотруднику. Ожидаем подтверждение: сотрудник может закрыть обращение или вернуть его в работу." : "Решение отправлено сотруднику. Закрытие выполняется по действующей политике."}</p> : raw.status === "closed" ? <p className="simple-muted">Обращение закрыто. Переписка и история доступны для просмотра.</p> : null}
+      {ticket ? <section className="simple-next-action" aria-label="Следующее действие" data-tone={ticket.nextAction.tone}>
+        <div><strong>Следующее действие · {ticket.nextAction.label}</strong><p>{ticket.nextAction.hint}</p></div>
+        <div><span>{ticket.nextAction.ownerLabel}</span>{ticket.nextAction.timerType !== "none" ? <span>{ticket.nextAction.remainingLabel}</span> : null}</div>
+      </section> : null}
       <div className="simple-ticket__content">
         {props.conversation}
       </div>
     </main>
-    <aside className="simple-ticket__facts" data-open={detailsOpen} aria-label="Сведения об обращении">
-      <button className="simple-button simple-ticket__facts-close" type="button" onClick={() => setDetailsOpen(false)}>Закрыть сведения <X size={15} aria-hidden /></button>
-      <section className="simple-panel simple-ticket-context" aria-label="Контекст обращения">
-        <h3>Контекст</h3>
-        {!descriptionIsAnswers ? <div className="simple-ticket-context__description"><h4>Описание проблемы</h4><p>{raw.description || "Описание не указано"}</p></div> : null}
-        {rows.length ? <dl className="simple-facts">{rows.map((row) => <div key={row.key}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl> : null}
-        {raw.requester_resolution_summary ? <div className="simple-ticket-context__result"><h4>Результат решения</h4><p id={resultId} data-expanded={resultExpanded} tabIndex={resultExpanded ? 0 : undefined}>{raw.requester_resolution_summary}</p>
-          <button className="simple-link simple-result-toggle" type="button" aria-controls={resultId} aria-expanded={resultExpanded} onClick={() => setExpandedResultTicket(resultExpanded ? null : raw.ticket_id)}>{resultExpanded ? "Свернуть результат" : "Показать результат полностью"}</button>
-        </div> : null}
-      </section>
+    <aside className="simple-ticket__facts" data-open={Boolean(factsOpen)} aria-label="Сведения об обращении">
+      <button className="simple-button simple-ticket__facts-close" type="button" onClick={() => { setDetailsOpen(false); props.onInspectorClose?.(); }}>Закрыть сведения <X size={15} aria-hidden /></button>
+      {!props.inspector ? <TicketRequestContext detail={detail} /> : null}
       {props.inspector ?? <><section className="simple-panel"><h3>Заявитель</h3><dl className="simple-facts">
         <div><dt>ФИО</dt><dd>{context?.requester.name ?? raw.requester_display_name ?? "Не указан"}</dd></div>
         <div><dt>Телефон</dt><dd>{context?.requester.phone ?? "Не указан"}</dd></div><div><dt>Email</dt><dd>{context?.requester.email ?? "Не указан"}</dd></div>

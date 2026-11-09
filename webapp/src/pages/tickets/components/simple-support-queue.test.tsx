@@ -12,6 +12,19 @@ const rows = [
 const queue = { tickets: rows, summary: { visible_count: 3, queue_counts: [] } } as unknown as SupportQueuePayload;
 
 describe("simple support queue", () => {
+  it("keeps SLA risk and list collapse available beside the ticket", () => {
+    const filter = vi.fn(); const toggle = vi.fn();
+    const props = { queue, compact: true, actorId: "operator", canWork: true, filter: "open" as const, search: "", onFilterChange: filter,
+      onSearchChange: vi.fn(), onOpenTicket: vi.fn(), onTakeTicket: vi.fn(), onAdvanced: vi.fn(), onToggleCollapsed: toggle };
+    const view = render(<SimpleSupportQueue {...props} />);
+    fireEvent.click(screen.getByRole("tab", { name: "SLA риск" }));
+    expect(filter).toHaveBeenCalledWith("sla_risk");
+    fireEvent.click(screen.getByRole("button", { name: "Скрыть список заявок" }));
+    expect(toggle).toHaveBeenCalledOnce();
+    view.rerender(<SimpleSupportQueue {...props} collapsed />);
+    expect(screen.queryByText("Принтер")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Показать список заявок" })).toHaveAttribute("aria-expanded", "false");
+  });
   it("opens the full queue from the compact list and hides partitions in unified mode", () => {
     const full = vi.fn();
     render(<SimpleSupportQueue queue={{ ...queue, queue_mode: "unified", summary: { ...queue.summary, queue_counts: [{ id: 1, code: "legacy", name: "Старая очередь", count: 3 }] } }} compact actorId="operator" canWork filter="open" search=""

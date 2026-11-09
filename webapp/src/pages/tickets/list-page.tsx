@@ -98,6 +98,7 @@ import {
 import {
   mapSupportTimelineEntries,
   mapSupportWorkspaceViewModel,
+  mapWorkspaceTimeline,
 } from "../../features/queues/support-workspace-mappers";
 import { operationActionReasonSentence } from "../../features/queues/support-workspace-labels";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
@@ -134,6 +135,9 @@ import {
 } from "./workspace-types";
 import { getTicketsWorkspaceUrlState } from "./url-state";
 import { SimpleSupportQueue, type SimpleQueueFilter } from "./components/simple-support-queue";
+import { TicketRequestContext } from "./components/ticket-request-context";
+import { TicketRequesterContext } from "./components/ticket-requester-context";
+import { qualityLabel } from "../../features/quality/labels";
 import { SimpleSupportTicket } from "./components/simple-support-ticket";
 import { SimpleSupportConversation } from "./components/simple-support-conversation";
 import { useChatUploads } from "../../components/use-chat-uploads";
@@ -144,6 +148,10 @@ const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 const SUPPORT_OPERATION_REFRESH_MS = 2_500;
 const SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS = 15_000;
 const LIVE_OPERATION_STATUSES = new Set(["accepted", "queued", "running", "sent", "in_progress", "waiting_consent"]);
+const problemStatusLabels: Record<string, string> = {
+  new: "Новая", open: "Открыта", investigating: "Исследуется", known_error: "Известная ошибка",
+  workaround_available: "Есть обходное решение", resolved: "Решена", closed: "Закрыта", canceled: "Отменена",
+};
 
 type ComposerMode = "public" | "internal";
 type SidebarTab = WorkspaceRightTab;
@@ -1549,6 +1557,17 @@ export function TicketListPage() {
       : SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS,
   });
 
+  const slaHistoryQuery = useQuery({
+    queryKey: ["tickets-workspace-timeline", selectedTicketId, "history"],
+    queryFn: () => fetchSupportTicketTimeline(selectedTicketId!, "history"),
+    enabled: Boolean(selectedTicketId) && sidebarTab === "sla" && slaWorkspaceTab === "history",
+    retry: false,
+    refetchInterval: SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS,
+  });
+  const slaHistory = mapWorkspaceTimeline(workspaceQuery.data ? { ...workspaceQuery.data.detail,
+    timeline: (slaHistoryQuery.data?.items ?? []).filter((item) => /^(sla|ola)(_|\.)/i.test(item.event_type)),
+  } : undefined);
+
   const markReadMutation = useMutation({
     mutationFn: ({ ticketId, lastReadEventId }: { ticketId: string; lastReadEventId: number }) =>
       postSupportTicketRead(ticketId, lastReadEventId),
@@ -2187,6 +2206,7 @@ export function TicketListPage() {
     void Promise.all([
       queueQuery.refetch(),
       workspaceQuery.refetch(),
+      ...(sidebarTab === "sla" && slaWorkspaceTab === "history" ? [slaHistoryQuery.refetch()] : []),
     ]);
   }
 
@@ -2351,6 +2371,7 @@ export function TicketListPage() {
     }));
   }
 
+  const inspectorMode = simpleMode ? sidebarTab : workspaceMode;
   const ticketInspector = (
         <aside
           aria-label="Ticket inspector"
@@ -2361,7 +2382,7 @@ export function TicketListPage() {
           data-open={compactInspectorOpen}
           data-testid="support-inspector-panel"
         >
-          {workspaceMode === "queue" ? (
+          {inspectorMode === "queue" ? (
             <div className="flex min-h-0 flex-1">
               <button
                 className={`flex h-full w-full items-center justify-center px-1 text-xs font-semibold leading-5 transition [writing-mode:vertical-rl] ${
@@ -2381,6 +2402,7 @@ export function TicketListPage() {
             </div>
           ) : (
             <>
+          {!simpleMode ? <>
           <div className="border-b border-white/10 bg-[#081321]/70 px-3 py-3" data-testid="support-inspector-summary">
             {!simpleMode && rightPanelInDrawer ? <button className="mb-3 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300" onClick={() => { setCompactInspectorOpen(false); setWorkspaceMode("ticket"); }} type="button">Вернуться к переписке</button> : null}
             <div className="flex items-start justify-between gap-3">
@@ -2423,15 +2445,16 @@ export function TicketListPage() {
               </div>
             ) : null}
           </div>
-          {workspaceMode === "tools" ? (
+          {inspectorMode === "tools" ? (
             <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="Инструменты" />
-          ) : workspaceMode === "sla" ? (
+          ) : inspectorMode === "sla" ? (
             <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="SLA режим" />
-          ) : workspaceMode === "passport" ? (
+          ) : inspectorMode === "passport" ? (
             <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="Паспорт решения" />
           ) : null}
+          </> : null}
           <div className="border-b border-white/10 p-3">
-            <div aria-label="Разделы правой панели" className="flex gap-1 overflow-x-auto rounded-xl bg-white/[0.04] p-1">
+            <nav aria-label="Разделы правой панели" className="flex gap-1 overflow-x-auto rounded-xl bg-white/[0.04] p-1">
               {sidebarTabs.map((tab) => (
                 <button
                   aria-pressed={sidebarTab === tab.value}
@@ -2446,7 +2469,7 @@ export function TicketListPage() {
                   {tab.label}
                 </button>
               ))}
-            </div>
+            </nav>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -2458,72 +2481,9 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "context" && viewModel.right.context ? (
               <TicketContextPanel
-                requester={<>                <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Заявитель</p>
-                  <div className="mt-3 flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-700">
-                      <UserRound className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-white">{viewModel.right.context.requester.name}</p>
-                      <p className="text-sm text-slate-400">{viewModel.right.context.requester.department}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3">
-                    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
-                      {viewModel.right.context.requester.sourceLabel}
-                    </span>
-                  </div>
-                  {viewModel.right.context.requester.accountWarning === "ticket_created_from_other_account_on_registered_device" ? (
-                    <div className="mt-4 rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-50">
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
-                        <div className="min-w-0">
-                          <p className="font-semibold">Обращение создано с другого аккаунта на зарегистрированном устройстве.</p>
-                          <dl className="mt-2 grid gap-1 text-xs leading-5 text-amber-50/85">
-                            <ContextInfoRow icon={UserRound} label="Заявленный аккаунт" value={viewModel.right.context.requester.accountDeclaredName} />
-                            <ContextInfoRow icon={Fingerprint} label="Логин" value={viewModel.right.context.requester.accountLogin} />
-                            <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.accountEmail} />
-                            <ContextInfoRow icon={Phone} label="Телефон" value={viewModel.right.context.requester.accountPhone} />
-                            <ContextInfoRow icon={UsersRound} label="Зарегистрированный владелец" value={viewModel.right.context.requester.activeDeviceOwner} />
-                            <ContextInfoRow icon={ShieldCheck} label="Проверка" value={viewModel.right.context.requester.accountVerification} />
-                            <ContextInfoRow icon={MessageSquare} label="Причина" value={viewModel.right.context.requester.accountReason} />
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  {viewModel.right.context.requester.accountMode ? (
-                    <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Аккаунт обращения</p>
-                      {viewModel.right.context.requester.accountMode === "registration_pending" ? (
-                        <div className="mt-2 rounded-lg border border-amber-300/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-50">
-                          Обращение создано до подтверждения регистрации пользователя.
-                        </div>
-                      ) : null}
-                      <dl className="mt-3 grid gap-1 text-xs leading-5 text-slate-300">
-                        <ContextInfoRow icon={ShieldCheck} label="Режим" value={viewModel.right.context.requester.accountMode} />
-                        <ContextInfoRow icon={UserRound} label="Заявленный аккаунт" value={viewModel.right.context.requester.accountDeclaredName} />
-                        <ContextInfoRow icon={Fingerprint} label="Логин" value={viewModel.right.context.requester.accountLogin} />
-                        <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.accountEmail} />
-                        <ContextInfoRow icon={Phone} label="Телефон" value={viewModel.right.context.requester.accountPhone} />
-                        <ContextInfoRow icon={MessageSquare} label="Причина" value={viewModel.right.context.requester.accountReason} />
-                        <ContextInfoRow icon={ShieldCheck} label="Проверка" value={viewModel.right.context.requester.accountVerification} />
-                        <ContextInfoRow icon={UsersRound} label="Владелец устройства" value={viewModel.right.context.requester.activeDeviceOwner} />
-                        <ContextInfoRow icon={Fingerprint} label="Base binding" value={viewModel.right.context.requester.accountBaseBindingId} />
-                      </dl>
-                    </div>
-                  ) : null}
-                  <dl className="mt-4 grid gap-2">
-                    <ContextInfoRow icon={Phone} label="Телефон" value={viewModel.right.context.requester.phone} />
-                    <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.email} />
-                    <ContextInfoRow icon={MapPin} label="Локация" value={viewModel.right.context.requester.location} />
-                  </dl>
-                </section>
-
-</>}
-                device={<TicketDeviceAgentPanel deviceContext={viewModel.right.context.device} inventoryContext={viewModel.right.inventoryContext} />}
-                agent={<EndpointAgentContext inventoryContext={viewModel.right.inventoryContext} />}
+                requester={<><TicketRequestContext detail={workspaceQuery.data!.detail} serviceContext={viewModel.right.context.classification} /><TicketRequesterContext requester={viewModel.right.context.requester} /></>}
+                device={<TicketDeviceAgentPanel deviceContext={viewModel.right.context.device} inventoryContext={viewModel.right.inventoryContext} deviceSnapshot={workspaceQuery.data?.detail.snapshot.device} />}
+                agent={null}
                 observer={<ObserverDiagnosticCard isLightTheme={isLightTheme} observer={viewModel.right.observer} />}
                 criticalSummary={<p className={viewModel.right.observer.errorTraceCount ? "text-sm font-semibold text-rose-600" : "text-sm text-slate-500"}>Observer: {viewModel.right.observer.healthLabel} · Ошибки: {viewModel.right.observer.errorTraceCount}</p>}
               >
@@ -2570,18 +2530,7 @@ export function TicketListPage() {
                 ) : null}
 
 
-                <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Категория / услуга</p>
-                  <dl className="mt-3 grid gap-2">
-                    <ContextInfoRow icon={Tags} label="Тип" value={viewModel.right.context.classification.ticketType} />
-                    <ContextInfoRow icon={ClipboardList} label="Категория" value={viewModel.right.context.classification.category} />
-                    <ContextInfoRow icon={Building2} label="Сервис" value={viewModel.right.context.classification.service} />
-                    <ContextInfoRow icon={UsersRound} label="Владелец услуги" value={viewModel.right.context.classification.serviceOwner} />
-                    <ContextInfoRow icon={Fingerprint} label="Источник услуги" value={viewModel.right.context.classification.serviceSourceLabel} />
-                    <ContextInfoRow icon={BookOpen} label="Источник" value={viewModel.right.context.classification.source} />
-                    <ContextInfoRow icon={MessageSquare} label="Похожие тикеты" value={viewModel.right.context.classification.similarTicketsCount} />
-                  </dl>
-                </section>
+
               </TicketContextPanel>
             ) : null}
 
@@ -2590,37 +2539,37 @@ export function TicketListPage() {
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quality</p>
-                      <h3 className="mt-1 font-semibold text-white">Experience signals</h3>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Качество</p>
+                      <h3 className="mt-1 font-semibold text-white">Оценка обслуживания</h3>
                     </div>
                     <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs font-semibold text-slate-300">
-                      {(selectedTicketQuality?.indicators.length ?? 0) || "No flags"}
+                      {selectedTicketQuality ? selectedTicketQuality.indicators.length || "Нет замечаний" : "Нет данных"}
                     </span>
                   </div>
                   <dl className="mt-4 grid gap-2 text-sm">
                     <ContextInfoRow
                       icon={BarChart3}
-                      label="Latest CSAT"
+                      label="Последняя оценка"
                       value={
                         selectedTicketQuality?.latest_feedback
-                          ? `${selectedTicketQuality.latest_feedback.rating}/5 (${selectedTicketQuality.latest_feedback.sentiment ?? "unknown"})`
-                          : "n/a"
+                          ? `${selectedTicketQuality.latest_feedback.rating}/5`
+                          : "Нет оценки"
                       }
                     />
                     <ContextInfoRow
                       icon={CheckCircle2}
-                      label="Problem resolved"
+                      label="Проблема решена"
                       value={
                         selectedTicketQuality?.latest_feedback?.problem_resolved === false
-                          ? "No"
-                          : selectedTicketQuality?.latest_feedback
-                            ? "Yes"
-                            : "n/a"
+                          ? "Нет"
+                          : selectedTicketQuality?.latest_feedback?.problem_resolved === true
+                            ? "Да"
+                            : "Нет оценки"
                       }
                     />
-                    <ContextInfoRow icon={RefreshCcw} label="Reopen history" value={selectedTicketQuality?.reopen_events.length ?? 0} />
-                    <ContextInfoRow icon={ShieldCheck} label="QA reviews" value={selectedTicketQuality?.reviews.length ?? 0} />
-                    <ContextInfoRow icon={Sparkles} label="Improvement actions" value={selectedTicketQuality?.improvement_actions.length ?? 0} />
+                    <ContextInfoRow icon={RefreshCcw} label="Повторные открытия" value={selectedTicketQuality?.reopen_events.length ?? "Нет данных"} />
+                    <ContextInfoRow icon={ShieldCheck} label="Проверки качества" value={selectedTicketQuality?.reviews.length ?? "Нет данных"} />
+                    <ContextInfoRow icon={Sparkles} label="Меры улучшения" value={selectedTicketQuality?.improvement_actions.length ?? "Нет данных"} />
                   </dl>
                   {selectedTicketQuality?.latest_feedback?.comment ? (
                     <p className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm leading-6 text-slate-200">
@@ -2631,11 +2580,11 @@ export function TicketListPage() {
 
                 {selectedTicketQuality?.indicators.length ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Indicators</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Замечания</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {selectedTicketQuality.indicators.map((indicator) => (
-                        <span className="rounded-md border border-amber-300/20 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-100" key={indicator}>
-                          {indicator}
+                        <span className="rounded-md border border-amber-300/20 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-100" key={qualityLabel(indicator)}>
+                          {qualityLabel(indicator)}
                         </span>
                       ))}
                     </div>
@@ -2644,16 +2593,16 @@ export function TicketListPage() {
 
                 {(selectedTicketQuality?.reviews.length ?? 0) > 0 ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">QA review queue</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Проверки качества</p>
                     <div className="mt-3 space-y-2">
                       {selectedTicketQuality?.reviews.slice(0, 4).map((review) => (
                         <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2" key={review.review_id}>
                           <div className="flex items-center justify-between gap-3 text-sm">
-                            <strong className="text-white">{review.review_type}</strong>
-                            <span className="text-slate-300">{review.status}</span>
+                            <strong className="text-white">{qualityLabel(review.review_type)}</strong>
+                            <span className="text-slate-300">{qualityLabel(review.status)}</span>
                           </div>
                           <p className="mt-1 text-xs text-slate-500">
-                            {review.severity} / score {review.score ?? "n/a"}
+                            {qualityLabel(review.severity)} / оценка {review.score ?? "Нет оценки"}
                           </p>
                         </div>
                       ))}
@@ -2663,16 +2612,16 @@ export function TicketListPage() {
 
                 {(selectedTicketQuality?.improvement_actions.length ?? 0) > 0 ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Improvement actions</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Меры улучшения</p>
                     <div className="mt-3 space-y-2">
                       {selectedTicketQuality?.improvement_actions.slice(0, 4).map((action) => (
                         <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2" key={action.action_id}>
                           <div className="flex items-center justify-between gap-3 text-sm">
                             <strong className="text-white">{action.title}</strong>
-                            <span className="text-slate-300">{action.status}</span>
+                            <span className="text-slate-300">{qualityLabel(action.status)}</span>
                           </div>
                           <p className="mt-1 text-xs text-slate-500">
-                            {action.priority} / {action.action_type} / owner {action.owner_actor_id ?? "unassigned"}
+                            {qualityLabel(action.priority)} / {qualityLabel(action.action_type)} / ответственный: {action.owner_actor_id ?? "Не назначен"}
                           </p>
                         </div>
                       ))}
@@ -2681,23 +2630,23 @@ export function TicketListPage() {
                 ) : null}
 
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Linked problems</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Связанные проблемы</p>
                   <div className="mt-3 space-y-2">
                     {(selectedTicketProblemsQuery.data ?? []).length > 0 ? (
                       selectedTicketProblemsQuery.data?.slice(0, 4).map((item) => (
                         <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2" key={item.link.link_id}>
                           <div className="flex items-center justify-between gap-3 text-sm">
                             <strong className="text-white">{item.problem.problem_key}</strong>
-                            <span className="text-slate-300">{item.problem.status}</span>
+                            <span className="text-slate-300">{problemStatusLabels[item.problem.status] ?? "Неизвестно"}</span>
                           </div>
                           <p className="mt-1 text-xs text-slate-500">
-                            {item.problem.title} / {item.link.link_type}
+                            {item.problem.title}
                           </p>
                         </div>
                       ))
                     ) : (
                       <p className="text-sm text-slate-400">
-                        {selectedTicketProblemsQuery.isLoading ? "Loading problem links..." : "No linked problems."}
+                        {selectedTicketProblemsQuery.isLoading ? "Загружаем связанные проблемы…" : selectedTicketProblemsQuery.isError ? "Не удалось загрузить связанные проблемы. Обновите данные." : "Связанных проблем нет."}
                       </p>
                     )}
                   </div>
@@ -2707,7 +2656,7 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "sla" ? (
               <div className="space-y-3">
-                {workspaceMode === "sla" ? (
+                {inspectorMode === "sla" ? (
                   <div aria-label="SLA workspace" className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-[#111f33] p-3" role="tablist">
                     {slaWorkspaceTabs.map((tab) => (
                       <button
@@ -2727,7 +2676,7 @@ export function TicketListPage() {
                     ))}
                   </div>
                 ) : null}
-                {workspaceMode === "sla" && slaWorkspaceTab === "overview" ? (
+                {inspectorMode === "sla" && slaWorkspaceTab === "overview" ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div className="grid gap-3 md:grid-cols-2">
                       {selectedTicket.timers.map((timer) => (
@@ -2751,7 +2700,7 @@ export function TicketListPage() {
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">OLA</p>
-                        <p className="mt-2 text-sm text-slate-300">Ack и Processing берутся из текущего SLA/OLA payload.</p>
+                        <p className="mt-2 text-sm text-slate-300">Подтверждение и обработка по внутренним срокам группы поддержки.</p>
                       </div>
                       <div className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-100/80">Эскалации</p>
@@ -2763,15 +2712,15 @@ export function TicketListPage() {
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">История сроков</p>
-                        <p className="mt-2 text-sm text-slate-300">События SLA/OLA доступны во вкладке истории timeline.</p>
+                        <p className="mt-2 text-sm text-slate-300">События изменения сроков доступны во вкладке «История сроков».</p>
                       </div>
                     </div>
                   </section>
                 ) : null}
-                {workspaceMode === "sla" && slaWorkspaceTab === "ola" ? (
+                {inspectorMode === "sla" && slaWorkspaceTab === "ola" ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <p className="font-semibold text-white">OLA по очереди</p>
-                    <p className="mt-1 text-sm text-slate-400">Внутренние сроки берутся из текущего SLA/OLA payload без нового API.</p>
+                    <p className="mt-1 text-sm text-slate-400">Внутренние сроки подтверждения и обработки обращения.</p>
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                       {selectedTicket.timers.length ? selectedTicket.timers.map((timer) => (
                         <div className={`rounded-xl border border-white/10 bg-white/[0.03] p-3 ${timerStatusRing(timer.status)}`} key={`ola:${timer.key}`}>
@@ -2792,32 +2741,26 @@ export function TicketListPage() {
                     </div>
                   </section>
                 ) : null}
-                {workspaceMode === "sla" && slaWorkspaceTab === "escalations" ? (
+                {inspectorMode === "sla" && slaWorkspaceTab === "escalations" ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <p className="font-semibold text-white">Эскалационный контроль</p>
                     <p className="mt-1 text-sm text-slate-400">
                       {selectedTicket.timers.some((timer) => timer.status === "breached" || timer.status === "at_risk")
-                        ? "Есть риск или нарушение срока. Действия показаны безопасно и не обходят backend policy."
+                        ? "Есть риск или нарушение срока. Проверьте исполнителя и приоритет обращения."
                         : "Активных SLA/OLA эскалаций по текущим данным нет."}
                     </p>
-                    <div className="mt-4 grid gap-2 md:grid-cols-3">
-                      <button className="rounded-xl border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 disabled:opacity-60" disabled type="button">
-                        Эскалировать
-                      </button>
-                      <button className="rounded-xl border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100 disabled:opacity-60" disabled type="button">
-                        Сообщить руководителю
-                      </button>
-                      <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 disabled:opacity-60" disabled type="button">
-                        Добавить причину задержки
-                      </button>
-                    </div>
+                    <p className="mt-3 text-sm text-slate-500">Автоматическая эскалация выполняется по действующим правилам SLA.</p>
+                    {hasPermission("ticket.status.change") && !workspaceErrorState ? <button className="simple-button mt-3" type="button" onClick={() => openOperatorAction("priority")}>Изменить приоритет</button> : null}
+
                   </section>
                 ) : null}
-                {workspaceMode === "sla" && slaWorkspaceTab === "history" ? (
+                {inspectorMode === "sla" && slaWorkspaceTab === "history" ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                    <p className="font-semibold text-white">История сроков</p>
+                    <p className="font-semibold text-white">Последние события сроков</p>
                     <div className="mt-3 space-y-2">
-                      {selectedTicket.timeline.filter((item) => item.kind === "history" || item.kind === "diagnostics").slice(0, 8).map((item) => (
+                      {slaHistoryQuery.isLoading ? <p role="status">Загружаем историю сроков…</p> : null}
+                      {slaHistoryQuery.isError ? <p role="alert">Не удалось загрузить историю сроков. Обновите данные.</p> : null}
+                      {slaHistory.map((item) => (
                         <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2" key={`sla-history:${item.id}`}>
                           <div className="flex justify-between gap-3 text-xs text-slate-500">
                             <span>{item.actor}</span>
@@ -2827,7 +2770,7 @@ export function TicketListPage() {
                           {item.body ? <p className="mt-1 text-xs leading-5 text-slate-400">{item.body}</p> : null}
                         </div>
                       ))}
-                      {!selectedTicket.timeline.some((item) => item.kind === "history" || item.kind === "diagnostics") ? (
+                      {!slaHistoryQuery.isLoading && !slaHistoryQuery.isError && !slaHistory.length ? (
                         <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400">
                           Событий сроков пока нет.
                         </p>
@@ -2835,7 +2778,7 @@ export function TicketListPage() {
                     </div>
                   </section>
                 ) : null}
-                {workspaceMode !== "sla" ? (
+                {inspectorMode !== "sla" ? (
                   selectedTicket.timers.length ? selectedTicket.timers.map((timer) => (
                     <section className={`rounded-xl border border-white/10 bg-[#111f33] p-4 ${timerStatusRing(timer.status)}`} key={timer.key}>
                       <div className="flex items-start justify-between gap-3">
@@ -2876,7 +2819,7 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "tools" ? (
               <div className="space-y-3">
-                {workspaceMode === "tools" ? (
+                {inspectorMode === "tools" ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div aria-label="Режим инструментов" className="mb-4 flex flex-wrap gap-2" role="tablist">
                       {toolsWorkspaceTabs.map((tab) => (
@@ -3398,7 +3341,7 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "passport" ? (
               <section className={`rounded-xl p-4 ${isLightTheme ? "border border-slate-200 bg-white text-slate-950 shadow-sm" : "border border-white/10 bg-[#111f33]"}`}>
-                {workspaceMode === "passport" ? (
+                {inspectorMode === "passport" ? (
                   <div aria-label="Паспорт решения workspace" className="mb-4 flex flex-wrap gap-2" role="tablist">
                     {passportWorkspaceTabs.map((tab) => (
                       <button
@@ -3418,7 +3361,7 @@ export function TicketListPage() {
                     ))}
                   </div>
                 ) : null}
-                {workspaceMode === "passport" && passportWorkspaceTab === "sections" ? (
+                {inspectorMode === "passport" && passportWorkspaceTab === "sections" ? (
                   <div className="mb-4 grid gap-3 md:grid-cols-3">
                     {["Проблема", "Причина", "Решение", "Проверка результата", "Подтверждение пользователя", "Доказательства", "Удалённая помощь", "Операции и диагностика", "Готовность к закрытию"].map((label, index) => {
                       const item = viewModel.right.passport.items[index % Math.max(1, viewModel.right.passport.items.length)];
@@ -3435,7 +3378,7 @@ export function TicketListPage() {
                     })}
                   </div>
                 ) : null}
-                {workspaceMode === "passport" && passportWorkspaceTab === "evidence" ? (
+                {inspectorMode === "passport" && passportWorkspaceTab === "evidence" ? (
                   <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
                     <p className="font-semibold text-white">Доказательства</p>
                     <p className="mt-1 text-sm text-slate-400">Evidence связывается только через существующий passport flow и closure policy.</p>
@@ -3454,7 +3397,7 @@ export function TicketListPage() {
                     </div>
                   </div>
                 ) : null}
-                {workspaceMode === "passport" && passportWorkspaceTab === "operations" ? (
+                {inspectorMode === "passport" && passportWorkspaceTab === "operations" ? (
                   <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
                     <p className="font-semibold text-white">Операции и диагностика</p>
                     <p className="mt-1 text-sm text-slate-400">Связанные операции используются как доказательная база паспорта решения.</p>
@@ -3465,7 +3408,7 @@ export function TicketListPage() {
                     />
                   </div>
                 ) : null}
-                {workspaceMode === "passport" && passportWorkspaceTab === "readiness" ? (
+                {inspectorMode === "passport" && passportWorkspaceTab === "readiness" ? (
                   <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
                     <p className="font-semibold text-white">Готовность к закрытию</p>
                     <p className="mt-1 text-sm text-slate-400">
@@ -3739,13 +3682,13 @@ export function TicketListPage() {
         {workspaceMode === "queue" || !selectedTicketId ? <>
           {actionError ? <p className="simple-notice simple-risk" role="alert">{actionError instanceof Error ? actionError.message : "Действие не выполнено"}</p> : null}
           <SimpleSupportQueue {...simpleQueueProps} onAdvanced={() => { setSimpleMode(false); setWorkspaceMode("queue"); }} />
-        </> : <div className="simple-workspace" style={{ "--simple-left": `${workspaceColumns.left}px`, "--simple-right": `${workspaceColumns.right}px` } as CSSProperties}>
-          {(["left", "right"] as const).map((pane) => <button key={pane} type="button" role="separator" aria-orientation="vertical" aria-label={pane === "left" ? "Ширина списка обращений" : "Ширина панели сведений"}
+        </> : <div className="simple-workspace" data-list-collapsed={effectiveListCollapsed} style={{ "--simple-left": `${workspaceColumns.left}px`, "--simple-right": `${workspaceColumns.right}px` } as CSSProperties}>
+          {(["left", "right"] as const).map((pane) => <button hidden={pane === "left" && effectiveListCollapsed} key={pane} type="button" role="separator" aria-orientation="vertical" aria-label={pane === "left" ? "Ширина списка обращений" : "Ширина панели сведений"}
             aria-valuenow={workspaceColumns[pane]} aria-valuemin={pane === "left" ? 260 : 300} aria-valuemax={pane === "left" ? 420 : 460}
             className="simple-column-resizer" data-pane={pane} style={pane === "left" ? { left: workspaceColumns.left } : { right: workspaceColumns.right }}
             onPointerDown={(event) => startColumnResize(pane, event)} onDoubleClick={resetWorkspaceColumnsForCurrentMode}
             onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Home") { event.preventDefault(); resetWorkspaceColumnsForCurrentMode(); } else if (["ArrowLeft", "ArrowRight"].includes(event.key)) { event.preventDefault(); const delta = (event.key === "ArrowRight" ? 20 : -20) * (pane === "right" ? -1 : 1); setWorkspaceColumnsByMode((current) => ({ ...current, ticket: normalizeWorkspaceColumnsForMode("ticket", { ...(current.ticket ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE.ticket), [pane]: (current.ticket ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE.ticket)[pane] + delta }, workspaceViewportWidth, 420) })); } }} title="Потяните или используйте стрелки. Двойной щелчок — сброс ширины."><GripVertical size={14} aria-hidden /></button>)}
-          <SimpleSupportQueue {...simpleQueueProps} compact />
+          <SimpleSupportQueue {...simpleQueueProps} compact collapsed={effectiveListCollapsed} onToggleCollapsed={toggleTicketList} />
           {workspaceQuery.data && selectedTicket ? <SimpleSupportTicket detail={workspaceQuery.data.detail} ticket={selectedTicket} context={viewModel.right.context}
             actorId={session?.user_login} isAdmin={isAdmin} canWork={hasPermission("ticket.status.change") && !workspaceErrorState}
             canAssign={hasPermission("ticket.assign")}
@@ -3754,7 +3697,14 @@ export function TicketListPage() {
             onStatus={(value) => operatorActionMutation.mutate({ kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" })}
             onClaim={() => takeTicketMutation.mutate(selectedTicket.id)}
             onResolve={() => setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket))}
-            onAdvanced={(mode = "ticket") => { setSimpleMode(false); setWorkspaceMode(mode); if (mode !== "ticket") setSidebarTab(mode); }}
+            inspector={ticketInspector} inspectorOpen={compactInspectorOpen} onInspectorOpen={() => setCompactInspectorOpen(true)} onInspectorClose={() => setCompactInspectorOpen(false)}
+            onAdvanced={(mode = "ticket") => selectRightTab(mode === "ticket" ? "context" : mode)}
+            additionalActions={<>
+              <button type="button" disabled={!statusActionOptions.length || operatorActionMutation.isPending} onClick={() => openOperatorAction("status")}>Сменить статус</button>
+              <button type="button" disabled={!hasPermission("ticket.assign") || operatorActionMutation.isPending} onClick={() => openOperatorAction("reroute")}>Пересчитать маршрут</button>
+              <button type="button" disabled={ticketVisibilityMutation.isPending || !(selectedTicket.hiddenFromWorkspace ? selectedTicket.canUnhideFromWorkspace : selectedTicket.canHideFromWorkspace)} onClick={() => ticketVisibilityMutation.mutate(selectedTicket.hiddenFromWorkspace ? "unhide" : "hide")}>{selectedTicket.hiddenFromWorkspace ? "Вернуть в списки" : "Скрыть у всех"}</button>
+              {isAdmin ? <button type="button" disabled={ticketVisibilityMutation.isPending || !(selectedTicket.archivedAt ? selectedTicket.canUnarchiveTicket : selectedTicket.canArchiveTicket)} onClick={() => ticketVisibilityMutation.mutate(selectedTicket.archivedAt ? "unarchive" : "archive")}>{selectedTicket.archivedAt ? "Вернуть из архива" : "Архивировать"}</button> : null}
+            </>}
             unifiedQueue={unifiedQueue}
             onManage={openOperatorAction} onQueue={() => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); }}
             conversation={<SimpleSupportConversation key={selectedTicket.id}
@@ -4709,7 +4659,7 @@ export function TicketListPage() {
                     initial={resolutionCloseDraft} pending={resolutionCloseMutation.isPending}
                     error={resolutionCloseMutation.error instanceof Error ? resolutionCloseMutation.error.message : null}
                     onSubmit={(draft) => resolutionCloseMutation.mutate(draft)} onCancel={() => setResolutionCloseDraft(null)}
-                    onAdvanced={() => { setResolutionCloseDraft(null); setSimpleMode(false); setSidebarTab("passport"); setWorkspaceMode("passport"); }}
+                    onAdvanced={() => { setResolutionCloseDraft(null); selectRightTab("passport"); }}
                   /></div>
                 ) : resolutionCloseDraft ? (
                   <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
