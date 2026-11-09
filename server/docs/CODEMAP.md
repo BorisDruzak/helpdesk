@@ -1097,3 +1097,5 @@ v4 fallback definitions are collapsed after the ordinary processing controls.
 See `docs/STUDIO_READINESS_STAGING_ACCEPTANCE_2026_11_09.md`. No new API or migration.
 
 Support layout modes: `SupportQueueModes` and `TicketListPage` retain the selected ticket/composer in full queue mode and defer read receipts while conversation is hidden. Support `AppSidebar` previews on hover/focus with account/workspace-scoped pin; SLA/OLA inspector grids use their own width. No API/DB changes. See `docs/SUPPORT_LAYOUT_MODES.md`.
+
+Support queue mini: `SimpleSupportQueue` provides five colored status filters, two compact header controls and96px number/status/SLA miniatures; ticket entry and successful start collapse the simple queue. See `docs/SUPPORT_QUEUE_MINI.md`. No API/schema change.

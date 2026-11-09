@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ArrowUpRight, Menu } from "lucide-react";
 import type { SupportQueuePayload } from "../../../features/queues/api";
 import { mapWorkspaceTicketItems } from "../../../features/queues/support-workspace-mappers";
 import "./simple-support.css";
@@ -15,25 +16,33 @@ export type SimpleSupportQueueProps = {
   view?: "tickets" | "actions"; onViewChange?: (view: "tickets" | "actions") => void; actionCenter?: ReactNode;
   onQueueChange?: (id: string | null) => void;
 };
-const FILTERS: Array<[SimpleQueueFilter, string]> = [["open", "Открытые"], ["new", "Новые"], ["mine", "Мои"], ["waiting", "Ожидают ответа"], ["completed", "Завершённые"], ["sla_risk", "SLA риск"]];
+const FILTERS: Array<[SimpleQueueFilter, string]> = [["open", "Открытые"], ["new", "Новые"], ["mine", "Мои"], ["waiting", "Ожидают ответа"], ["completed", "Завершённые"]];
 
 export function SimpleSupportQueue(props: SimpleSupportQueueProps) {
   const { queue, compact, selectedTicketId, actorId, canWork, pending, onOpenTicket, onTakeTicket } = props;
   const actionsView = !compact && props.view === "actions";
   const tickets = mapWorkspaceTicketItems(queue, selectedTicketId ?? null);
+  const compactControls = <div className="simple-queue__compact-controls">
+    {props.onToggleCollapsed ? <button className="simple-button" aria-label={props.collapsed ? "Показать список заявок" : "Скрыть список заявок"} aria-expanded={!props.collapsed} title={props.collapsed ? "Раскрыть очередь рядом с тикетом" : "Свернуть очередь до миниатюр"} onClick={props.onToggleCollapsed} type="button"><Menu size={17} aria-hidden /></button> : null}
+    {props.onOpenQueue ? <button className="simple-button simple-queue__full" aria-label="Открыть всю очередь" title="Открыть всю очередь" onClick={props.onOpenQueue} type="button"><ArrowUpRight size={17} aria-hidden />{!props.collapsed ? <span>Вся очередь</span> : null}</button> : null}
+  </div>;
   if (compact && props.collapsed) return <section className="simple-queue simple-queue--compact simple-queue--collapsed" aria-label="Список заявок">
-    <button className="simple-button" aria-label="Показать список заявок" aria-expanded={false} onClick={props.onToggleCollapsed} type="button">☰</button><span>{tickets.length}</span>
+    {compactControls}<span className="simple-queue__mini-count">{tickets.length}</span>
+    <div className="simple-queue__miniatures">{tickets.map(ticket=><button type="button" key={ticket.id} className="simple-queue__miniature" aria-current={ticket.active ? "true" : undefined} aria-label={`${ticket.code} · ${ticket.statusLabel} · SLA: ${ticket.nextDueLabel}${ticket.unread ? " · Есть непрочитанные сообщения" : ""}`} title={`${ticket.subject}\n${ticket.statusLabel}\nSLA: ${ticket.nextDueLabel}`} onClick={()=>onOpenTicket(ticket.id)}>
+      <strong><span>{ticket.code}</span>{ticket.unread ? <i className="simple-unread" aria-hidden /> : null}</strong>
+      <span className="simple-badge" data-tone={ticket.statusTone}>{ticket.statusLabel}</span>
+      <span className="simple-queue__mini-sla" data-risk={ticket.slaRisk} data-overdue={ticket.nextDueLabel.startsWith("Просрочено")} data-empty={ticket.nextDueLabel === "Нет срока"}>{ticket.slaRisk ? ticket.nextDueLabel.startsWith("Просрочено") ? "SLA нарушен" : "SLA скоро срок" : ticket.nextDueLabel === "Нет срока" ? "SLA: нет данных" : "SLA в норме"}</span>
+    </button>)}</div>
   </section>;
   return <section className={`simple-queue${compact ? " simple-queue--compact" : ""}`} aria-label={compact ? "Моя рабочая очередь" : "Очередь обращений"}>
-    {compact && props.onToggleCollapsed ? <button className="simple-button simple-queue__expand" aria-expanded type="button" onClick={props.onToggleCollapsed}>Скрыть список заявок</button> : null}
-    <div className={`simple-queue__heading${!compact ? " simple-queue__heading--unified" : ""}`}><div><p className="simple-eyebrow">Рабочее место / заявки</p>{!compact ? <button className="simple-link simple-queue__return" type="button" disabled={!props.onReturnToTicket} title={props.onReturnToTicket ? "Вернуться к открытому обращению без потери ответа" : "Сначала откройте обращение из списка"} onClick={props.onReturnToTicket}>← Вернуться к обращению{props.returnTicketLabel ? ` ${props.returnTicketLabel}` : ""}</button> : null}<h2>{compact ? "Очередь рядом" : "Очередь обращений"}</h2>
+    {compact ? compactControls : null}
+    {!compact ? <div className="simple-queue__heading simple-queue__heading--unified"><div><p className="simple-eyebrow">Рабочее место / заявки</p><button className="simple-link simple-queue__return" type="button" disabled={!props.onReturnToTicket} title={props.onReturnToTicket ? "Вернуться к открытому обращению без потери ответа" : "Сначала откройте обращение из списка"} onClick={props.onReturnToTicket}>← Вернуться к обращению{props.returnTicketLabel ? ` ${props.returnTicketLabel}` : ""}</button><h2>Очередь обращений</h2>
       {!compact && props.onViewChange ? <div className="simple-tabs simple-queue__views" role="tablist" aria-label="Вид очереди">{([["tickets", "Обращения"], ["actions", "Действия"]] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={(props.view ?? "tickets") === id} onClick={() => props.onViewChange?.(id)}>{label}</button>)}</div> : null}</div>
-      {compact && props.onOpenQueue ? <button className="simple-button simple-queue__expand" type="button" onClick={props.onOpenQueue}>Открыть всю очередь ↗</button> : null}
       {!compact ? <input className="simple-queue__shared-search" aria-label="Поиск обращений" placeholder="Номер, тема, сотрудник, услуга или устройство" type="search" value={props.search} onChange={event => props.onSearchChange(event.target.value)} /> : null}
-      {!compact ? <details className="simple-queue__more"><summary>Ещё</summary><button className="simple-button" onClick={props.onAdvanced} type="button">Расширенные инструменты очереди</button></details> : null}</div>
+      <details className="simple-queue__more"><summary>Ещё</summary><button className="simple-button" onClick={props.onAdvanced} type="button">Расширенные инструменты очереди</button></details></div> : null}
     {queue?.queue_mode === "unified" ? <p className="simple-queue__mode">Единая очередь · все операторы поддержки</p> : null}
     <div className="simple-queue__toolbar" hidden={actionsView && (queue?.queue_mode === "unified" || !props.onQueueChange || !(queue?.summary.queue_counts?.length))}>
-      {!actionsView ? <div className="simple-tabs" role="tablist" aria-label="Фильтры обращений">{FILTERS.map(([id, label]) => <button type="button" role="tab" aria-selected={props.filter === id} key={id} onClick={() => props.onFilterChange(id)}>{label}</button>)}</div> : null}
+      {!actionsView ? <div className="simple-tabs simple-queue__filters" role="tablist" aria-label="Фильтры обращений">{FILTERS.map(([id, label]) => <button type="button" role="tab" data-filter={id} aria-selected={props.filter === id} key={id} onClick={() => props.onFilterChange(id)}>{label}</button>)}</div> : null}
       {compact ? <input aria-label="Поиск обращений" placeholder="Поиск по номеру, теме, сотруднику" type="search" value={props.search} onChange={(event) => props.onSearchChange(event.target.value)} /> : null}
       {queue?.queue_mode !== "unified" && props.onQueueChange && (queue?.summary.queue_counts?.length ?? 0) > 0 ? <select aria-label="Очередь" value={props.activeQueueId ?? ""} onChange={(event) => props.onQueueChange?.(event.target.value || null)}>
         <option value="">Все очереди</option>{queue?.summary.queue_counts?.map((item) => <option key={item.id ?? item.code} value={item.code ?? String(item.id)}>{item.name ?? item.code}</option>)}</select> : null}

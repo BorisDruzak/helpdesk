@@ -1266,8 +1266,11 @@ export function TicketListPage() {
   const actionsRefreshing = useIsFetching({ queryKey: ["operator-command-center"] }) > 0;
   const { session } = useSession();
   const panelAccount=session?.user_login??"";
-  const [ticketListCollapsed,setTicketListCollapsed]=useState(()=>loadPanelPreferences(panelAccount,"support").ticketListCollapsed);
-  useEffect(()=>setTicketListCollapsed(loadPanelPreferences(panelAccount,"support").ticketListCollapsed),[panelAccount]);
+  const [ticketListCollapsed,setTicketListCollapsed]=useState(()=>{
+    const initial=getTicketsWorkspaceUrlState(searchParams);
+    return searchParams.get("advanced")!=="1" && (!initial.smartView || initial.smartView==="all") ? true : loadPanelPreferences(panelAccount,"support").ticketListCollapsed;
+  });
+  useEffect(()=>setTicketListCollapsed(simpleMode ? true : loadPanelPreferences(panelAccount,"support").ticketListCollapsed),[panelAccount]);
   const initialUrlStateRef = useRef(getTicketsWorkspaceUrlState(searchParams));
   const [simpleMode, setSimpleMode] = useState(() => searchParams.get("advanced") !== "1" && (!initialUrlStateRef.current.smartView || initialUrlStateRef.current.smartView === "all"));
   const [simpleFilter, setSimpleFilter] = useState<SimpleQueueFilter>("open");
@@ -1330,6 +1333,7 @@ export function TicketListPage() {
 
   useEffect(() => {
     if (params.ticketId) {
+      if(simpleMode && params.ticketId!==selectedTicketId)setQueueCollapsed(true);
       setSelectedTicketId(params.ticketId);
       if (simpleMode) setWorkspaceMode("ticket");
     } else if (simpleMode) {
@@ -1965,9 +1969,10 @@ export function TicketListPage() {
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
       ]);
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, draft) => {
       setMoreOpen(false);
       setOperatorActionDraft(null);
+      if(simpleMode && draft.kind==="status" && draft.targetStatus==="in_progress")setQueueCollapsed(true);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
@@ -2203,6 +2208,7 @@ export function TicketListPage() {
 
   function openTicket(ticketId: string) {
     startTransition(() => {
+      if(simpleMode)setQueueCollapsed(true);
       setWorkspaceMode("ticket");
       navigate(`/app/tickets/${ticketId}`);
     });

@@ -114,6 +114,7 @@ test("unified queue keeps the full list reachable and restores the resizable ins
   await expect(page.getByTestId("support-inspector-panel")).toBeVisible();
   await expect(page.getByRole("region", { name: "Следующее действие", exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Очередь", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Очередь рядом", exact: true }).click();
   const left = page.getByRole("separator", { name: "Ширина списка обращений" });
   const right = page.getByRole("separator", { name: "Ширина панели сведений" });
   const before = await right.getAttribute("aria-valuenow");
@@ -134,8 +135,9 @@ test("unified queue keeps the full list reachable and restores the resizable ins
   await page.getByRole("button", { name: "Скрыть список заявок", exact: true }).click();
   await expect(page.getByRole("button", { name: "Показать список заявок", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Показать список заявок", exact: true }).click();
-  await page.getByRole("tab", { name: "SLA риск", exact: true }).click();
-  await expect(page.getByRole("tab", { name: "SLA риск", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "SLA риск", exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Новые", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Новые", exact: true })).toHaveAttribute("aria-selected", "true");
   await page.screenshot({ path: info.outputPath("unified-inspector-1920.png"), fullPage: true });
   await expect(page.getByTestId("simple-support-workspace")).toBeVisible();
   await page.getByRole("button", { name: /Открыть всю очередь/ }).click();

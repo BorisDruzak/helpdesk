@@ -2608,6 +2608,20 @@ describe("TicketListPage", () => {
 
 
 describe("UI-SUPPORT-001 default workspace", () => {
+  it("starts with miniatures and collapses the queue after successfully starting work",async()=>{
+    const workspace=workspacePayload();
+    workspace.detail.ticket.status="queued";workspace.detail.ticket.assignee_id=null;
+    workspace.detail.actions.status_options=[{value:"in_progress",label:"В работе"}];
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    postSupportTicketStatusMock.mockResolvedValue({} as Awaited<ReturnType<typeof postSupportTicketStatus>>);
+    renderTicketListPage("/app/tickets/ticket-1",false);
+    await screen.findByRole("button",{name:"Взять в работу"});
+    expect(screen.getByRole("button",{name:"Свернуть очередь"})).toHaveAttribute("aria-pressed","true");
+    fireEvent.click(screen.getByRole("button",{name:"Очередь рядом"}));
+    fireEvent.click(screen.getByRole("button",{name:"Взять в работу"}));
+    await waitFor(()=>expect(postSupportTicketStatusMock).toHaveBeenCalled());
+    await waitFor(()=>expect(screen.getByRole("button",{name:"Свернуть очередь"})).toHaveAttribute("aria-pressed","true"));
+  });
   it("does not read hidden messages from A when opening B from the full queue",async()=>{
     const queue=queuePayload();
     queue.tickets.push({...queue.tickets[0],ticket_id:"ticket-2",ticket_code:"T-000002",title:"Другой тикет"});
@@ -2683,11 +2697,13 @@ describe("UI-SUPPORT-001 default workspace", () => {
     postSupportTicketStatusMock.mockRejectedValue(new Error("Обращение уже взято другим оператором"));
     renderTicketListPage("/app/tickets/ticket-1", false);
     const take = await screen.findByRole("button", { name: "Взять в работу" });
+    fireEvent.click(screen.getByRole("button",{name:"Очередь рядом"}));
     expect(screen.getByRole("textbox", { name: "Сообщение сотруднику" })).toBeDisabled();
     expect(screen.queryByTestId("support-command-strip")).not.toBeInTheDocument();
     fireEvent.click(take);
     await waitFor(() => expect(postSupportTicketStatusMock).toHaveBeenCalledWith("ticket-1", "in_progress", expect.any(Object)));
     expect(await screen.findByRole("alert")).toHaveTextContent("Обращение уже взято");
+    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
     expect(screen.getByRole("textbox", { name: "Сообщение сотруднику" })).toBeDisabled();
     expect(postSupportTicketAssignMock).not.toHaveBeenCalled();
   });

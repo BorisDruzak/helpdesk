@@ -65,6 +65,7 @@ for (const width of [390, 1366, 1440, 1920]) {
     await expect(page.getByRole("button", { name: "Очередь рядом", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "T-200001", exact: true }).click();
     await expect(page.locator(".simple-ticket")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Свернуть очередь", exact: true })).toHaveAttribute("aria-pressed","true");
     const reply = page.getByRole("textbox", { name: "Сообщение сотруднику", exact: true });
     await expect(reply).toBeEnabled();
     await reply.fill("Черновик ответа — не отправлять");
@@ -103,6 +104,30 @@ for (const width of [390, 1366, 1440, 1920]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("miniatures show complete numbers, status and SLA with five colored filters",async({page},info)=>{
+  await page.setViewportSize({width:1440,height:900});
+  await login(page);await page.getByRole("button",{name:"T-200001",exact:true}).click();
+  const rail=page.getByRole("region",{name:"Список заявок",exact:true});
+  await expect(rail).toBeVisible();
+  const first=rail.getByRole("button",{name:/T-200001.*SLA/});
+  await expect(first).toBeVisible();
+  expect((await rail.boundingBox())!.width).toBe(96);
+  const number=await first.locator("strong").boundingBox();const card=await first.boundingBox();
+  expect(number!.x+number!.width).toBeLessThanOrEqual(card!.x+card!.width);
+  await page.screenshot({path:info.outputPath("queue-miniatures.png"),fullPage:true});
+  await rail.getByRole("button",{name:"Показать список заявок",exact:true}).click();
+  const compact=page.getByRole("region",{name:"Моя рабочая очередь",exact:true});
+  await expect(compact.locator(".simple-queue__compact-controls button")).toHaveCount(2);
+  await expect(compact.getByRole("tab",{name:"SLA риск",exact:true})).toHaveCount(0);
+  await expect(compact.getByRole("tab")).toHaveCount(5);
+  const colors=await compact.getByRole("tab").evaluateAll(tabs=>tabs.map(e=>getComputedStyle(e).getPropertyValue("--filter-color")));
+  expect(new Set(colors).size).toBe(5);
+  await compact.getByRole("tab",{name:"Новые",exact:true}).click();
+  await expect(compact.getByRole("tab",{name:"Новые",exact:true})).toHaveAttribute("aria-selected","true");
+  await page.getByRole("button",{name:"Тёмная тема",exact:true}).click();
+  await page.screenshot({path:info.outputPath("queue-filters-dark.png"),fullPage:true});
+});
 
 test("navigation hover overlays without moving the ticket, pin persists, keyboard can escape", async ({ page }, info) => {
   await page.setViewportSize({ width: 1440, height: 900 });

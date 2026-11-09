@@ -12,6 +12,19 @@ const rows = [
 const queue = { tickets: rows, summary: { visible_count: 3, queue_counts: [] } } as unknown as SupportQueuePayload;
 
 describe("simple support queue", () => {
+  it("distinguishes an approaching SLA deadline from an overdue one in miniatures",()=>{
+    vi.useFakeTimers();
+    try{
+      vi.setSystemTime(new Date("2026-11-09T10:00:00Z"));
+      const props={queue:{...queue,tickets:[{...rows[0],first_response_due_at:"2026-11-09T10:01:00Z"}]},compact:true,collapsed:true,canWork:true,filter:"open" as const,search:"",onFilterChange:vi.fn(),onSearchChange:vi.fn(),onOpenTicket:vi.fn(),onTakeTicket:vi.fn(),onAdvanced:vi.fn()};
+      const view=render(<SimpleSupportQueue {...props}/>);
+      expect(screen.getByText("SLA скоро срок")).toBeVisible();
+      expect(screen.queryByText("SLA нарушен")).not.toBeInTheDocument();
+      vi.setSystemTime(new Date("2026-11-09T10:02:00Z"));
+      view.rerender(<SimpleSupportQueue {...props}/>);
+      expect(screen.getByText("SLA нарушен")).toBeVisible();
+    }finally{vi.useRealTimers();}
+  });
   it("shows actions within the primary queue with one shared search", () => {
     const mode = vi.fn(); const search = vi.fn();
     render(<SimpleSupportQueue queue={queue} canWork filter="open" search="VPN" view="actions" onViewChange={mode}
@@ -27,18 +40,26 @@ describe("simple support queue", () => {
     expect(mode).toHaveBeenCalledWith("tickets");
   });
 
-  it("keeps SLA risk and list collapse available beside the ticket", () => {
+  it("uses five colored filters and compact header controls beside the ticket", () => {
     const filter = vi.fn(); const toggle = vi.fn();
     const props = { queue, compact: true, actorId: "operator", canWork: true, filter: "open" as const, search: "", onFilterChange: filter,
       onSearchChange: vi.fn(), onOpenTicket: vi.fn(), onTakeTicket: vi.fn(), onAdvanced: vi.fn(), onToggleCollapsed: toggle };
     const view = render(<SimpleSupportQueue {...props} />);
-    fireEvent.click(screen.getByRole("tab", { name: "SLA риск" }));
-    expect(filter).toHaveBeenCalledWith("sla_risk");
+    expect(screen.queryByRole("tab", { name: "SLA риск" })).not.toBeInTheDocument();
+    const tabs=screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(5);
+    for(const tab of tabs)expect(tab).toHaveAttribute("data-filter");
+    fireEvent.click(screen.getByRole("tab", { name: "Новые" }));
+    expect(filter).toHaveBeenCalledWith("new");
     fireEvent.click(screen.getByRole("button", { name: "Скрыть список заявок" }));
     expect(toggle).toHaveBeenCalledOnce();
     view.rerender(<SimpleSupportQueue {...props} collapsed />);
     expect(screen.queryByText("Принтер")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Показать список заявок" })).toHaveAttribute("aria-expanded", "false");
+    const miniature=screen.getByRole("button",{name:/T-001.*В очереди.*SLA/});
+    expect(within(miniature).getByText("T-001")).toBeVisible();
+    fireEvent.click(miniature);
+    expect(props.onOpenTicket).toHaveBeenCalledWith("new");
   });
   it("opens the full queue from the compact list and hides partitions in unified mode", () => {
     const full = vi.fn();
