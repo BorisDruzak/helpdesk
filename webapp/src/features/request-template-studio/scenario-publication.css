@@ -1,5 +1,5 @@
 .scenario-publication { min-width: 0; display: grid; gap: 1rem; overflow-wrap: anywhere; }
-.scenario-publication-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 1rem; background: #fff; }
+.scenario-publication-header { position: sticky; top: 5rem; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 1rem; background: #fff; }
 .scenario-publication-header h1 { font-size: 1.4rem; font-weight: 650; }
 .scenario-publication-header p { color: #64748b; font-size: .875rem; }
 .scenario-publication-header-actions { display: flex; flex-wrap: wrap; gap: .5rem; }

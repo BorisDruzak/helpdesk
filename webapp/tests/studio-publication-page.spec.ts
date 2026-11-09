@@ -16,6 +16,10 @@ async function setup(page:Page,width:number,blocked=false){
  return{state,visibility:()=>visibility,publishes:()=>publishCount};
 }
 for(const width of [1366,1920]){
+ test(`publication actions remain clickable after scroll with expanded navigation ${width}`,async({page})=>{
+  const{state}=await setup(page,width);const expand=page.getByRole('button',{name:'Развернуть меню',exact:true});if(await expand.isVisible())await expand.click();await page.getByRole('button',{name:'Опубликовать',exact:true}).click();const prepare=page.getByRole('button',{name:'Подготовить публикацию',exact:true});await prepare.click();await page.getByRole('heading',{name:'Проверенные исходы',exact:true}).click();await page.mouse.move(width-100,500);await page.mouse.wheel(0,500);
+  await expect.poll(()=>prepare.evaluate(e=>{const r=e.getBoundingClientRect(),top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return top===e||!!top&&e.contains(top);})).toBe(true);expect(state.errors).toEqual([]);
+ });
  test(`focused route and SLA settings on their own map blocks ${width}`,async({page},info)=>{
   const{state}=await setup(page,width);await page.getByRole('button',{name:'+ SLA',exact:true}).click();
   const sla=page.getByRole('group',{name:'Прикреплённая настройка SLA',exact:true});await sla.getByRole('combobox',{name:'Профиль SLA',exact:true}).selectOption('standard');
