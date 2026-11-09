@@ -4,6 +4,7 @@ type Issue=ScenarioPublicationPreview['readiness']['issues'][number];
 /** Explain the failed check without turning a policy-derived SLA into a manual one. */
 export function publicationIssueGuidance(issue:Issue):{title:string;help?:string}{
  const path=issue.path??'';
+ if(issue.code==='missing_fallback')return{title:'Не настроены переходы для всех результатов',help:'Укажите один переход без условия («Иначе») для остальных случаев. В блоке «Проверка результата» вместо него можно явно настроить все три ответа: да, нет и не знаю.'};
  if(issue.code==='processing_default_missing')return path.includes('sla_profile')
   ?{title:'Не выбран резервный SLA',help:'Проверьте резервный SLA в настройках публикации. Назначение в блоке или на пройденном пути учитывается отдельно; в новой модели срок также может рассчитываться по правилам услуги.'}
   :{title:'Не выбрано резервное направление',help:'Откройте настройки обработки в публикации: выберите резервное направление или назначьте маршрут на нужном пути. Само наличие направления в списке не назначает его заявке.'};

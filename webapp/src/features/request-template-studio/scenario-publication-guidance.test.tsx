@@ -23,3 +23,11 @@ it('retains distinct server paths to the same terminal when explaining SLA failu
  render(<ScenarioPublicationChecks definition={{...definition,schema_version:4}} preview={preview(paths.map(message=>({code:'sla_unavailable',path:'blocks.end',message})))}/>);
  for(const message of paths)expect(screen.getByText(message)).toBeInTheDocument();
 });
+
+it('explains incomplete result transitions in Russian',()=>{
+ render(<ScenarioPublicationChecks preview={preview([{code:'missing_fallback',path:'blocks.check.transitions',message:'Every possible result needs an exit and explicit fallback'}])}/>);
+ expect(screen.getByRole('alert')).toHaveTextContent('Не настроены переходы для всех результатов');
+ expect(screen.getByText(/Укажите один переход без условия/)).toBeVisible();
+ expect(screen.getByText(/вместо него можно явно настроить все три ответа/)).toBeVisible();
+ expect(screen.queryByText(/Every possible result/)).not.toBeInTheDocument();
+});
