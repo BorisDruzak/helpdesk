@@ -12,6 +12,8 @@ from app.db.models import RegistryPerson, RegistryPersonIdentity, UiUser
 from auth.identity import IdentityService, IdentityError, parse_identity
 from auth.identity_handlers import handle_identity_resolve
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 
 @pytest.mark.no_db
 def test_subject_is_exact_and_guid_is_canonical():
