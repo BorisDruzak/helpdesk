@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { TicketRequestContext } from "./ticket-request-context";
-import { X } from "lucide-react";
+import { ArrowUpRight, Menu, X } from "lucide-react";
 import type { SupportTicketDetailPayload } from "../../../features/queues/api";
 import type { SupportWorkspaceContext, SupportWorkspaceSelectedTicket } from "../../../features/queues/support-workspace-model";
 
@@ -8,6 +8,7 @@ export type SimpleSupportTicketProps = {
   detail: SupportTicketDetailPayload; ticket?: SupportWorkspaceSelectedTicket | null; context?: SupportWorkspaceContext | null;
   actorId?: string; isAdmin?: boolean; canWork: boolean; canAssign?: boolean; pending?: boolean; error?: string | null;
   onStatus: (value: string) => void; onClaim?: () => void; onResolve: () => void; onAdvanced: (mode?: "passport" | "tools" | "sla" | "ticket") => void;
+  onToggleQueue?: () => void; queueCollapsed?: boolean;
   inspector?: ReactNode; inspectorOpen?: boolean; onInspectorOpen?: () => void; onInspectorClose?: () => void; additionalActions?: ReactNode; unifiedQueue?: boolean; onQueue: () => void; onManage?: (kind: "queue" | "priority") => void; conversation: ReactNode;
 };
 export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
@@ -44,7 +45,7 @@ export function SimpleSupportTicket(props: SimpleSupportTicketProps) {
       <header className="simple-ticket__header">
         <div className="simple-ticket__title"><button className="simple-link" type="button" onClick={props.onQueue}>← Вся очередь</button><p className="simple-eyebrow">{raw.ticket_code ?? raw.ticket_id} · Рабочая карточка</p>
           <h2>{raw.title}</h2><div className="simple-inline"><span className="simple-badge" data-tone={ticket?.priorityTone ?? "warning"}>{raw.priority_class ?? raw.priority ?? "P3"}</span><span className="simple-badge" data-tone={ticket?.statusTone ?? "info"}>{raw.status_label}</span><span className="simple-muted">Исполнитель: {mine ? "вы" : raw.assignee_id ? ticket?.assigneeLabel ?? raw.assignee_id : "не назначен"}</span></div></div>
-        <div className="simple-ticket__actions">{primary ? <button className="simple-button simple-button--primary" title={primary.hint} disabled={props.pending} onClick={primary.run} type="button">{props.pending ? "Выполняем…" : primary.label}</button> : null}
+        <div className="simple-ticket__actions">{props.onToggleQueue ? <div className="simple-ticket__mobile-queue"><button className="simple-button" type="button" onClick={props.onToggleQueue} aria-label={props.queueCollapsed ? "Показать очередь рядом" : "Свернуть очередь рядом"} aria-expanded={!props.queueCollapsed}><Menu size={16} aria-hidden /></button><button className="simple-button" type="button" onClick={props.onQueue} aria-label="Открыть полную очередь"><ArrowUpRight size={16} aria-hidden /></button></div> : null}{primary ? <button className="simple-button simple-button--primary" title={primary.hint} disabled={props.pending} onClick={primary.run} type="button">{props.pending ? "Выполняем…" : primary.label}</button> : null}
           <details className="simple-menu"><summary className="simple-button">Действия ▾</summary><div>
             {raw.status === "in_progress" && allowed("waiting_on_user") && (mine || isAdmin) ? <button type="button" onClick={() => onStatus("waiting_on_user")}>Ожидать ответа сотрудника</button> : null}
             {props.onManage && canWork ? <>{!props.unifiedQueue ? <button type="button" onClick={() => props.onManage?.("queue")}>Изменить очередь</button> : null}<button type="button" onClick={() => props.onManage?.("priority")}>Изменить приоритет</button></> : null}

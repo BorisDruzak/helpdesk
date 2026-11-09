@@ -2608,6 +2608,14 @@ describe("TicketListPage", () => {
 
 
 describe("UI-SUPPORT-001 default workspace", () => {
+  it("omits the top queue mode selector while retaining queue controls",async()=>{
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    renderTicketListPage("/app/tickets/ticket-1",false);
+    await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
+    expect(screen.queryByRole("group",{name:"Режим очереди"})).not.toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"Скрыть список заявок"})).toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"Открыть всю очередь"})).toBeInTheDocument();
+  });
   it("previews with the queue open and collapses only after successfully starting work",async()=>{
     const workspace=workspacePayload();
     workspace.detail.ticket.status="queued";workspace.detail.ticket.assignee_id=null;
@@ -2616,10 +2624,10 @@ describe("UI-SUPPORT-001 default workspace", () => {
     postSupportTicketStatusMock.mockResolvedValue({} as Awaited<ReturnType<typeof postSupportTicketStatus>>);
     renderTicketListPage("/app/tickets/ticket-1",false);
     await screen.findByRole("button",{name:"Взять в работу"});
-    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
+    expect(screen.getByRole("region",{name:"Моя рабочая очередь"})).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button",{name:"Взять в работу"}));
     await waitFor(()=>expect(postSupportTicketStatusMock).toHaveBeenCalled());
-    await waitFor(()=>expect(screen.getByRole("button",{name:"Свернуть очередь"})).toHaveAttribute("aria-pressed","true"));
+    await waitFor(()=>expect(screen.getByRole("region",{name:"Список заявок"})).toBeInTheDocument());
   });
   it("keeps the adjacent queue open when previewing another ticket without starting work",async()=>{
     const queue=queuePayload();
@@ -2629,10 +2637,10 @@ describe("UI-SUPPORT-001 default workspace", () => {
     renderTicketListPage("/app/tickets",false);
     fireEvent.click(await screen.findByRole("button",{name:"T-000001"}));
     await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
-    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
+    expect(screen.getByRole("region",{name:"Моя рабочая очередь"})).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("region",{name:"Моя рабочая очередь"})).getByRole("button",{name:/T-000002/}));
     await waitFor(()=>expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
-    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
+    expect(screen.getByRole("region",{name:"Моя рабочая очередь"})).toBeInTheDocument();
     expect(postSupportTicketStatusMock).not.toHaveBeenCalled();
     expect(postSupportTicketAssignMock).not.toHaveBeenCalled();
   });
@@ -2646,7 +2654,7 @@ describe("UI-SUPPORT-001 default workspace", () => {
     });
     const {queryClient}=renderTicketListPage("/app/tickets/ticket-1",false);
     await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
-    fireEvent.click(screen.getByRole("button",{name:"Полная очередь"}));
+    fireEvent.click(screen.getByRole("button",{name:"Открыть всю очередь"}));
     const value=timelinePayload({filter:"messages",items:[{...timelinePayload().items[0],event_id:845,event_type:"chat_message",from_role:"user",requester_timeline_kind:"user_message",visibility:"public",text:"Скрытое сообщение A"}]});
     await act(async()=>{queryClient.setQueryData(["tickets-workspace-timeline","ticket-1","messages"],value);await new Promise(resolve=>setTimeout(resolve,30));});
     fireEvent.click(screen.getByRole("button",{name:"T-000002"}));
@@ -2659,7 +2667,7 @@ describe("UI-SUPPORT-001 default workspace", () => {
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     const {queryClient}=renderTicketListPage("/app/tickets/ticket-1",false);
     await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
-    fireEvent.click(screen.getByRole("button",{name:"Полная очередь"}));
+    fireEvent.click(screen.getByRole("button",{name:"Открыть всю очередь"}));
     const value=timelinePayload({filter:"messages",items:[{...timelinePayload().items[0],event_id:845,event_type:"chat_message",from_role:"user",requester_timeline_kind:"user_message",visibility:"public",text:"Новое сообщение"}]});
     fetchSupportTicketTimelineMock.mockResolvedValue(value);
     await act(async()=>{await queryClient.refetchQueries({queryKey:["tickets-workspace-timeline","ticket-1","messages"]});});
@@ -2680,14 +2688,14 @@ describe("UI-SUPPORT-001 default workspace", () => {
     renderTicketListPage("/app/tickets/ticket-1",false);
     const reply=await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
     fireEvent.change(reply,{target:{value:"Неотправленный ответ"}});
-    fireEvent.click(screen.getByRole("button",{name:"Полная очередь"}));
+    fireEvent.click(screen.getByRole("button",{name:"Открыть всю очередь"}));
     expect(await screen.findByRole("heading",{name:"Очередь обращений"})).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button",{name:/Вернуться к обращению/}));
     expect(await screen.findByRole("textbox",{name:"Сообщение сотруднику"})).toHaveValue("Неотправленный ответ");
-    fireEvent.click(screen.getByRole("button",{name:"Свернуть очередь"}));
-    expect(screen.getByRole("button",{name:"Свернуть очередь"})).toHaveAttribute("aria-pressed","true");
-    fireEvent.click(screen.getByRole("button",{name:"Очередь рядом"}));
-    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
+    fireEvent.click(screen.getByRole("button",{name:"Скрыть список заявок"}));
+    expect(screen.getByRole("region",{name:"Список заявок"})).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button",{name:"Показать список заявок"}));
+    expect(screen.getByRole("region",{name:"Моя рабочая очередь"})).toBeInTheDocument();
     expect(screen.getByRole("textbox",{name:"Сообщение сотруднику"})).toHaveValue("Неотправленный ответ");
     expect(postSupportTicketStatusMock).not.toHaveBeenCalled();
     expect(postSupportTicketAssignMock).not.toHaveBeenCalled();
@@ -2711,13 +2719,12 @@ describe("UI-SUPPORT-001 default workspace", () => {
     postSupportTicketStatusMock.mockRejectedValue(new Error("Обращение уже взято другим оператором"));
     renderTicketListPage("/app/tickets/ticket-1", false);
     const take = await screen.findByRole("button", { name: "Взять в работу" });
-    fireEvent.click(screen.getByRole("button",{name:"Очередь рядом"}));
     expect(screen.getByRole("textbox", { name: "Сообщение сотруднику" })).toBeDisabled();
     expect(screen.queryByTestId("support-command-strip")).not.toBeInTheDocument();
     fireEvent.click(take);
     await waitFor(() => expect(postSupportTicketStatusMock).toHaveBeenCalledWith("ticket-1", "in_progress", expect.any(Object)));
     expect(await screen.findByRole("alert")).toHaveTextContent("Обращение уже взято");
-    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
+    expect(screen.getByRole("region",{name:"Моя рабочая очередь"})).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Сообщение сотруднику" })).toBeDisabled();
     expect(postSupportTicketAssignMock).not.toHaveBeenCalled();
   });

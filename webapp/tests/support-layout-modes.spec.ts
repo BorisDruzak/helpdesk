@@ -34,6 +34,26 @@ test("browser Back restores the queue search intent",async({page})=>{
   await expect(search).toHaveValue("T-200001");
 });
 
+test("whole queue row previews details with keyboard access and no work command",async({page},info)=>{
+  await page.setViewportSize({width:1366,height:768});
+  let commands=0;
+  await page.route("**/api/web/support/tickets/*/status",route=>{commands++;return route.abort();});
+  await login(page);
+  await expect(page.getByRole("group",{name:"Режим очереди",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("columnheader",{name:"Действие",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("columnheader")).toHaveCount(8);
+  const row=page.getByRole("row",{name:/T-200001/});
+  await row.getByRole("cell").nth(2).click();
+  await expect(page.locator(".simple-ticket")).toBeVisible();
+  await expect(page.getByRole("button",{name:"Взять в работу",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Открыть всю очередь",exact:true}).click();
+  await row.focus();await page.keyboard.press("Enter");
+  await expect(page.locator(".simple-ticket")).toBeVisible();
+  expect(commands).toBe(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);
+  await page.screenshot({path:info.outputPath("row-open-1366.png"),fullPage:true});
+});
+
 test.describe("touch navigation",()=>{
   test.use({hasTouch:true,viewport:{width:1280,height:800}});
   test("manual expansion stays open for touch without a hover",async({page})=>{
@@ -62,10 +82,10 @@ for (const width of [390, 1366, 1440, 1920]) {
       await route.fulfill({response,json:payload});
     });
     await login(page);
-    await expect(page.getByRole("button", { name: "Очередь рядом", exact: true })).toBeDisabled();
+    await expect(page.getByRole("group",{name:"Режим очереди",exact:true})).toHaveCount(0);
     await page.getByRole("button", { name: "T-200001", exact: true }).click();
     await expect(page.locator(".simple-ticket")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Очередь рядом", exact: true })).toHaveAttribute("aria-pressed","true");
+    await expect(page.getByRole("button",{name:width===390 ? "Свернуть очередь рядом" : "Скрыть список заявок",exact:true})).toHaveAttribute("aria-expanded","true");
     const reply = page.getByRole("textbox", { name: "Сообщение сотруднику", exact: true });
     await expect(reply).toBeEnabled();
     await reply.fill("Черновик ответа — не отправлять");
@@ -79,18 +99,18 @@ for (const width of [390, 1366, 1440, 1920]) {
       await page.getByRole("button",{name:"Открепить панель",exact:true}).click();
       await page.mouse.move(900,100);
     }
-    await page.getByRole("button", { name: "Полная очередь", exact: true }).click();
+    await page.getByRole("button", { name: width===390 ? "Открыть полную очередь" : "Открыть всю очередь", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Очередь обращений", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Полная очередь", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("group",{name:"Режим очереди",exact:true})).toHaveCount(0);
     await expect(page).toHaveURL(/\/app\/tickets\/ticket-1$/);
     await page.getByRole("button", { name: /Вернуться к обращению/ }).click();
     await expect(reply).toHaveValue("Черновик ответа — не отправлять");
     if (width === 1366) await expect(page.getByText("reply-draft.txt",{exact:true})).toBeVisible();
-    await page.getByRole("button", { name: "Свернуть очередь", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Свернуть очередь", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: width===390 ? "Свернуть очередь рядом" : "Скрыть список заявок", exact: true }).click();
+    await expect(page.getByRole("button",{name:width===390 ? "Показать очередь рядом" : "Показать список заявок",exact:true})).toHaveAttribute("aria-expanded","false");
     await expect(reply).toHaveValue("Черновик ответа — не отправлять");
-    await page.getByRole("button", { name: "Очередь рядом", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Очередь рядом", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: width===390 ? "Показать очередь рядом" : "Показать список заявок", exact: true }).click();
+    await expect(page.getByRole("button",{name:width===390 ? "Свернуть очередь рядом" : "Скрыть список заявок",exact:true})).toHaveAttribute("aria-expanded","true");
     await expect(page.locator(".simple-workspace > .simple-queue--compact")).toBeVisible();
     await expect(reply).toHaveValue("Черновик ответа — не отправлять");
     if (width >= 1024) {
@@ -100,6 +120,9 @@ for (const width of [390, 1366, 1440, 1920]) {
       await expect(reply).toHaveValue("Черновик ответа — не отправлять");
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    if(width===390)for(const action of await page.locator(".simple-ticket__actions button").all()){
+      if(await action.isVisible()){const rect=await action.boundingBox();expect(rect!.x+rect!.width).toBeLessThanOrEqual(width);}
+    }
     await page.screenshot({ path: info.outputPath(`queue-modes-${width}.png`), fullPage: true });
     expect(errors).toEqual([]);
   });
@@ -108,8 +131,8 @@ for (const width of [390, 1366, 1440, 1920]) {
 test("miniatures show complete numbers, status and SLA with five colored filters",async({page},info)=>{
   await page.setViewportSize({width:1440,height:900});
   await login(page);await page.getByRole("button",{name:"T-200001",exact:true}).click();
-  await expect(page.getByRole("button",{name:"Очередь рядом",exact:true})).toHaveAttribute("aria-pressed","true");
-  await page.getByRole("button",{name:"Свернуть очередь",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Скрыть список заявок",exact:true})).toHaveAttribute("aria-expanded","true");
+  await page.getByRole("button",{name:"Скрыть список заявок",exact:true}).click();
   const rail=page.getByRole("region",{name:"Список заявок",exact:true});
   await expect(rail).toBeVisible();
   const first=rail.getByRole("button",{name:/T-200001.*SLA/});

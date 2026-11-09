@@ -3104,3 +3104,8 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 
 - Three reversible queue modes retain the selected ticket/draft; support navigation previews on hover with an independent pin; SLA inspector uses width-based typography/layout. Existing schemas, operations and other workspaces remain intact.
 - Checks and staging receipt: docs/SUPPORT_LAYOUT_MODES_STAGING_ACCEPTANCE_2026_11_09.md.
+
+### Support queue rows — in progress (2026-11-10)
+
+- Support List+Detail: remove top mode selector/action column; whole-row and keyboard preview keep business actions in ticket. Preserve mobile access, draft and services. Verify component/native/browser behavior and staging-only release.
+- Plan and OLA contract explanation: `docs/SUPPORT_QUEUE_ROW_OPEN.md`.

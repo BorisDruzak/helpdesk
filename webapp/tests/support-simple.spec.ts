@@ -114,7 +114,6 @@ test("unified queue keeps the full list reachable and restores the resizable ins
   await expect(page.getByTestId("support-inspector-panel")).toBeVisible();
   await expect(page.getByRole("region", { name: "Следующее действие", exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Очередь", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Очередь рядом", exact: true }).click();
   const left = page.getByRole("separator", { name: "Ширина списка обращений" });
   const right = page.getByRole("separator", { name: "Ширина панели сведений" });
   const before = await right.getAttribute("aria-valuenow");
@@ -206,7 +205,7 @@ for (const width of [1366, 1440, 1920, 390]) {
     });
     await login(page);
     await expect(page.getByRole("heading", { name: "Очередь обращений" })).toBeVisible();
-    await expect(page.getByRole("row", { name: /T-200001/ }).getByRole("button", { name: "Взять в работу", exact: true })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Действие", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Завершённые", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: info.outputPath(`queue-${width}.png`), fullPage: true });
@@ -449,7 +448,7 @@ test("queue and card explain an unavailable take before sending a command", asyn
   await login(page);
   const row = page.getByRole("row", { name: /T-200001/ });
   await expect(row.getByRole("button", { name: "Взять в работу", exact: true })).toHaveCount(0);
-  await expect(row.getByText("Не состоите в очереди", { exact: true })).toBeVisible();
+  await expect(page.getByRole("columnheader",{name:"Действие",exact:true})).toHaveCount(0);
   await row.getByRole("button", { name: "T-200001" }).click();
   await expect(page.getByRole("button", { name: "Взять в работу", exact: true })).toHaveCount(0);
   await expect(page.getByText(reason, { exact: true }).first()).toBeVisible();

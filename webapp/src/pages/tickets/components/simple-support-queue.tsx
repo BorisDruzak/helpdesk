@@ -19,7 +19,7 @@ export type SimpleSupportQueueProps = {
 const FILTERS: Array<[SimpleQueueFilter, string]> = [["open", "Открытые"], ["new", "Новые"], ["mine", "Мои"], ["waiting", "Ожидают ответа"], ["completed", "Завершённые"]];
 
 export function SimpleSupportQueue(props: SimpleSupportQueueProps) {
-  const { queue, compact, selectedTicketId, actorId, canWork, pending, onOpenTicket, onTakeTicket } = props;
+  const { queue, compact, selectedTicketId, onOpenTicket } = props;
   const actionsView = !compact && props.view === "actions";
   const tickets = mapWorkspaceTicketItems(queue, selectedTicketId ?? null);
   const compactControls = <div className="simple-queue__compact-controls">
@@ -56,17 +56,16 @@ export function SimpleSupportQueue(props: SimpleSupportQueueProps) {
       <span className="simple-queue__card-top"><b>{ticket.code}</b><span className="simple-badge" data-tone={ticket.statusTone}>{ticket.statusLabel}</span></span>
       <strong>{ticket.subject}</strong><span className="simple-muted">{ticket.requester}</span>{ticket.hiddenFromWorkspace ? <span className="simple-badge">Скрыт</span> : null}{ticket.archivedAt ? <span className="simple-badge">Архив</span> : null}
       <span className="simple-queue__card-top"><span className="simple-badge" data-tone={ticket.priorityTone}>{ticket.priority}</span><span className={ticket.slaRisk ? "simple-risk" : "simple-muted"}>{ticket.nextDueLabel}</span>{ticket.unread ? <span aria-label="Есть непрочитанные сообщения" className="simple-unread" /> : null}</span>
-    </button>)}</div></> : tickets.length ? <div className="simple-queue__table-wrap"><table><thead><tr>{["Номер", "Тема", "Сотрудник", "Приоритет", "Статус", "Исполнитель", "SLA", "Сообщения", "Действие"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
+    </button>)}</div></> : tickets.length ? <div className="simple-queue__table-wrap"><table><thead><tr>{["Номер", "Тема", "Сотрудник", "Приоритет", "Статус", "Исполнитель", "SLA", "Сообщения"].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
       <tbody>{tickets.map((ticket, index) => {
         const raw = queue!.tickets[index];
-        const take = canWork && raw.take_in_work?.allowed === true && !raw.assignee_id && ["new", "queued"].includes(raw.status);
-        const blocked = !raw.assignee_id && ["new", "queued"].includes(raw.status) && raw.take_in_work?.allowed === false;
-        const blockedLabel = raw.take_in_work?.reason_code === "ASSIGNEE_NOT_IN_QUEUE" ? "Не состоите в очереди" : raw.take_in_work?.reason_code === "ASSIGNEE_CAPACITY_REACHED" ? "Лимит нагрузки" : "Взятие недоступно";
-        return <tr key={ticket.id} aria-selected={ticket.active}><td><button className="simple-link" type="button" onClick={() => onOpenTicket(ticket.id)}>{ticket.code}</button></td>
+        return <tr key={ticket.id} className="simple-queue__row" aria-selected={ticket.active} tabIndex={0} title="Открыть карточку обращения"
+          onClick={event=>{if(event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || (event.target instanceof Element && event.target.closest('button,a,input,select,textarea,[contenteditable="true"]')) || window.getSelection()?.toString())return;onOpenTicket(ticket.id);}}
+          onKeyDown={event=>{if(event.target===event.currentTarget && !event.defaultPrevented && (event.key==="Enter" || event.key===" ")){event.preventDefault();onOpenTicket(ticket.id);}}}><td><button className="simple-link" type="button" onClick={() => onOpenTicket(ticket.id)}>{ticket.code}</button></td>
           <td><strong>{ticket.subject}</strong></td><td>{ticket.requester}</td><td><span className="simple-badge" data-tone={ticket.priorityTone}>{ticket.priority}</span></td>
           <td><span className="simple-badge" data-tone={ticket.statusTone}>{ticket.statusLabel}</span></td><td>{ticket.assigneeLabel}</td>
           <td><span className={ticket.slaRisk ? "simple-risk" : ""}>{ticket.nextDueLabel}</span></td><td>{raw.unread_user_messages ? <span aria-label={`${raw.unread_user_messages} непрочитанных`} className="simple-badge" data-tone="brand">{raw.unread_user_messages}</span> : "—"}</td>
-          <td><button className={`simple-button${take ? " simple-button--primary" : ""}`} type="button" disabled={take && pending} onClick={() => take ? onTakeTicket(ticket.id) : onOpenTicket(ticket.id)}>{take ? "Взять в работу" : raw.assignee_id === actorId ? "Открыть" : "Просмотр"}</button>{blocked ? <span className="simple-queue__blocked" title={raw.take_in_work?.reason ?? undefined}>{blockedLabel}</span> : null}</td></tr>;
+          </tr>;
       })}</tbody></table></div> : null}
     {!compact ? <p className="simple-queue__footer simple-muted">Обращений в списке: {queue?.summary.visible_count ?? tickets.length}. Обновление каждые 15 секунд.</p> : null}
     </>}

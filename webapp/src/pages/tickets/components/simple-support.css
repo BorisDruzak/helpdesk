@@ -21,6 +21,9 @@
 .simple-queue th { background:var(--simple-bg); color:var(--simple-muted); font-size:11px; font-weight:650; text-transform:uppercase; padding:14px 12px; }
 .simple-queue td { padding:17px 12px; border-top:1px solid var(--simple-border); overflow-wrap:anywhere; }
 .simple-queue tr[aria-selected="true"] td { background:var(--simple-soft); }
+.simple-queue__row { cursor:pointer; }
+.simple-queue__row:hover td { background:var(--simple-soft); }
+.simple-queue__row:focus-visible { outline:2px solid var(--simple-accent); outline-offset:-2px; }
 .simple-queue td:nth-child(2) { min-width:140px; }
 .simple-queue__footer { background:var(--simple-panel); border:1px solid var(--simple-border); border-top:0; border-radius:0 0 12px 12px; padding:14px 16px; }
 .simple-badge { display:inline-flex; align-items:center; padding:4px 7px; border-radius:6px; background:var(--simple-soft); color:var(--simple-accent); font-size:11px; font-weight:650; white-space:nowrap; }
@@ -93,6 +96,7 @@
 .simple-menu button { display:block; padding:10px; text-align:left; font-size:13px; width:100%; border-radius:6px; cursor:pointer; }
 .simple-menu button:hover { background:var(--simple-soft); }
 .simple-ticket__details-toggle { display:none; }
+.simple-ticket__mobile-queue { display:none; }
 .simple-description-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-shrink:0; width:100%; padding:12px 14px; border:1px solid var(--simple-border); border-radius:9px; background:var(--simple-panel); text-align:left; font-size:13px; font-weight:650; cursor:pointer; }
 .simple-description-toggle:hover { background:var(--simple-soft); }
 .simple-description-dialog { width:min(760px,calc(100vw - 32px)); max-height:82vh; border:1px solid var(--simple-border); border-radius:14px; background:var(--simple-panel); color:var(--simple-ink); padding:22px; }
@@ -163,8 +167,6 @@
   .simple-queue__table-wrap tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:12px; border-top:1px solid var(--simple-border); }
   .simple-queue__table-wrap td { display:block; border:0; padding:6px; min-width:0; font-size:12px; }
   .simple-queue__table-wrap td:nth-child(2) { grid-column:1/-1; grid-row:1; }
-  .simple-queue__table-wrap td:nth-child(9) { grid-column:1/-1; }
-  .simple-queue__table-wrap td:nth-child(9) button { width:100%; }
   .simple-queue__table-wrap td:nth-child(6)::before { content:"Исполнитель: "; color:var(--simple-muted); }
   .simple-queue__table-wrap td:nth-child(7)::before { content:"SLA: "; color:var(--simple-muted); }
 }
@@ -178,8 +180,9 @@
  .simple-ticket__facts-close { display:inline-flex; }
 }
 @media(max-width:760px) {
+ .simple-ticket__mobile-queue { display:inline-flex; gap:4px; }
  .simple-ticket__main { padding:12px; }
- .simple-ticket__actions { flex-direction:row; }
+ .simple-ticket__actions { flex-direction:row; width:100%; max-width:100%; min-width:0; justify-content:flex-start; }
  .simple-ticket__header { gap:8px; padding-bottom:6px; flex-wrap:wrap; }
  .simple-ticket__title { flex-basis:100%; }
  .simple-ticket__title h2 { font-size:21px; margin:4px 0 7px; }

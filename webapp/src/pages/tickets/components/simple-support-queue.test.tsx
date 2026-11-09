@@ -70,16 +70,20 @@ describe("simple support queue", () => {
     expect(screen.queryByRole("combobox", { name: "Очередь" })).not.toBeInTheDocument();
     expect(screen.getByText(/Единая очередь/)).toBeVisible();
   });
-  it("offers take only for unassigned tickets and keeps other operators' work read-only", () => {
+  it("opens full rows and keyboard previews without an action column or starting work", () => {
     const take = vi.fn(); const open = vi.fn();
     render(<SimpleSupportQueue queue={queue} actorId="operator" canWork filter="open" search="" onFilterChange={vi.fn()}
       onSearchChange={vi.fn()} onOpenTicket={open} onTakeTicket={take} onAdvanced={vi.fn()} />);
     const unassigned = screen.getByRole("row", { name: /T-001/ });
-    fireEvent.click(within(unassigned).getByRole("button", { name: "Взять в работу" }));
-    expect(take).toHaveBeenCalledWith("new");
-    expect(within(screen.getByRole("row", { name: /T-002/ })).getByRole("button", { name: "Открыть" })).toBeEnabled();
-    fireEvent.click(within(screen.getByRole("row", { name: /T-003/ })).getByRole("button", { name: "Просмотр" }));
+    expect(screen.queryByRole("columnheader",{name:"Действие"})).not.toBeInTheDocument();
+    expect(screen.getAllByRole("columnheader")).toHaveLength(8);
+    fireEvent.click(within(unassigned).getByText("Принтер"));
+    expect(open).toHaveBeenCalledWith("new");
+    fireEvent.keyDown(screen.getByRole("row", { name: /T-003/ }),{key:"Enter"});
     expect(open).toHaveBeenCalledWith("other");
+    fireEvent.click(within(unassigned).getByRole("button",{name:"T-001"}));
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(take).not.toHaveBeenCalled();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 

@@ -43,7 +43,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
+import { startTransition, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
@@ -135,7 +135,7 @@ import {
 } from "./workspace-types";
 import { getTicketsWorkspaceUrlState } from "./url-state";
 import { SupportCommandCenterPage } from "../support/command-center-page";
-import { SupportQueueModes, type SupportQueueDisplayMode } from "./components/support-queue-modes";
+import type { SupportQueueDisplayMode } from "./components/support-queue-modes";
 import { SimpleSupportQueue, type SimpleQueueFilter } from "./components/simple-support-queue";
 import { TicketRequestContext } from "./components/ticket-request-context";
 import { TicketRequesterContext } from "./components/ticket-requester-context";
@@ -1240,14 +1240,13 @@ function ObserverDiagnosticCard({
   );
 }
 
-function SupportWorkspaceTopbar({ theme, onToggleTheme, onRefresh, refreshing, queueControls }: {
-  theme: SupportWorkspaceTheme; onToggleTheme: () => void; onRefresh: () => void; refreshing: boolean; queueControls?: ReactNode;
+function SupportWorkspaceTopbar({ theme, onToggleTheme, onRefresh, refreshing }: {
+  theme: SupportWorkspaceTheme; onToggleTheme: () => void; onRefresh: () => void; refreshing: boolean;
 }) {
   const isLight = theme === "light";
   return (
     <header className="support-workspace-topbar flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#111f33] px-4 py-2">
       <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Поддержка</p><h1 className="text-lg font-semibold">Тикеты</h1></div>
-      {queueControls}
       <div className="flex items-center gap-2">
         <Link className="rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white" to="/app/help">Создать обращение</Link>
         <button aria-label="Обновить очередь" disabled={refreshing} onClick={onRefresh} className="rounded-lg border border-white/10 p-2" type="button"><RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /></button>
@@ -2258,7 +2257,6 @@ export function TicketListPage() {
     if (!params.ticketId) navigate(`/app/tickets/${selectedTicketId}`);
   }
   function returnToSelectedTicket() { changeQueueDisplay(ticketListCollapsed ? "collapsed" : "compact"); }
-  const queueDisplayMode: SupportQueueDisplayMode = workspaceMode === "queue" || !selectedTicketId ? "full" : ticketListCollapsed ? "collapsed" : "compact";
   const selectedTicketIsUnassigned = Boolean(selectedTicket?.assigneeLabel.toLowerCase().includes("не назнач"));
   const getCompactTicketSlaLabel = (ticket: (typeof visibleTickets)[number]) => {
     if (selectedTicket?.id === ticket.id && selectedTicket.nextAction.timerType !== "none") {
@@ -3694,7 +3692,6 @@ export function TicketListPage() {
     >
       <SupportWorkspaceTopbar
         theme={workspaceTheme}
-        queueControls={simpleMode ? <SupportQueueModes mode={queueDisplayMode} hasTicket={Boolean(selectedTicketId)} onChange={changeQueueDisplay} /> : undefined}
         onToggleTheme={toggleWorkspaceTheme}
         onRefresh={refreshAll}
         refreshing={queueQuery.isFetching || workspaceQuery.isFetching || actionsRefreshing}
@@ -3731,7 +3728,7 @@ export function TicketListPage() {
               {isAdmin ? <button type="button" disabled={ticketVisibilityMutation.isPending || !(selectedTicket.archivedAt ? selectedTicket.canUnarchiveTicket : selectedTicket.canArchiveTicket)} onClick={() => ticketVisibilityMutation.mutate(selectedTicket.archivedAt ? "unarchive" : "archive")}>{selectedTicket.archivedAt ? "Вернуть из архива" : "Архивировать"}</button> : null}
             </>}
             unifiedQueue={unifiedQueue}
-            onManage={openOperatorAction} onQueue={() => changeQueueDisplay("full")}
+            onManage={openOperatorAction} onQueue={() => changeQueueDisplay("full")} onToggleQueue={toggleTicketList} queueCollapsed={effectiveListCollapsed}
             conversation={<SimpleSupportConversation key={selectedTicket.id}
               ticketId={!workspaceQuery.isError ? selectedTicket.id : undefined}
               items={mapSupportTimelineEntries([...(timelineQuery.data?.items ?? workspaceQuery.data.detail.timeline)].sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0)))}
