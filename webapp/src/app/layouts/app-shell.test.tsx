@@ -15,6 +15,24 @@ vi.mock("../../components/shell/app-topbar", () => ({ AppTopbar: () => <header>�
 afterEach(()=>{ localStorage.clear(); fixture.portal = undefined; fixture.requester = false; });
 
 describe("ticket workspace shell", () => {
+  it("previews an unpinned support navigation on hover and keeps a saved pin",()=>{
+    const view=render(<MemoryRouter initialEntries={["/app/tickets/ticket-1"]}><AppShell><p>Переписка</p></AppShell></MemoryRouter>);
+    const navigation=screen.getByTestId("support-navigation");
+    expect(navigation).toHaveAttribute("data-expanded","false");
+    fireEvent.pointerEnter(navigation,{pointerType:"mouse"});
+    expect(navigation).toHaveAttribute("data-expanded","true");
+    fireEvent.pointerLeave(navigation,{pointerType:"mouse"});
+    expect(navigation).toHaveAttribute("data-expanded","false");
+    fireEvent.click(screen.getByRole("button",{name:"Закрепить панель"}));
+    fireEvent.pointerLeave(navigation,{pointerType:"mouse"});
+    expect(navigation).toHaveAttribute("data-expanded","true");
+    expect(loadPanelPreferences("operator","support").navigationPinned).toBe(true);
+    view.unmount();
+    render(<MemoryRouter initialEntries={["/app/tickets/ticket-1"]}><AppShell><p>Переписка</p></AppShell></MemoryRouter>);
+    expect(screen.getByRole("button",{name:"Открепить панель"})).toBeInTheDocument();
+    expect(screen.getByTestId("support-navigation")).toHaveAttribute("data-expanded","true");
+  });
+
   it.each(["https://endpoint.sosnadmin.local/employee", "https://endpoint-staging.sosnadmin.local/employee"])("offers WorkTime %s alongside requester navigation in desktop and mobile layouts", (url) => {
     fixture.requester = true;
     fixture.portal = url;
@@ -50,9 +68,10 @@ describe("ticket workspace shell", () => {
   it("collapses support navigation independently of the ticket list",()=>{
     savePanelPreferences("operator","support",{navigationCollapsed:false,ticketListCollapsed:true});
     render(<MemoryRouter initialEntries={["/app/tickets/ticket-1"]}><AppShell><p>Переписка</p></AppShell></MemoryRouter>);
-    fireEvent.click(screen.getByRole("button",{name:"Свернуть меню"}));
-    expect(screen.getByRole("button",{name:"Развернуть меню"})).toHaveAttribute("aria-expanded","false");
+    fireEvent.click(screen.getByRole("button",{name:"Развернуть или свернуть меню"}));
+    fireEvent.click(screen.getByRole("button",{name:"Развернуть или свернуть меню"}));
+    expect(screen.getByRole("button",{name:"Развернуть или свернуть меню"})).toHaveAttribute("aria-expanded","false");
     expect(screen.getByText("Переписка")).toBeInTheDocument();
-    expect(loadPanelPreferences("operator","support")).toEqual({navigationCollapsed:true,ticketListCollapsed:true});
+    expect(loadPanelPreferences("operator","support")).toEqual({navigationCollapsed:true,ticketListCollapsed:true,navigationPinned:false});
   });
 });

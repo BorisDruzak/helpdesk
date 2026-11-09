@@ -1095,3 +1095,5 @@ explicit retry in the editor; normal editing has no floating create/manual-save 
 Issue grouping/focus reuse `scenario-publication-checks` and issue navigation; optional
 v4 fallback definitions are collapsed after the ordinary processing controls.
 See `docs/STUDIO_READINESS_STAGING_ACCEPTANCE_2026_11_09.md`. No new API or migration.
+
+Support layout modes: `SupportQueueModes` and `TicketListPage` retain the selected ticket/composer in full queue mode and defer read receipts while conversation is hidden. Support `AppSidebar` previews on hover/focus with account/workspace-scoped pin; SLA/OLA inspector grids use their own width. No API/DB changes. See `docs/SUPPORT_LAYOUT_MODES.md`.

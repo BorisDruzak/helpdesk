@@ -3099,3 +3099,8 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Focused regressions, full Studio checks and1366/1920 browser evidence; immutable
   staging candidate preserves parallel work. Receipt:
   `docs/STUDIO_READINESS_STAGING_ACCEPTANCE_2026_11_09.md`.
+
+### Support layout modes — in progress (2026-11-09)
+
+- Three reversible queue modes retain the selected ticket/draft; support navigation previews on hover with an independent pin; SLA inspector uses width-based typography/layout. Existing schemas, operations and other workspaces remain intact.
+- Checks and staging receipt: docs/SUPPORT_LAYOUT_MODES_STAGING_ACCEPTANCE_2026_11_09.md.

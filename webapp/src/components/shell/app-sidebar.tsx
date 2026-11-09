@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Pin, PinOff } from "lucide-react";
 
 import {
   ADMIN_HOME_PATH,
@@ -15,9 +15,11 @@ import {
   resolveNavigationItemTarget,
 } from "../../app/navigation";
 import { cn } from "../../shared/ui/cn";
+import "./app-sidebar.css";
 import { RequesterSidebar } from "./requester-sidebar";
 
 type AppSidebarProps = {
+  autoHide?: boolean; pinned?: boolean; onPinnedChange?: (pinned: boolean) => void;
   collapsed?: boolean;
   hasAdminAccess: boolean;
   hasRequesterAccess?: boolean;
@@ -310,7 +312,10 @@ function AdminSidebar({
 }
 
 export function AppSidebar({
-  collapsed = false,
+  collapsed: suppliedCollapsed = false,
+  autoHide = false,
+  pinned = false,
+  onPinnedChange,
   hasAdminAccess,
   hasRequesterAccess = false,
   hasSupportAccess,
@@ -329,7 +334,18 @@ export function AppSidebar({
     hasSupportAccess,
     pathname: location.pathname,
   });
+  const [hovered,setHovered]=useState(false);
+  const [keyboardFocus,setKeyboardFocus]=useState(false);
+  const [manualOpen,setManualOpen]=useState(false);
+  const [suppressed,setSuppressed]=useState(false);
+  const pointerFocusRef=useRef(false);
+  const collapsed=autoHide ? !(pinned || manualOpen || !suppressed && (hovered || keyboardFocus)) : suppliedCollapsed;
   const ToggleIcon = collapsed ? ChevronRight : ChevronLeft;
+  function toggleNavigation() {
+    if (!autoHide) { onCollapsedChange?.(!collapsed); return; }
+    if (collapsed) { setManualOpen(true);setSuppressed(false);onCollapsedChange?.(false); }
+    else { setManualOpen(false);setKeyboardFocus(false);setSuppressed(true);if(pinned)onPinnedChange?.(false);onCollapsedChange?.(true); }
+  }
   const supportItems = useMemo(
     () => getVisibleNavigationItems("support", permissions, { includeWorkspaceHome: true }),
     [permissions],
@@ -341,11 +357,24 @@ export function AppSidebar({
 
   if (workspace === "requester") return <RequesterSidebar items={requesterItems} currentPath={currentPath} onNavigate={onNavigate} worktimePortalUrl={worktimePortalUrl} worktimeHandoffEnabled={worktimeHandoffEnabled} />;
 
-  return (
+  const sidebar = (
     <aside
+      data-testid={autoHide ? "support-navigation" : undefined}
+      data-expanded={!collapsed}
+      data-pinned={autoHide ? pinned : undefined}
+      aria-label={autoHide ? "Навигационная панель поддержки" : undefined}
+      onPointerEnter={autoHide ? event => {if(event.pointerType!=="touch"){setHovered(true);setSuppressed(false);}} : undefined}
+      onPointerLeave={autoHide ? event => {if(event.pointerType!=="touch"){if(pointerFocusRef.current)setKeyboardFocus(false);pointerFocusRef.current=false;setHovered(false);setManualOpen(false);setSuppressed(false);}} : undefined}
+      onPointerDownCapture={autoHide ? () => {pointerFocusRef.current=true;setKeyboardFocus(false);} : undefined}
+      onPointerCancelCapture={autoHide ? () => {pointerFocusRef.current=false;} : undefined}
+      onKeyDownCapture={autoHide ? () => {pointerFocusRef.current=false;} : undefined}
+      onFocusCapture={autoHide ? event => {if(!pointerFocusRef.current && (!hovered || (event.target as HTMLElement).matches(":focus-visible"))){setKeyboardFocus(true);setSuppressed(false);}} : undefined}
+      onBlurCapture={autoHide ? event => {if(!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)){pointerFocusRef.current=false;setKeyboardFocus(false);setManualOpen(false);setSuppressed(false);}} : undefined}
+      onKeyDown={autoHide ? event => {if(event.key==="Escape"&&!pinned){setManualOpen(false);setHovered(false);setKeyboardFocus(false);setSuppressed(true);}} : undefined}
       className={cn(
         "hidden shrink-0 border-r border-white/10 bg-brand-700 px-3 py-4 text-white transition-[width] duration-200 lg:flex lg:flex-col",
         collapsed ? "w-16" : "w-[260px]",
+        autoHide ? "support-navigation" : "",
       )}
     >
       <Link
@@ -375,7 +404,7 @@ export function AppSidebar({
             currentPath={currentPath}
             items={supportItems}
             onCollapsedChange={onCollapsedChange}
-            onNavigate={onNavigate}
+            onNavigate={() => {if(autoHide&&!pinned){setHovered(false);setKeyboardFocus(false);setManualOpen(false);setSuppressed(true);}onNavigate?.();}}
           />
         ) : null}
         {workspace === "admin" ? (
@@ -390,21 +419,22 @@ export function AppSidebar({
       </div>
 
       {showCollapseToggle ? (
-        <button
+        <div className="support-navigation__controls"><button
           aria-expanded={!collapsed}
-          aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"}
+          aria-label={autoHide ? "Развернуть или свернуть меню" : collapsed ? "Развернуть меню" : "Свернуть меню"}
           className={cn(
             "mt-4 flex items-center gap-3 rounded-panel border border-white/10 bg-white/8 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/14 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700",
             collapsed ? "justify-center px-2" : "",
           )}
-          onClick={() => onCollapsedChange?.(!collapsed)}
+          onClick={toggleNavigation}
           title={collapsed ? "Развернуть меню" : "Свернуть меню"}
           type="button"
         >
           <ToggleIcon className="h-4 w-4" />
           <span className={collapsed ? "sr-only" : ""}>{collapsed ? "Развернуть меню" : "Свернуть меню"}</span>
-        </button>
+        </button>{autoHide ? <button type="button" className="support-navigation__pin" aria-label={pinned ? "Открепить панель" : "Закрепить панель"} aria-pressed={pinned} title={pinned ? "Открепить: раскрывать при наведении" : "Закрепить панель раскрытой"} onClick={()=>{onPinnedChange?.(!pinned);setManualOpen(false);setKeyboardFocus(false);setHovered(false);setSuppressed(pinned);}}>{pinned ? <PinOff size={16} aria-hidden /> : <Pin size={16} aria-hidden />}</button> : null}</div>
       ) : null}
     </aside>
   );
+  return autoHide ? <div className="support-navigation-reserve" data-pinned={pinned}>{sidebar}</div> : sidebar;
 }

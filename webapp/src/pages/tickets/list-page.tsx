@@ -43,7 +43,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { startTransition, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
@@ -135,6 +135,7 @@ import {
 } from "./workspace-types";
 import { getTicketsWorkspaceUrlState } from "./url-state";
 import { SupportCommandCenterPage } from "../support/command-center-page";
+import { SupportQueueModes, type SupportQueueDisplayMode } from "./components/support-queue-modes";
 import { SimpleSupportQueue, type SimpleQueueFilter } from "./components/simple-support-queue";
 import { TicketRequestContext } from "./components/ticket-request-context";
 import { TicketRequesterContext } from "./components/ticket-requester-context";
@@ -1239,13 +1240,14 @@ function ObserverDiagnosticCard({
   );
 }
 
-function SupportWorkspaceTopbar({ theme, onToggleTheme, onRefresh, refreshing }: {
-  theme: SupportWorkspaceTheme; onToggleTheme: () => void; onRefresh: () => void; refreshing: boolean;
+function SupportWorkspaceTopbar({ theme, onToggleTheme, onRefresh, refreshing, queueControls }: {
+  theme: SupportWorkspaceTheme; onToggleTheme: () => void; onRefresh: () => void; refreshing: boolean; queueControls?: ReactNode;
 }) {
   const isLight = theme === "light";
   return (
-    <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#111f33] px-4 py-2">
+    <header className="support-workspace-topbar flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#111f33] px-4 py-2">
       <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Поддержка</p><h1 className="text-lg font-semibold">Тикеты</h1></div>
+      {queueControls}
       <div className="flex items-center gap-2">
         <Link className="rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white" to="/app/help">Создать обращение</Link>
         <button aria-label="Обновить очередь" disabled={refreshing} onClick={onRefresh} className="rounded-lg border border-white/10 p-2" type="button"><RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /></button>
@@ -1327,26 +1329,27 @@ export function TicketListPage() {
   const canResizeWorkspace = workspaceViewportWidth >= 1200;
 
   useEffect(() => {
-    setSelectedTicketId(params.ticketId ?? null);
-  }, [params.ticketId]);
+    if (params.ticketId) {
+      setSelectedTicketId(params.ticketId);
+      if (simpleMode) setWorkspaceMode("ticket");
+    } else if (simpleMode) {
+      shouldKeepQueueRouteRef.current = true;
+      setWorkspaceMode("queue");
+    } else setSelectedTicketId(null);
+  }, [params.ticketId, simpleMode]);
 
+  const appliedQueueIntentRef = useRef<string | null>(null);
   useEffect(() => {
     const urlState = getTicketsWorkspaceUrlState(searchParams);
-    if (!urlState.shouldOpenQueue) {
-      return;
-    }
+    if (params.ticketId || !urlState.shouldOpenQueue) {appliedQueueIntentRef.current=null;return;}
+    const intent = JSON.stringify([urlState.smartView,urlState.search,urlState.similarGroup]);
+    if (appliedQueueIntentRef.current === intent) return;
+    appliedQueueIntentRef.current = intent;
     shouldKeepQueueRouteRef.current = true;
-    if (urlState.smartView && urlState.smartView !== smartView) {
-      setSmartView(urlState.smartView);
-    }
-    const nextSearch = urlState.search ?? urlState.similarGroup ?? "";
-    if (nextSearch !== search) {
-      setSearch(nextSearch);
-    }
-    if (workspaceMode !== "queue") {
-      setWorkspaceMode("queue");
-    }
-  }, [search, searchParams, smartView, workspaceMode]);
+    if (urlState.smartView) setSmartView(urlState.smartView);
+    setSearch(urlState.search ?? urlState.similarGroup ?? "");
+    setWorkspaceMode("queue");
+  }, [searchParams,params.ticketId]);
 
   useLayoutEffect(() => {
     composerGenerationRef.current += 1;
@@ -1604,7 +1607,7 @@ export function TicketListPage() {
   }, [timelineQuery.data?.items, workspaceQuery.data?.detail.timeline]);
 
   useEffect(() => {
-    if (!selectedTicketId || latestRequesterMessageEventId === null || markReadMutation.isPending) {
+    if (workspaceMode === "queue" || !selectedTicketId || params.ticketId !== selectedTicketId || latestRequesterMessageEventId === null || markReadMutation.isPending) {
       return;
     }
     const markKey = `${selectedTicketId}:${latestRequesterMessageEventId}`;
@@ -1618,7 +1621,7 @@ export function TicketListPage() {
       ticketId: selectedTicketId,
       lastReadEventId: latestRequesterMessageEventId,
     });
-  }, [latestRequesterMessageEventId, markReadMutation, selectedTicketId, workspaceQuery.dataUpdatedAt, timelineQuery.dataUpdatedAt]);
+  }, [latestRequesterMessageEventId, markReadMutation, selectedTicketId, params.ticketId, workspaceMode, workspaceQuery.dataUpdatedAt, timelineQuery.dataUpdatedAt]);
 
   const evidenceCandidatesQuery = useQuery({
     queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId],
@@ -2199,8 +2202,8 @@ export function TicketListPage() {
   });
 
   function openTicket(ticketId: string) {
-    setWorkspaceMode("ticket");
     startTransition(() => {
+      setWorkspaceMode("ticket");
       navigate(`/app/tickets/${ticketId}`);
     });
   }
@@ -2236,12 +2239,21 @@ export function TicketListPage() {
       total: Math.max(0, ticket.closurePlan.total - retiredCount), readyForResolution: missingCount === 0 } };
   }, [viewModel.selectedTicket]);
   const effectiveListCollapsed=Boolean(selectedTicket && ticketListCollapsed && workspaceMode!=="queue");
-  function toggleTicketList() {
-    const collapsed=!ticketListCollapsed;
+  function setQueueCollapsed(collapsed:boolean) {
     setTicketListCollapsed(collapsed);
     savePanelPreferences(panelAccount,"support",{...loadPanelPreferences(panelAccount,"support"),ticketListCollapsed:collapsed});
     resizeStateRef.current=null;setResizingPane(null);
   }
+  function toggleTicketList() { setQueueCollapsed(!ticketListCollapsed); }
+  function changeQueueDisplay(mode: SupportQueueDisplayMode) {
+    resizeStateRef.current=null;setResizingPane(null);
+    if (mode === "full") { shouldKeepQueueRouteRef.current=true;setWorkspaceMode("queue");return; }
+    if (!selectedTicketId) return;
+    setQueueCollapsed(mode === "collapsed");setWorkspaceMode("ticket");
+    if (!params.ticketId) navigate(`/app/tickets/${selectedTicketId}`);
+  }
+  function returnToSelectedTicket() { changeQueueDisplay(ticketListCollapsed ? "collapsed" : "compact"); }
+  const queueDisplayMode: SupportQueueDisplayMode = workspaceMode === "queue" || !selectedTicketId ? "full" : ticketListCollapsed ? "collapsed" : "compact";
   const selectedTicketIsUnassigned = Boolean(selectedTicket?.assigneeLabel.toLowerCase().includes("не назнач"));
   const getCompactTicketSlaLabel = (ticket: (typeof visibleTickets)[number]) => {
     if (selectedTicket?.id === ticket.id && selectedTicket.nextAction.timerType !== "none") {
@@ -2681,27 +2693,27 @@ export function TicketListPage() {
                   </div>
                 ) : null}
                 {inspectorMode === "sla" && slaWorkspaceTab === "overview" ? (
-                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                    <div className="grid gap-3 md:grid-cols-2">
+                  <section className="support-sla-section rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <div className="support-sla-timers">
                       {selectedTicket.timers.map((timer) => (
-                        <div className={`rounded-xl border border-white/10 bg-white/[0.03] p-4 ${timerStatusRing(timer.status)}`} key={`expanded:${timer.key}`}>
-                          <div className="flex items-start justify-between gap-3">
+                        <div className={`support-sla-card rounded-xl border border-white/10 bg-white/[0.03] p-4 ${timerStatusRing(timer.status)}`} key={`expanded:${timer.key}`}>
+                          <div className="support-sla-card__heading">
                             <div>
-                              <p className="font-semibold text-white">{timer.label}</p>
+                              <p className="support-sla-card__title font-semibold text-white">{timer.label}</p>
                               <p className="mt-1 text-xs text-slate-500">{timer.completedAt ? formatDueLabel(timer.completedAt, "Выполнено") : formatDueLabel(timer.dueAt)}</p>
                             </div>
                             <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
                               {timerStatusLabel(timer.status)}
                             </span>
                           </div>
-                          <p className="mt-4 text-2xl font-semibold text-white">{timer.remainingLabel}</p>
+                          <p className="support-sla-card__value font-semibold text-white">{timer.remainingLabel}</p>
                           <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
                             <div className={`h-full rounded-full ${progressTone(timer.status)}`} style={{ width: `${Math.max(4, timer.progress)}%` }} />
                           </div>
                         </div>
                       ))}
                     </div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className="support-sla-notes">
                       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">OLA</p>
                         <p className="mt-2 text-sm text-slate-300">Подтверждение и обработка по внутренним срокам группы поддержки.</p>
@@ -2722,19 +2734,19 @@ export function TicketListPage() {
                   </section>
                 ) : null}
                 {inspectorMode === "sla" && slaWorkspaceTab === "ola" ? (
-                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                  <section className="support-sla-section rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <p className="font-semibold text-white">OLA по очереди</p>
                     <p className="mt-1 text-sm text-slate-400">Внутренние сроки подтверждения и обработки обращения.</p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="support-sla-timers mt-4">
                       {selectedTicket.timers.length ? selectedTicket.timers.map((timer) => (
-                        <div className={`rounded-xl border border-white/10 bg-white/[0.03] p-3 ${timerStatusRing(timer.status)}`} key={`ola:${timer.key}`}>
-                          <div className="flex items-start justify-between gap-3">
+                        <div className={`support-sla-card rounded-xl border border-white/10 bg-white/[0.03] p-3 ${timerStatusRing(timer.status)}`} key={`ola:${timer.key}`}>
+                          <div className="support-sla-card__heading">
                             <p className="font-semibold text-white">{timer.label}</p>
                             <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
                               {timerStatusLabel(timer.status)}
                             </span>
                           </div>
-                          <p className="mt-3 text-lg font-semibold text-white">{timer.remainingLabel}</p>
+                          <p className="support-sla-card__value font-semibold text-white">{timer.remainingLabel}</p>
                           <p className="mt-1 text-xs text-slate-500">{timer.completedAt ? formatDueLabel(timer.completedAt, "Выполнено") : formatDueLabel(timer.dueAt)}</p>
                         </div>
                       )) : (
@@ -3661,7 +3673,8 @@ export function TicketListPage() {
     onFilterChange: setSimpleFilter, onSearchChange: setSearch, onOpenTicket: openTicket,
     onTakeTicket: (id: string) => takeTicketMutation.mutate(id), onQueueChange: unifiedQueue ? undefined : setActiveQueueId,
     onAdvanced: () => setSimpleMode(false),
-    onOpenQueue: () => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); },
+    onOpenQueue: () => changeQueueDisplay("full"),
+    onReturnToTicket: selectedTicketId ? returnToSelectedTicket : undefined, returnTicketLabel: selectedTicket?.code,
   };
 
   return (
@@ -3676,6 +3689,7 @@ export function TicketListPage() {
     >
       <SupportWorkspaceTopbar
         theme={workspaceTheme}
+        queueControls={simpleMode ? <SupportQueueModes mode={queueDisplayMode} hasTicket={Boolean(selectedTicketId)} onChange={changeQueueDisplay} /> : undefined}
         onToggleTheme={toggleWorkspaceTheme}
         onRefresh={refreshAll}
         refreshing={queueQuery.isFetching || workspaceQuery.isFetching || actionsRefreshing}
@@ -3712,7 +3726,7 @@ export function TicketListPage() {
               {isAdmin ? <button type="button" disabled={ticketVisibilityMutation.isPending || !(selectedTicket.archivedAt ? selectedTicket.canUnarchiveTicket : selectedTicket.canArchiveTicket)} onClick={() => ticketVisibilityMutation.mutate(selectedTicket.archivedAt ? "unarchive" : "archive")}>{selectedTicket.archivedAt ? "Вернуть из архива" : "Архивировать"}</button> : null}
             </>}
             unifiedQueue={unifiedQueue}
-            onManage={openOperatorAction} onQueue={() => { shouldKeepQueueRouteRef.current = true; setWorkspaceMode("queue"); navigate("/app/tickets"); }}
+            onManage={openOperatorAction} onQueue={() => changeQueueDisplay("full")}
             conversation={<SimpleSupportConversation key={selectedTicket.id}
               ticketId={!workspaceQuery.isError ? selectedTicket.id : undefined}
               items={mapSupportTimelineEntries([...(timelineQuery.data?.items ?? workspaceQuery.data.detail.timeline)].sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0)))}

@@ -20,6 +20,7 @@ test.beforeEach(async ({ page }) => {
 test("inspector becomes a drawer when expanded navigation narrows the workspace at 1280", async ({ page }, info) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await login(page);
+  await page.getByRole("button", { name: "Закрепить панель", exact: true }).click();
   await page.getByRole("button", { name: "T-200001", exact: true }).click();
   const toggle = page.getByRole("button", { name: "Сведения", exact: true });
   const facts = page.getByRole("complementary", { name: "Сведения об обращении", exact: true });
@@ -139,7 +140,9 @@ test("unified queue keeps the full list reachable and restores the resizable ins
   await expect(page.getByTestId("simple-support-workspace")).toBeVisible();
   await page.getByRole("button", { name: /Открыть всю очередь/ }).click();
   await expect(page.getByRole("heading", { name: "Очередь обращений", exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/\/app\/tickets$/);
+  await expect(page).toHaveURL(/\/app\/tickets\/ticket-1$/);
+  await page.getByRole("button", { name: /Вернуться к обращению/ }).click();
+  await expect(page.locator(".simple-ticket")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
 });

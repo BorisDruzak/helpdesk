@@ -11,6 +11,7 @@ export type SimpleSupportQueueProps = {
   onFilterChange: (filter: SimpleQueueFilter) => void; onSearchChange: (value: string) => void;
   onOpenTicket: (id: string) => void; onTakeTicket: (id: string) => void; onAdvanced: () => void;
   onOpenQueue?: () => void;
+  onReturnToTicket?: () => void; returnTicketLabel?: string;
   view?: "tickets" | "actions"; onViewChange?: (view: "tickets" | "actions") => void; actionCenter?: ReactNode;
   onQueueChange?: (id: string | null) => void;
 };
@@ -25,7 +26,7 @@ export function SimpleSupportQueue(props: SimpleSupportQueueProps) {
   </section>;
   return <section className={`simple-queue${compact ? " simple-queue--compact" : ""}`} aria-label={compact ? "Моя рабочая очередь" : "Очередь обращений"}>
     {compact && props.onToggleCollapsed ? <button className="simple-button simple-queue__expand" aria-expanded type="button" onClick={props.onToggleCollapsed}>Скрыть список заявок</button> : null}
-    <div className={`simple-queue__heading${!compact ? " simple-queue__heading--unified" : ""}`}><div><p className="simple-eyebrow">Рабочее место / заявки</p><h2>{compact ? "Моя рабочая очередь" : "Очередь обращений"}</h2>
+    <div className={`simple-queue__heading${!compact ? " simple-queue__heading--unified" : ""}`}><div><p className="simple-eyebrow">Рабочее место / заявки</p>{!compact ? <button className="simple-link simple-queue__return" type="button" disabled={!props.onReturnToTicket} title={props.onReturnToTicket ? "Вернуться к открытому обращению без потери ответа" : "Сначала откройте обращение из списка"} onClick={props.onReturnToTicket}>← Вернуться к обращению{props.returnTicketLabel ? ` ${props.returnTicketLabel}` : ""}</button> : null}<h2>{compact ? "Очередь рядом" : "Очередь обращений"}</h2>
       {!compact && props.onViewChange ? <div className="simple-tabs simple-queue__views" role="tablist" aria-label="Вид очереди">{([["tickets", "Обращения"], ["actions", "Действия"]] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={(props.view ?? "tickets") === id} onClick={() => props.onViewChange?.(id)}>{label}</button>)}</div> : null}</div>
       {compact && props.onOpenQueue ? <button className="simple-button simple-queue__expand" type="button" onClick={props.onOpenQueue}>Открыть всю очередь ↗</button> : null}
       {!compact ? <input className="simple-queue__shared-search" aria-label="Поиск обращений" placeholder="Номер, тема, сотрудник, услуга или устройство" type="search" value={props.search} onChange={event => props.onSearchChange(event.target.value)} /> : null}

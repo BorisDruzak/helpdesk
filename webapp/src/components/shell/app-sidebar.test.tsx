@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -18,6 +18,18 @@ const fullPermissions = [
 ];
 
 describe("AppSidebar", () => {
+  it("opens an unpinned navigation for keyboard focus and closes its preview with Escape",()=>{
+    render(<MemoryRouter initialEntries={["/app/tickets"]}><AppSidebar autoHide pinned={false} showCollapseToggle hasAdminAccess={false} hasSupportAccess permissions={fullPermissions} /></MemoryRouter>);
+    const navigation=screen.getByTestId("support-navigation");
+    act(()=>screen.getByRole("link",{name:"Очередь обращений"}).focus());
+    expect(navigation).toHaveAttribute("data-expanded","true");
+    fireEvent.keyDown(navigation,{key:"Escape"});
+    expect(navigation).toHaveAttribute("data-expanded","false");
+    expect(screen.getByRole("button",{name:"Развернуть или свернуть меню"})).toHaveAttribute("aria-expanded","false");
+    fireEvent.click(screen.getByRole("button",{name:"Развернуть или свернуть меню"}));
+    expect(navigation).toHaveAttribute("data-expanded","true");
+  });
+
   it("shows admin navigation items only when the session has matching permissions", () => {
     const { rerender } = render(
       <MemoryRouter initialEntries={["/app/admin"]}>

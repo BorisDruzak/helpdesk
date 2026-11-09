@@ -113,6 +113,15 @@ export function AppShell({ children }: AppShellProps) {
   const currentWorkspace = getActiveWorkspace(location.pathname) ?? "support";
   const account=session?.user_login??"";
   const [adminSidebarCollapsed, setAdminSidebarCollapsed] = useState(() => loadPanelPreferences(account,currentWorkspace,{navigationCollapsed:isFormsBuilderRoute,ticketListCollapsed:false}).navigationCollapsed);
+  const sidebarOwner=JSON.stringify([account,currentWorkspace]);
+  const [sidebarPin,setSidebarPin]=useState(()=>({owner:sidebarOwner,value:loadPanelPreferences(account,currentWorkspace).navigationPinned??false}));
+  const sidebarPinned=sidebarPin.owner===sidebarOwner && sidebarPin.value;
+  useEffect(()=>setSidebarPin({owner:sidebarOwner,value:loadPanelPreferences(account,currentWorkspace).navigationPinned??false}),[account,currentWorkspace,sidebarOwner]);
+  function handleSidebarPin(value:boolean) {
+    setSidebarPin({owner:sidebarOwner,value});
+    setAdminSidebarCollapsed(!value);
+    savePanelPreferences(account,currentWorkspace,{...loadPanelPreferences(account,currentWorkspace),navigationPinned:value,navigationCollapsed:!value});
+  }
   const shouldManageSidebar = currentWorkspace === "admin" || currentWorkspace === "support";
 
   useEffect(() => {
@@ -157,9 +166,13 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   return (
-    <div className={`${isFullHeightWorkspace ? "h-dvh overflow-hidden" : "min-h-screen"} ${currentWorkspace === "requester" ? "requester-shell" : "bg-app"} text-slate-950`}>
+    <div className={`${isFullHeightWorkspace ? "h-dvh overflow-hidden" : "min-h-screen"} ${currentWorkspace === "requester" ? "requester-shell" : "bg-app"} ${currentWorkspace === "support" && /^\/app\/tickets(?:\/|$)/.test(location.pathname) ? "support-ticket-shell" : ""} text-slate-950`}>
       <div className={`flex ${isFullHeightWorkspace ? "h-full min-h-0" : "min-h-screen"}`}>
         <AppSidebar
+          key={sidebarOwner}
+          autoHide={currentWorkspace === "support"}
+          pinned={sidebarPinned}
+          onPinnedChange={handleSidebarPin}
           collapsed={shouldManageSidebar ? adminSidebarCollapsed : false}
           hasAdminAccess={hasAdmin}
           hasRequesterAccess={hasRequester}

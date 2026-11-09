@@ -393,7 +393,7 @@ function renderTicketListPage(initialEntry = "/app/tickets", advanced = true) {
     },
   });
 
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[advanced ? `${initialEntry}${initialEntry.includes("?") ? "&" : "?"}advanced=1` : initialEntry]}>
         <Routes>
@@ -404,6 +404,7 @@ function renderTicketListPage(initialEntry = "/app/tickets", advanced = true) {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return {...rendered,queryClient};
 }
 
 beforeEach(() => {
@@ -2607,6 +2608,63 @@ describe("TicketListPage", () => {
 
 
 describe("UI-SUPPORT-001 default workspace", () => {
+  it("does not read hidden messages from A when opening B from the full queue",async()=>{
+    const queue=queuePayload();
+    queue.tickets.push({...queue.tickets[0],ticket_id:"ticket-2",ticket_code:"T-000002",title:"Другой тикет"});
+    fetchSupportQueueMock.mockResolvedValue(queue);
+    fetchSupportTicketWorkspaceMock.mockImplementation(async id=>{
+      const workspace=workspacePayload();workspace.detail.ticket.ticket_id=id;
+      return workspace;
+    });
+    const {queryClient}=renderTicketListPage("/app/tickets/ticket-1",false);
+    await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
+    fireEvent.click(screen.getByRole("button",{name:"Полная очередь"}));
+    const value=timelinePayload({filter:"messages",items:[{...timelinePayload().items[0],event_id:845,event_type:"chat_message",from_role:"user",requester_timeline_kind:"user_message",visibility:"public",text:"Скрытое сообщение A"}]});
+    await act(async()=>{queryClient.setQueryData(["tickets-workspace-timeline","ticket-1","messages"],value);await new Promise(resolve=>setTimeout(resolve,30));});
+    fireEvent.click(screen.getByRole("button",{name:"T-000002"}));
+    await waitFor(()=>expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-2"));
+    expect(postSupportTicketReadMock).not.toHaveBeenCalledWith("ticket-1",845);
+  });
+
+  it("does not mark newly arriving messages read while the full queue hides the conversation",async()=>{
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    const {queryClient}=renderTicketListPage("/app/tickets/ticket-1",false);
+    await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
+    fireEvent.click(screen.getByRole("button",{name:"Полная очередь"}));
+    const value=timelinePayload({filter:"messages",items:[{...timelinePayload().items[0],event_id:845,event_type:"chat_message",from_role:"user",requester_timeline_kind:"user_message",visibility:"public",text:"Новое сообщение"}]});
+    fetchSupportTicketTimelineMock.mockResolvedValue(value);
+    await act(async()=>{await queryClient.refetchQueries({queryKey:["tickets-workspace-timeline","ticket-1","messages"]});});
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,30));});
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-mode","queue");
+    expect(postSupportTicketReadMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:/Вернуться к обращению/}));
+    await waitFor(()=>expect(postSupportTicketReadMock).toHaveBeenCalledWith("ticket-1",845));
+  });
+
+  it("round trips all queue modes without losing the selected ticket or unsent reply",async()=>{
+    const workspace=workspacePayload();
+    workspace.detail.ticket.status="in_progress";
+    workspace.detail.ticket.assignee_id="support-test";
+    workspace.detail.actions.can_send_public_message=true;
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspace);
+    renderTicketListPage("/app/tickets/ticket-1",false);
+    const reply=await screen.findByRole("textbox",{name:"Сообщение сотруднику"});
+    fireEvent.change(reply,{target:{value:"Неотправленный ответ"}});
+    fireEvent.click(screen.getByRole("button",{name:"Полная очередь"}));
+    expect(await screen.findByRole("heading",{name:"Очередь обращений"})).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button",{name:/Вернуться к обращению/}));
+    expect(await screen.findByRole("textbox",{name:"Сообщение сотруднику"})).toHaveValue("Неотправленный ответ");
+    fireEvent.click(screen.getByRole("button",{name:"Свернуть очередь"}));
+    expect(screen.getByRole("button",{name:"Свернуть очередь"})).toHaveAttribute("aria-pressed","true");
+    fireEvent.click(screen.getByRole("button",{name:"Очередь рядом"}));
+    expect(screen.getByRole("button",{name:"Очередь рядом"})).toHaveAttribute("aria-pressed","true");
+    expect(screen.getByRole("textbox",{name:"Сообщение сотруднику"})).toHaveValue("Неотправленный ответ");
+    expect(postSupportTicketStatusMock).not.toHaveBeenCalled();
+    expect(postSupportTicketAssignMock).not.toHaveBeenCalled();
+  });
+
   it("preserves command-center deep links to advanced smart views", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     renderTicketListPage("/app/tickets?smart_view=new_unassigned", false);
