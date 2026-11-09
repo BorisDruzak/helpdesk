@@ -24,7 +24,6 @@ function mount(code: string, path: string) {
   const change = vi.fn();
   render(<MemoryRouter><QueryClientProvider client={new QueryClient()}><ScenarioWizard definition={definition} detail={{ scenario: { id: "scenario" }, draft: { revision: 2, definition } } as ScenarioDetail} catalog={{ offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер" }], categories: [], services: [], scenarios: [] } as unknown as ScenarioCatalog} dirty={false} disabled={false} onChange={change} /></QueryClientProvider></MemoryRouter>);
   fireEvent.click(screen.getByRole("button", { name: "Опубликовать" }));
-  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
   return change;
 }
 it("opens the source of a broken transition and focuses its visible target", async () => {

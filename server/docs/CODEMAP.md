@@ -1079,3 +1079,19 @@ dependency or change to Endpoint contracts. See `docs/UNIFIED_TICKET_2026_11_09.
 Studio entry-first editor: scenario-map-canvas.tsx renders catalogue entrances as root cards without the metadata Start node or incoming entrance edges; existing implicit/named entry wire semantics remain unchanged. Incoming links to actual navigation blocks render directly, ordinary transition cards remain. scenario-wizard.tsx opens new-service metadata on publication (including before detail/save); publication service settings own former Start fields and validation destinations. Workbench library/context menus create independent pending entrances; toolbar groups rare actions under Ещё. No route, runtime, schema or migration change; see docs/UNIFIED_SERVICE_SCENARIOS.md.
 
 Support queue actions: `/app/tickets?view=actions` embeds `pages/support/command-center-page.tsx` through `SimpleSupportQueue`; `/app/support/advanced` redirects there. Existing command-center read APIs and ticket/approval mutations are unchanged. See `docs/SUPPORT_QUEUE_ACTIONS.md`.
+
+
+## Automatic ordered service readiness (2026-11-09)
+
+`scenario-publication.tsx` presents five numbered requirements and checks the saved
+revision automatically, debounced250ms. Wizard retains the assessment across map
+navigation and lazily renders service/processing settings. Actor/revision/dirty/
+permission/visibility changes clear readiness and confirmation. Blocked assessments
+refresh every30s and on focus/online/resume; valid confirmation refreshes on expiry.
+Highlight-only navigation does not call the preview endpoint. Canonical publish-preview
+still owns assessment and persisted one-use token issuance; final publish retains
+explicit confirmation and server source/revision revalidation. Failed autosave has an
+explicit retry in the editor; normal editing has no floating create/manual-save bar.
+Issue grouping/focus reuse `scenario-publication-checks` and issue navigation; optional
+v4 fallback definitions are collapsed after the ordinary processing controls.
+See `docs/STUDIO_READINESS_STAGING_ACCEPTANCE_2026_11_09.md`. No new API or migration.

@@ -3,6 +3,23 @@
 .scenario-publication-header h1 { font-size: 1.4rem; font-weight: 650; }
 .scenario-publication-header p { color: #64748b; font-size: .875rem; }
 .scenario-publication-header-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.scenario-publication-progress { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.5rem; }
+.scenario-publication-progress button { width:100%; height:100%; display:grid; align-content:start; gap:.35rem; text-align:left; padding:.8rem; border:1px solid #dbe5df; border-radius:.75rem; background:#fff; font-size:.85rem; }
+.scenario-publication-progress small { color:#64748b; }
+.scenario-publication-progress [data-state="problem"] { border-color:#f0c29f; background:#fffaf3; }
+.scenario-publication-step { min-width:0; display:grid; gap:1rem; padding:1.25rem; border:1px solid #dbe5df; border-radius:1rem; background:#fff; scroll-margin-top:11rem; }
+.scenario-publication-step > header { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+.scenario-publication-step > header h2 { font-size:1.1rem; font-weight:650; }
+.scenario-readiness-badge { flex-shrink:0; padding:.3rem .65rem; border-radius:1rem; background:#f1f5f9; color:#64748b; font-size:.8rem; }
+.scenario-readiness-badge[data-state="ready"] { background:#e8f5ed; color:#17643e; }
+.scenario-readiness-badge[data-state="problem"] { background:#fff0dd; color:#92520e; }
+.scenario-publication-step[data-highlighted="true"] { border-color:#d99b42; box-shadow:0 0 0 2px #e4ad5d40; }
+.scenario-publication-step > .scenario-publication-section { padding:0; border:0; border-radius:0; }
+.scenario-publication-step > .scenario-publication-section > button { justify-self:start; }
+.scenario-publication-inline-issues:has(.scenario-publication-check-group) { display:grid; gap:.5rem; }
+.scenario-publication-inline-issues:not(:has(.scenario-publication-check-group)) { display:none; }
+@media(max-width:1000px) { .scenario-publication-progress { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:600px) { .scenario-publication-progress { grid-template-columns:minmax(0,1fr); } .scenario-publication-step { padding:1rem; } .scenario-publication-step > header { flex-wrap:wrap; gap:.5rem; } }
 .scenario-publication-section { min-width: 0; padding: 1.25rem; border: 1px solid #e2e8f0; border-radius: 1rem; background: #fff; display: grid; gap: .75rem; }
 .scenario-publication-section h2 { font-size: 1.1rem; font-weight: 650; }
 .scenario-publication-section h3 { font-weight: 600; }

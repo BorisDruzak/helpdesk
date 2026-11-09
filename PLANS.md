@@ -3088,3 +3088,14 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 
 - Integrate compact localized action list/detail into the primary queue with shared search, wrapping filters and compatible advanced-route redirect. Preserve approvals, operations, assignees, services and Studio edits.
 - Verification and staging receipt will be recorded in docs/SUPPORT_QUEUE_ACTIONS_STAGING_ACCEPTANCE_2026_11_09.md.
+
+
+## Studio automatic readiness — 2026-11-09
+
+- User requested removing editor create/save portal and ordering publication settings.
+- Implemented five live readiness points, saved-revision checks, highlight-only action,
+  generic autosave retry and preserved explicit publication consent. Kept map/assessment
+  state across navigation; source-policy repair refreshes without editing the draft.
+- Focused regressions, full Studio checks and1366/1920 browser evidence; immutable
+  staging candidate preserves parallel work. Receipt:
+  `docs/STUDIO_READINESS_STAGING_ACCEPTANCE_2026_11_09.md`.

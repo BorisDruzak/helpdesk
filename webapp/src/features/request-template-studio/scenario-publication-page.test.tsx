@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioPublication } from "./scenario-publication";
@@ -22,7 +22,7 @@ function mount(extra: Partial<React.ComponentProps<typeof ScenarioPublication>> 
 }
 it("shows authoritative outcomes by catalogue entrance, terminal, queue and actual SLA", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => response(preview)));
-  mount(); fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  mount();
   const outcomes = await screen.findByRole("region", { name: "Проверенные исходы" });
   expect(within(outcomes).getByText("Нет бумаги")).toBeVisible();
   expect(within(outcomes).getByText("Передать специалисту")).toBeVisible();
@@ -40,7 +40,7 @@ it("groups server issues by their editable area and jumps to the correct map blo
     { code: "sla_unavailable", message: "Нет срока" },
   ] }, confirmation_token: null })));
   const onIssue = vi.fn(); mount({ onIssue });
-  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+
   expect(await screen.findByRole("heading", { name: "Карта и переходы" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Каталог и доступность" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Обработка и сроки" })).toBeVisible();
@@ -50,17 +50,18 @@ it("groups server issues by their editable area and jumps to the correct map blo
 });
 it("rejects a preview bound to a different saved revision", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => response({ ...preview, revision: 1 })));
-  mount(); fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  mount();
   expect(await screen.findByRole("alert")).toHaveTextContent(/изменил|повтор|заново/i);
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 });
 it("discards a pending preview after edits or saved revision changes", async () => {
   let resolve!: (value: Response) => void;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(done => { resolve = done; })));
-  const view = mount(); fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  const view = mount();
+  await waitFor(() => expect(resolve).toBeTypeOf("function"));
   view.update({ dirty: true, revision: 3 });
   await act(async () => { resolve(response(preview)); });
-  expect(await screen.findByText("Сначала сохраните изменения.")).toBeVisible();
+  expect(await screen.findByText("Изменения сохраняются автоматически. Проверка обновится после сохранения.")).toBeVisible();
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 });
 it("can recheck a new revision while an obsolete read is pending and ignores its late result", async () => {
@@ -68,20 +69,20 @@ it("can recheck a new revision while an obsolete read is pending and ignores its
   const fetchMock = vi.fn(() => new Promise<Response>(done => { resolves.push(done); }));
   vi.stubGlobal("fetch", fetchMock);
   const view = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   view.update({ revision: 3 });
-  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   await act(async () => { resolves[0](response(preview)); });
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Проверка…" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Показать, что исправить" })).toBeDisabled();
   await act(async () => { resolves[1](response({ ...preview, revision: 3 })); });
   expect(screen.getByRole("checkbox")).toBeEnabled();
 });
 it("requires a fresh check after live catalogue visibility changes", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => response(preview)));
   const view = mount({ offeringVisibility: "internal" });
-  fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+
   fireEvent.click(await screen.findByRole("checkbox"));
   view.update({ offeringVisibility: "public" });
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -89,7 +90,14 @@ it("requires a fresh check after live catalogue visibility changes", async () =>
 });
 it("does not offer confirmation for an expired token", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => response({ ...preview, expires_at: "2000-01-01T00:00:00Z" })));
-  mount(); fireEvent.click(screen.getByRole("button", { name: "Подготовить публикацию" }));
+  mount();
   expect(await screen.findByRole("alert")).toHaveTextContent(/срок|заново/i);
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+});
+
+it("clears another administrator's confirmation immediately and checks under the new identity", async () => {
+  const fetcher=vi.fn(async()=>response(preview));vi.stubGlobal("fetch",fetcher);
+  const view=mount({actorIdentity:"first:admin"});fireEvent.click(await screen.findByRole("checkbox"));
+  view.update({actorIdentity:"second:admin"});expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(await screen.findByRole("checkbox")).not.toBeChecked();expect(fetcher).toHaveBeenCalledTimes(2);
 });
