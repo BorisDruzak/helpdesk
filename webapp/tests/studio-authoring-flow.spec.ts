@@ -42,6 +42,7 @@ for (const width of [1366,1920]) test(`new draft autosave, early screenshot and 
  });
  await page.goto("/app/admin/request-template-studio");await page.getByRole("button",{name:"Создать услугу",exact:true}).click();
  await page.getByRole("textbox",{name:"Название услуги",exact:true}).fill("Проверка автосохранения");
+ await page.getByRole("button",{name:"Вернуться к карте",exact:true}).click();
  await page.getByRole("button",{name:"+ Вопрос",exact:true}).click();
  await page.getByRole("textbox",{name:"Что спросить?",exact:true}).fill("Какой путь выбрать?");
  await page.getByLabel("Прикрепить скриншоты или файлы",{exact:true}).setInputFiles({name:"early.png",mimeType:"image/png",buffer:png});
@@ -52,7 +53,7 @@ for (const width of [1366,1920]) test(`new draft autosave, early screenshot and 
  await expect.poll(()=>draft!.blocks!.length).toBe(2);const firstId=draft!.blocks![1].id;
  await page.getByRole("button",{name:"+ Вопрос",exact:true}).click();await page.getByRole("textbox",{name:"Что спросить?",exact:true}).fill("Второй вариант");
  await expect.poll(()=>draft!.blocks!.length).toBe(3);const secondId=draft!.blocks![2].id;
- await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();await page.getByRole("button",{name:"Вся карта",exact:true}).click();
+ await page.locator('.studio-map-toolbar > details > summary').click();await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();await page.locator('.studio-map-toolbar > details > summary').click();await page.getByRole("button",{name:"Вся карта",exact:true}).click();
  for(const targetId of [firstId,secondId]){
   const from=page.locator(`[data-id="${sourceId}"] .react-flow__handle[data-handleid="new"]`),to=page.locator(`[data-id="${targetId}"] .react-flow__handle.target`);
   await expect(from).toBeInViewport();await expect(to).toBeInViewport();const a=(await from.boundingBox())!,b=(await to.boundingBox())!;

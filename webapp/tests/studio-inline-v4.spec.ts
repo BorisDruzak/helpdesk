@@ -15,9 +15,8 @@ for (const width of [1366, 1920]) {
     await service.click();
     await expect(page.locator("aside.catalog-inspector")).toHaveCount(0);
     await service.dblclick();
-    await expect(page.getByLabel("Название услуги", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-id="studio:metadata"]')).toHaveCount(0);
     await expect(page.locator("aside.studio-map-inspector")).toHaveCount(0);
-    await page.getByRole("button", { name: "Редактировать выбранный блок", exact: true }).click();
     const map = page.getByLabel("Визуальная карта сценария", { exact: true });
     const bounds = (await map.boundingBox())!;
     // Pan from an empty edge of the pane before adding a block.

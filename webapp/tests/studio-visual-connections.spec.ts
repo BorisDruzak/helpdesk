@@ -7,11 +7,11 @@ async function dragEmpty(page:Page,from:Locator){
  let previous="";await expect.poll(async()=>{const r=await from.boundingBox();const current=r?JSON.stringify([r.x,r.y,r.width,r.height].map(n=>Math.round(n))):"";const stable=!!current&&current===previous;previous=current;return stable;}).toBe(true);
  await drag(page,from,await emptyPoint(page));
 }
-async function setup(page:Page,width:number,mutate?:(d:ScenarioDraftDefinition)=>void){await page.setViewportSize({width,height:width===1366?768:1080});const state=await installStudioV3Fixture(page);mutate?.(state.definition());await page.route('**/api/web/notifications/push/config',r=>r.fulfill({json:{status:'ok',enabled:false,public_key:null}}));await page.route('**/request-studio/fragments',r=>r.fulfill({json:{status:'success',data:{items:[],total:0}}}));await page.goto('/app/admin/request-template-studio');await page.getByRole('button',{name:'Настроить услугу Проблемы с печатью',exact:true}).dblclick();await page.getByRole('button',{name:'Редактировать выбранный блок',exact:true}).click();await page.getByRole('button',{name:'Вся карта',exact:true}).click();return state;}
+async function setup(page:Page,width:number,mutate?:(d:ScenarioDraftDefinition)=>void){await page.setViewportSize({width,height:width===1366?768:1080});const state=await installStudioV3Fixture(page);mutate?.(state.definition());await page.route('**/api/web/notifications/push/config',r=>r.fulfill({json:{status:'ok',enabled:false,public_key:null}}));await page.route('**/request-studio/fragments',r=>r.fulfill({json:{status:'success',data:{items:[],total:0}}}));await page.goto('/app/admin/request-template-studio');await page.getByRole('button',{name:'Настроить услугу Проблемы с печатью',exact:true}).dblclick();await page.getByRole('button',{name:'Вся карта',exact:true}).click();return state;}
 const port=(page:Page,node:string,handle='new')=>page.locator(`.react-flow__handle[data-nodeid="${node}"][data-handleid="${handle}"]`);
 test('empty map starts visually and pending deletion/undo persists before connection',async({page})=>{
  test.setTimeout(60000);const state=await setup(page,1366,d=>{d.schema_version=4;d.execution_semantics=3;d.blocks=[];d.entry_points=[];d.entry_block_id=null;d.editor_layout={positions:{}};});
- await dragEmpty(page,port(page,'studio:metadata','entrance'));await page.getByRole('menu',{name:'Добавить на конец связи'}).getByRole('menuitem',{name:'Вход из каталога',exact:true}).click();
+ await page.getByRole('complementary',{name:'Библиотека блоков'}).getByRole('button',{name:'+ Вход из каталога',exact:true}).click();
  await expect.poll(()=>state.definition().editor_layout?.pending_entrances?.length).toBe(1);const entry=state.definition().editor_layout!.pending_entrances![0];
  await page.getByRole('button',{name:'Удалить незавершённый вход',exact:true}).click();await expect.poll(()=>state.definition().editor_layout?.pending_entrances?.length).toBe(0);await page.getByRole('button',{name:'Отменить изменение',exact:true}).click();await expect.poll(()=>state.definition().editor_layout?.pending_entrances?.[0]?.key).toBe(entry.key);
  await page.getByRole('button',{name:'Вся карта',exact:true}).click();await dragEmpty(page,port(page,`studio:link:entry:named:${entry.key}`,'out'));await page.getByRole('menu',{name:'Добавить на конец связи'}).getByRole('menuitem',{name:'Вопрос',exact:true}).click();
@@ -28,16 +28,16 @@ test('answer handle creates typed condition and route-card insertion preserves c
  await page.getByRole('button',{name:'Отменить изменение',exact:true}).click();await expect.poll(()=>state.definition().blocks?.length).toBe(6);expect(state.definition().blocks!.find(b=>b.id==='q1')!.transitions![0].to).toBe('q2');expect(state.errors).toEqual([]);expect(state.unexpected).toEqual([]);
 });
 for(const width of [1366,1920]){
- test(`visual Start entrance, pending autosave/reload and completion ${width}`,async({page},info)=>{
+ test(`independent catalogue entrance, pending autosave/reload and completion ${width}`,async({page},info)=>{
   test.setTimeout(90000);const state=await setup(page,width),before=structuredClone(state.definition());
-  await dragEmpty(page,port(page,'studio:metadata','entrance'));
-  const menu=page.getByRole('menu',{name:'Добавить на конец связи',exact:true});await expect(menu).toBeVisible();await expect(menu.getByRole('menuitem',{name:'Вопрос',exact:true})).toHaveCount(0);await menu.getByRole('menuitem',{name:'Вход из каталога',exact:true}).click();
+  await page.getByRole('complementary',{name:'Библиотека блоков'}).getByRole('button',{name:'+ Вход из каталога',exact:true}).click();
+  const menu=page.getByRole('menu',{name:'Добавить на конец связи',exact:true});
   await expect(page.getByRole('combobox',{name:'Первый блок для сотрудника',exact:true})).toHaveCount(0);
   await expect.poll(()=>state.definition().editor_layout?.pending_entrances?.length).toBe(1);const pending=state.definition().editor_layout!.pending_entrances![0];
   const card=page.locator(`[data-scenario-edge="studio:entry-point:${pending.key}"]`);await expect(card).toContainText('Тяните связь справа');
   const title=card.getByRole('textbox',{name:'Название входа «Новый вход»',exact:true});await title.fill('Визуальный вход');await title.press('Enter');
   await expect.poll(()=>state.definition().editor_layout?.pending_entrances?.[0].title).toBe('Визуальный вход');await page.reload();await page.getByRole('button',{name:'Настроить услугу Проблемы с печатью',exact:true}).dblclick();
-  await page.getByRole('button',{name:'Редактировать выбранный блок',exact:true}).click();await page.getByRole('button',{name:'Вся карта',exact:true}).click();
+  await page.getByRole('button',{name:'Вся карта',exact:true}).click();
   await drag(page,port(page,`studio:link:entry:named:${pending.key}`,'out'),page.locator('.react-flow__handle[data-nodeid="q2"][data-handletype="target"],.react-flow__handle[data-nodeid="q2"].target'));
   await expect.poll(()=>state.definition().entry_points?.find(e=>e.key===pending.key)?.target_block_id).toBe('q2');expect(state.definition().editor_layout?.pending_entrances??[]).toHaveLength(0);expect(state.definition().blocks).toEqual(before.blocks);expect(state.definition().entry_block_id).toBe(before.entry_block_id);expect(state.definition().schema_version).toBe(3);
   await page.getByRole('button',{name:'+ Вход из каталога',exact:true}).click();await expect(page.getByRole('dialog',{name:'Новый вход из каталога'})).toHaveCount(0);await expect.poll(()=>state.definition().editor_layout?.pending_entrances?.length).toBe(1);

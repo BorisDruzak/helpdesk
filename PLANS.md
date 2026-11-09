@@ -3078,3 +3078,8 @@ Handoff: docs/ACCESS_USERS_ACCEPTANCE_2026-11-05.md and display/cleanup procedur
 - Implemented inspector composition, compact action, collapse/risk queue, profile/device
   merge and deadline-specific history. Verification and staging receipt:
   `docs/UNIFIED_TICKET_2026_11_09.md` (updated after checks).
+
+### Studio entry-first editor — in progress (2026-11-09)
+
+- User requests catalogue entrances as map roots, metadata/settings in publication, no redundant incoming card for standalone navigation blocks, and simplified toolbar. Preserve schema1–4, existing services/drafts and staging-only release; no migration/runtime change.
+- UI implementation and native1366/1920 regression are being verified over installed90fe32ec; task source baseline and73existing maps/drafts,111versions captured. Exact acceptance and final SHA will be recorded in docs/STUDIO_ENTRY_FIRST_STAGING_ACCEPTANCE_2026_11_09.md.

@@ -25,5 +25,5 @@ it("explains category selection before offering selection instead of an empty se
   const catalog = { categories: [], offerings: [], services: [] } as unknown as ScenarioCatalog;
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ScenarioPurpose catalog={catalog} definition={{ title: "Новый", service_code: "", offering_full_code: "", blocks: [], scenario_key: "new", process_binding: { request_template_key: "" } }} disabled={false} existing={false} onChange={vi.fn()} /></MemoryRouter></QueryClientProvider>);
   expect(screen.getByLabelText("Категория (необязательно)")).toBeDisabled();
-  expect(screen.getByText("Соедините «Начало» с первым шагом. Название на этой линии — пункт, который сотрудник увидит в каталоге.")).toBeVisible();
+  expect(screen.getByText("Входы из каталога создаются на карте и открывают первый шаг. Название каждого входа видно сотруднику в каталоге.")).toBeVisible();
 });

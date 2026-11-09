@@ -2,11 +2,16 @@ import { createElement, useState, type ComponentType } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ScenarioMapCanvas, entranceCardId, transitionCardId, type MapNode } from "./scenario-map-canvas";
-it("opens a Start subsection without serializing a definition change", () => {
-  const section = vi.fn();
-  render(<ScenarioMapCanvas {...props} definition={definition} onStartSection={section} />);
-  fireEvent.click(screen.getByRole("button", { name: "Начало: Раздел и категория" }));
-  expect(section).toHaveBeenCalledWith("catalog");
+it("opens legacy maps without a metadata node, incoming entrance wires or definition edits", () => {
+  const before = structuredClone(definition);
+  render(<ScenarioMapCanvas {...props} definition={definition} />);
+  expect(screen.queryByTestId("node-studio:metadata")).not.toBeInTheDocument();
+  expect(screen.queryByText("Начало", {exact:true})).not.toBeInTheDocument();
+  expect(screen.queryByTestId("edge-studio:primary:input")).not.toBeInTheDocument();
+  const entrance = screen.getByTestId(`node-${entranceCardId(null)}`);
+  expect(entrance.querySelector('[data-testid="handle-in"]')).toBeNull();
+  expect(entrance.querySelector('[data-testid="handle-out"]')).not.toBeNull();
+  expect(definition).toEqual(before);
 });
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 const { fitProjectedCard }=vi.hoisted(()=>({fitProjectedCard:vi.fn()}));
@@ -99,7 +104,7 @@ it("keeps implicit primary and a named primary entrance as distinct selectable c
  expect(implicit).not.toBe(named);
  fireEvent.click(within(implicit).getByRole("button",{name:"Редактировать вход"}));expect(onEntrance).toHaveBeenLastCalledWith(null,"q");
  fireEvent.click(within(named).getByRole("button",{name:"Редактировать вход"}));expect(onEntrance).toHaveBeenLastCalledWith("primary","end");
- for(const edgeId of ["studio:primary","studio:entry-point:primary"]){expect(screen.getByTestId(`edge-${edgeId}:input`)).toBeInTheDocument();expect(screen.getByTestId(`edge-${edgeId}`)).toBeInTheDocument();}
+ for(const edgeId of ["studio:primary","studio:entry-point:primary"]){expect(screen.queryByTestId(`edge-${edgeId}:input`)).not.toBeInTheDocument();expect(screen.getByTestId(`edge-${edgeId}`)).toBeInTheDocument();}
 });
 it("renders an attached SLA card with a setting link and no flow ports or next-step action",()=>{
  const next={...definition,schema_version:4 as const,execution_semantics:3 as const,blocks:[...definition.blocks!,{id:"policy",kind:"sla_attachment" as const,title:"Политика SLA",attached_to:"q"}]};
@@ -135,5 +140,16 @@ it("rejects ordinary route, card and reconnect targets pointing into a catalog e
  const connect=vi.fn(),reconnect=vi.fn();render(<ScenarioMapCanvas {...props} definition={definition} onConnect={connect} onReconnect={reconnect}/>);
  fireEvent.click(screen.getByRole("button",{name:"try route into entrance"}));fireEvent.click(screen.getByRole("button",{name:"try card into entrance"}));fireEvent.click(screen.getByRole("button",{name:"try reconnect into entrance"}));
  expect(connect).not.toHaveBeenCalled();expect(reconnect).not.toHaveBeenCalled();
- const entry=screen.getByTestId(`node-${entranceCardId(null)}`);expect(entry).toHaveTextContent("Вход из каталога");expect(entry).toHaveTextContent("Начало → вход из каталога");
+ const entry=screen.getByTestId(`node-${entranceCardId(null)}`);expect(entry).toHaveTextContent("Вход из каталога");expect(entry).toHaveTextContent("Открывает первый шаг");
+});
+
+it("uses one navigation block with a direct incoming wire while ordinary transitions keep their cards",()=>{
+ const next={...definition,schema_version:4 as const,blocks:[{...definition.blocks![0],transitions:[{to:"nav"}]},{id:"nav",kind:"navigation" as const,title:"Продолжить",transitions:[{to:"end",button:{key:"next",label:"Далее"}}]},definition.blocks![2]]};
+ render(<ScenarioMapCanvas {...props} definition={next}/>);
+ expect(screen.getByTestId("node-nav")).toBeInTheDocument();
+ expect(screen.queryByTestId(`node-${transitionCardId("q",0)}`)).not.toBeInTheDocument();
+ expect(screen.queryByTestId("edge-q:0:input")).not.toBeInTheDocument();
+ expect(screen.getByTestId("edge-q:0")).toBeInTheDocument();
+ expect(screen.getByTestId(`node-${transitionCardId("nav",0)}`)).toBeInTheDocument();
+ expect(screen.getByTestId("edge-nav:0:input")).toBeInTheDocument();
 });

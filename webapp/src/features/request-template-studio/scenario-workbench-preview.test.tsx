@@ -1,10 +1,12 @@
 import { fireEvent,render,screen,waitFor,within } from "@testing-library/react";
-import { useState } from "react";
+import { act, useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach,expect,it,vi } from "vitest";
 import { ScenarioMapWorkbench } from "./scenario-map-workbench";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
-vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitionId:(source:string,index:number)=>`${source}:${index}`,entranceEdgeId:(key:string|null)=>`entry:${key}`,entranceCardId:(key:string|null)=>`card:${key}`,ScenarioMapCanvas:({onSelect,onEntrance,expandedId,inlineEditor,entranceEditor,onStartSection}:{onSelect:(id:string)=>void;onEntrance:(key:string,target:string)=>void;expandedId?:string|null;inlineEditor?:React.ReactNode;entranceEditor?:React.ReactNode;onStartSection?:(section:"catalog")=>void})=><div><button onClick={()=>onStartSection?.("catalog")}>Открыть раздел начала</button><button onClick={()=>onSelect("q")}>Выбрать вопрос</button><button onClick={()=>onSelect("branch")}>Выбрать второе условие</button><button onClick={()=>onEntrance("named","q")}>Выбрать связь входа</button>{expandedId && inlineEditor}{entranceEditor}</div>}));
+const { canvasState }=vi.hoisted(()=>({canvasState:{current:null as any}}));
+vi.mock("./scenario-map-canvas",()=>({metadataNodeId:"studio:metadata",transitionId:(source:string,index:number)=>`${source}:${index}`,entranceEdgeId:(key:string|null)=>`entry:${key}`,entranceCardId:(key:string|null)=>`card:${key}`,ScenarioMapCanvas:(props:any)=>{canvasState.current=props;const {onSelect,onEntrance,expandedId,inlineEditor,entranceEditor}=props;return <div><button onClick={()=>onSelect("q")}>Выбрать вопрос</button><button onClick={()=>onSelect("branch")}>Выбрать второе условие</button><button onClick={()=>onEntrance("named","q")}>Выбрать связь входа</button>{expandedId && inlineEditor}{entranceEditor}</div>;}}));
+
 const definition:ScenarioDraftDefinition={scenario_key:"s",title:"Карта",service_code:"it",offering_full_code:"it.p",process_binding:{request_template_key:"p"},entry_block_id:"q",entry_points:[{key:"named",title:"Вход",target_block_id:"q"}],blocks:[{id:"q",kind:"instruction",title:"Проверка",content:{body:"Шаг"},transitions:[]},{id:"done",kind:"finish",title:"Готово"}]};
 const catalog={services:[],offerings:[],categories:[],scenarios:[],total:0,offset:0,limit:100};
 afterEach(()=>vi.unstubAllGlobals());
@@ -83,7 +85,8 @@ it("edits decision conditions directly in the selected block",()=>{
 it("an unbound v2 map needs no canonical type picker",()=>{
  render(<MemoryRouter><ScenarioMapWorkbench definition={{...definition,schema_version:2,offering_full_code:"",blocks:[],entry_block_id:null,entry_points:[]}} catalog={catalog} existing={false} disabled={false} onChange={vi.fn()}/></MemoryRouter>);
  expect(screen.queryByLabelText("Тип обращения")).not.toBeInTheDocument();
- expect(screen.getByLabelText("Название услуги")).toBeVisible();
+ expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
+ expect(screen.getByRole("button",{name:"+ Вход из каталога"})).toBeEnabled();
 });
 it("opens service-wide rules through publication callback without mounting generic processing",()=>{
  const change=vi.fn(), openRules=vi.fn();
@@ -102,14 +105,15 @@ it("a missing-route hint reveals editing controls from employee preview",()=>{
  fireEvent.click(screen.getByRole("button",{name:"Редактировать выбранный блок"}));fireEvent.click(screen.getByRole("tab",{name:"Как у сотрудника"}));fireEvent.click(screen.getByRole("button",{name:/«Проверка»: укажите следующий шаг/}));fireEvent.click(screen.getByRole("button",{name:/Исправить: «Проверка»: укажите следующий шаг/}));expect(screen.getByRole("tab",{name:"Настройки"})).toHaveAttribute("aria-selected","true");expect(screen.getByLabelText("Название блока")).toBeVisible();
 });
 
-it("opens Start sections while a different inspector panel is active without changing the draft",()=>{
+it("keeps inspection and help under More without duplicate preview or metadata editors",()=>{
  const change=vi.fn();
- function Harness(){const [panel,setPanel]=useState(true);return <ScenarioMapWorkbench definition={definition} catalog={catalog} existing disabled={false} onChange={change} inspectorPanel={panel?<p>Проверка пути открыта</p>:undefined} onInspect={()=>setPanel(false)}/>;}
- render(<Harness/>);
- expect(screen.getByText("Проверка пути открыта")).toBeVisible();
- fireEvent.click(screen.getByRole("button",{name:"Открыть раздел начала"}));
- expect(screen.queryByText("Проверка пути открыта")).not.toBeInTheDocument();
- expect(screen.getByRole("combobox",{name:"Раздел каталога"})).toBeVisible();
+ render(<ScenarioMapWorkbench definition={definition} catalog={catalog} existing disabled={false} onChange={change}/>);
+ const more=screen.getByText("Ещё",{selector:"summary"}).closest("details")!;
+ expect(more).toContainElement(screen.getByRole("button",{name:"Редактировать выбранный блок"}));
+ expect(more).toContainElement(screen.getByText("Как работать с картой",{selector:"summary"}));
+ expect(screen.queryByRole("button",{name:"Предпросмотр страницы"})).not.toBeInTheDocument();
+ expect(screen.queryByRole("button",{name:"Настройки карты"})).not.toBeInTheDocument();
+ expect(screen.queryByLabelText("Название услуги")).not.toBeInTheDocument();
  expect(change).not.toHaveBeenCalled();
 });
 
@@ -118,6 +122,36 @@ it("creates a persistent pending library entrance with no step selection and und
  function Harness(){const [d,setD]=useState(initial);return <MemoryRouter><ScenarioMapWorkbench definition={d} catalog={catalog} existing disabled={false} onChange={next=>{change(next);setD(next as typeof initial);}}/></MemoryRouter>;}
  render(<Harness/>);fireEvent.click(within(screen.getByRole("complementary",{name:"Библиотека блоков"})).getByRole("button",{name:"+ Вход из каталога"}));
  const next=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition;expect(next.entry_points).toEqual(initial.entry_points);expect(next.blocks).toEqual(initial.blocks);expect(next.entry_block_id).toBe("q");expect(next.schema_version).toBe(3);
- expect(next.editor_layout?.pending_entrances).toHaveLength(1);expect(screen.queryByRole("combobox",{name:"Первый блок для сотрудника"})).not.toBeInTheDocument();
+ expect(next.editor_layout?.pending_entrances).toHaveLength(1);expect(screen.getByLabelText("Первый блок для сотрудника").closest("details")).not.toHaveAttribute("open");
  expect(screen.getByText(/Потяните связь из правой точки/)).toBeVisible();fireEvent.click(screen.getByRole("button",{name:"Отменить изменение"}));expect(change.mock.calls.at(-1)![0]).toEqual(initial);
+});
+
+it("creates navigation from the library then connects an existing source without a replacement step",()=>{
+ const initial={...definition,schema_version:4 as const};const change=vi.fn();
+ function Harness(){const [d,setD]=useState<ScenarioDraftDefinition>(initial);return <MemoryRouter><ScenarioMapWorkbench definition={d} catalog={catalog} existing disabled={false} onChange={next=>{change(next);setD(next);}}/></MemoryRouter>;}
+ render(<Harness/>);
+ fireEvent.click(screen.getByRole("button",{name:"+ Переходы · кнопки"}));
+ const created=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition,nav=created.blocks!.at(-1)!;
+ expect(nav.kind).toBe("navigation");expect(created.blocks!.slice(0,-1)).toEqual(initial.blocks);
+ act(()=>canvasState.current.onConnect("q",nav.id,"new"));
+ const connected=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition;
+ expect(connected.blocks).toHaveLength(initial.blocks!.length+1);
+ expect(connected.blocks!.find(block=>block.id==="q")!.transitions).toEqual([{to:nav.id}]);
+ expect(connected.blocks!.find(block=>block.id===nav.id)!.kind).toBe("navigation");
+ expect(connected.entry_points).toEqual(initial.entry_points);
+});
+it("creates a root entrance on an empty map and completes it with a new visual step",()=>{
+ const initial={...definition,schema_version:4 as const,blocks:[],entry_points:[],entry_block_id:null};const change=vi.fn();
+ function Harness(){const [d,setD]=useState<ScenarioDraftDefinition>(initial);return <MemoryRouter><ScenarioMapWorkbench definition={d} catalog={catalog} existing disabled={false} onChange={next=>{change(next);setD(next);}}/></MemoryRouter>;}
+ render(<Harness/>);
+ fireEvent.click(screen.getByRole("button",{name:"+ Вход из каталога"}));
+ const pending=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition,entry=pending.editor_layout!.pending_entrances![0];
+ expect(pending.blocks).toEqual([]);expect(pending.entry_block_id).toBeNull();expect(pending.entry_points).toEqual([]);
+ const bounds=screen.getByRole("complementary",{name:"Библиотека блоков"}).parentElement!;vi.spyOn(bounds,"getBoundingClientRect").mockReturnValue({left:0,top:0,width:900,height:500} as DOMRect);
+ act(()=>canvasState.current.onConnectionDrop({type:"entrance",key:entry.key,point:{x:500,y:200}}));
+ fireEvent.click(screen.getByRole("menuitem",{name:"Вопрос"}));
+ const next=change.mock.calls.at(-1)![0] as ScenarioDraftDefinition;
+ expect(next.blocks).toHaveLength(1);expect(next.blocks![0].kind).toBe("form_page");
+ expect(next.entry_points?.[0]).toMatchObject({key:entry.key,target_block_id:next.blocks![0].id});
+ expect(next.entry_block_id).toBe(next.blocks![0].id);expect(next.editor_layout?.pending_entrances).toEqual([]);
 });

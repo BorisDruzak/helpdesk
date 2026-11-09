@@ -9,9 +9,15 @@ function asset(name: string, index: number): ScenarioAttachment {
   return {asset_id: id, name, mime_type: name.endsWith(".png") ? "image/png" : "text/plain", size_bytes: 100, url: `/api/web/request-scenario-assets/${id}/download`};
 }
 async function openMap(page: Page) {
+  await page.route("**/api/web/notifications/push/config", route => route.fulfill({json: {status: "ok", enabled: false, public_key: null}}));
+  await page.route("**/request-studio/fragments", route => route.fulfill({json: {status: "success", data: {items: [], total: 0}}}));
   await page.goto("/app/admin/request-template-studio");
-  await page.getByRole("region", {name: "Каталог услуг", exact: true}).getByRole("button", {name: "Настроить услугу Проблемы с печатью", exact: true}).click();
-  await page.getByRole("button", {name: "Открыть карту сценария", exact: true}).click();
+  await page.getByRole("button", {name: "Настроить услугу Проблемы с печатью", exact: true}).dblclick();
+}
+async function editBlock(page: Page, id: string, title: string) {
+  await page.getByRole("list", {name: "Блоки сценария"}).getByRole("button", {name: title, exact: true}).click();
+  await page.locator(`[data-id="${id}"]`).getByRole("button", {name: "Редактировать", exact: true}).click();
+  await page.getByRole("button", {name: "Развернуть редактор", exact: true}).click();
 }
 for (const width of [1366, 390]) {
   test(`Studio saves files with field help and instructions at ${width}`, async ({page}, info) => {
@@ -29,21 +35,19 @@ for (const width of [1366, 390]) {
     });
     await page.route("**/api/web/request-scenario-assets/*/download", route => route.fulfill({contentType: "image/png", body: Buffer.from(png, "base64")}));
     await openMap(page);
-    await page.getByRole("list", {name: "Блоки сценария"}).getByRole("button", {name: "Тип проблемы", exact: true}).click();
+    await editBlock(page, "q1", "Тип проблемы");
     await page.getByLabel('Прикрепить скриншоты или файлы', {exact: true}).setInputFiles(files);
     await expect(page.getByRole("button", {name: "Открыть изображение example.png", exact: true})).toBeVisible();
-    await page.getByRole("button", {name: "Сохранить черновик", exact: true}).click();
-    await expect.poll(() => state.writes.length).toBe(1);
-    await page.getByRole("list", {name: "Блоки сценария"}).getByRole("button", {name: "Памятка", exact: true}).click();
+    await expect.poll(() => state.writes.filter(value => value === "draft").length).toBeGreaterThanOrEqual(1);
+    await page.getByRole("button", {name: "Вернуться к карте", exact: true}).click();
+    await editBlock(page, "instruction", "Памятка");
     await page.getByLabel('Прикрепить скриншоты или файлы', {exact: true}).setInputFiles(files);
     await expect(page.getByRole("link", {name: "steps.txt", exact: true})).toBeVisible();
     await page.getByRole("textbox", {name: "Текст инструкции", exact: true}).fill("Инструкция и два приложенных файла");
-    await page.getByRole("button", {name: "Сохранить черновик", exact: true}).click();
-    await expect.poll(() => state.writes.length).toBe(2);
+    await expect.poll(() => state.definition().blocks!.some(block => block.kind === "instruction" && block.content.body === "Инструкция и два приложенных файла" && block.content.attachments?.length === 2)).toBe(true);
     await page.reload();
-    await page.getByRole("region", {name: "Каталог услуг", exact: true}).getByRole("button", {name: "Настроить услугу Проблемы с печатью", exact: true}).click();
-    await page.getByRole("button", {name: "Открыть карту сценария", exact: true}).click();
-    await page.getByRole("list", {name: "Блоки сценария"}).getByRole("button", {name: "Памятка", exact: true}).click();
+    await page.getByRole("button", {name: "Настроить услугу Проблемы с печатью", exact: true}).dblclick();
+    await editBlock(page, "instruction", "Памятка");
     await expect(page.getByRole("textbox", {name: "Текст инструкции", exact: true})).toHaveValue("Инструкция и два приложенных файла");
     await page.getByRole("button", {name: "Открыть изображение example.png", exact: true}).click();
     await expect(page.getByRole("dialog", {name: "Просмотр изображения: example.png", exact: true})).toBeVisible();
@@ -75,6 +79,8 @@ async function requesterFixture(page: Page) {
     if (path.endsWith("/session/me")) data = {user_login: "requester-files", actor_role: "user", default_workspace: "requester", available_workspaces: ["requester"], permissions: ["workspace.requester.view"]};
     else if (path.endsWith("/bootstrap")) data = {profile_completion: {complete: true}, devices: [], account_summary: {linked_profile: true}, feature_flags: {requester_ticket_create: true, requester_no_device_create: true}, policies: {}};
     else if (path.endsWith("unread_count")) return route.fulfill({json: {status: "ok", unread_count: 0}});
+    else if (path.endsWith("/notifications/push/config")) return route.fulfill({json: {status: "ok", enabled: false, public_key: null}});
+    else if (path.endsWith("/requester/catalog-events")) data = {accepted: true};
     else if (path.endsWith("/consents")) data = {consents: []};
     else if (path.includes("/request-scenario-assets/")) return route.fulfill({contentType: "image/png", body: Buffer.from(png, "base64")});
     else if (path.endsWith("/attachments") && request.method() === "POST") {
@@ -173,9 +179,13 @@ test("Studio copy saves materials under the new scenario scope", async ({page}) 
   });
   await openMap(page);
   await page.getByRole("button", {name: "Создать копию", exact: true}).click();
-  await page.getByRole("button", {name: "Сохранить черновик", exact: true}).click();
+  const save = page.getByRole("button", {name: "Сохранить черновик", exact: true});
+  if (await save.isEnabled()) await save.click();
+  await expect.poll(() => creates).toBe(1);
   await expect(page.getByText(/Черновик сохранён/).first()).toBeVisible();
-  await page.getByRole("list", {name: "Блоки сценария"}).getByRole("button", {name: "Тип проблемы", exact: true}).click();
+  const back = page.getByRole("button", {name: "Вернуться к карте", exact: true});
+  if (await back.isVisible()) await back.click();
+  await editBlock(page, "q1", "Тип проблемы");
   await expect(page.getByRole("img", {name: "Миниатюра: example.png", exact: true})).toHaveAttribute("src", copied.url);
   expect(creates).toBe(1); expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });

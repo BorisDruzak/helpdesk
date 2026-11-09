@@ -54,3 +54,29 @@ it("opens processing for an unavailable policy without choosing a start block", 
   expect(screen.getByLabelText("Название услуги")).not.toBeVisible();
   expect(change).not.toHaveBeenCalled();
 });
+
+it.each([["title", "Название услуги"], ["service_code", "Раздел каталога"]])("opens metadata issue %s in publication settings without a map node", async (path,label) => {
+ const change=mount("required",path);
+ fireEvent.click(await screen.findByRole("button",{name:"Исправить: Настройки услуги"}));
+ expect(screen.getByRole("region",{name:"Публикация сценария"})).toBeVisible();
+ expect(screen.getByLabelText(label)).toBeVisible();
+ expect(screen.getByRole("button",{name:"Настройки услуги"})).toHaveAttribute("aria-expanded","true");
+ expect(change).not.toHaveBeenCalled();
+});
+
+it.each([["title", "Название услуги"], ["category_id", "Категория (необязательно)"]])("keeps repeated repair focus on requested metadata %s after real processing effects",async(path,label)=>{
+ mount("required",path);
+ const repair=await screen.findByRole("button",{name:"Исправить: Настройки услуги"});
+ for(let attempt=0;attempt<2;attempt++){
+  fireEvent.click(repair);await screen.findByLabelText("Сроки обслуживания");
+  await waitFor(()=>expect(screen.getByLabelText(label)).toHaveFocus());
+  expect(screen.getByRole("region",{name:"Обработка услуги"})).not.toHaveFocus();
+  screen.getByRole("button",{name:"Настройки услуги"}).focus();
+ }
+});
+
+it("focuses the visible catalogue subsection when a requested section field is locked",async()=>{
+ mount("required","service_code");fireEvent.click(await screen.findByRole("button",{name:"Исправить: Настройки услуги"}));
+ await screen.findByLabelText("Сроки обслуживания");await waitFor(()=>expect(screen.getByText("Раздел и категория",{selector:"summary"})).toHaveFocus());
+ expect(screen.getByLabelText("Раздел каталога")).toBeDisabled();
+});

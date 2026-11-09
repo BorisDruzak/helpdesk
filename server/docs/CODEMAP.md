@@ -1075,3 +1075,5 @@ reuse existing authorized mutations. Quality labels reuse the Russian quality di
 problem-read failures remain distinct from empty links. SLA history has a separate
 filtered history read and displays only SLA/OLA event types. No new API, migration,
 dependency or change to Endpoint contracts. See `docs/UNIFIED_TICKET_2026_11_09.md`.
+
+Studio entry-first editor: scenario-map-canvas.tsx renders catalogue entrances as root cards without the metadata Start node or incoming entrance edges; existing implicit/named entry wire semantics remain unchanged. Incoming links to actual navigation blocks render directly, ordinary transition cards remain. scenario-wizard.tsx opens new-service metadata on publication (including before detail/save); publication service settings own former Start fields and validation destinations. Workbench library/context menus create independent pending entrances; toolbar groups rare actions under Ещё. No route, runtime, schema or migration change; see docs/UNIFIED_SERVICE_SCENARIOS.md.

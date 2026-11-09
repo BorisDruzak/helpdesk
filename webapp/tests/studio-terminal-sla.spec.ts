@@ -1,7 +1,7 @@
 import { expect, test } from "playwright/test";
 import { installStudioV3Fixture } from "./fixtures/studio-v3";
 
-for (const width of [1366,1920]) test(`Start sections and terminal SLA ${width}`, async ({ page }, info) => {
+for (const width of [1366,1920]) test(`publication metadata and terminal SLA ${width}`, async ({ page }, info) => {
   await page.setViewportSize({width,height:width===1366?768:1080});
   const state=await installStudioV3Fixture(page);
   state.definition().schema_version=4; state.definition().execution_semantics=3;
@@ -9,12 +9,14 @@ for (const width of [1366,1920]) test(`Start sections and terminal SLA ${width}`
   await page.route("**/request-studio/fragments",r=>r.fulfill({json:{status:"success",data:{items:[],total:0}}}));
   await page.goto("/app/admin/request-template-studio");
   await page.getByRole("button",{name:"Настроить услугу Проблемы с печатью",exact:true}).dblclick();
-  await page.getByRole("button",{name:"Начало: Раздел и категория",exact:true}).click();
+  await page.getByRole("button",{name:"Опубликовать",exact:true}).click();
+  await page.getByRole("button",{name:"Настройки услуги",exact:true}).click();
+  await page.getByText("Раздел и категория",{exact:true}).click();
   await expect(page.getByRole("combobox",{name:"Раздел каталога",exact:true})).toBeVisible();
-  await page.getByRole("button",{name:"Начало: Входы в каталог",exact:true}).click();
-  await expect(page.getByRole("button",{name:"Настроить вход Быстрый вход",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Вернуться к карте",exact:true}).click();
+  await expect(page.locator('[data-scenario-edge="studio:entry-point:special"]')).toBeVisible();
   await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Передать в поддержку",exact:true}).click();
-  await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();
+  await page.locator('[data-id="end"]').getByRole("button",{name:"Редактировать",exact:true}).click();
   await page.getByRole("button",{name:"Развернуть редактор",exact:true}).click();
   const final=page.getByRole("region",{name:"SLA завершения",exact:true});
   await expect(final).toBeVisible();

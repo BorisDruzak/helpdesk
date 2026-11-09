@@ -79,7 +79,7 @@ for (const width of [1366, 1920]) {
     await page.getByRole("separator", { name: "Высота редактора", exact: true }).press("End");
     await expect.poll(() => inlineEditor.evaluate(element => element.clientHeight)).toBeGreaterThan(160);
     expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? 'null'), sizePreferenceKey)).toEqual(preferredSize);
-    await page.getByRole("button", { name: "Редактировать выбранный блок", exact: true }).click();
+    await page.locator('.studio-map-toolbar > details > summary').click();await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();await page.locator('.studio-map-toolbar > details > summary').click();
     await page.getByRole("button", { name: "Вся карта", exact: true }).click();
     await page.locator('[data-scenario-edge="q1:0"] input').fill("Проверить принтер");
     await page.locator('[data-scenario-edge="q1:0"] input').press("Enter");

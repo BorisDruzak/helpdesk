@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { AdminRequestTemplateStudioPage } from "./request-template-studio-page";
+vi.mock("../../features/settings/api",()=>({fetchWebSettingsPayload:vi.fn(async()=>({queues:[],calendars:[]}))}));
 vi.mock("../../features/auth/session-provider", () => ({ useSession: () => ({ session: { actor_role: "admin" } }) }));
 const offering = { full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" };
 const catalog = { categories: [], services: [{ code: "it", public_title: "ИТ" }], offerings: [offering], entries: [{ offering, scenarios: [], active_mode: "form", category_ids: [] }], scenarios: [], total: 1, offset: 0, limit: 100 };
@@ -16,7 +17,7 @@ it("creates a local map from the service creation choice without server writes",
  expect(screen.queryByLabelText("Способ помощи")).not.toBeInTheDocument();
  fireEvent.change(screen.getByLabelText("Название услуги"),{target:{value:"Выдать доступ"}});
  fireEvent.change(screen.getByLabelText("Раздел каталога"),{target:{value:"it"}});
- expect(await screen.findByRole("heading",{name:"Библиотека блоков"})).toBeVisible();expect(fetcher.mock.calls.every(([,init])=>!["POST","PUT","DELETE"].includes(init?.method??"GET"))).toBe(true);
+ expect(screen.getByRole("region",{name:"Публикация сценария"})).toBeVisible();fireEvent.click(screen.getByRole("button",{name:"Вернуться к карте"}));expect(await screen.findByRole("heading",{name:"Библиотека блоков"})).toBeVisible();expect(fetcher.mock.calls.every(([,init])=>!["POST","PUT","DELETE"].includes(init?.method??"GET"))).toBe(true);
 });
 it("renders only offering cards supplied by the catalog projection",async()=>{
  const vpn={...offering,full_code:"it.vpn",public_title:"VPN"};vi.stubGlobal("fetch",vi.fn(async()=>response({...catalog,offerings:[offering,vpn]})));mount();
@@ -27,8 +28,8 @@ it.each([0,2])("discards old map edits before choosing a service with %i maps",a
  const definition={scenario_key:"existing",title:"Карта принтера",service_code:"it",offering_full_code:offering.full_code,blocks:[],process_binding:{request_template_key:"printer"}};const item={...definition,id:"s1",archived:false};const maps=Array.from({length:mapCount},(_,index)=>({...item,id:`vpn-${index}`,title:`VPN ${index}`,offering_full_code:other.full_code}));
  const data={...catalog,offerings:[offering,other],scenarios:[item,...maps],entries:[{offering,scenarios:[item],active_mode:"form",category_ids:[]},{offering:other,scenarios:maps,active_mode:"form",category_ids:[]}]};
  const fetcher=vi.fn(async(url:unknown,_init?:RequestInit)=>response(String(url).includes("/scenarios/s1")?{scenario:item,draft:{revision:3,definition}}:data));vi.stubGlobal("fetch",fetcher);mount();
- fireEvent.click(await screen.findByRole("button",{name:"Настроить услугу Карта принтера"}));fireEvent.click(screen.getByRole("button",{name:"Открыть карту сценария"}));await waitFor(()=>expect(screen.getByLabelText("Название услуги")).toHaveValue("Карта принтера"));
- vi.useFakeTimers();fireEvent.change(screen.getByLabelText("Название услуги"),{target:{value:"Отброшенная правка"}});fireEvent.click(screen.getByRole("button",{name:"Каталог"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Настроить услугу Карта принтера"}));fireEvent.click(screen.getByRole("button",{name:"Открыть карту сценария"}));await screen.findByRole("button",{name:"Опубликовать"});fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));fireEvent.click(screen.getByRole("button",{name:"Настройки услуги"}));await waitFor(()=>expect(screen.getByLabelText("Название услуги")).toHaveValue("Карта принтера"));
+ vi.useFakeTimers();fireEvent.change(screen.getByLabelText("Название услуги"),{target:{value:"Отброшенная правка"}});fireEvent.click(screen.getByRole("button",{name:"Вернуться к карте"}));fireEvent.click(screen.getByRole("button",{name:"Каталог"}));
  await act(async()=>{await vi.advanceTimersByTimeAsync(1500);});expect(fetcher.mock.calls.some(([,init])=>init?.method==="PUT")).toBe(false);
  fireEvent.click(screen.getByRole("button",{name:"Уйти без сохранения"}));fireEvent.click(screen.getByRole("button",{name:mapCount===0?"Настроить услугу VPN":"Настроить услугу VPN 0"}));
  if(mapCount===0){expect(screen.queryByRole("button",{name:/Открыть карту сценария/})).not.toBeInTheDocument();expect(screen.getByRole("button",{name:"Перенести в сценарий"})).toBeVisible();}

@@ -11,7 +11,8 @@ vi.mock("./scenario-simulation",()=>({ScenarioSimulationPanel:({revision,onState
 vi.mock("./scenario-author-attachments",()=>({ScenarioAuthorAttachmentProvider:({children}:any)=>children}));
 vi.mock("./scenario-requester-preview",()=>({ScenarioPagePreview:()=> <section aria-label="Страница сотрудника">Визуальное оформление черновика</section>}));
 it("opens employee visual preview from the top actions even for an unsaved draft",()=>{
- render(<ScenarioWizard definition={{scenario_key:"test",blocks:[],process_binding:{request_template_key:"t"}} as never} detail={null} catalog={{offerings:[]} as never} disabled={false} dirty onChange={vi.fn()}/>);
+ render(<ScenarioWizard definition={{scenario_key:"test",blocks:[],process_binding:{request_template_key:"t"}} as never} detail={null} catalog={{offerings:[],services:[],categories:[]} as never} disabled={false} dirty onChange={vi.fn()}/>);
+ fireEvent.click(screen.getByRole("button",{name:"Вернуться к карте"}));
  fireEvent.click(screen.getByRole("button",{name:"Как у сотрудника"}));
  expect(screen.getByRole("region",{name:"Страница сотрудника"})).toBeVisible();
 });

@@ -96,7 +96,7 @@ export function ScenarioEmployeePreview({ definition, detail, ensureSaved, onSta
     }, 300);
   }
   if (!flow.length) return <p role="status">Добавьте первый блок на карту, чтобы пройти сценарий.</p>;
-  if (!hasEntry) return <p role="status">Соедините «Начало» с первым блоком сценария.</p>;
+  if (!hasEntry) return <p role="status">Соедините вход из каталога с первым блоком сценария.</p>;
   return <section className="grid min-w-0 gap-4 rounded-panel border border-slate-200 bg-white p-5" aria-label="Блок глазами сотрудника" aria-busy={busy}>
     {(definition.entry_points?.filter(item => item.enabled !== false).length ?? 0) > 0 && <label>Вход из каталога<select className="field-base block w-full" value={entry} disabled={busy} onChange={event => setEntry(event.target.value)}><option value="">Основной вход</option>{definition.entry_points?.filter(item => item.enabled !== false).map(item => <option key={item.key} value={item.key}>{item.title}</option>)}</select></label>}
     {busy && !block && <p role="status">Подготавливаем черновик и открываем первый шаг…</p>}

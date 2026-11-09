@@ -9,6 +9,7 @@ vi.mock("../../features/request-template-studio/scenario-map-canvas", () => ({
   metadataNodeId: "studio:metadata", transitionId: (source: string, index: number) => `${source}:${index}`, entranceEdgeId: (key: string | null) => `entry:${key}`,
   ScenarioMapCanvas: ({ expandedId, inlineEditor }: { expandedId?: string | null; inlineEditor?: React.ReactNode }) => <div aria-label="Визуальная карта сценария">{expandedId && inlineEditor}</div>,
 }));
+vi.mock("../../features/settings/api",()=>({fetchWebSettingsPayload:vi.fn(async()=>({queues:[],calendars:[]}))}));
 vi.mock("../../features/auth/session-provider", () => ({ useSession: () => ({ session: { actor_role: "admin" } }) }));
 const category = { id: "c1", parent_id: null, service_code: "it", title: "Оборудование", slug: "hardware", description: "", sort_order: 0, revision: 1, visibility: "internal", lifecycle_status: "draft" };
 const catalog = { categories: [category], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [], total: 0, offset: 0, limit: 100 };
@@ -24,7 +25,7 @@ async function start(kind="Простая заявка", _bound=false) {
  await ready();fireEvent.click(await screen.findByRole("button",{name:"Создать услугу"}));
  fireEvent.change(screen.getByLabelText("Название услуги"),{target:{value:"Выдать доступ"}});
  fireEvent.change(screen.getByLabelText("Раздел каталога"),{target:{value:"it"}});
- if(kind!=="Пустая карта")fireEvent.click(screen.getByRole("button",{name:"+ Вопрос"}));
+ if(kind!=="Пустая карта"){fireEvent.click(screen.getByRole("button",{name:"Вернуться к карте"}));fireEvent.click(screen.getByRole("button",{name:"+ Вопрос"}));}
  await screen.findByLabelText("Визуальная карта сценария");
 }
 
@@ -44,5 +45,5 @@ describe("Guided Studio workflow",()=>{
  it("saves a new v4 map through automatic internal binding without publication",async()=>{const fetcher=mock();mount();await start("Простая заявка",true);fireEvent.click(screen.getByRole("button",{name:"Сохранить черновик"}));expect(await screen.findByText("Черновик сохранён. Ревизия 1.")).toBeVisible();const body=JSON.parse(String(fetcher.mock.calls.find(([,init])=>init?.method==="POST")?.[1]?.body));expect(body.definition.blocks.map((b:{kind:string})=>b.kind)).toEqual(["form_page"]);expect(body.definition.offering_full_code).toBe("");expect(body.definition.schema_version).toBe(4);expect(body.definition.execution_semantics).toBe(3);expect(fetcher.mock.calls.some(([url])=>String(url).includes("/publish"))).toBe(false);});
  it("keeps three sections and contextual testing",async()=>{mock();mount();await start();expect(screen.getByRole("navigation",{name:"Разделы Студии"})).toBeVisible();expect(screen.getByRole("button",{name:"Согласования"})).toBeVisible();fireEvent.click(screen.getByRole("button",{name:"Тестировать"}));expect(screen.getByText("Сначала сохраните сценарий.")).toBeVisible();});
  it("requires an explicit decision before replacing unsaved edits",async()=>{mock();mount();await start();fireEvent.change(screen.getByLabelText("Что спросить?"),{target:{value:"Мой вопрос"}});fireEvent.click(screen.getByRole("button",{name:"Создать услугу"}));expect(screen.getByText("Переключить карту без сохранения локальных изменений?" )).toBeVisible();fireEvent.click(screen.getByRole("button",{name:"Отмена"}));expect(screen.getByLabelText("Что спросить?")).toHaveValue("Мой вопрос");});
- it("selects the service category once on Start",async()=>{const fetcher=mock();mount();await start("Пустая карта");fireEvent.change(screen.getByLabelText("Категория (необязательно)"),{target:{value:"c1"}});expect(screen.getByLabelText("Категория (необязательно)")).toHaveValue("c1");expect(fetcher.mock.calls.some(([url,init])=>init?.method==="POST"&&String(url).includes("categories"))).toBe(false);});
+ it("selects the service category once in publication settings",async()=>{const fetcher=mock();mount();await start("Пустая карта");fireEvent.change(screen.getByLabelText("Категория (необязательно)"),{target:{value:"c1"}});expect(screen.getByLabelText("Категория (необязательно)")).toHaveValue("c1");expect(fetcher.mock.calls.some(([url,init])=>init?.method==="POST"&&String(url).includes("categories"))).toBe(false);});
 });

@@ -15,7 +15,7 @@ vi.mock("./scenario-publication-settings", () => ({ ScenarioPublicationSettings:
 vi.mock("./scenario-publication", () => ({ ScenarioPublication: ({ onBack, onIssue, settingsPanel }: any) => <section aria-label="Публикация сценария"><h1>Публикация сценария</h1>{settingsPanel}<button onClick={onBack}>Вернуться к карте</button><button onClick={() => onIssue({ step: 1, blockId: "submit", label: "Завершение" })}>Исправить завершение</button><button onClick={() => onIssue({ step: 2, policy: "sla", label: "Сроки" })}>Исправить сроки</button></section> }));
 vi.mock("./scenario-author-attachments", () => ({ ScenarioAuthorAttachmentProvider: ({ children }: any) => children }));
 afterEach(cleanup);
-const props: any = { definition: { scenario_key: "s", blocks: [], process_binding: {} }, detail: { scenario: { id: "s" }, draft: { revision: 1 } }, catalog: { offerings: [] }, dirty: false, disabled: false, onChange: vi.fn() };
+const props: any = { definition: { scenario_key: "s", blocks: [], process_binding: {} }, detail: { scenario: { id: "s" }, draft: { revision: 1 } }, catalog: { offerings: [], services: [], categories: [] }, dirty: false, disabled: false, onChange: vi.fn() };
 it("opens publication as a separate page while keeping the map mounted with its local context", () => {
   render(<ScenarioWizard {...props} />);
   fireEvent.change(screen.getByRole("textbox", { name: "Положение карты" }), { target: { value: "выбранный блок" } });
@@ -45,4 +45,26 @@ it("keeps service-wide remediation on publication and reopens the same setting r
  fireEvent.click(screen.getByRole("button", { name: "Исправить сроки" }));
  expect(screen.getByText("sla:3")).toBeVisible();
  expect(screen.queryByRole("region", { name: "Карта" })).not.toBeInTheDocument();
+});
+
+it("opens new service settings before first save and preserves map choice after autosave",()=>{
+ const definition={...props.definition,title:"Новая услуга",service_code:"it"};
+ const view=render(<ScenarioWizard {...props} definition={definition} detail={null}/>);
+ expect(screen.getByRole("region",{name:"Публикация сценария"})).toBeVisible();
+ expect(screen.getByLabelText("Название услуги")).toBeVisible();
+ fireEvent.change(screen.getByLabelText("Название услуги"),{target:{value:"Сервис печати"}});
+ expect(props.onChange).toHaveBeenCalledWith(expect.objectContaining({title:"Сервис печати"}));
+ view.rerender(<ScenarioWizard {...props} definition={definition}/>);
+ expect(screen.getByLabelText("Название услуги")).toBeVisible();
+ fireEvent.click(screen.getByRole("button",{name:"Вернуться к карте"}));
+ expect(screen.getByRole("region",{name:"Карта"})).toBeVisible();
+ view.rerender(<ScenarioWizard {...props} definition={{...definition,title:"Сервис печати"}}/>);
+ expect(screen.getByRole("region",{name:"Карта"})).toBeVisible();
+});
+it("opens existing service metadata from an explicit publication settings button",()=>{
+ render(<ScenarioWizard {...props}/>);
+ expect(screen.getByRole("region",{name:"Карта"})).toBeVisible();
+ fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));
+ fireEvent.click(screen.getByRole("button",{name:"Настройки услуги"}));
+ expect(screen.getByLabelText("Название услуги")).toBeVisible();
 });

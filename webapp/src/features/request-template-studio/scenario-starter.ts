@@ -5,7 +5,7 @@ export type ScenarioStarter = "simple" | "diagnostic" | "empty";
 export const starterChoices: { kind: ScenarioStarter; title: string; description: string; route: string }[] = [
   { kind: "simple", title: "Простая заявка", description: "Собрать ответы и передать обращение в поддержку", route: "Пункт каталога → вопрос → сводка → создать обращение" },
   { kind: "diagnostic", title: "Диагностика проблемы", description: "Помочь сотруднику и проверить, удалось ли решить проблему", route: "Инструкция → проверка → подтверждённое решение или обращение" },
-  { kind: "empty", title: "Пустая карта", description: "Самостоятельно добавить первый шаг и построить маршрут", route: "Настройки карты и действие «Добавить первый шаг»" },
+  { kind: "empty", title: "Пустая карта", description: "Самостоятельно добавить первый шаг и построить маршрут", route: "Настройки услуги на публикации, затем вход из каталога на карте" },
 ];
 
 /** Editable schema-v3 drafts, never publication or catalog mutations. */

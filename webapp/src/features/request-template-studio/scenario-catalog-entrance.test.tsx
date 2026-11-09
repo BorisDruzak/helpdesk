@@ -40,3 +40,13 @@ it("allows natural multiword typing and replacement before committing the pendin
  render(<Harness/>);const input=screen.getByLabelText("Название входа") as HTMLInputElement;
  fireEvent.change(input,{target:{value:""}});for(const letter of "Вход в отдел поддержки")fireEvent.change(input,{target:{value:input.value+letter}});expect(input).toHaveValue("Вход в отдел поддержки");fireEvent.blur(input);expect(commit).toHaveBeenLastCalledWith("Вход в отдел поддержки");
 });
+
+it("keeps keyboard completion collapsed and excludes attachments while respecting read-only mode",()=>{
+ const connect=vi.fn();
+ const blocks=[...draft.blocks!,{id:"policy",kind:"sla_attachment" as const,title:"Политика SLA"}];
+ render(<ScenarioCatalogEntrance entry={{key:"pending-key",title:"Новый вход",position:{x:0,y:0}}} blocks={blocks} onConnect={connect} disabled onTitle={vi.fn()} onRemove={vi.fn()}/>);
+ const summary=screen.getByText("Подключение с клавиатуры",{selector:"summary"});expect(summary.closest("details")).not.toHaveAttribute("open");
+ fireEvent.click(summary);const select=screen.getByLabelText("Первый блок для сотрудника");expect(select).toBeDisabled();
+ expect(screen.queryByRole("option",{name:"Политика SLA"})).not.toBeInTheDocument();expect(screen.getByRole("option",{name:"Вопрос"})).toBeInTheDocument();
+ fireEvent.change(select,{target:{value:"q"}});expect(connect).not.toHaveBeenCalled();
+});

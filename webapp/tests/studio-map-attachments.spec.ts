@@ -14,7 +14,7 @@ for(const width of [1366,1920]) test(`attached policies and direct map editors $
  await expect(page.getByRole("dialog",{name:"Предпросмотр полной страницы",exact:true})).toBeVisible();
  await page.getByRole("button",{name:"Вернуться к карте",exact:true}).click();
  await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Тип проблемы",exact:true}).click();
- await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();
+ await page.locator('.studio-map-toolbar > details > summary').click();await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();await page.locator('.studio-map-toolbar > details > summary').click();
  await expect(page.getByText("Подсказка сотруднику (необязательно)",{exact:true})).toBeVisible();
  await page.getByRole("textbox",{name:"Подсказка к вопросу",exact:true}).fill("Найдите имя принтера на наклейке.");
  await page.getByRole("button",{name:"Как у сотрудника",exact:true}).click();
@@ -33,7 +33,7 @@ for(const width of [1366,1920]) test(`attached policies and direct map editors $
  });
  await page.mouse.move(questionBlank.x,questionBlank.y);await page.mouse.down();await page.mouse.move(questionBlank.x+30,questionBlank.y+20,{steps:8});await page.mouse.up();
  await expect.poll(async()=>Math.round((await questionNode.boundingBox())!.x-questionBefore.x)).toBeGreaterThan(20);
- await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();
+ await page.locator('.studio-map-toolbar > details > summary').click();await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();await page.locator('.studio-map-toolbar > details > summary').click();
  await page.getByRole("button",{name:"Вся карта",exact:true}).click();
  const edge=page.locator('[data-scenario-edge="q1:0"]');
  await edge.getByRole("button",{name:"Редактировать переход",exact:true}).click();
@@ -56,7 +56,7 @@ for(const width of [1366,1920]) test(`attached policies and direct map editors $
  await page.getByRole("combobox",{name:"Маршрут обработки",exact:true}).selectOption("network");
  await expect.poll(()=>state.definition().blocks?.filter(b=>b.kind==="routing_attachment").length).toBe(1);
  const routeId=state.definition().blocks!.find(b=>b.kind==="routing_attachment")!.id;
- await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();
+ await page.locator('.studio-map-toolbar > details > summary').click();await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();await page.locator('.studio-map-toolbar > details > summary').click();
  await page.getByRole("button",{name:"Вся карта",exact:true}).click();
  const source=page.locator(`[data-id="${routeId}"] .react-flow__handle[data-handleid="policy"]`),target=page.locator('[data-id="q1"] .react-flow__handle.target');
  await expect(source).toBeInViewport();await expect(target).toBeInViewport();
@@ -65,7 +65,7 @@ for(const width of [1366,1920]) test(`attached policies and direct map editors $
  await expect.poll(()=>state.definition().blocks!.find(b=>b.id===routeId)?.kind==="routing_attachment"?(state.definition().blocks!.find(b=>b.id===routeId) as {attached_to?:string}).attached_to:undefined).toBe("q1");
  expect(state.definition().blocks!.filter(b=>b.kind.endsWith("_attachment")).every(b=>!Object.hasOwn(b,"transitions")&&!Object.hasOwn(b,"transition_mode"))).toBe(true);
  await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Передать в поддержку",exact:true}).click();
- await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();
+ await page.locator('.studio-map-toolbar > details > summary').click();await page.getByRole("button",{name:"Редактировать выбранный блок",exact:true}).click();await page.locator('.studio-map-toolbar > details > summary').click();
  await page.getByRole("button",{name:"Развернуть редактор",exact:true}).click();
  await expect(page.getByRole("combobox",{name:"Маршрут при создании обращения",exact:true})).toBeVisible();
  await page.getByRole("combobox",{name:"Маршрут при создании обращения",exact:true}).selectOption("support");

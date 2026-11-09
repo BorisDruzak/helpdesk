@@ -15,7 +15,7 @@ export function ScenarioMapLinkCard({ link, selected, editor, preferenceKey, get
   const [title,setTitle]=useState(link.title);
   useEffect(()=>setTitle(link.title),[link.title]);
   return <div data-scenario-edge={link.edgeId} className={`studio-map-node studio-map-link-card${selected ? " is-selected" : ""}${editor ? " is-expanded" : ""}`} onDoubleClick={event=>{event.stopPropagation();if(!(event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable]")))link.select();}}>
-    <Handle type="target" id="in" position={Position.Left} isConnectable={false}/>
+    {!link.entrance && <Handle type="target" id="in" position={Position.Left} isConnectable={false}/>}
     <Handle type="source" id="out" position={Position.Right} isConnectable={!link.disabled} aria-label={`Изменить назначение «${link.title}»`}/>
     <div className="studio-map-node__kind">{link.entrance ? "Вход из каталога" : "Переход"}</div>
     <p className="studio-map-link-card__context">{link.context}</p>

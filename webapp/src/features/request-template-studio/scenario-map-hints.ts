@@ -24,10 +24,10 @@ export function scenarioMapHints(definition: ScenarioDraftDefinition): MapHint[]
   const result = blocks.find(block => block.kind === "submit_ticket");
   if ((definition.schema_version ?? 1) < 2 && !definition.offering_full_code) add("offering", "Выберите тип обращения, чтобы сохранить черновик.", result?.id);
   else if ((definition.schema_version ?? 1) < 2 && !definition.process_binding.request_template_key) add("template", "Для обращения не выбран шаблон заявки.", result?.id);
-  if (!definition.title.trim()) add("title", "Укажите название в настройках карты.");
-  if (!blocks.length) hints.push({ code: "blocks", text: "Добавьте первый шаг: вопрос или инструкцию.", target: "blocks", level: "required" });
+  if (!definition.title.trim()) add("title", "Укажите название в настройках услуги на странице публикации.");
+  if (!blocks.length) hints.push({ code: "blocks", text: "Начните с входа из каталога и соедините его с вопросом или инструкцией.", target: "blocks", level: "required" });
   else {
-    if (!definition.entry_block_id || !ids.has(definition.entry_block_id)) add("start", "Соедините «Начало» с первым вопросом или инструкцией.");
+    if (!definition.entry_block_id || !ids.has(definition.entry_block_id)) add("start", "Соедините вход из каталога с первым вопросом или инструкцией.");
     for (const entry of definition.entry_points ?? []) if (!ids.has(entry.target_block_id)) add("entry_target", `«${entry.title}»: пункт каталога не связан с блоком.`, entry.target_block_id);
     if (!blocks.some(block => terminal(block.kind))) hints.push({ code: "result", text: "Добавьте «Результат»: создание обращения или завершение без обращения.", target: "blocks", level: "required" });
     const reached = new Set<string>(), pending = [definition.entry_block_id, ...(definition.entry_points ?? []).map(entry => entry.target_block_id)].filter((id): id is string => !!id);
@@ -48,6 +48,6 @@ export function scenarioMapHints(definition: ScenarioDraftDefinition): MapHint[]
       for (const edge of block.transitions ?? []) routes.push({ id: edge.to, confirmed: state.confirmed || (block.kind === "resolution_check" && confirmsResolution(edge.when)) });
     }
   }
-  if (!(definition.entry_points ?? []).length) hints.push({ code: "catalog_entrances", text: "Проведите линию от «Начала» к блоку, чтобы создать пункт каталога.", level: "suggestion" });
+  if (!(definition.entry_points ?? []).length) hints.push({ code: "catalog_entrances", text: "Добавьте вход из каталога и соедините его с первым шагом.", level: "suggestion" });
   return hints;
 }
