@@ -18,7 +18,7 @@ export function ScenarioPublicationSettings({ definition, disabled, onChange, re
  useEffect(() => { if (!processing) return; let active = true; setFailed(false); void fetchWebSettingsPayload().then(value => { if (active) setRegistry(value); }).catch(() => { if (active) setFailed(true); }); return () => { active = false; }; }, [attempt, !!processing]);
  const { queues, defaultCode } = scenarioQueueSettings(registry);
  const common = queues.find(queue => queue.code === defaultCode);
- const missingRoutes = processing ? Object.entries(processing.routes).filter(([, route]) => !route.queue_code || (!!registry && !queues.some(queue => queue.code === route.queue_code))) : [];
+ const missingRoutes = processing ? Object.entries(processing.routes).filter(([, route]) => !route.queue_code || (!!registry && !registry.queues.some(queue => queue.is_active && queue.code === route.queue_code))) : [];
  return <section ref={sectionRef} tabIndex={-1} aria-label="Обработка услуги" className="scenario-publication-section space-y-4">
   <h2>Обработка услуги</h2>
   <p className="text-sm text-slate-600">Общие правила действуют для всей услуги. Блоки маршрута и SLA на карте уточняют их для пройденного пути. Приоритет и сроки рассчитываются по ответам и действующим правилам.</p>

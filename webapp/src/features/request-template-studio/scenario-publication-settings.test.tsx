@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ScenarioPublicationSettings } from "./scenario-publication-settings";
+import { fetchWebSettingsPayload } from "../settings/api";
 import type { ScenarioDraftDefinition } from "./scenario-contract";
 vi.mock("../settings/api", () => ({ fetchWebSettingsPayload: vi.fn(async () => ({ queues: [{ code: "common", name: "Общая поддержка", is_active: true }], calendars: [], ticket_settings: { operational_flags: { queue_mode: "unified", take_queue_common_code: "common" } } })) }));
 vi.mock("./scenario-processing", () => ({ ScenarioProcessing: () => <p>Политики услуги</p> }));
@@ -22,6 +23,14 @@ it("repairs a selected direction with the configured common queue only on explic
  render(<ScenarioPublicationSettings definition={definition} disabled={false} onChange={change} requestId={0} />);
  fireEvent.click(await screen.findByRole("button", { name: "Использовать общую очередь «Общая поддержка»" }));
  expect(change).toHaveBeenCalledWith({ ...definition, processing: { ...definition.processing, routes: { desk: { title: "Поддержка", queue_code: "common" } } } });
+});
+it("accepts active historical queues while offering repair for an inactive queue", async () => {
+ vi.mocked(fetchWebSettingsPayload).mockResolvedValueOnce({ queues: [{ code: "common", name: "Общая поддержка", is_active: true }, { code: "historical", name: "Историческая очередь", is_active: true }, { code: "disabled", name: "Отключённая очередь", is_active: false }], calendars: [], ticket_settings: { operational_flags: { queue_mode: "unified", take_queue_common_code: "common" } } } as unknown as Awaited<ReturnType<typeof fetchWebSettingsPayload>>);
+ const change=vi.fn();
+ render(<ScenarioPublicationSettings definition={{...definition,processing:{...definition.processing!,routes:{old:{title:"Старое направление",queue_code:"historical"},disabled:{title:"Отключённое направление",queue_code:"disabled"}}}}} disabled={false} onChange={change} requestId={0}/>);
+ expect(await screen.findByText(/В направлении «Отключённое направление» не выбрана действующая очередь/)).toBeInTheDocument();
+ expect(screen.queryByText(/В направлении «Старое направление» не выбрана действующая очередь/)).not.toBeInTheDocument();
+ expect(change).not.toHaveBeenCalled();
 });
 
 it("manages v3 route and SLA definitions on publication without upgrading or changing defaults", async () => {
