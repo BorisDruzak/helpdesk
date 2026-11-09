@@ -759,6 +759,7 @@ def _build_support_sla_ola_payload(ticket, now: datetime | None = None) -> Suppo
             breached_attr="ola_ack_breached_at",
             paused_attr="ola_paused_at",
             paused_seconds_attr="ola_paused_seconds",
+            completed_attr="ola_ack_at",
             now=now,
         ),
         ola_processing=_ticket_timer_payload(
@@ -767,6 +768,7 @@ def _build_support_sla_ola_payload(ticket, now: datetime | None = None) -> Suppo
             breached_attr="ola_processing_breached_at",
             paused_attr="ola_paused_at",
             paused_seconds_attr="ola_paused_seconds",
+            completed_attr="ola_processing_at",
             now=now,
         ),
     )
