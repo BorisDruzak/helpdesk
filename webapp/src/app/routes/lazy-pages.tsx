@@ -143,3 +143,5 @@ export const AdminRegistryPage = lazy(() =>
 export const AdminRequestTemplateStudioPage = lazy(() =>
   import("../../pages/admin/request-template-studio-page").then((module) => ({ default: module.AdminRequestTemplateStudioPage })),
 );
+
+export const ServiceSettingsPage = lazy(() => import("../../pages/settings").then(module => ({default: module.ServiceSettingsPage})));

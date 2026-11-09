@@ -245,14 +245,14 @@ export const appNavigation: AppNavItem[] = [
     order: 40,
   },
   {
-    label: "Настройки",
-    description: "Политики и интеграции",
+    label: "Мои настройки",
+    description: "Личные уведомления и рабочее место",
     icon: Settings2,
     section: "support",
     workspace: "support",
     domainId: "support-primary",
     to: "/app/settings",
-    permission: "settings.view",
+    permission: "workspace.support.view",
     order: 50,
   },
   {
@@ -439,8 +439,8 @@ export const appNavigation: AppNavItem[] = [
     order: 20,
   },
   {
-    label: "Настройки",
-    description: "Уведомления и политики",
+    label: "Настройки службы",
+    description: "Общие политики и состояние службы",
     icon: Settings2,
     section: "admin",
     workspace: "admin",

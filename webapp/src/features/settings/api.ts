@@ -272,11 +272,12 @@ export type NotificationsPayload = {
 };
 
 export type TechAlertItem = {
+  id: string;
   kind: string;
-  severity: "danger" | "info" | "neutral" | "success" | "warning";
-  title: string;
-  description: string;
-  action: string | null;
+  severity: string;
+  summary: string;
+  details: Record<string, unknown>;
+  link: string | null;
 };
 
 export type TechAlertsPayload = {

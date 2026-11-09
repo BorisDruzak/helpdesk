@@ -1103,3 +1103,8 @@ Support queue mini: `SimpleSupportQueue` provides five colored status filters, t
 Support queue preview: ticket navigation preserves adjacent/mini mode, and only successful work-start/claim automatically collapses. Direct previews begin expanded; full-list selection opens adjacent.144px miniatures add subject previews, sticky controls, unread/active cues. Supersedes the earlier ticket-entry-collapse rule; see `docs/SUPPORT_QUEUE_PREVIEW.md`. No API/schema change.
 
 Support queue rows: simple queue rows open the detailed ticket without starting work; action column/topmode selector removed, mobile controls remain in ticket actions. OLA remains a policy reference, not a visual scenario block. See `docs/SUPPORT_QUEUE_ROW_OPEN.md`. No API/schema change.
+
+
+## Personal and service settings (2026-11-10)
+
+`/app/settings` renders personal notifications and existing browser workspace preferences without requesting the service-settings payload. `/app/admin/settings` renders URL-addressable service sections; admin workspace and existing server permission checks remain authoritative. `webapp/src/pages/settings/` separates page orchestration, draft state, mutations, bounded editors and form/workflow mapping. Draft groups survive background cache updates and sibling saves; navigation and refresh guard unsaved work. Explicit create selections never fall back to an existing object. Technical alerts consume the provider summary/details/link DTO. Missing duration/matrix rows remain unset. No API routes, database schema or Endpoint contract changed. See `docs/SETTINGS_REFACTOR_2026_11_10.md`.

@@ -35,6 +35,7 @@ import {
   RequesterTicketsPage,
   RequesterTicketChatPage,
   SettingsPage,
+  ServiceSettingsPage,
   TicketDetailPage,
   TicketListPage,
   TicketPassportPrintPage,
@@ -587,7 +588,7 @@ export const appRoutes: RouteObject[] = [
             path: "admin/settings",
             element: (
               <WorkspaceAccessGate workspace="admin">
-                <SettingsPage />
+                <ServiceSettingsPage />
               </WorkspaceAccessGate>
             )
           }
