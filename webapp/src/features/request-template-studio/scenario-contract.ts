@@ -48,7 +48,7 @@ export type ScenarioBlock = BlockBase & (
   | { kind: "instruction"; content: { format?: "markdown" | "plain"; body: string; attachments?: ScenarioAttachment[]; rich_document?: ScenarioRichDocument | null }; acknowledgment_required?: boolean }
   | { kind: "navigation" }
   | { kind: "sla"; processing_facts?: ScenarioProcessingFacts | null; sla_profile?: string | null; policy_ref?: string | null }
-  | { kind: "sla_attachment"; attached_to?: string | null; processing_facts?: ScenarioProcessingFacts | null; sla_profile?: string | null; policy_ref?: string | null }
+  | { kind: "sla_attachment"; attached_to?: string | null; processing_facts?: ScenarioProcessingFacts | null; sla_profile?: string | null; policy_ref?: string | null; ola_targets?: ScenarioOlaTargets | null; ola_policy_ref?: string | null }
   | { kind: "ola_attachment"; attached_to?: string | null; targets?: ScenarioOlaTargets | null; policy_ref?: string | null }
   | { kind: "routing_attachment"; attached_to?: string | null; route?: string | null; policy_ref?: string | null }
   | { kind: "decision" }

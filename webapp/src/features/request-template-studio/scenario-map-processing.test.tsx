@@ -27,7 +27,7 @@ it("edits map-local durations and chooses trusted queues/calendars without creat
  fireEvent.click(screen.getByRole("button", { name: "Добавить направление" }));
  expect(screen.queryByRole("option", { name: "Отключена" })).not.toBeInTheDocument();
  fireEvent.change(screen.getByLabelText("Очередь Helpdesk"), { target: { value: "support" } });
- fireEvent.click(screen.getByRole("button", { name: "Добавить профиль SLA" }));
+ fireEvent.click(screen.getByRole("button", { name: "Добавить профиль сроков для сотрудника" }));
  fireEvent.change(screen.getByLabelText("Название профиля"), { target: { value: "Срочный" } });
  fireEvent.change(screen.getByLabelText("Первый ответ"), { target: { value: "30" } });
  fireEvent.change(screen.getByLabelText("Единица срока решения"), { target: { value: "60" } });

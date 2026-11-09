@@ -136,6 +136,7 @@ def validate_scenario(definition):
                 add("unsafe_instruction", path, "Instructions cannot contain HTML or executable links")
 
     attachment_targets = set()
+    internal_deadline_targets = set()
     for block in definition.blocks:
         if block.kind not in MODIFIER_KINDS:
             continue
@@ -146,6 +147,11 @@ def validate_scenario(definition):
         elif (block.kind, block.attached_to) in attachment_targets:
             add("duplicate_attachment", path, "Only one setting of each kind may attach to a block")
         attachment_targets.add((block.kind, block.attached_to))
+        has_internal = block.kind == "ola_attachment" or block.kind == "sla_attachment" and (block.ola_targets is not None or block.ola_policy_ref)
+        if has_internal:
+            if block.attached_to in internal_deadline_targets:
+                add("duplicate_attachment", path, "У блока уже есть внутренние сроки поддержки. Оставьте одну настройку внутренних сроков.")
+            internal_deadline_targets.add(block.attached_to)
     if definition.entry_block_id in blocks and blocks[definition.entry_block_id].kind in MODIFIER_KINDS:
         add("modifier_flow_target", "entry_block_id", "A setting cannot be a flow entrance")
     if definition.entry_block_id not in blocks:
@@ -187,13 +193,13 @@ def validate_scenario(definition):
                     add("invalid_processing_source", f"blocks.{block.id}.{policy_field}", f"Map-owned {label} cannot select a registry policy")
                 if profile and definition.processing is None:
                     add("processing_reference_unknown", f"blocks.{block.id}.{profile_field}", f"{label} value requires map processing")
-        if block.kind in {"ola_attachment", "submit_ticket"} and definition.schema_version == 4:
+        if block.kind in {"ola_attachment", "sla_attachment", "submit_ticket"} and definition.schema_version == 4:
             targets = block.targets if block.kind == "ola_attachment" else block.ola_targets
             policy = block.policy_ref if block.kind == "ola_attachment" else block.ola_policy_ref
             if targets is not None and policy:
-                add("invalid_ola", f"blocks.{block.id}", "Выберите сроки OLA или опубликованное правило OLA, одновременно выбрать нельзя.")
+                add("invalid_ola", f"blocks.{block.id}", "Выберите ручные внутренние сроки или опубликованное правило, одновременно выбрать нельзя.")
             if block.kind == "ola_attachment" and targets is None and not policy:
-                add("ola_unconfigured", f"blocks.{block.id}", "Укажите сроки подтверждения и обработки или выберите опубликованное правило OLA.")
+                add("ola_unconfigured", f"blocks.{block.id}", "Укажите сроки назначения исполнителя и обработки группой или выберите опубликованное правило внутренних сроков.")
         if block.kind in MODIFIER_KINDS:
             continue
         terminal = block.kind in {"finish", "submit_ticket"}

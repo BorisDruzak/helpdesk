@@ -5,7 +5,7 @@ export const blockLabels: Record<ScenarioBlock["kind"], string> = {
   form_page: "Страница вопросов", instruction: "Инструкция", decision: "Условие",
   resolution_check: "Проверка результата", diagnostic: "Диагностика",
   review: "Просмотр ответов", submit_ticket: "Создание обращения", finish: "Завершение без обращения",
-  navigation: "Переходы", sla: "SLA · последовательный блок", sla_attachment: "SLA", ola_attachment: "OLA", routing_attachment: "Маршрут",
+  navigation: "Переходы", sla: "Сроки · последовательный блок", sla_attachment: "Сроки обработки", ola_attachment: "Внутренние сроки поддержки", routing_attachment: "Маршрут",
 };
 export const fieldLabels: Record<ScenarioFieldType, string> = {
   text: "Короткий текст", textarea: "Длинный текст", select: "Список", multi_select: "Несколько вариантов",

@@ -3117,3 +3117,7 @@ Goal: fix audited settings defects, separate personal/service configuration, dep
 
 ### Studio OLA blocks
 - 2026-11-10: Add v4 OLA policy attachments, retained-route/terminal precedence, published-rule or manual calendar-minute targets, typed fragments, server simulation/publication and guarded staging enablement. Preserve old schemas, services, drafts and support UI. Focused/backend/frontend/native/browser validation recorded in tmp/studio-ola-block-20261110 and docs/STUDIO_OLA_BLOCKS.md.
+
+# Unified processing deadlines — 2026-11-10
+
+One Russian «Сроки обработки» attachment combines employee and internal support settings independently. Existing SLA/OLA JSON, published services, drafts and user browser tabs are preserved. Plan: `docs/superpowers/plans/2026-11-10-unified-timing.md`. Focused checks:479 backend,445 frontend and4 native browser tests passed. Staging install and live save/reload/compatibility verification pending; production excluded.

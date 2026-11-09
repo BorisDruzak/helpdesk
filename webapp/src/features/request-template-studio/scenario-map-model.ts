@@ -7,9 +7,9 @@ export const mapPalette: { kind: ScenarioBlock["kind"]; label: string }[] = [
   { kind: "form_page", label: "Вопрос" }, { kind: "instruction", label: "Инструкция" },
   { kind: "decision", label: "Условие" }, { kind: "resolution_check", label: "Проверка результата" },
   { kind: "submit_ticket", label: "Результат" },
-  { kind: "navigation", label: "Переходы · кнопки" }, { kind: "sla_attachment", label: "SLA" }, { kind: "ola_attachment", label: "OLA" }, { kind: "routing_attachment", label: "Маршрут" },
+  { kind: "navigation", label: "Переходы · кнопки" }, { kind: "sla_attachment", label: "Сроки обработки" }, { kind: "routing_attachment", label: "Маршрут" },
 ];
-export const mapKindLabel = (kind: ScenarioBlock["kind"]) => kind === "finish" ? "Результат" : kind === "sla" ? "SLA · последовательный блок" : mapPalette.find(item => item.kind === kind)?.label ?? kind;
+export const mapKindLabel = (kind: ScenarioBlock["kind"]) => kind === "finish" ? "Результат" : kind === "sla" ? "Сроки · последовательный блок" : kind === "ola_attachment" ? "Внутренние сроки поддержки" : mapPalette.find(item => item.kind === kind)?.label ?? kind;
 export const terminal = (kind: ScenarioBlock["kind"]) => kind === "finish" || kind === "submit_ticket";
 export const catalogEntranceSourceId = "studio:metadata";
 
@@ -141,7 +141,7 @@ export function insertOnTransition(definition: ScenarioDraftDefinition, source: 
 export function addMapBlock(definition: ScenarioDraftDefinition, kind: ScenarioBlock["kind"], position: { x: number; y: number }) {
   if (["sla", "navigation", "sla_attachment", "ola_attachment", "routing_attachment"].includes(kind) && definition.schema_version !== 4) throw new Error("Сначала включите новые возможности карты. Существующие услуги сохраняют прежние правила.");
   if ((definition.blocks?.length ?? 0) >= 256) throw new Error("Достигнут лимит 256 шагов карты");
-  const next = isPolicyAttachment(kind) ? { ...definition, blocks: [...definition.blocks ?? [], { id: newKey("block"), title: kind === "sla_attachment" ? "SLA" : kind === "ola_attachment" ? "OLA" : "Маршрут", kind } as ScenarioBlock] } : addBlock(definition, kind, null);
+  const next = isPolicyAttachment(kind) ? { ...definition, blocks: [...definition.blocks ?? [], { id: newKey("block"), title: kind === "sla_attachment" ? "Сроки обработки" : kind === "ola_attachment" ? "Внутренние сроки поддержки" : "Маршрут", kind } as ScenarioBlock] } : addBlock(definition, kind, null);
   return positionBlock(next, next.blocks![next.blocks!.length - 1].id, position);
 }
 /** Contextual addition is one undoable mutation. Existing branches are never guessed. */

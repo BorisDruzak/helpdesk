@@ -78,7 +78,7 @@ it.each([false, true])("shows canonical facts and processing with canonical OLA 
   fireEvent.click(screen.getByRole("button", { name: "Начать проверку" }));
   await screen.findByText("Весь отдел");
   expect(screen.getByText("Кого затронуло? → Проверка ответов → Отправка")).toBeInTheDocument();
-  expect(screen.getByText(configured ? "Подтверждение поддержки: 15 мин.; обработка: 60 мин." : "Внутренние сроки поддержки не настроены.")).toBeInTheDocument();
+  expect(screen.getByText(configured ? "Внутренние сроки поддержки: назначение исполнителя: 15 мин.; обработка группой: 60 мин." : "Внутренние сроки поддержки не настроены.")).toBeInTheDocument();
   expect(screen.getByText("При закрытии обязательны итог для сотрудника и код решения.")).toBeInTheDocument();
   expect(screen.getByText("Уведомления не отправлялись. Правила для групп: участники очереди.")).toBeInTheDocument();
 });

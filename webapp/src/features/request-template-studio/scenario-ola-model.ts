@@ -16,7 +16,10 @@ export function summarizeTerminalOla(definition: ScenarioDraftDefinition, blockI
   if (current.visited.includes(block.id)) { cyclic = true; continue; }
   const route = [...current.route, block.title]; let selection = current.selection;
   if (definition.schema_version === 4) {
-   for (const setting of policyAttachmentsFor(definition, block.id)) if (setting.kind === "ola_attachment" && (setting.targets || setting.policy_ref)) selection = { targets: setting.targets, policy_ref: setting.policy_ref, source: `блок «${setting.title}» у «${block.title}»` };
+   for (const setting of policyAttachmentsFor(definition, block.id)) {
+    const value = setting.kind === "ola_attachment" ? setting : setting.kind === "sla_attachment" ? {targets:setting.ola_targets,policy_ref:setting.ola_policy_ref} : {};
+    if (value.targets || value.policy_ref) selection = { targets:value.targets,policy_ref:value.policy_ref,source:`блок «${setting.title}» у «${block.title}»` };
+   }
    if (block.id === blockId && block.kind === "submit_ticket" && !inheritOnly && (block.ola_targets || block.ola_policy_ref)) selection = { targets: block.ola_targets, policy_ref: block.ola_policy_ref, source: "настройка завершающего блока" };
   }
   if (block.id === blockId) { alternatives.push({ ...selection, route }); continue; }

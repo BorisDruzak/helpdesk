@@ -42,7 +42,7 @@ it("keeps SLA and routing policies with identical codes in independent mappings"
  fireEvent.click(await screen.findByRole("button", { name: /Разные правила/ }));
  await waitFor(() => expect(screen.getByRole("option", { name: "SLA shared" })).toBeInTheDocument());
  const insert = screen.getByRole("button", { name: "Вставить фрагмент" });
- fireEvent.change(screen.getByLabelText("Правило SLA: Исходный SLA"), { target: { value: "shared" } }); expect(insert).toBeDisabled();
+ fireEvent.change(screen.getByLabelText("Правило сроков для сотрудника: Исходный SLA"), { target: { value: "shared" } }); expect(insert).toBeDisabled();
  fireEvent.change(screen.getByLabelText("Правило маршрутизации: Исходный маршрут"), { target: { value: "shared" } }); expect(insert).toBeEnabled();
  fireEvent.click(insert);
  await waitFor(() => expect(insertApi).toHaveBeenCalled());

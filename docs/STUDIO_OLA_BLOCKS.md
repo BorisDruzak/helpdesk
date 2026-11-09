@@ -1,6 +1,6 @@
 # OLA blocks in Request Studio
 
-Administrators can add **OLA** from the block library or map context menu in a version 4 scenario. Drag its purple setting link onto a question, instruction, navigation step or result. It is an attachment, never an employee step or an executable transition. Only one OLA attachment of this kind may be connected to a target; SLA and routing attachments remain independent.
+Administrators configure internal deadlines through **«Сроки обработки»** in the block library or map context menu. Its employee and internal deadline sections remain independent. Existing separate OLA attachments remain editable without rewriting their stored definitions. Drag the purple setting link onto a question, instruction, navigation step or result; it never becomes an employee step or executable transition. See [combined deadlines](STUDIO_PROCESSING_DEADLINES.md).
 
 Choose a published OLA policy or enter acknowledgment and processing durations. Manual values are whole calendar minutes from 1 to 525600. Both values belong to one assignment; selecting a policy clears manual targets and selecting manual targets clears the policy. The built-in OLA fragment provides an instruction, terminal and an attached editable 15/240-minute example.
 

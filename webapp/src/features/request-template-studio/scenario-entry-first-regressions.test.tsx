@@ -46,17 +46,17 @@ it.each([true,false])("invalidates history safely after map SLA creation and pub
  mount({...initial,blocks:[...initial.blocks!,{id:"legacy-sla",kind:"sla",title:"Сроки карты",transitions:[]}]});
  fireEvent.click(within(screen.getByRole("list",{name:"Блоки сценария"})).getByRole("button",{name:"Сроки карты"}));
  fireEvent.click(screen.getByRole("button",{name:"Редактировать выбранный блок"}));
- fireEvent.click(screen.getByRole("button",{name:"Создать профиль SLA"}));
+ fireEvent.click(screen.getByRole("button",{name:"Создать профиль сроков для сотрудника"}));
  const key=Object.keys(draft().processing!.sla_profiles)[0];
- expect(draft().processing!.sla_profiles[key]).toEqual({title:"Новый профиль SLA",first_response_minutes:30,resolution_minutes:480,time_basis:"calendar"});
+ expect(draft().processing!.sla_profiles[key]).toEqual({title:"Новый профиль сроков для сотрудника",first_response_minutes:30,resolution_minutes:480,time_basis:"calendar"});
  fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));
- fireEvent.click(screen.getByRole("button",{name:"Настроить направления и профили карты"}));fireEvent.click(screen.getByRole("button",{name:"Профили SLA карты"}));
+ fireEvent.click(screen.getByRole("button",{name:"Настроить направления и профили карты"}));fireEvent.click(screen.getByRole("button",{name:"Профили сроков карты"}));
  if(renamed)fireEvent.change(within(screen.getByRole("region",{name:"Публикация сценария"})).getByLabelText("Название профиля"),{target:{value:"Переименованный профиль"}});
- fireEvent.change(screen.getByLabelText("Резервный профиль SLA"),{target:{value:key}});
+ fireEvent.change(screen.getByLabelText("Резервный профиль сроков для сотрудника"),{target:{value:key}});
  fireEvent.click(screen.getByRole("button",{name:"Вернуться к карте"}));
  for(const name of ["Отменить изменение","Повторить изменение"]){
   expect(screen.getByRole("button",{name})).toBeDisabled();fireEvent.click(screen.getByRole("button",{name}));
-  const value=draft();expect(value.processing!.sla_profiles[key]).toEqual({title:renamed?"Переименованный профиль":"Новый профиль SLA",first_response_minutes:30,resolution_minutes:480,time_basis:"calendar"});
+  const value=draft();expect(value.processing!.sla_profiles[key]).toEqual({title:renamed?"Переименованный профиль":"Новый профиль сроков для сотрудника",first_response_minutes:30,resolution_minutes:480,time_basis:"calendar"});
   expect(value.processing!.sla_profiles[value.processing!.defaults.sla_profile]).toBeDefined();
   const block=value.blocks!.find(block=>block.id==="legacy-sla")!;
   if(block.kind!=="sla")throw new Error("Expected legacy SLA block");
@@ -68,8 +68,8 @@ it("cannot restore a map assignment after its profile is explicitly deleted in p
  const profile={title:"Старый профиль",first_response_minutes:30,resolution_minutes:480,time_basis:"calendar" as const};
  mount({...initial,processing:{...initial.processing!,sla_profiles:{old:profile}},blocks:[...initial.blocks!,{id:"legacy-sla",kind:"sla",title:"Сроки карты",sla_profile:"old",transitions:[]}]});
  fireEvent.click(within(screen.getByRole("list",{name:"Блоки сценария"})).getByRole("button",{name:"Сроки карты"}));fireEvent.click(screen.getByRole("button",{name:"Редактировать выбранный блок"}));
- fireEvent.change(screen.getByLabelText("Профиль SLA"),{target:{value:""}});expect(screen.getByRole("button",{name:"Отменить изменение"})).toBeEnabled();
- fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));fireEvent.click(screen.getByRole("button",{name:"Настроить направления и профили карты"}));fireEvent.click(screen.getByRole("button",{name:"Профили SLA карты"}));
+ fireEvent.change(screen.getByLabelText("Профиль сроков для сотрудника"),{target:{value:""}});expect(screen.getByRole("button",{name:"Отменить изменение"})).toBeEnabled();
+ fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));fireEvent.click(screen.getByRole("button",{name:"Настроить направления и профили карты"}));fireEvent.click(screen.getByRole("button",{name:"Профили сроков карты"}));
  fireEvent.click(screen.getByRole("button",{name:"Удалить профиль"}));fireEvent.click(screen.getByRole("button",{name:"Вернуться к карте"}));
  expect(screen.getByRole("button",{name:"Отменить изменение"})).toBeDisabled();expect(screen.getByRole("button",{name:"Повторить изменение"})).toBeDisabled();expect(draft().processing!.sla_profiles).toEqual({});
  const block=draft().blocks!.find(block=>block.id==="legacy-sla")!;expect(block.kind==="sla"&&block.sla_profile).toBeNull();
@@ -77,7 +77,7 @@ it("cannot restore a map assignment after its profile is explicitly deleted in p
 it("preserves the current complete 32-profile collection instead of restoring historical dictionaries",()=>{
  const profiles=Object.fromEntries(Array.from({length:32},(_,index)=>[`profile-${index}`,{title:`Профиль ${index}`,first_response_minutes:30,resolution_minutes:480,time_basis:"calendar" as const}]));
  mount({...initial,processing:{...initial.processing!,sla_profiles:profiles}});fireEvent.click(screen.getByRole("button",{name:"+ Инструкция"}));
- fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));fireEvent.click(screen.getByRole("button",{name:"Настроить направления и профили карты"}));fireEvent.click(screen.getByRole("button",{name:"Профили SLA карты"}));
+ fireEvent.click(screen.getByRole("button",{name:"Опубликовать"}));fireEvent.click(screen.getByRole("button",{name:"Настроить направления и профили карты"}));fireEvent.click(screen.getByRole("button",{name:"Профили сроков карты"}));
  fireEvent.change(within(screen.getByRole("region",{name:"Публикация сценария"})).getByLabelText("Название профиля"),{target:{value:"Новые сроки"}});fireEvent.click(screen.getByRole("button",{name:"Вернуться к карте"}));
  expect(screen.getByRole("button",{name:"Отменить изменение"})).toBeDisabled();expect(Object.keys(draft().processing!.sla_profiles)).toHaveLength(32);
  expect(draft().processing!.sla_profiles["profile-0"]).toEqual({...profiles["profile-0"],title:"Новые сроки"});

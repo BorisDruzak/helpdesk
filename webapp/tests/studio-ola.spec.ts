@@ -1,23 +1,25 @@
 import { expect, test } from "playwright/test";
 import { installStudioV3Fixture } from "./fixtures/studio-v3";
 
-for (const width of [1366, 1920]) test(`visual OLA attachment and terminal override ${width}`, async ({page}, info) => {
+for (const width of [1366, 1920]) test(`legacy internal deadlines stay editable ${width}`, async ({page}, info) => {
  await page.setViewportSize({width,height:width===1366?768:1080});
  const state=await installStudioV3Fixture(page);
  state.definition().schema_version=4;state.definition().execution_semantics=3;
+ state.definition().blocks!.push({id:"legacy_ola",kind:"ola_attachment",title:"Прежние внутренние сроки",attached_to:"q1",targets:{ack_minutes:7,processing_minutes:43}});
  await page.route("**/api/web/notifications/push/config",r=>r.fulfill({json:{status:"ok",enabled:false,public_key:null}}));
  await page.route("**/request-studio/fragments",r=>r.fulfill({json:{status:"success",data:{items:[],total:0}}}));
  await page.goto("/app/admin/request-template-studio");
  await page.getByRole("button",{name:"Настроить услугу Проблемы с печатью",exact:true}).dblclick();
- await page.getByRole("button",{name:"+ OLA",exact:true}).click();
- const card=page.locator('.react-flow__node').filter({has:page.locator('.studio-map-node__kind',{hasText:/^OLA$/})});
- await page.getByRole("combobox",{name:"Способ задания OLA",exact:true}).selectOption("targets");
- await page.getByRole("spinbutton",{name:"Подтверждение, мин.",exact:true}).fill("7");
- await page.getByRole("spinbutton",{name:"Обработка, мин.",exact:true}).fill("43");
- await page.getByRole("combobox",{name:"Применять OLA к блоку",exact:true}).selectOption("q1");
+ await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Прежние внутренние сроки",exact:true}).click();
+ await page.locator('[data-id="legacy_ola"]').getByRole("button",{name:"Редактировать",exact:true}).click();
+ const card=page.locator('.react-flow__node').filter({has:page.locator('.studio-map-node__kind',{hasText:/^Внутренние сроки поддержки$/})});
+ await page.getByRole("combobox",{name:"Способ задания внутренних сроков",exact:true}).selectOption("targets");
+ await page.getByRole("spinbutton",{name:"Назначение исполнителя, мин.",exact:true}).fill("7");
+ await page.getByRole("spinbutton",{name:"Обработка группой, мин.",exact:true}).fill("43");
+ await page.getByRole("combobox",{name:"Применять внутренние сроки к блоку",exact:true}).selectOption("q1");
  await page.getByRole("button",{name:"Свернуть редактор",exact:true}).click();
  await page.getByRole("button",{name:"Вся карта",exact:true}).click();
- const source=await card.getByLabel("Подключить настройку «OLA» к блоку",{exact:true}).boundingBox();
+ const source=await card.getByLabel("Подключить настройку «Прежние внутренние сроки» к блоку",{exact:true}).boundingBox();
  const target=await page.locator('[data-id="end"]').getByLabel("Вход блока «Передать в поддержку»",{exact:true}).boundingBox();
  expect(source).toBeTruthy();expect(target).toBeTruthy();
  await page.mouse.move(source!.x+source!.width/2,source!.y+source!.height/2);await page.mouse.down();await page.mouse.move(target!.x+target!.width/2,target!.y+target!.height/2,{steps:24});await page.mouse.up();
@@ -26,14 +28,14 @@ for (const width of [1366, 1920]) test(`visual OLA attachment and terminal overr
  await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Передать в поддержку",exact:true}).click();
  await page.locator('[data-id="end"]').getByRole("button",{name:"Редактировать",exact:true}).click();
  await page.getByRole("button",{name:"Развернуть редактор",exact:true}).click();
- const terminal=page.getByRole("region",{name:"OLA завершения",exact:true});
- await expect(terminal).toContainText("Подтверждение: 7 мин. · обработка: 43 мин.");
- await terminal.getByRole("combobox",{name:"Способ задания OLA",exact:true}).selectOption("targets");
- await terminal.getByRole("spinbutton",{name:"Подтверждение, мин.",exact:true}).fill("3");
- await terminal.getByRole("spinbutton",{name:"Обработка, мин.",exact:true}).fill("20");
+ const terminal=page.getByRole("region",{name:"Внутренние сроки завершения",exact:true});
+ await expect(terminal).toContainText("Назначение исполнителя: 7 мин. · обработка группой: 43 мин.");
+ await terminal.getByRole("combobox",{name:"Способ задания внутренних сроков",exact:true}).selectOption("targets");
+ await terminal.getByRole("spinbutton",{name:"Назначение исполнителя, мин.",exact:true}).fill("3");
+ await terminal.getByRole("spinbutton",{name:"Обработка группой, мин.",exact:true}).fill("20");
  await expect.poll(()=>state.definition().blocks!.find(b=>b.id==="end")?.ola_targets?.ack_minutes).toBe(3);
  await terminal.scrollIntoViewIfNeeded();
- await page.screenshot({path:info.outputPath(`ola-terminal-${width}.png`),fullPage:true});
+ await page.screenshot({path:info.outputPath(`legacy-timing-terminal-${width}.png`),fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.getByRole("button",{name:"Вернуться к карте",exact:true}).click();
  await expect(page.getByRole("button",{name:"Опубликовать",exact:true})).toBeInViewport();

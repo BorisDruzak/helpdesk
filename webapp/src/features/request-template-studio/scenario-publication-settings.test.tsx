@@ -11,10 +11,10 @@ const definition: ScenarioDraftDefinition = { schema_version: 4, scenario_key: "
 it("keeps fallbacks optional and does not duplicate profile editors or mutate on opening", async () => {
  const change = vi.fn();
  render(<ScenarioPublicationSettings definition={definition} disabled={false} onChange={change} requestId={1} focus="sla" />);
- expect(screen.getByLabelText("Резервный профиль SLA")).toHaveFocus();
- expect(screen.getByLabelText("Резервный профиль SLA")).toHaveValue("");
+ expect(screen.getByLabelText("Резервный профиль сроков для сотрудника")).toHaveFocus();
+ expect(screen.getByLabelText("Резервный профиль сроков для сотрудника")).toHaveValue("");
  expect(screen.getAllByRole("option", { name: "Рассчитать по правилам услуги/пройденному пути" })).toHaveLength(2);
- expect(screen.queryByRole("button", { name: "Добавить профиль SLA" })).not.toBeInTheDocument();
+ expect(screen.queryByRole("button", { name: "Добавить профиль сроков для сотрудника" })).not.toBeInTheDocument();
  await screen.findByRole("button", { name: "Использовать общую очередь «Общая поддержка»" });
  expect(change).not.toHaveBeenCalled();
 });
@@ -40,9 +40,9 @@ it("manages v3 route and SLA definitions on publication without upgrading or cha
  fireEvent.click(screen.getByRole("button", { name: "Настроить направления и профили карты" }));
  const queue = await screen.findByLabelText("Очередь Helpdesk");
  fireEvent.change(queue, { target: { value: "common" } });
- fireEvent.click(screen.getByRole("button", { name: "Профили SLA карты" }));
+ fireEvent.click(screen.getByRole("button", { name: "Профили сроков карты" }));
  fireEvent.change(screen.getByLabelText("Срок решения"), { target: { value: "125" } });
- fireEvent.click(screen.getByRole("button", { name: "Добавить профиль SLA" }));
+ fireEvent.click(screen.getByRole("button", { name: "Добавить профиль сроков для сотрудника" }));
  fireEvent.change(screen.getByLabelText("Название профиля"), { target: { value: "Для отдельной ветви" } });
  const saved = JSON.parse(screen.getByTestId("draft").textContent!);
  expect(saved.schema_version).toBe(3);
@@ -56,7 +56,7 @@ it("edits an unbound v4 profile without creating or changing fallback assignment
  const value = { ...definition, processing: { ...definition.processing!, sla_profiles: { branch: { title: "Из перехода", first_response_minutes: 10, resolution_minutes: 90, time_basis: "calendar" as const } } } };
  render(<ScenarioPublicationSettings definition={value} disabled={false} onChange={change} requestId={0} />);
  fireEvent.click(screen.getByRole("button", { name: "Настроить направления и профили карты" }));
- fireEvent.click(screen.getByRole("button", { name: "Профили SLA карты" }));
+ fireEvent.click(screen.getByRole("button", { name: "Профили сроков карты" }));
  fireEvent.change(screen.getByLabelText("Срок решения"), { target: { value: "140" } });
  expect(change).toHaveBeenLastCalledWith({ ...value, processing: { ...value.processing, sla_profiles: { branch: { ...value.processing.sla_profiles.branch, resolution_minutes: 140 } } } });
 });

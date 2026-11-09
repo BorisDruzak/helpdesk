@@ -1,6 +1,9 @@
 import type { ScenarioBlock, ScenarioDraftDefinition } from "./scenario-contract";
 
 export type PolicyAttachmentBlock = Extract<ScenarioBlock, { kind: "sla_attachment" | "ola_attachment" | "routing_attachment" }>;
+function hasInternalDeadlines(block: PolicyAttachmentBlock) {
+ return block.kind === "ola_attachment" || block.kind === "sla_attachment" && !!(block.ola_targets || block.ola_policy_ref);
+}
 export function isPolicyAttachment(block: ScenarioBlock | ScenarioBlock["kind"] | undefined): block is PolicyAttachmentBlock {
  const kind = typeof block === "string" ? block : block?.kind;
  return kind === "ola_attachment" || kind === "sla_attachment" || kind === "routing_attachment";
@@ -13,10 +16,11 @@ export function connectPolicyAttachment(definition: ScenarioDraftDefinition, att
  if (definition.schema_version !== 4) throw new Error("Прикреплённые настройки доступны в версии 4 карты");
  const attachment = definition.blocks?.find(block => block.id === attachmentId);
  const target = definition.blocks?.find(block => block.id === targetId);
- if (!attachment || !isPolicyAttachment(attachment)) throw new Error("Выберите карточку настройки SLA, OLA или маршрута");
+ if (!attachment || !isPolicyAttachment(attachment)) throw new Error("Выберите карточку сроков обработки или маршрута");
  if (!target) throw new Error("Выберите существующий блок для настройки");
  if (isPolicyAttachment(target)) throw new Error("Нельзя прикрепить настройку к другой настройке. Выберите шаг или результат.");
- if (policyAttachmentsFor(definition, targetId).some(block => block.kind === attachment.kind && block.id !== attachmentId)) throw new Error(`У блока «${target.title}» уже есть настройка ${attachment.kind === "sla_attachment" ? "SLA" : attachment.kind === "ola_attachment" ? "OLA" : "маршрута"}. Сначала отсоедините её.`);
+ if (policyAttachmentsFor(definition, targetId).some(block => block.kind === attachment.kind && block.id !== attachmentId)) throw new Error(`У блока «${target.title}» уже есть настройка ${attachment.kind === "sla_attachment" ? "сроков обработки" : attachment.kind === "ola_attachment" ? "внутренних сроков" : "маршрута"}. Сначала отсоедините её.`);
+ if (hasInternalDeadlines(attachment) && policyAttachmentsFor(definition,targetId).some(block=>block.id!==attachmentId && hasInternalDeadlines(block))) throw new Error("У блока уже есть внутренние сроки поддержки. Оставьте одну настройку внутренних сроков.");
  return { ...definition, blocks: definition.blocks?.map(block => block.id === attachmentId ? { ...attachment, attached_to: targetId } : block) };
 }
 export function detachPolicyAttachment(definition: ScenarioDraftDefinition, attachmentId: string): ScenarioDraftDefinition {

@@ -11,13 +11,15 @@ def select_scenario_ola(definition, state):
     selected = {"kind": "policy", "key": code, "source": {"kind": "default"}} if code else None
     for identifier in [*state.history, state.current_block_id]:
         for block in definition.blocks:
-            if block.kind != "ola_attachment" or block.attached_to != identifier:
+            if block.kind not in {"ola_attachment", "sla_attachment"} or block.attached_to != identifier:
                 continue
             source = {"kind": "attachment", "block_id": block.id, "attached_to": identifier}
-            if block.targets is not None:
-                selected = {"kind": "targets", "targets": block.targets.model_dump(), "source": source}
-            elif block.policy_ref:
-                selected = {"kind": "policy", "key": block.policy_ref, "source": source}
+            targets = block.targets if block.kind == "ola_attachment" else block.ola_targets
+            policy = block.policy_ref if block.kind == "ola_attachment" else block.ola_policy_ref
+            if targets is not None:
+                selected = {"kind": "targets", "targets": targets.model_dump(), "source": source}
+            elif policy:
+                selected = {"kind": "policy", "key": policy, "source": source}
     terminal = next(block for block in definition.blocks if block.id == state.current_block_id)
     if terminal.kind == "submit_ticket":
         source = {"kind": "terminal", "block_id": terminal.id}

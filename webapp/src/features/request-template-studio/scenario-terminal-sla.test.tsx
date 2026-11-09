@@ -14,13 +14,13 @@ it("shows inherited values without writing and removes explicit fields on inheri
  const definition = slaDefinition(), change = vi.fn(), block = { ...definition.blocks![1], kind: "submit_ticket" as const, sla_profile: "fast" };
  render(<ScenarioTerminalSla block={block} definition={{ ...definition, blocks: [definition.blocks![0], block] }} disabled={false} onChange={change} />);
  expect(screen.getByText(/Первый ответ: 5 мин/)).toBeInTheDocument(); expect(change).not.toHaveBeenCalled();
- fireEvent.change(screen.getByLabelText("SLA при создании обращения"), { target: { value: "" } });
+ fireEvent.change(screen.getByLabelText("Сроки для сотрудника при создании обращения"), { target: { value: "" } });
  expect(change.mock.lastCall![0]).not.toHaveProperty("sla_profile"); expect(change.mock.lastCall![0]).not.toHaveProperty("policy_ref");
 });
 it("lets an author select a final profile and test the path", () => {
  const definition = slaDefinition(), change = vi.fn(), test = vi.fn();
  render(<ScenarioTerminalSla block={definition.blocks![1]} definition={definition} disabled={false} onChange={change} onTestPath={test} />);
- fireEvent.change(screen.getByLabelText("SLA при создании обращения"), { target: { value: "fast" } });
+ fireEvent.change(screen.getByLabelText("Сроки для сотрудника при создании обращения"), { target: { value: "fast" } });
  expect(change.mock.lastCall![0]).toMatchObject({ sla_profile: "fast" });
  fireEvent.click(screen.getByRole("button", { name: "Проверить путь" })); expect(test).toHaveBeenCalledOnce();
 });
@@ -39,7 +39,7 @@ it("loads only published policy choices and never invents policy durations", asy
  await waitFor(() => expect(screen.getByRole("option", { name: "Рабочее правило" })).toBeInTheDocument());
  expect(screen.queryByRole("option", { name: "Черновик" })).not.toBeInTheDocument();
  expect(screen.getByText(/Сроки определит сервер/)).toBeInTheDocument();
- fireEvent.change(screen.getByLabelText("SLA при создании обращения"), { target: { value: "published" } });
+ fireEvent.change(screen.getByLabelText("Сроки для сотрудника при создании обращения"), { target: { value: "published" } });
  expect(change.mock.lastCall![0]).toMatchObject({ policy_ref: "published" }); expect(change.mock.lastCall![0]).not.toHaveProperty("sla_profile");
 });
 it("does not enable terminal settings on old schemas or self service", () => {
@@ -53,7 +53,7 @@ it("shows exact actual path SLA, route, and terminal source from simulation", ()
  const definition = slaDefinition(), block = definition.blocks![1];
  const result = { current_block: block, state: { current_block_id: "end", history: ["start"] }, processing: { sla: { first_response_min: 12, resolution_min: 144, time_basis: "business", source: { kind: "terminal", block_id: "end" } }, routing: { queue_title: "Инженеры" } } } as unknown as ScenarioSimulation;
  render(<ScenarioTerminalSla block={block} definition={definition} disabled={false} onChange={vi.fn()} result={result} />);
- expect(screen.getByRole("heading", { name: "Проверенный SLA этого пути" })).toBeInTheDocument();
+ expect(screen.getByRole("heading", { name: "Проверенные сроки для сотрудника" })).toBeInTheDocument();
  expect(screen.getByText(/Первый ответ: 12 мин/)).toHaveTextContent("решение: 144 мин.");
  expect(screen.getByText(/Очередь: Инженеры/)).toBeInTheDocument();
  expect(screen.getByText(/Источник: завершение «Обращение»/)).toBeInTheDocument();

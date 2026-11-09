@@ -36,7 +36,7 @@ describe("map policy attachments", () => {
  });
  it("adds modifiers only as settings and never makes them an entrance or ordinary step", () => {
   const d = draft();
-  expect(mapPalette.find(item => item.label === "SLA")?.kind).toBe("sla_attachment");
+  expect(mapPalette.find(item => item.label === "Сроки обработки")?.kind).toBe("sla_attachment");
   expect(mapPalette.find(item => item.label === "Маршрут")?.kind).toBe("routing_attachment");
   expect(() => connectBlocks(d, "q", "sla")).toThrow(/прикреп/);
   expect(() => connectBlocks(d, "sla", "q")).toThrow(/прикреп/);

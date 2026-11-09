@@ -2108,6 +2108,32 @@
           ],
           "default": null,
           "title": "Policy Ref"
+        },
+        "ola_targets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScenarioOlaTargets"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ola_policy_ref": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ola Policy Ref"
         }
       },
       "required": [

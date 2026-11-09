@@ -44,8 +44,8 @@ export function summarizeTerminalSla(definition: ScenarioDraftDefinition, blockI
   }
   // Server replay applies target attachments, then the executable legacy block, then its edge.
   if (block.kind === "sla") {
-   if (definition.processing && block.sla_profile) selection = { kind: "profile", key: block.sla_profile, source: `блок SLA «${block.title}»` };
-   if (!definition.processing && block.policy_ref) selection = { kind: "policy", key: block.policy_ref, source: `блок SLA «${block.title}»` };
+   if (definition.processing && block.sla_profile) selection = { kind: "profile", key: block.sla_profile, source: `блок сроков «${block.title}»` };
+   if (!definition.processing && block.policy_ref) selection = { kind: "policy", key: block.policy_ref, source: `блок сроков «${block.title}»` };
   }
   if (block.id === blockId && block.kind === "submit_ticket") {
    if (definition.schema_version === 4 && !options.inheritOnly) {
@@ -77,7 +77,7 @@ type ActualSla = { first_response_min?: number; resolution_min?: number; time_ba
 export function actualSourceLabel(definition?: ScenarioDraftDefinition, source?: ActualSource) {
  const title = definition?.blocks?.find(item => item.id === source?.block_id)?.title ?? "Шаг сценария";
  const target = definition?.blocks?.find(item => item.id === source?.attached_to)?.title ?? "Шаг сценария";
- return source?.kind === "attachment" ? `настройка «${title}» у блока «${target}»` : source?.kind === "terminal" ? `завершение «${title}»` : source?.kind === "transition" ? `переход «${title}», ветвь ${(source.transition_index ?? 0) + 1}` : source?.kind === "block" ? `блок SLA «${title}»` : source?.kind === "default" ? "настройки карты по умолчанию" : "серверная политика услуги";
+ return source?.kind === "attachment" ? `настройка «${title}» у блока «${target}»` : source?.kind === "terminal" ? `завершение «${title}»` : source?.kind === "transition" ? `переход «${title}», ветвь ${(source.transition_index ?? 0) + 1}` : source?.kind === "block" ? `блок сроков «${title}»` : source?.kind === "default" ? "настройки карты по умолчанию" : "серверная политика услуги";
 }
 export function terminalActualSla(definition: ScenarioDraftDefinition, block: ScenarioBlock, result?: ScenarioSimulation) {
  if (block.kind !== "submit_ticket" || !result?.processing || result.processing_error || (result.current_step?.id ?? result.current_block?.id ?? result.state.current_block_id) !== block.id) return null;
@@ -90,19 +90,19 @@ export function terminalActualSla(definition: ScenarioDraftDefinition, block: Sc
 }
 
 function slaSummary(definition: ScenarioDraftDefinition, block: ScenarioBlock, simulation?: ScenarioSimulation): string {
- if (block.kind === "finish") return "Завершение без обращения · SLA не применяется";
+ if (block.kind === "finish") return "Завершение без обращения · сроки поддержки не применяются";
  if (block.kind !== "submit_ticket") return "";
  const actual = terminalActualSla(definition, block, simulation);
- if (actual) return `Очередь: ${actual.queue ?? "не определена"} · SLA проверенного пути: ответ ${actual.sla.first_response_min == null ? "не определён" : `${actual.sla.first_response_min} мин.`}, решение ${actual.sla.resolution_min == null ? "не определено" : `${actual.sla.resolution_min} мин.`} · ${actual.sla.time_basis === "business" ? "рабочее время" : actual.sla.time_basis === "calendar" ? "календарное время" : "режим времени не указан"}`;
+ if (actual) return `Очередь: ${actual.queue ?? "не определена"} · Сроки проверенного пути: ответ ${actual.sla.first_response_min == null ? "не определён" : `${actual.sla.first_response_min} мин.`}, решение ${actual.sla.resolution_min == null ? "не определено" : `${actual.sla.resolution_min} мин.`} · ${actual.sla.time_basis === "business" ? "рабочее время" : actual.sla.time_basis === "calendar" ? "календарное время" : "режим времени не указан"}`;
  const result = summarizeTerminalSla(definition, block.id);
- if (!result.alternatives.length) return "SLA: путь к завершению не найден";
+ if (!result.alternatives.length) return "Сроки: путь к завершению не найден";
  const choices = new Set(result.alternatives.map(item => `${item.selection.kind}:${item.selection.key ?? ""}`));
  const queues = new Set(result.alternatives.map(item => `${item.routingSelection.kind}:${item.routingSelection.key ?? ""}`));
  const queue = queues.size > 1 ? "Очередь зависит от пути" : result.alternatives[0].routing ? `Очередь: ${result.alternatives[0].routing!.title}` : "Очередь по правилам услуги";
- if (choices.size > 1) return `${queue} · SLA зависит от пути · проверьте варианты${result.truncated || result.cyclic ? " · обзор неполный" : ""}`;
+ if (choices.size > 1) return `${queue} · Сроки для сотрудника зависят от пути · проверьте варианты${result.truncated || result.cyclic ? " · обзор неполный" : ""}`;
  const first = result.alternatives[0];
- const label = first.profile ? `SLA: ${first.profile.title} · ответ ${first.profile.first_response_minutes} мин., решение ${first.profile.resolution_minutes} мин. · ${first.profile.time_basis === "business" ? "рабочее" : "календарное"} время`
-  : first.selection.kind === "profile" ? "SLA: выбранный профиль недоступен" : "SLA по политике · сроки в проверке пути";
+ const label = first.profile ? `Сроки: ${first.profile.title} · ответ ${first.profile.first_response_minutes} мин., решение ${first.profile.resolution_minutes} мин. · ${first.profile.time_basis === "business" ? "рабочее" : "календарное"} время`
+  : first.selection.kind === "profile" ? "Сроки: выбранный профиль недоступен" : "Сроки по правилу услуги · сроки в проверке пути";
  return `${queue} · ${label}${result.truncated || result.cyclic ? " · обзор неполный" : ""}`;
 }
 
@@ -111,12 +111,12 @@ export function terminalSlaSummary(definition: ScenarioDraftDefinition, block: S
  const sla = slaSummary(definition, block, simulation);
  if (block.kind !== "submit_ticket") return sla;
  const actual = terminalActualSla(definition, block, simulation) ? simulation?.processing?.ola : undefined;
- if (actual?.enabled === false) return `${sla} · OLA отключён на сервере`;
- if (actual && (actual.ack_min != null || actual.processing_min != null)) return `${sla} · OLA: подтверждение ${actual.ack_min ?? "не задано"} мин., обработка ${actual.processing_min ?? "не задана"} мин.`;
+ if (actual?.enabled === false) return `${sla} · учёт внутренних сроков отключён на сервере`;
+ if (actual && (actual.ack_min != null || actual.processing_min != null)) return `${sla} · Внутренние сроки: назначение исполнителя ${actual.ack_min ?? "не задано"} мин., обработка ${actual.processing_min ?? "не задана"} мин.`;
  const paths = summarizeTerminalOla(definition, block.id);
  if (!paths.alternatives.some(item => item.targets || item.policy_ref)) return sla;
  const selections = new Set(paths.alternatives.map(item => JSON.stringify([item.targets, item.policy_ref])));
- if (selections.size !== 1 || paths.truncated || paths.cyclic) return `${sla} · OLA зависит от пути · проверьте варианты`;
+ if (selections.size !== 1 || paths.truncated || paths.cyclic) return `${sla} · Внутренние сроки зависят от пути · проверьте варианты`;
  const first = paths.alternatives[0];
- return `${sla} · ${first.targets ? `OLA: подтверждение ${first.targets.ack_minutes} мин., обработка ${first.targets.processing_minutes} мин.` : "OLA по правилу · сроки в проверке пути"}`;
+ return `${sla} · ${first.targets ? `Внутренние сроки: назначение исполнителя ${first.targets.ack_minutes} мин., обработка ${first.targets.processing_minutes} мин.` : "Внутренние сроки по правилу · сроки в проверке пути"}`;
 }

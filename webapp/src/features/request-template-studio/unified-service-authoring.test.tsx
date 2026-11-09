@@ -20,7 +20,7 @@ it("opens the map directly from create service without a help-mode selector",()=
 });
 
 it("includes v4 navigation and separate attached SLA and routing settings",()=>{
- expect(mapPalette.map(item=>item.kind)).toEqual(["form_page","instruction","decision","resolution_check","submit_ticket","navigation","sla_attachment","ola_attachment","routing_attachment"]);
+ expect(mapPalette.map(item=>item.kind)).toEqual(["form_page","instruction","decision","resolution_check","submit_ticket","navigation","sla_attachment","routing_attachment"]);
 });
 
 it("creates a catalog entrance only on a Start connection and inherits category",()=>{

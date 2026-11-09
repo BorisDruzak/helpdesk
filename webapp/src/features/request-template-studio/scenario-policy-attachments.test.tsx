@@ -43,7 +43,7 @@ it("chooses a target and an existing SLA profile without creating duration defau
  expect(screen.getByRole("option",{name:"Не менять ранее выбранные сроки"})).toBeInTheDocument();
  fireEvent.change(screen.getByLabelText("Применять к блоку"), { target: { value: "end" } });
  expect(change.mock.lastCall![0].blocks[1]).toMatchObject({ attached_to: "end" });
- fireEvent.change(screen.getByLabelText("Профиль SLA"), { target: { value: "normal" } });
+ fireEvent.change(screen.getByLabelText("Профиль сроков для сотрудника"), { target: { value: "normal" } });
  expect(change.mock.lastCall![0].blocks[1]).toMatchObject({ sla_profile: "normal" });
  expect(change.mock.lastCall![0].processing).toEqual(definition.processing);
  expect(screen.queryByRole("option", { name: "Маршрут" })).not.toBeInTheDocument();
@@ -56,7 +56,7 @@ it("clears only the attachment override and retains a manual profile assigned ea
  const attachment = { ...definition.blocks![2], kind: "sla_attachment" as const, attached_to: "end", sla_profile: "normal" };
  definition.blocks![2] = attachment;
  render(<ScenarioPolicyAttachmentEditor block={attachment} definition={definition} disabled={false} onChange={change} />);
- fireEvent.change(screen.getByLabelText("Профиль SLA"), { target: { value: "" } });
+ fireEvent.change(screen.getByLabelText("Профиль сроков для сотрудника"), { target: { value: "" } });
  const next = change.mock.lastCall![0] as ScenarioDraftDefinition;
  expect(next.processing).toEqual(definition.processing);
  expect(next.blocks![0]).toEqual(definition.blocks![0]);
@@ -101,5 +101,5 @@ it("offers retry on registry failure without clearing saved policy", async () =>
  await waitFor(() => expect(screen.getByRole("button", { name: "Повторить загрузку правил" })).toBeInTheDocument());
  fireEvent.click(screen.getByRole("button", { name: "Повторить загрузку правил" }));
  await waitFor(() => expect(screen.getByRole("option", { name: "Опубликованный SLA" })).toBeInTheDocument());
- expect(screen.getByRole("combobox", { name: "Правило SLA" })).toHaveValue("saved");
+ expect(screen.getByRole("combobox", { name: "Правило сроков для сотрудника" })).toHaveValue("saved");
 });

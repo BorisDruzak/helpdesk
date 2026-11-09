@@ -16,7 +16,7 @@ describe("terminal SLA path summary", () => {
   definition.blocks![0] = { id: "start", kind: "sla", title: "Обычный последовательный SLA", sla_profile: mode === "profile" ? "normal" : undefined, policy_ref: mode === "policy" ? "standard" : undefined, transitions: [{ to: "end" }] };
   definition.blocks!.push({ id: "urgent", kind: "sla_attachment", title: "Срочная настройка", attached_to: "start", sla_profile: mode === "profile" ? "fast" : undefined, policy_ref: mode === "policy" ? "urgent" : undefined });
   const before = structuredClone(definition);
-  expect(summarizeTerminalSla(definition, "end").alternatives[0].selection).toEqual({ kind: mode, key: mode === "profile" ? "normal" : "standard", source: "блок SLA «Обычный последовательный SLA»" });
+  expect(summarizeTerminalSla(definition, "end").alternatives[0].selection).toEqual({ kind: mode, key: mode === "profile" ? "normal" : "standard", source: "блок сроков «Обычный последовательный SLA»" });
   expect(definition).toEqual(before);
  });
  it("replays attachments before selected transitions and explicit terminal selections last", () => {
@@ -73,7 +73,7 @@ describe("terminal SLA path summary", () => {
   expect(result.alternatives.filter(item => item.conditional)).toHaveLength(2);
   expect(result.alternatives.some(item => item.route.includes("Прямой вход"))).toBe(true);
   expect(result.alternatives.some(item => item.route.includes("Выключен"))).toBe(false);
-  expect(terminalSlaSummary(definition, definition.blocks![1])).toContain("зависит от пути");
+  expect(terminalSlaSummary(definition, definition.blocks![1])).toContain("зависят от пути");
  });
  it("keeps registry policy values unknown and applies terminal policy last", () => {
   const definition = slaDefinition(); definition.processing = null;

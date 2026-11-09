@@ -319,6 +319,16 @@ class SlaAttachment(PolicyAttachmentBase):
     processing_facts: ProcessingFacts = Field(default_factory=ProcessingFacts)
     sla_profile: Key | None = None
     policy_ref: CatalogCode | None = None
+    ola_targets: ScenarioOlaTargets | None = None
+    ola_policy_ref: CatalogCode | None = None
+
+    @model_serializer(mode="wrap")
+    def omit_inherited_internal_deadlines(self, handler):
+        raw = handler(self)
+        for key in ("ola_targets", "ola_policy_ref"):
+            if raw.get(key) is None:
+                raw.pop(key, None)
+        return raw
 
 
 class ScenarioOlaTargets(StrictModel):

@@ -15,7 +15,7 @@ it("offers canonical service routing and SLA policies beside map overrides witho
  const select = await screen.findByLabelText("Сроки обслуживания");
  await waitFor(() => expect(select).toHaveFocus());
  expect(screen.getByLabelText("Маршрут и очередь")).toBeVisible();
- expect(screen.queryByRole("button", { name: "Добавить профиль SLA" })).not.toBeInTheDocument();
+ expect(screen.queryByRole("button", { name: "Добавить профиль сроков для сотрудника" })).not.toBeInTheDocument();
  fireEvent.change(select, { target: { value: "standard" } });
  expect(change).toHaveBeenCalledWith({ ...value, process_binding: { ...value.process_binding, policy_refs: { routing: "route", sla: "standard" } } });
 });

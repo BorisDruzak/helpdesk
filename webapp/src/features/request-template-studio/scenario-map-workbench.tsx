@@ -16,7 +16,6 @@ import { duplicateBlock } from "./scenario-builder-model";
 import { ScenarioBlockEditor } from "./scenario-block-editor";
 import { ScenarioNavigationEditor } from "./scenario-navigation-editor";
 import { ScenarioSlaEditor } from "./scenario-sla-editor";
-import { ScenarioTerminalOla } from "./scenario-ola";
 import { ScenarioTerminalSla } from "./scenario-terminal-sla";
 import { ScenarioPolicyAttachmentEditor } from "./scenario-policy-attachments";
 import { isPolicyAttachment, connectPolicyAttachment } from "./scenario-policy-attachments-model";
@@ -179,7 +178,6 @@ export function ScenarioMapWorkbench({ onServiceSettings, ensureSaved, simulatio
           {block.kind === "submit_ticket" && <><p className="text-sm">Перед отправкой сотрудник проверит собранные ответы. Очередь, приоритет и сроки определяются действующими правилами обработки.</p><Button variant="outline" onClick={() => openProcessing()}>Открыть правила обработки</Button></>}
           {isPolicyAttachment(block) ? <ScenarioPolicyAttachmentEditor block={block} definition={definition} disabled={disabled} onChange={change}/> : block.kind === "sla" ? <ScenarioSlaEditor block={block} definition={definition} disabled={disabled} onChange={change} /> : <ScenarioBlockEditor key={block.id} block={block} definition={definition} disabled={disabled || legacy} focusTitle={block.id === issueBlockId && !issueTransitions} hideTransitions onChange={next => change({ ...definition, blocks: blocks.map(item => item.id === block.id ? next : item) })} />}
           {terminal(block.kind) && <ScenarioTerminalSla block={block} definition={definition} disabled={disabled} result={simulationResult} onTestPath={onTest} onChange={next=>change({...definition,blocks:blocks.map(item=>item.id===block.id?next:item)})}/>}
-          {terminal(block.kind) && <ScenarioTerminalOla block={block} definition={definition} disabled={disabled} result={simulationResult} onChange={next=>change({...definition,blocks:blocks.map(item=>item.id===block.id?next:item)})}/>}
           {definition.schema_version === 4 && ["form_page", "instruction", "review", "navigation"].includes(block.kind) && <ScenarioNavigationEditor block={block} definition={definition} disabled={disabled} onChange={next => change({ ...definition, blocks: blocks.map(item => item.id === block.id ? next : item) })} />}
           {!isPolicyAttachment(block) && !terminal(block.kind) && block.transition_mode !== "buttons" && block.kind !== "navigation" && ((block.kind === "decision" || block.kind === "resolution_check")
             ? <ScenarioBlockRoutes key={`routes:${block.id}`} definition={definition} block={block} disabled={disabled || legacy} sourceFieldKey={answerSources[block.id]} onSourceField={key => setAnswerSources(previous => ({ ...previous, [block.id]: key }))} onAddAnswer={when => addAnswer(block.id, when)} onChange={next => perform(() => next)} />
@@ -199,7 +197,7 @@ export function ScenarioMapWorkbench({ onServiceSettings, ensureSaved, simulatio
       if (event.key.toLowerCase() === "y") { event.preventDefault(); history(true); }
     }
   }}>
-    {definition.schema_version !== 4 && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm"><p>Кнопки переходов, отдельный SLA и визуальное оформление доступны в новой модели. Включение сохраняет прежние правила услуги и не меняет опубликованную версию.</p><Button variant="outline" disabled={disabled} onClick={() => { if (onUpgrade) void onUpgrade(); else if (!existing) change(upgradeScenarioDraft(definition)); }}>Включить новые возможности карты</Button></div>}
+    {definition.schema_version !== 4 && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm"><p>Кнопки переходов, сроки обработки и визуальное оформление доступны в новой модели. Включение сохраняет прежние правила услуги и не меняет опубликованную версию.</p><Button variant="outline" disabled={disabled} onClick={() => { if (onUpgrade) void onUpgrade(); else if (!existing) change(upgradeScenarioDraft(definition)); }}>Включить новые возможности карты</Button></div>}
     {existing && (definition.schema_version ?? 1) < 2 && <div className="rounded border p-3 text-sm"><p>Историческая карта сохраняет прежнее поведение. Единая модель будет проверять обращение по вопросам этой карты. Действующая версия и начатые сеансы сохранятся до публикации.</p><Button variant="outline" disabled={disabled} onClick={() => perform(() => {
       let next = definition;
       if (next.entry_block_id && !next.entry_points?.some(entry => entry.enabled !== false && entry.target_block_id === next.entry_block_id)) {

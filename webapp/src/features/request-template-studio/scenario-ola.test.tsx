@@ -12,19 +12,19 @@ const draft = (): ScenarioDraftDefinition => ({ schema_version:4, execution_sema
 
 describe("OLA attachment", () => {
  it("is available in the palette, adds at the viewport and connects without creating transitions", () => {
-  expect(mapPalette.some(item=>item.kind==="ola_attachment")).toBe(true);
+  expect(mapPalette.some(item=>item.kind==="ola_attachment")).toBe(false);
   const created=addMapBlock(draft(),"ola_attachment",{x:222,y:333}); const block=created.blocks!.at(-1)!;
   expect(isPolicyAttachment(block)).toBe(true);
   const connected=connectPolicyAttachment(created,block.id,"first");
   expect(connected.blocks![0].transitions).toEqual([{to:"end"}]);
   expect(connected.editor_layout?.positions?.[block.id]).toEqual({x:222,y:333});
-  expect(()=>connectPolicyAttachment({...connected,blocks:[...connected.blocks!,{id:"another",kind:"ola_attachment",title:"Другой OLA",attached_to:"first"}]},block.id,"first")).toThrow(/OLA/);
+  expect(()=>connectPolicyAttachment({...connected,blocks:[...connected.blocks!,{id:"another",kind:"ola_attachment",title:"Другой OLA",attached_to:"first"}]},block.id,"first")).toThrow(/внутренних сроков/);
  });
  it("edits visible durations directly and switches atomically to a published rule", () => {
   const onChange=vi.fn();render(<ScenarioOlaEditor value={{targets:{ack_minutes:10,processing_minutes:60}}} disabled={false} onChange={onChange}/>);
-  fireEvent.change(screen.getByLabelText("Подтверждение, мин."),{target:{value:"5"}});
+  fireEvent.change(screen.getByLabelText("Назначение исполнителя, мин."),{target:{value:"5"}});
   expect(onChange).toHaveBeenLastCalledWith({targets:{ack_minutes:5,processing_minutes:60}});
-  fireEvent.change(screen.getByLabelText("Способ задания OLA"),{target:{value:"policy"}});
+  fireEvent.change(screen.getByLabelText("Способ задания внутренних сроков"),{target:{value:"policy"}});
   expect(onChange).toHaveBeenLastCalledWith({});
  });
  it("summarizes last visited OLA and terminal override, retaining independent branch alternatives", () => {
@@ -38,13 +38,13 @@ describe("OLA attachment", () => {
   const d=draft();const block=d.blocks![1];
   const result={current_block:block,state:{current_block_id:"end",history:["first"]},processing:{sla:{},routing:{},ola:{enabled:false,ack_min:7,processing_min:43}}} as unknown as ScenarioSimulation;
   render(<ScenarioTerminalOla definition={d} block={block} disabled={false} onChange={vi.fn()} result={result}/>);
-  expect(screen.getByRole("alert")).toHaveTextContent("OLA отключён на сервере");
-  expect(screen.queryByText("Проверенный OLA этого пути")).not.toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent("Учёт внутренних сроков отключён на сервере");
+  expect(screen.queryByText("Проверенные внутренние сроки этого пути")).not.toBeInTheDocument();
  });
  it("shows OLA durations once in the server result and explains disabled accounting", () => {
   const result={state:{current_block_id:"end",history:[]},processing:{priority:{priority_class:"P3"},sla:{},routing:{},approval:{required:false},ola:{enabled:false,ack_min:7,processing_min:43}}} as unknown as ScenarioSimulation;
   render(<ScenarioProcessingResult result={result} definition={draft()}/>);
   expect(screen.getAllByText(/обработка.*43.*мин/i)).toHaveLength(1);
-  expect(screen.getByText(/OLA отключён на сервере/)).toBeVisible();
+  expect(screen.getByText(/Учёт внутренних сроков отключён на сервере/)).toBeVisible();
  });
 });

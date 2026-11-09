@@ -32,11 +32,11 @@ export function ScenarioProcessingResult({ result, definition }: { result: Scena
     <p>Первый ответ: {processing.sla.first_response_min ? `${processing.sla.first_response_min} мин.` : "Не определён"}</p>
     <p>Срок выполнения: {processing.sla.resolution_min ? `${processing.sla.resolution_min} мин.` : "Не определён"}</p>
     {processing.sla.time_basis && <p>{processing.sla.time_basis === "business" ? "Рабочее время" : "Календарное время"}</p>}
-    {slaSource && <p>Источник SLA: {slaSource.kind === "terminal" ? `итоговый выбор в блоке «${definition?.blocks?.find(block => block.id === slaSource.block_id)?.title ?? "Завершение"}»` : actualSourceLabel(definition, slaSource)}.</p>}
+    {slaSource && <p>Источник сроков для сотрудника: {slaSource.kind === "terminal" ? `итоговый выбор в блоке «${definition?.blocks?.find(block => block.id === slaSource.block_id)?.title ?? "Завершение"}»` : actualSourceLabel(definition, slaSource)}.</p>}
     {routingSource && <p>Источник очереди: {actualSourceLabel(definition, routingSource)}.</p>}
     {processing.sla.first_response_due_preview && <p>Ответить до: {deadline(processing.sla.first_response_due_preview)}</p>}
     {processing.sla.resolution_due_preview && <p>Решить до: {deadline(processing.sla.resolution_due_preview)}</p>}
-    {processing.ola?.ack_min || processing.ola?.processing_min ? <p>{processing.ola.enabled === false ? "OLA отключён на сервере. Настроенные сроки:" : "OLA:"} подтверждение поддержки: {processing.ola.ack_min ?? "не определено"} мин.; обработка: {processing.ola.processing_min ?? "не определено"} мин.</p> : <p>Внутренние сроки поддержки не настроены.</p>}
+    {processing.ola?.ack_min || processing.ola?.processing_min ? <p>{processing.ola.enabled === false ? "Учёт внутренних сроков отключён на сервере. Настроенные сроки:" : "Внутренние сроки поддержки:"} назначение исполнителя: {processing.ola.ack_min ?? "не определено"} мин.; обработка группой: {processing.ola.processing_min ?? "не определено"} мин.</p> : <p>Внутренние сроки поддержки не настроены.</p>}
     <p>{processing.approval.required ? "Потребуется согласование" : "Согласование не требуется"}</p>
     <ScenarioSimulationTrace result={result} definition={definition} />
     {processing.closure && <p>{processing.closure.requires_public_summary && processing.closure.requires_resolution_code ? "При закрытии обязательны итог для сотрудника и код решения." : processing.closure.requires_public_summary ? "При закрытии обязателен итог для сотрудника." : processing.closure.requires_resolution_code ? "При закрытии обязателен код решения." : "Дополнительные требования закрытия не заданы политикой."}</p>}
