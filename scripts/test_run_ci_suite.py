@@ -12,9 +12,13 @@ from scripts import run_ci_suite
 
 
 @pytest.mark.parametrize("secret", ["synthetic-ci-password-8391", 'synthetic-ci<&"päss/@>'])
-def test_capture_redacts_step_database_credentials_in_output_header_and_junit(tmp_path, capsys, secret):
+def test_capture_redacts_step_database_credentials_in_output_header_and_junit(tmp_path, capsys, monkeypatch, secret):
     encoded_secret = quote(secret, safe="")
     database_url = f"postgresql+asyncpg://test_admin:{encoded_secret}@127.0.0.1:54321/postgres"
+    # The real CI URL also carries a password. Keep this unit test's authority
+    # self-contained so a password equal to the database name is not expected
+    # to remain visible in the redacted report.
+    monkeypatch.setenv("TEST_DATABASE_URL", database_url)
     script = tmp_path / "emit_failure.py"
     junit = tmp_path / "junit-failure.xml"
     script.write_text(
