@@ -18,7 +18,8 @@ concurrency:
 
 jobs:
   full-ci:
-    runs-on: ubuntu-latest
+    # Match the pinned Playwright1.55 browser dependency matrix.
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       TEST_DATABASE_ADMIN_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
