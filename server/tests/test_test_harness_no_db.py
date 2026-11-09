@@ -658,8 +658,11 @@ def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 178
-    assert full_tables[:11] == (
+    assert len(full_tables) == 181
+    assert full_tables[:14] == (
+        "worktime_session_leases",
+        "worktime_authorization_codes",
+        "web_requester_registrations",
         "oidc_sessions",
         "oidc_flows",
         "identity_migration_candidates",
