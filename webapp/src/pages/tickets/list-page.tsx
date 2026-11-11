@@ -197,6 +197,7 @@ type OperatorActionDraft = {
   priority: "P0" | "P1" | "P2" | "P3";
   reason: string;
   comment: string;
+  requesterMessage?: string;
 };
 
 type ResolutionCloseDraft = {
@@ -1935,6 +1936,9 @@ export function TicketListPage() {
         return postSupportTicketStatus(selectedTicketId, draft.targetStatus, {
           reason,
           internalComment: comment || undefined,
+          ...(draft.targetStatus === "waiting_on_user" && draft.requesterMessage?.trim()
+            ? { publicComment: draft.requesterMessage.trim() }
+            : {}),
         });
       }
       if (draft.kind === "assign_self") {
@@ -2312,6 +2316,10 @@ export function TicketListPage() {
   const isAdmin = session?.actor_role === "admin";
   const operatorActionMeta = operatorActionDraft ? operatorActionLabels[operatorActionDraft.kind] : null;
   const operatorReasonReady = (operatorActionDraft?.reason.trim().length ?? 0) >= 3;
+  const showRequesterMessage = operatorActionDraft?.kind === "status" && operatorActionDraft.targetStatus === "waiting_on_user" &&
+    (publicReplyAllowed || (isAdmin && hasPermission("ticket.comment.public") && !workspaceErrorState &&
+      workspaceQuery.data?.detail.actions.can_send_public_message === true));
+  const operatorMessageReady = !showRequesterMessage || Boolean(operatorActionDraft?.requesterMessage?.trim());
   const operatorTargetReady =
     !operatorActionDraft ||
     operatorActionDraft.kind === "assign_self" ||
@@ -2319,7 +2327,7 @@ export function TicketListPage() {
     (operatorActionDraft.kind === "status" && Boolean(operatorActionDraft.targetStatus)) ||
     (operatorActionDraft.kind === "queue" && Boolean(operatorActionDraft.queueId)) ||
     (operatorActionDraft.kind === "priority" && Boolean(operatorActionDraft.priority));
-  const operatorSubmitDisabled = !operatorActionDraft || !operatorReasonReady || !operatorTargetReady || operatorActionMutation.isPending;
+  const operatorSubmitDisabled = !operatorActionDraft || !operatorReasonReady || !operatorTargetReady || !operatorMessageReady || operatorActionMutation.isPending;
   const resolutionCloseReady =
     (resolutionCloseDraft?.requesterResolutionSummary.trim().length ?? 0) >= 3 &&
     (!(workspaceQuery.data?.detail.actions.closure_requirements ?? []).some((item) => item.key === "internal_summary") || (resolutionCloseDraft?.resolutionSummary.trim().length ?? 0) >= 3) &&
@@ -3716,7 +3724,14 @@ export function TicketListPage() {
             canAssign={hasPermission("ticket.assign")}
             pending={operatorActionMutation.isPending || takeTicketMutation.isPending}
             error={workspaceErrorState ? "Не удалось обновить обращение. Обновите данные перед действием." : actionError instanceof Error ? actionError.message : null}
-            onStatus={(value) => operatorActionMutation.mutate({ kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" })}
+            onStatus={(value) => {
+              const draft: OperatorActionDraft = { kind: "status", targetStatus: value, queueId: null, priority: "P3", reason: "Действие оператора: " + value, comment: "" };
+              if (value === "waiting_on_user") {
+                setOperatorActionDraft({ ...draft, reason: "Запрошено уточнение у заявителя" });
+              } else {
+                operatorActionMutation.mutate(draft);
+              }
+            }}
             onClaim={() => takeTicketMutation.mutate(selectedTicket.id)}
             onResolve={() => setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket))}
             inspector={ticketInspector} inspectorOpen={compactInspectorOpen} onInspectorOpen={() => setCompactInspectorOpen(true)} onInspectorClose={() => setCompactInspectorOpen(false)}
@@ -4534,7 +4549,7 @@ export function TicketListPage() {
                     <section
                       aria-labelledby="operator-action-title"
                       aria-modal="true"
-                      className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#101d30] p-5 text-slate-100 shadow-2xl shadow-black/50"
+                      className="max-h-[calc(100dvh-3rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#101d30] p-5 text-slate-100 shadow-2xl shadow-black/50"
                       role="dialog"
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -4619,6 +4634,25 @@ export function TicketListPage() {
                         {operatorActionDraft.kind === "assign_self" ? (
                           <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
                             Исполнитель: <span className="font-semibold text-slate-100">{session?.user_login ?? "текущий оператор"}</span>
+                          </div>
+                        ) : null}
+
+                        {showRequesterMessage ? (
+                          <div>
+                            <label className="block text-sm font-medium text-slate-300" htmlFor="operator-requester-message">Сообщение заявителю</label>
+                            <textarea
+                              aria-describedby="operator-requester-message-hint"
+                              className="mt-2 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                              id="operator-requester-message"
+                              onChange={(event) => {
+                                const requesterMessage = event.currentTarget.value;
+                                setOperatorActionDraft((draft) => draft ? { ...draft, requesterMessage } : draft);
+                              }}
+                              placeholder="Например: укажите номер кабинета, где не работает принтер"
+                              required
+                              value={operatorActionDraft.requesterMessage ?? ""}
+                            />
+                            <span className="mt-1 block text-xs text-slate-400" id="operator-requester-message-hint">Этот текст появится в чате обращения. Напишите, какой ответ нужен.</span>
                           </div>
                         ) : null}
 

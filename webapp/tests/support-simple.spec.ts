@@ -288,6 +288,50 @@ for (const width of [1366, 1440, 1920, 390]) {
   });
 }
 
+test("waiting for the requester sends a separate public message with the status", async ({ page }) => {
+  let currentStatus = "in_progress";
+  const errors: string[] = [];
+  const commands: unknown[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+  await page.route("**/api/web/support/tickets/ticket-1/workspace", async route => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    const { ticket, actions } = payload.data.detail;
+    ticket.status = currentStatus;
+    ticket.status_label = currentStatus === "in_progress" ? "В работе" : "Ждём пользователя";
+    ticket.assignee_id = "support";
+    actions.can_send_public_message = true;
+    actions.status_options = currentStatus === "in_progress" ? [{ value: "waiting_on_user", label: "Ждём пользователя" }] : [];
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route("**/api/web/support/tickets/ticket-1/status", async route => {
+    commands.push(route.request().postDataJSON());
+    currentStatus = "waiting_on_user";
+    await route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", status: currentStatus, status_label: "Ждём пользователя" } } });
+  });
+
+  await login(page);
+  await page.goto("/app/tickets/ticket-1");
+  await page.getByText("Действия ▾", { exact: true }).click();
+  await page.getByRole("button", { name: "Ожидать ответа сотрудника" }).click();
+  const dialog = page.getByRole("dialog", { name: "Сменить статус" });
+  const submit = dialog.getByRole("button", { name: "Применить статус" });
+  await expect(dialog.getByLabel("Новый статус")).toHaveValue("waiting_on_user");
+  await expect(submit).toBeDisabled();
+  await dialog.getByLabel("Сообщение заявителю").fill("Уточните номер кабинета.");
+  await dialog.getByLabel("Комментарий для внутренней истории").fill("Служебная заметка");
+  const completed = page.waitForResponse(response => response.url().endsWith("/ticket-1/status") && response.request().method() === "POST");
+  await submit.click();
+  expect((await completed).ok()).toBe(true);
+  await expect(dialog).toBeHidden();
+  expect(commands).toEqual([expect.objectContaining({
+    to_status: "waiting_on_user", public_comment: "Уточните номер кабинета.",
+    reason: "Запрошено уточнение у заявителя", internal_comment: "Служебная заметка",
+  })]);
+  expect(errors).toEqual([]);
+});
+
 test("explicit confirmation policy keeps separate resolution without a completion flag", async ({ page }) => {
   let currentStatus = "in_progress";
   const commands: unknown[] = [];

@@ -6,10 +6,45 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Ticket, TicketEvent, UiUser
 from tests.test_requester_workspace_api import _person_for_login, _headers
+from tests.test_web_support_api import _seed_queue, _support_headers
 from tests.conftest import TEST_UI_USER_PREFIX
 from tickets.statuses import requester_status_for_internal
 
 pytestmark=[pytest.mark.asyncio,pytest.mark.db_cleanup('web_support')]
+
+
+async def test_waiting_status_message_reaches_requester_chat(test_client, test_engine):
+    maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid4())
+    owner = f"waiting-owner-{uuid4().hex[:8]}"
+    async with maker() as session:
+        person = await _person_for_login(session, login=owner)
+        session.add(UiUser(user_login="support-test", password_hash="unused", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        session.add(Ticket(
+            ticket_id=ticket_id, title="Уточнение по обращению", description="Проверка переписки",
+            requester_id=owner, requester_person_id=person.person_id, requester_external_ref=person.person_id,
+            requester_snapshot_json={"person": {"external_id": person.person_id}, "display_name": person.display_name},
+            status="in_progress", assignee_id="support-test", queue_id=queue.id,
+        ))
+        await session.commit()
+
+    public = "Уточните номер кабинета."
+    private_reason = "Служебная причина смены статуса"
+    private_comment = "Заметка для коллег"
+    changed = await test_client.post(f"/api/web/support/tickets/{ticket_id}/status", headers=_support_headers(), json={
+        "to_status": "waiting_on_user", "public_comment": public,
+        "reason": private_reason, "internal_comment": private_comment,
+    })
+    assert changed.status == 200, await changed.text()
+    assert (await changed.json())["data"]["status"] == "waiting_on_user"
+
+    detail = await test_client.get(f"/api/web/requester/tickets/{ticket_id}", headers=_headers(TEST_UI_USER_PREFIX + owner))
+    assert detail.status == 200, await detail.text()
+    payload = await detail.json()
+    assert [message["text"] for message in payload["data"]["messages"]] == [public]
+    assert payload["data"]["handling"]["next_action_owner"] == "requester"
+    assert private_reason not in str(payload) and private_comment not in str(payload)
 
 
 async def test_owner_gets_current_specialist_sla_and_public_progress_but_stranger_gets_404(test_client_light,test_engine):

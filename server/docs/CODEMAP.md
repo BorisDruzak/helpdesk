@@ -68,6 +68,10 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - `web_api/support_handlers.py` locks status/ownership before take-in-work and
   public reply. Rejected replies write no event and do not finish first-response
   SLA. `web_api/dto/support.py` projects `actions.can_send_public_message`.
+  A waiting-on-user status change with an explicit `public_comment` saves a
+  public chat message in the status transaction and broadcasts it after commit.
+  `tickets/visibility_policy.py` keeps its internal status reason out of the
+  requester/public ticket projection.
   Support resolution requires the current assignee even for administrators.
   Legacy active/waiting work exposes status-preserving self-claim through the
   existing assign route with `claim`/`expected_assignee_id`, rechecked under lock.

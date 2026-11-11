@@ -214,6 +214,9 @@ def _prune_requester_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return payload
     custom_fields = _requester_custom_fields_projection(payload)
     pruned = {key: value for key, value in payload.items() if key in REQUESTER_SAFE_TICKET_FIELDS}
+    if payload.get("status") == "waiting_on_user":
+        # The status reason is for operators; the requester gets a separate public chat message.
+        pruned.pop("status_reason", None)
     if custom_fields:
         pruned["custom_fields"] = custom_fields
     visibility = pruned.get("visibility")

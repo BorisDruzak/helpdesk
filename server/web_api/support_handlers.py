@@ -5621,6 +5621,13 @@ async def handle_web_support_change_status(request: web.Request):
             status=400,
         )
 
+    public_comment = data.get("public_comment")
+    requester_message = None
+    if to_status == "waiting_on_user" and public_comment is not None:
+        if not isinstance(public_comment, str):
+            return _support_json_error("Сообщение заявителю должно быть текстом", status=400, error_code="VALIDATION_ERROR")
+        requester_message = public_comment = public_comment.strip() or None
+
     try:
         async with get_session() as session:
             ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
@@ -5637,6 +5644,16 @@ async def handle_web_support_change_status(request: web.Request):
             ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            if requester_message:
+                denied = await _require_permission(session, auth_context, "ticket.comment.public")
+                if denied:
+                    return denied
+                reply_error = _support_public_reply_error(
+                    ticket, actor_id=auth_context.actor_id, is_admin=auth_context.actor_role == "admin",
+                )
+                if reply_error:
+                    code, message = reply_error
+                    return _support_json_error(message, status=403 if code == "ASSIGNEE_CONFLICT" else 409, error_code=code)
             if to_status == "resolved":
                 resolution_error = _support_resolution_error(ticket, actor_id=auth_context.actor_id)
                 if resolution_error:
@@ -5686,7 +5703,7 @@ async def handle_web_support_change_status(request: web.Request):
                     resolution_summary=data.get("resolution_summary"),
                     requester_resolution_summary=data.get("requester_resolution_summary"),
                     root_cause=data.get("root_cause"),
-                    public_comment=data.get("public_comment"),
+                    public_comment=public_comment,
                     internal_comment=data.get("internal_comment"),
                     source="web_support_api",
                     close_after_resolve=close_after_resolve,
@@ -5804,6 +5821,45 @@ async def handle_web_support_change_status(request: web.Request):
             elif to_status == "closed" and _resolution_confirmation_pending(ticket):
                 ticket = await _store_resolution_confirmation_state(repo, ticket, pending=False)
                 confirmation_pending_cleared = True
+            elif requester_message:
+                message_id = str(uuid.uuid4())
+                sender_role = _message_role_from_auth(auth_context)
+                followup_payload = {
+                    "message_id": message_id,
+                    "sender_role": sender_role,
+                    "sender_actor_id": auth_context.actor_id,
+                    "sender_display_name": auth_context.actor_id,
+                    "from": sender_role,
+                    "text": requester_message,
+                    "visibility": "public",
+                }
+                followup_result = await repo.add_event(
+                    ticket_id=ticket.ticket_id,
+                    device_id=ticket.device_id,
+                    agent_seq=None,
+                    event_type="chat_message",
+                    payload=followup_payload,
+                    event_id=message_id,
+                )
+                if followup_result is None:
+                    await session.rollback()
+                    return _support_json_error("Не удалось сохранить сообщение заявителю", status=409, error_code="WORKFLOW_CONFLICT")
+                if is_public_support_reply_payload(followup_payload):
+                    await TicketSlaService(session, repo).close_frt(ticket.ticket_id)
+                await _write_support_web_observer_event(
+                    session,
+                    request=request,
+                    auth_context=auth_context,
+                    source="support_chat",
+                    event_type="support_message_sent",
+                    severity="info",
+                    result="succeeded",
+                    ticket_id=ticket.ticket_id,
+                    device_id=ticket.device_id,
+                    person_id=_support_observer_ticket_person_id(ticket),
+                    idempotency_key=message_id,
+                    payload=_support_chat_observer_payload(message_payload=followup_payload, attachments=[]),
+                )
 
             await _write_support_web_observer_event(
                 session,
@@ -5821,7 +5877,7 @@ async def handle_web_support_change_status(request: web.Request):
                     to_status=to_status,
                     data=data,
                     requester_confirmation_requested=requester_confirmation_requested,
-                    confirmation_message_created=bool(followup_result and followup_payload),
+                    confirmation_message_created=bool(followup_result and confirmation_request_payload),
                     confirmation_pending_cleared=confirmation_pending_cleared,
                 ),
             )

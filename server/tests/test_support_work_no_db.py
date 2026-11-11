@@ -182,6 +182,45 @@ async def test_start_work_cannot_hijack_another_assignee(web_support_client, wor
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("public_comment,denied", [(" Уточните номер кабинета. ", False), (None, False), ("Уточните номер кабинета.", True)])
+async def test_waiting_for_user_sends_only_the_explicit_public_comment(web_support_client, work, monkeypatch, public_comment, denied):
+    work.ticket.status = "in_progress"
+    work.ticket.assignee_id = "other" if denied else "support1"
+
+    async def transition(**kwargs):
+        work.ticket.status = kwargs["to_status"]
+        return {"event_payload": {"reason": kwargs["reason"]}}
+
+    apply_transition = AsyncMock(side_effect=transition)
+    monkeypatch.setattr(support, "TicketWorkflowService", lambda *_: SimpleNamespace(apply_status_transition=apply_transition))
+    response = await web_support_client.post(f"/api/web/support/tickets/{work.ticket.ticket_id}/status", json={
+        "to_status": "waiting_on_user", "reason": "Внутренняя причина", "internal_comment": "Служебная заметка",
+        "public_comment": public_comment,
+    })
+    if denied:
+        assert response.status == 403
+        work.session.commit.assert_not_awaited()
+        work.pushed.assert_not_awaited()
+    else:
+        assert response.status == 200, await response.text()
+        work.session.commit.assert_awaited_once()
+    if public_comment and not denied:
+        message = work.repo.add_event.await_args.kwargs
+        assert message["event_type"] == "chat_message"
+        payload = message["payload"]
+        assert payload["visibility"] == "public"
+        assert payload["text"] == public_comment.strip()
+        assert payload["sender_role"] == "support"
+        assert apply_transition.await_args.kwargs["reason"] == "Внутренняя причина"
+        assert apply_transition.await_args.kwargs["internal_comment"] == "Служебная заметка"
+        assert work.pushed.await_args.args[2:] == (work.repo.add_event.return_value, "chat_message", payload)
+        work.close_frt.assert_awaited_once_with(work.ticket.ticket_id)
+    else:
+        work.repo.add_event.assert_not_awaited()
+        work.close_frt.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("action,body", [("messages", {"text": "Reply"}), ("status", {"to_status": "in_progress"})])
 async def test_scope_is_rechecked_after_locked_refresh(web_support_client, work, monkeypatch, action, body):
     work.ticket.status = "in_progress"

@@ -138,6 +138,15 @@ success, broadcast or first-response SLA completion. Internal notes retain
 their separate permission and do not stop first-response SLA. Sending a message
 does not automatically change the ticket's status.
 
+For **Ждём пользователя**, the status dialog and the quick action **Ожидать
+ответа сотрудника** ask an operator who can send public replies for a separate
+**Сообщение заявителю**. The `/api/web/support/tickets/{ticket_id}/status`
+endpoint accepts it in the existing `public_comment` field and saves a public
+chat message together with the status change. Public reply permissions and
+ownership checks apply, and the message counts toward first response. The
+status reason and internal comment stay in operator history; requests without
+a public comment still change status without publishing a chat message.
+
 The additive `actions.can_send_public_message` projection provides the UI gate;
 the endpoint remains authoritative. Dialog contains public chat messages,
 Internal notes contains internal entries, and History contains diagnostics and
