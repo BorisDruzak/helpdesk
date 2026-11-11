@@ -129,3 +129,49 @@ async def test_contact_edit_keeps_current_archived_department_but_cannot_select_
     with pytest.raises(RequesterProfileValidationError):
         async with maker.begin() as session:
             await RequesterIdentityResolver(session).update_own_profile(actor_id=result["user_login"],payload={**profile,"department_id":other})
+
+
+
+async def test_inventory_invitation_is_atomic_and_single_use(test_engine, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    import hashlib
+
+    from app.db.models import RegistryInventoryInvite, RegistryInventoryLink
+
+    monkeypatch.setenv("HELPDESK_INVENTORY_BASE_URL", "https://fixture.invalid")
+    maker, data = await fixture(test_engine)
+    code = "a" * 43
+    inventory_id = str(uuid.uuid4())
+    async with maker.begin() as session:
+        session.add(RegistryInventoryInvite(
+            inventory_person_id=inventory_id, code_digest=hashlib.sha256(code.encode()).hexdigest(),
+            full_name="Петров Иван Сергеевич", inventory_department="Тестовый отдел",
+            department_id=data["department_id"], issued_by="fixture-admin",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+        ))
+    invited = {**data, "inventory_invite_code": code}
+    with pytest.raises(RegistrationConflict):
+        async with maker.begin() as session:
+            await register_requester(session, {**invited, "last_name": "Сидоров"})
+    with pytest.raises(RequesterProfileValidationError):
+        async with maker.begin() as session:
+            await register_requester(session, {**invited, "phone": "", "internal_extension": ""})
+    async with maker.begin() as session:
+        assert (await session.get(RegistryInventoryInvite, inventory_id)).consumed_at is None
+    async def redeem(payload):
+        async with maker.begin() as session:
+            return await register_requester(session, payload)
+
+    attempts = [invited, {**invited, "request_id": str(uuid.uuid4())}]
+    results = await asyncio.gather(*(redeem(payload) for payload in attempts), return_exceptions=True)
+    assert sum(isinstance(result, RegistrationConflict) for result in results) == 1
+    (used_payload, result), = [(payload, result) for payload, result in zip(attempts, results) if isinstance(result, dict)]
+    async with maker.begin() as session:
+        replay = await register_requester(session, used_payload)
+        assert replay["replayed"] and replay["user_login"] == result["user_login"]
+        link = await session.scalar(select(RegistryInventoryLink).where(RegistryInventoryLink.inventory_person_id == inventory_id))
+        assert link is not None and link.user_login == result["user_login"]
+        assert (await session.get(RegistryInventoryInvite, inventory_id)).consumed_at is not None
+    with pytest.raises(RegistrationConflict):
+        async with maker.begin() as session:
+            await register_requester(session, {**invited, "request_id": str(uuid.uuid4())})

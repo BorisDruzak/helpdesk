@@ -9,7 +9,7 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {status, headers: {"Content-Type":"application/json"}});
 }
 function Home() { const location = useLocation(); return <p data-testid="destination">{location.pathname}</p>; }
-function install(options: { failOnce?: boolean; changedSchema?: boolean } = {}) {
+function install(options: { failOnce?: boolean; changedSchema?: boolean; invitation?: boolean; rejectInvite?: boolean } = {}) {
   let submissions = 0;
   let optionReads = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -23,10 +23,14 @@ function install(options: { failOnce?: boolean; changedSchema?: boolean } = {}) 
         {key:"department_id",label:"Отдел",type:"select",required:true},
         {key:"phone",label:"Телефон или внутренний номер",type:"phone",required:true},
       ] : [];
-      return json({status:"success",data:{departments:[{value:"real",label:"Юридический отдел"}],profile_schema:{fields,required_fields:[]}}});
+      return json({status:"success",data:{departments:[{value:"real",label:"Юридический отдел"}],profile_schema:{fields,required_fields:[]},inventory_invitation_enabled:options.invitation}});
     }
+    if (url.endsWith("/registration-invitation") && options.invitation)
+      return json({status:"success",data:{full_name:"Петров Иван Сергеевич",department:"Юридический отдел",department_id:"real"}});
     if (url.endsWith("/register-requester")) {
       submissions++;
+      if (options.rejectInvite && JSON.parse(String(init?.body)).inventory_invite_code)
+        return json({status:"error",error:"Приглашение недействительно",error_code:"REGISTRATION_CONFLICT"},409);
       if (options.failOnce && submissions === 1) throw new TypeError("Network failed");
       return json({status:"success",data:{user_login:"ipetrov2",actor_role:"user",profile_complete:true}},201);
     }
@@ -141,4 +145,63 @@ describe("guided employee registration", () => {
     expect(JSON.parse(String(calls[1][1]?.body)).position).toBe("Инженер");
     expect(JSON.parse(String(calls[0][1]?.body))).toEqual(JSON.parse(String(calls[1][1]?.body)));
   });
+});
+
+
+
+it("uses the selected invitation and asks for the code again after an uncertain reload", async () => {
+  const code = "fixture-invitation-code-".padEnd(43, "x");
+  const requests = install({ failOnce: true, invitation: true });
+  const initial = show();
+  fireEvent.click(await screen.findByText("У меня есть приглашение"));
+  fireEvent.change(screen.getByLabelText("Код приглашения"), {target:{value:code}});
+  fireEvent.click(screen.getByRole("button", {name:"Проверить код"}));
+  fireEvent.click(await screen.findByRole("button", {name:"Это моя запись"}));
+  expect(screen.getByLabelText("Фамилия")).toHaveValue("Петров");
+  fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
+  expect(screen.queryByRole("combobox", {name:"Отдел"})).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"), {target:{value:"1234"}});
+  fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
+  await password();
+  await screen.findByRole("alert");
+  expect(JSON.stringify({...sessionStorage})).not.toContain(code);
+  initial.unmount();
+  show();
+  expect(await screen.findByLabelText("Код приглашения")).toHaveValue("");
+  fireEvent.change(screen.getByLabelText("Пароль", {exact:true}), {target:{value:"Long-registration-password-43!"}});
+  fireEvent.change(screen.getByLabelText("Повторите пароль"), {target:{value:"Long-registration-password-43!"}});
+  fireEvent.click(screen.getByRole("button", {name:"Повторить завершение"}));
+  expect(screen.getByRole("alert")).toHaveTextContent("Введите код приглашения");
+  fireEvent.change(screen.getByLabelText("Код приглашения"), {target:{value:code}});
+  fireEvent.click(screen.getByRole("button", {name:"Повторить завершение"}));
+  await screen.findByTestId("destination");
+  const attempts = requests.mock.calls.filter(([url])=>String(url).endsWith("/register-requester"));
+  expect(attempts).toHaveLength(2);
+  expect(JSON.parse(String(attempts[1][1]?.body))).toEqual(JSON.parse(String(attempts[0][1]?.body)));
+  expect(JSON.parse(String(attempts[1][1]?.body))).toMatchObject({inventory_invite_code:code, department_id:"real"});
+});
+
+
+
+it("can explicitly start normal registration after a rejected invitation", async () => {
+  const requests = install({ invitation: true, rejectInvite: true });
+  show();
+  fireEvent.click(await screen.findByText("У меня есть приглашение"));
+  fireEvent.change(screen.getByLabelText("Код приглашения"), {target:{value:"a".repeat(43)}});
+  fireEvent.click(screen.getByRole("button", {name:"Проверить код"}));
+  fireEvent.click(await screen.findByRole("button", {name:"Это моя запись"}));
+  fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
+  fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"), {target:{value:"1234"}});
+  fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
+  await password();
+  fireEvent.click(await screen.findByRole("button", {name:"Продолжить без приглашения"}));
+  await names();
+  await contacts();
+  await password();
+  await screen.findByTestId("destination");
+  const attempts = requests.mock.calls.filter(([url])=>String(url).endsWith("/register-requester"));
+  expect(attempts).toHaveLength(2);
+  const [invited, standard] = attempts.map(([,init]) => JSON.parse(String(init?.body)));
+  expect(standard.request_id).not.toBe(invited.request_id);
+  expect(standard).not.toHaveProperty("inventory_invite_code");
 });

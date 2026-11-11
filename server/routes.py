@@ -116,7 +116,10 @@ from customer_history.handlers import (
     handle_web_support_ticket_history,
     handle_web_support_ticket_llm_context_preview,
 )
-from web_api.inventory_handlers import confirm_inventory_link, read_inventory_devices, remove_inventory_link
+from web_api.inventory_handlers import (
+    confirm_inventory_link, create_inventory_invitation, preview_inventory_invitation,
+    read_inventory_devices, remove_inventory_link, revoke_inventory_invitation,
+)
 from web_api.requester_handlers import (
     handle_web_requester_bootstrap,
     handle_web_requester_consent_approve,
@@ -606,6 +609,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/session/register', handle_web_session_register),
         web.post('/api/web/session/register-requester', handle_web_requester_register),
         web.get('/api/web/session/registration-options', handle_web_registration_options),
+        web.post('/api/web/session/registration-invitation', preview_inventory_invitation),
         web.get('/api/web/session/capabilities', handle_web_session_capabilities),
         web.post('/api/web/session/password-reset-requests', handle_web_session_password_reset_request),
         web.post('/api/web/session/logout', handle_web_session_logout),
@@ -896,6 +900,8 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/registry/people/{person_id}/archive', handle_web_admin_registry_person_archive),
         web.patch('/api/web/admin/registry/people/{person_id}', handle_web_admin_registry_person_update),
         web.put('/api/web/admin/registry/people/{person_id}/inventory-link', confirm_inventory_link),
+        web.post('/api/web/admin/registry/inventory-invitations', create_inventory_invitation),
+        web.delete('/api/web/admin/registry/inventory-invitations/{inventory_person_id}', revoke_inventory_invitation),
         web.delete('/api/web/admin/registry/people/{person_id}/inventory-link', remove_inventory_link),
         web.post('/api/web/admin/registry/people/{person_id}/identities', handle_web_admin_registry_person_identity_create),
         web.post('/api/web/admin/registry/ui-users/{user_login}/link-person', handle_web_admin_registry_ui_user_link_person),

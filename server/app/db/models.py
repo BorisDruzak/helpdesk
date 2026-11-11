@@ -2152,6 +2152,22 @@ class RegistryAsset(Base):
 
 
 
+
+class RegistryInventoryInvite(Base):
+    """Latest invitation for an inventory employee. Only its digest is retained."""
+
+    __tablename__ = "registry_inventory_invites"
+
+    inventory_person_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code_digest: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    inventory_department: Mapped[str] = mapped_column(String(255), nullable=False)
+    department_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    issued_by: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+
 class RegistryInventoryLink(Base):
     """Explicit approval for one inventory employee and one Helpdesk account."""
 

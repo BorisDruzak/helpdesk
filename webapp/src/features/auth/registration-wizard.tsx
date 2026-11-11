@@ -8,8 +8,9 @@ import { buildProfilePayload, buildProfileValues, missingProfileFields, Requeste
 import { fieldsWithRuntimeOptions } from "../../pages/requester/profile-workflow";
 import { WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
+import { RegistrationInvitationField } from "./registration-invitation-field";
 import { clearRegistrationAttempt, clearPendingRegistrationSubmission, confirmRegistration, fetchRegistrationOptions, registerRequester, registrationAttempt, rememberRegistrationSubmission,
-  registrationLoginPreview, RegistrationFieldError, type RegistrationAttempt, type RegistrationNames, type RegistrationOptions } from "./requester-registration";
+  registrationLoginPreview, RegistrationFieldError, type RegistrationAttempt, type RegistrationInvitation, type RegistrationNames, type RegistrationOptions } from "./requester-registration";
 
 export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   const navigate = useNavigate();
@@ -21,6 +22,11 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   const [loadError,setLoadError] = useState(false);
   const [reload,setReload] = useState(0);
   const [step,setStep] = useState(attempt?.submission ? 2 : 0);
+  const [inviteCode,setInviteCode] = useState("");
+  const [invitation,setInvitation] = useState<RegistrationInvitation | null>(null);
+  const [canDiscardInvite,setCanDiscardInvite] = useState(false);
+  const requiresInvitation = Boolean(attempt?.submission?.requires_invitation);
+
   const [password,setPassword] = useState("");
   const [repeat,setRepeat] = useState("");
   const [error,setError] = useState<string | null>(null);
@@ -51,6 +57,7 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   function advance() {
     setError(null);setErrors({});
     if(step === 0) {
+      if (inviteCode.trim() && !invitation) return showErrors("Подтвердите запись сотрудника или очистите поле кода.");
       const details: Record<string,string> = {};
       if(!names.last_name.trim()) details.last_name = "Укажите фамилию.";
       if(!names.first_name.trim()) details.first_name = "Укажите имя.";
@@ -67,15 +74,20 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
     if(busy.current || !attempt) return;
     if(password.length < 12) return showErrors("Пароль должен содержать не менее 12 символов.",{password:"Не менее 12 символов."});
     if(!attempt.user_login && password !== repeat) return showErrors("Пароли не совпадают.",{password_repeat:"Повторите тот же пароль."});
-    busy.current = true; setPending(true);setError(null);setErrors({});
+    const useInvitation = !attempt.user_login && (Boolean(invitation) || requiresInvitation);
+    if (useInvitation && !/^[A-Za-z0-9_-]{43}$/.test(inviteCode.trim())) {
+      return showErrors("Введите код приглашения.");
+    }
+    busy.current = true; setPending(true);setError(null);setErrors({});setCanDiscardInvite(false);
     try {
       if(switchAccount && status === "authenticated") await logout();
       let actual = attempt.user_login;
       if(!actual) {
         const submission = uncertain && attempt.submission ? attempt.submission : {names,profile:buildProfilePayload(profileValues,null,fields)};
-        rememberRegistrationSubmission(attempt,submission.names,submission.profile);
-        setAttempt({...attempt,submission});
-        const result = await registerRequester({...submission.names,request_id:attempt.request_id,profile:submission.profile,password,password_repeat:repeat});
+        rememberRegistrationSubmission(attempt, submission.names, submission.profile, useInvitation);
+        setAttempt({...attempt, submission: {...submission, requires_invitation: useInvitation}});
+        const result = await registerRequester({...submission.names,request_id:attempt.request_id,profile:submission.profile,
+          password,password_repeat:repeat,inventory_invite_code:useInvitation ? inviteCode.trim() : undefined});
         actual = result.user_login;
         confirmRegistration(attempt,actual);
         setAttempt({...attempt,user_login:actual});
@@ -86,7 +98,10 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
     } catch(cause) {
       const retry = !(cause instanceof WebSessionApiError) || cause.status >= 500;
       setUncertain(retry);
-      if(!retry && cause instanceof RegistrationFieldError && cause.status === 400) {
+      if (!retry && useInvitation && cause instanceof RegistrationFieldError && [400, 409].includes(cause.status)) {
+        setCanDiscardInvite(true);
+      }
+      if(!retry && !useInvitation && cause instanceof RegistrationFieldError && cause.status === 400) {
         clearPendingRegistrationSubmission(attempt);
         setAttempt({request_id:attempt.request_id});
       }
@@ -94,8 +109,37 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
       if(cause instanceof RegistrationFieldError && cause.status === 400 && cause.errorCode === "PROFILE_VALIDATION_ERROR") setStep(1);
     } finally {busy.current=false;setPending(false);}
   }
+  function selectInvitation(employee: RegistrationInvitation) {
+    const parts = employee.full_name.trim().split(/\s+/);
+    if (parts.length === 2 || parts.length === 3) {
+      const [last_name, first_name, patronymic = ""] = parts;
+      setNames({last_name, first_name, patronymic});
+    }
+    setValues(current => ({...current, department_id: employee.department_id}));
+    setInvitation(employee);
+    setError(null);
+  }
+  function discardInvitation() {
+    clearRegistrationAttempt();
+    setAttempt(registrationAttempt());
+    setInviteCode("");
+    setInvitation(null);
+    setCanDiscardInvite(false);
+    setStep(0);
+    setPassword("");
+    setRepeat("");
+    setError(null);
+    setErrors({});
+  }
+  function changeInviteCode(value: string) {
+    setInviteCode(value);
+    setInvitation(null);
+  }
   function submit(event: FormEvent) {event.preventDefault(); if(step < 2 && !attempt?.user_login) advance(); else void finish();}
   function control(field: typeof fields[number]) {
+    if(field.key==='department_id' && invitation) return (
+      <p key={field.key} className="text-sm">Отдел: {departments.find(option => option.value === invitation.department_id)?.label ?? invitation.department}</p>
+    );
     if(field.key==='department_id') return <SearchableSelect key={field.key} label="Отдел" required={field.required} value={values.department_id}
       options={departments} error={errors.department_id} onChange={value=>setValues(current=>({...current,department_id:value}))}/>;
     return <RequesterProfileFieldControl key={field.key} field={field} error={errors[field.key] ?? errors[`custom_fields.${field.key}`]}
@@ -110,8 +154,17 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
       {["ФИО","Отдел и связь","Пароль"].map((label,index) => <li key={label} aria-current={step===index ? "step" : undefined} className={step===index ? "font-semibold text-brand-700" : "text-slate-500"}>{index+1}. {label}</li>)}
     </ol> : <div role="status">Аккаунт создан, профиль заполнен. Ваш логин: <strong>{attempt.user_login}</strong>. Введите пароль, чтобы войти в кабинет.</div>}
     {error ? <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+    {canDiscardInvite && !attempt.user_login ? (
+      <Button type="button" variant="outline" disabled={pending} onClick={discardInvitation}>Продолжить без приглашения</Button>
+    ) : null}
     {uncertain && !attempt.user_login ? <p role="status" className="text-sm text-slate-600">Повторите завершение с теми же данными и паролем. Новый аккаунт при повторе не создаётся.</p> : null}
     <fieldset disabled={pending} className="min-w-0 space-y-4">
+      {!attempt.user_login && step === 0 && options.inventory_invitation_enabled ? (
+        <RegistrationInvitationField code={inviteCode} onCodeChange={changeInviteCode} selected={invitation} onSelect={selectInvitation} />
+      ) : null}
+      {!attempt.user_login && step === 2 && requiresInvitation && !invitation ? (
+        <RegistrationInvitationField code={inviteCode} onCodeChange={changeInviteCode} selected={null} onSelect={selectInvitation} retry />
+      ) : null}
       {!attempt.user_login && step===0 ? <div className="space-y-4">{([['last_name','Фамилия'],['first_name','Имя'],['patronymic','Отчество']] as const).map(([key,label]) =>
         <label key={key} className="block space-y-1 text-sm font-medium">{label}<Input className="w-full" aria-label={label} aria-invalid={errors[key] ? true : undefined} autoComplete={key==='last_name' ? 'family-name' : key==='first_name' ? 'given-name' : 'additional-name'} maxLength={100} value={names[key]} onChange={event => setNames({...names,[key]:event.target.value})}/>{errors[key] ? <span className="block text-rose-700">{errors[key]}</span> : null}</label>)}</div> : null}
       {!attempt.user_login && step===1 ? <div className="space-y-4">

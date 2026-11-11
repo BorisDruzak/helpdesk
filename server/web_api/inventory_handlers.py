@@ -10,10 +10,16 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+import config as config_module
 from app.db import get_session
 from app.db.models import RegistryInventoryLink, RegistryPerson, RegistryPersonIdentity, UiUser
 from app.repos.ui_users_repo import normalize_user_login
-from auth.middleware import require_auth
+from auth.inventory_invitation import (
+    INVITE_UNAVAILABLE, InventoryInviteError, invalidate_pending_inventory_invite, invite_digest, issue_inventory_invite,
+    lock_inventory_identity, read_inventory_invite,
+)
+from auth.middleware import _same_origin_error, require_auth
+from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from registry import inventory_directory as inventory
 from registry.admin_operations_service import RegistryAdminOperationsService
 
@@ -39,7 +45,7 @@ def _reply(data: dict, status: int = 200) -> web.Response:
 async def _is_owner(session, person_id: str, login: str) -> bool:
     person = await session.get(RegistryPerson, person_id)
     account = await session.get(UiUser, login)
-    if (person is None or person.status != "active" or (person.metadata_json or {}).get("merged_into")
+    if (person is None or person.status not in {"active", "self_reported"} or (person.metadata_json or {}).get("merged_into")
             or account is None or not account.is_active or account.actor_role != "user"):
         return False
     canonical = normalize_user_login(account.user_login)
@@ -80,6 +86,7 @@ async def confirm_inventory_link(request: web.Request) -> web.Response:
         return _reply({"error": "Inventory unavailable"}, 503)
 
     async with get_session() as session:
+        await lock_inventory_identity(session, str(payload.inventory_person_id))
         await session.scalar(select(RegistryPerson.person_id).where(RegistryPerson.person_id == person_id).with_for_update())
         if not await _is_owner(session, person_id, payload.user_login):
             return _reply({"error": "The account must have an active verified requester profile"}, 409)
@@ -94,6 +101,7 @@ async def confirm_inventory_link(request: web.Request) -> web.Response:
         session.add(row)
         try:
             await session.flush()
+            await invalidate_pending_inventory_invite(session, row.inventory_person_id)
             await _audit(session, request, row, "inventory_link_confirmed", payload.reason)
             await session.commit()
         except IntegrityError:
@@ -164,3 +172,87 @@ async def read_inventory_devices(request: web.Request) -> web.Response:
             return _reply({"sync_state": "stale", "observed_at": previous.observed_at.isoformat(),
                            "assignments": inventory.display_assignments(previous, stale=True)})
         return _reply({"sync_state": "unavailable", "assignments": []})
+
+
+
+class InvitationIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    inventory_person_id: UUID
+    department_id: UUID
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+
+
+class InvitationLookup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: Annotated[str, StringConstraints(min_length=43, max_length=43)]
+
+
+@require_auth("admin")
+async def create_inventory_invitation(request: web.Request) -> web.Response:
+    if not config_module.WEB_SELF_REGISTRATION_ENABLED or not inventory.inventory_enabled():
+        return _reply({"error": "Inventory integration is disabled"}, 503)
+    try:
+        payload = InvitationIssue.model_validate(await request.json())
+    except (ValueError, ValidationError):
+        return _reply({"error": "Проверьте сотрудника, отдел и причину выдачи."}, 400)
+    try:
+        profile = await inventory.fetch_person(payload.inventory_person_id)
+    except inventory.InventoryPersonMissing:
+        return _reply({"error": "Сотрудник не найден в инвентаризации."}, 404)
+    except inventory.InventoryUnavailable:
+        return _reply({"error": "Инвентаризация недоступна."}, 503)
+    from auth.requester_registration import clean_registration_name, registration_login_base
+    parts = profile.full_name.split(maxsplit=2)
+    try:
+        if len(parts) < 2 or len(profile.full_name) > 240:
+            raise ValueError("Invalid name")
+        registration_login_base(parts[1], parts[0])
+        if len(parts) == 3:
+            clean_registration_name(parts[2], optional=True)
+    except ValueError:
+        return _reply({"error": "ФИО в инвентаризации должно подходить для регистрации. Проверьте карточку сотрудника."}, 409)
+    try:
+        async with get_session() as session:
+            result = await issue_inventory_invite(
+                session, profile, str(payload.department_id), request["auth_context"].actor_id, payload.reason,
+            )
+    except InventoryInviteError as exc:
+        return _reply({"error": str(exc)}, 409)
+    return _reply(result, 201)
+
+
+@require_auth("admin")
+async def revoke_inventory_invitation(request: web.Request) -> web.Response:
+    try:
+        inventory_id = str(UUID(request.match_info["inventory_person_id"]))
+        payload = Removal.model_validate(await request.json())
+    except (ValueError, ValidationError):
+        return _reply({"error": "Проверьте сотрудника и причину отзыва."}, 400)
+    async with get_session() as session:
+        await lock_inventory_identity(session, inventory_id)
+        revoked = await invalidate_pending_inventory_invite(session, inventory_id)
+        if revoked:
+            await RegistryAdminOperationsService(session).append_event(
+                object_type="inventory_invitation", object_id=inventory_id, event_type="inventory_invitation_revoked",
+                actor_id=request["auth_context"].actor_id, actor_role="admin", reason=payload.reason,
+            )
+    return _reply({"revoked": revoked})
+
+
+async def preview_inventory_invitation(request: web.Request) -> web.Response:
+    if not config_module.WEB_SELF_REGISTRATION_ENABLED or not inventory.inventory_enabled():
+        return _reply({"error": "Регистрация по приглашению недоступна."}, 403)
+    if _same_origin_error(request):
+        return _reply({"error": "Откройте регистрацию на странице Helpdesk."}, 403)
+    if not check_rate_limit("requester_inventory_invitation", client_ip(request), limit=10, window_seconds=60):
+        return rate_limited_response()
+    try:
+        payload = InvitationLookup.model_validate(await request.json())
+        digest = invite_digest(payload.code)
+        async with get_session() as session:
+            row = await read_inventory_invite(session, digest)
+            result = {"full_name": row.full_name, "department": row.inventory_department,
+                      "department_id": row.department_id}
+    except (ValueError, ValidationError):
+        return _reply({"error": INVITE_UNAVAILABLE}, 409)
+    return _reply(result)

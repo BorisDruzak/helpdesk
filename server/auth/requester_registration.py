@@ -10,6 +10,9 @@ from sqlalchemy import text
 
 from app.db.models import UiUser, WebRequesterRegistration
 from app.repos.ui_users_repo import UiUsersRepo
+from auth.inventory_invitation import (
+    InventoryInviteError, consume_inventory_invite, invite_digest, validate_inventory_invite,
+)
 from auth.password_service import hash_password, validate_password_policy, verify_password
 from requester.identity_service import RequesterIdentityResolver, RequesterProfileValidationError
 
@@ -63,7 +66,15 @@ async def register_requester(session, payload: dict) -> dict:
     profile["full_name"] = " ".join(part for part in (last, first, patronymic) if part)
     if len(profile["full_name"]) > 240:
         raise ValueError("ФИО должно содержать не более 240 символов.")
-    fingerprint = hashlib.sha256(json.dumps(profile, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+    material = profile
+    digest = None
+    if code := payload.get("inventory_invite_code"):
+        try:
+            digest = invite_digest(code)
+        except InventoryInviteError as exc:
+            raise RegistrationConflict(str(exc)) from exc
+        material = {**profile, "inventory_invitation": digest}
+    fingerprint = hashlib.sha256(json.dumps(material, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
     await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _lock_key("requester-signup-request:" + request_id)})
     receipt = await session.get(WebRequesterRegistration, request_id)
     if receipt is not None:
@@ -74,6 +85,12 @@ async def register_requester(session, payload: dict) -> dict:
                 or not verify_password(password, user.password_hash)):
             raise RegistrationConflict("Не удалось продолжить регистрацию. Используйте вход в существующий аккаунт.")
         return {"user_login": receipt.user_login, "actor_role": "user", "profile_complete": True, "replayed": True}
+    invitation = None
+    if digest is not None:
+        try:
+            invitation = await validate_inventory_invite(session, digest, profile)
+        except InventoryInviteError as exc:
+            raise RegistrationConflict(str(exc)) from exc
     # A transaction lock serializes namesakes; the unique user constraint also
     # protects against legacy/admin writers that do not take this lock.
     await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _lock_key("requester-signup-login:" + base)})
@@ -97,6 +114,8 @@ async def register_requester(session, payload: dict) -> dict:
         result = await RequesterIdentityResolver(session).update_own_profile(actor_id=login, payload=profile)
         if not result["profile_completion"]["complete"]:
             raise RequesterProfileValidationError("Заполните обязательные поля профиля.")
+        if invitation is not None:
+            await consume_inventory_invite(session, invitation, result["profile"]["person_id"], login)
         session.add(WebRequesterRegistration(request_id=request_id, user_login=login,
             person_id=result["profile"]["person_id"], profile_fingerprint=fingerprint))
         await session.flush()

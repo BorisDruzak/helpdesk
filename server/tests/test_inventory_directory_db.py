@@ -97,3 +97,77 @@ async def test_alias_with_conflict_or_a_different_account_does_not_prove_ownersh
     response = await test_client.get(READ_PATH, headers=first_headers)
     assert (await response.json())["data"]["sync_state"] == "unlinked"
     assert (await test_client.put(url, headers=ADMIN, json=data)).status == 409
+
+
+
+async def test_inventory_invitation_endpoint_discloses_only_the_selected_employee(test_client, test_engine, monkeypatch):
+    import config
+    from app.db.models import RegistryDepartment, RegistryInventoryInvite
+    from auth.inventory_invitation import invite_digest
+
+    monkeypatch.setenv("HELPDESK_INVENTORY_BASE_URL", "https://fixture.invalid")
+    monkeypatch.setattr(config, "WEB_SELF_REGISTRATION_ENABLED", True)
+    department_id = str(uuid4())
+    async with async_sessionmaker(test_engine).begin() as session:
+        session.add(RegistryDepartment(department_id=department_id, name="Fixture department", status="active"))
+
+    async def fetch(person_id):
+        assert person_id == PERSON
+        return inventory_directory.InventoryProfile.model_validate(snapshot())
+
+    monkeypatch.setattr(inventory_directory, "fetch_person", fetch)
+    issue_path = "/api/web/admin/registry/inventory-invitations"
+    preview_path = "/api/web/session/registration-invitation"
+    payload = {"inventory_person_id": str(PERSON), "department_id": department_id, "reason": "Fixture confirmed"}
+    assert (await test_client.post(issue_path, json=payload)).status == 403
+    issued = await test_client.post(issue_path, headers=ADMIN, json=payload)
+    assert issued.status == 201
+    assert issued.headers["Cache-Control"] == "no-store"
+    code = (await issued.json())["data"]["code"]
+    assert len(code) == 43
+    async with async_sessionmaker(test_engine)() as session:
+        stored = await session.get(RegistryInventoryInvite, str(PERSON))
+        assert stored.code_digest == invite_digest(code) != code
+    assert (await test_client.post(preview_path, headers={"Origin": "https://invalid.example"}, json={"code": code})).status == 403
+    origin = str(test_client.make_url("/").origin())
+    headers = {"Origin": origin}
+    preview = await test_client.post(preview_path, headers=headers, json={"code": code})
+    assert preview.status == 200
+    assert (await preview.json())["data"] == {
+        "full_name": "Fixture employee", "department": "Fixture department", "department_id": department_id,
+    }
+    assert preview.headers["Cache-Control"] == "no-store"
+    replacement = await test_client.post(issue_path, headers=ADMIN, json=payload)
+    assert replacement.status == 201
+    second_code = (await replacement.json())["data"]["code"]
+    assert (await test_client.post(preview_path, headers=headers, json={"code": code})).status == 409
+
+    person_id, login, _ = await create_account(test_engine)
+    link_path = f"/api/web/admin/registry/people/{person_id}/inventory-link"
+    confirmation = {"inventory_person_id": str(PERSON), "user_login": login, "reason": "Fixture confirmed manually"}
+    assert (await test_client.put(link_path, headers=ADMIN, json=confirmation)).status == 200
+    assert (await test_client.delete(link_path, headers=ADMIN, json={"reason": "Fixture removed"})).status == 200
+    assert (await test_client.post(preview_path, headers=headers, json={"code": second_code})).status == 409
+
+    def issue():
+        return test_client.post(issue_path, headers=ADMIN, json=payload)
+
+    active = await issue()
+    third_code = (await active.json())["data"]["code"]
+    revoked = await test_client.delete(f"{issue_path}/{PERSON}", headers=ADMIN, json={"reason": "Fixture revoke"})
+    assert (await revoked.json())["data"]["revoked"] is True
+    assert (await test_client.post(preview_path, headers=headers, json={"code": third_code})).status == 409
+
+    issued_again = await issue()
+    final_code = (await issued_again.json())["data"]["code"]
+    registration = {
+        "request_id": str(uuid4()), "first_name": "employee", "last_name": "Fixture",
+        "department_id": department_id, "phone": "1234", "inventory_invite_code": final_code,
+        "password": "Long-fixture-password-43!", "password_repeat": "Long-fixture-password-43!",
+    }
+    response = await test_client.post("/api/web/session/register-requester", headers=headers, json=registration)
+    assert response.status == 201
+    requester = (await response.json())["data"]["user_login"]
+    result = await test_client.get(READ_PATH, headers={"Authorization": f"Bearer test-ui-user:{requester}"})
+    assert result.status == 200
+    assert (await result.json())["data"]["assignments"][0]["name"] == "Fixture workstation"

@@ -9,6 +9,7 @@ class WebSessionCapabilities(BaseModel):
 
     self_registration_enabled: bool
     sso_enabled: bool = False
+    inventory_invitation_enabled: bool | None = None
 
 
 class WebSessionPayload(BaseModel):
@@ -54,6 +55,7 @@ class WebRequesterRegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: UUID
+    inventory_invite_code: str | None = Field(default=None, min_length=43, max_length=43)
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
     patronymic: str = Field(default="", max_length=100)

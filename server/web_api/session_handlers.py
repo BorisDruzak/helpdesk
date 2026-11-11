@@ -16,6 +16,7 @@ from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
 from observer.web_event_writer import write_web_cabinet_observer_event
+from registry.inventory_directory import inventory_enabled
 from registry.password_reset_service import PasswordResetRequestService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
@@ -33,12 +34,14 @@ _LOGIN_RE = re.compile(r"^[A-Za-z0-9._@-]{3,100}$")
 
 
 async def handle_web_session_capabilities(request):
-    response = json_model_response(SuccessResponse[WebSessionCapabilities](
+    payload = SuccessResponse[WebSessionCapabilities](
         data=WebSessionCapabilities(
             self_registration_enabled=bool(getattr(config_module, "WEB_SELF_REGISTRATION_ENABLED", False)),
             sso_enabled=bool(getattr(config_module, "OIDC_ENABLED", False)),
+            inventory_invitation_enabled=True if config_module.WEB_SELF_REGISTRATION_ENABLED and inventory_enabled() else None,
         ),
-    ))
+    )
+    response = web.json_response(payload.model_dump(mode="json", exclude_none=True))
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -409,6 +412,8 @@ async def handle_web_registration_options(request):
             "required_fields": [{"key": field["key"], "label": field["label"]} for field in fields if field.get("required")]}
         data = {"departments": [{"value": department.department_id, "label": department.name}
                 for department in departments if department.status == "active"], "profile_schema": public_schema}
+        if inventory_enabled():
+            data["inventory_invitation_enabled"] = True
     response = web.json_response({"status": "success", "data": data})
     response.headers["Cache-Control"] = "no-store"
     return response

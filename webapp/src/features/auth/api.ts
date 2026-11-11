@@ -49,7 +49,7 @@ async function readJson<T>(response: Response): Promise<T | null> {
   return (await response.json()) as T;
 }
 
-export type WebSessionCapabilities = { self_registration_enabled: boolean; sso_enabled: boolean };
+export type WebSessionCapabilities = { self_registration_enabled: boolean; sso_enabled: boolean; inventory_invitation_enabled?: boolean };
 
 export async function fetchSessionCapabilities(): Promise<WebSessionCapabilities> {
   const response = await fetch("/api/web/session/capabilities", {
@@ -59,7 +59,8 @@ export async function fetchSessionCapabilities(): Promise<WebSessionCapabilities
   if (!response.ok || payload?.status !== "success" || typeof payload.data?.self_registration_enabled !== "boolean") {
     throw new WebSessionApiError("Не удалось проверить доступность регистрации", response.status);
   }
-  return { self_registration_enabled: payload.data.self_registration_enabled, sso_enabled: payload.data.sso_enabled === true };
+  return { self_registration_enabled: payload.data.self_registration_enabled, sso_enabled: payload.data.sso_enabled === true,
+    inventory_invitation_enabled: payload.data.inventory_invitation_enabled === true };
 }
 
 export async function fetchCurrentSession(): Promise<WebSession | null> {

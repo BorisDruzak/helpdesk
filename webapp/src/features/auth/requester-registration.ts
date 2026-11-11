@@ -3,8 +3,9 @@ import { WebSessionApiError } from "./api";
 
 const ATTEMPT_KEY = "helpdesk.requester-registration.v1";
 export const REGISTRATION_LOGIN_KEY = "helpdesk.registration-completed-login";
-export type RegistrationAttempt = { request_id: string; user_login?: string; submission?: {names:RegistrationNames;profile:RequesterProfileUpdatePayload} };
-export type RegistrationOptions = { departments: Array<{value:string;label:string}>; profile_schema: RequesterProfileSchema };
+export type RegistrationAttempt = { request_id: string; user_login?: string; submission?: {names:RegistrationNames;profile:RequesterProfileUpdatePayload; requires_invitation?: boolean} };
+export type RegistrationOptions = { departments: Array<{value:string;label:string}>; profile_schema: RequesterProfileSchema; inventory_invitation_enabled?: boolean };
+export type RegistrationInvitation = {full_name: string; department: string; department_id: string};
 export type RegistrationNames = { first_name: string; last_name: string; patronymic: string };
 
 export function registrationAttempt(): RegistrationAttempt {
@@ -32,9 +33,9 @@ export function confirmRegistration(attempt: RegistrationAttempt, login: string)
 }
 export function clearRegistrationAttempt() { sessionStorage.removeItem(ATTEMPT_KEY); }
 
-export function rememberRegistrationSubmission(attempt:RegistrationAttempt, names:RegistrationNames, profile:RequesterProfileUpdatePayload) {
+export function rememberRegistrationSubmission(attempt:RegistrationAttempt, names:RegistrationNames, profile:RequesterProfileUpdatePayload, requiresInvitation = false) {
   // The password is deliberately absent from this bounded, session-only draft.
-  sessionStorage.setItem(ATTEMPT_KEY,JSON.stringify({request_id:attempt.request_id,submission:{names,profile}}));
+  sessionStorage.setItem(ATTEMPT_KEY,JSON.stringify({request_id:attempt.request_id,submission:{names,profile,...(requiresInvitation ? {requires_invitation:true} : {})}}));
 }
 
 export function clearPendingRegistrationSubmission(attempt:RegistrationAttempt) {
@@ -58,17 +59,30 @@ export async function fetchRegistrationOptions(signal?: AbortSignal): Promise<Re
     throw new WebSessionApiError("Не удалось загрузить список отделов. Повторите попытку.",response.status);
   return payload.data;
 }
+export async function previewRegistrationInvitation(code: string): Promise<RegistrationInvitation> {
+  const response = await fetch("/api/web/session/registration-invitation", {
+    method:"POST", credentials:"same-origin", cache:"no-store",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({code}),
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.status !== "success") {
+    throw new WebSessionApiError(payload.error ?? "Не удалось проверить приглашение.", response.status);
+  }
+  return payload.data;
+}
+
 export class RegistrationFieldError extends WebSessionApiError {
   constructor(message: string, status: number, code?: string, public details?: Record<string,string>) { super(message,status,code); }
 }
 export async function registerRequester(input: RegistrationNames & {
-  request_id: string; profile: RequesterProfileUpdatePayload; password: string; password_repeat: string;
+  request_id: string; profile: RequesterProfileUpdatePayload; password: string; password_repeat: string; inventory_invite_code?: string;
 }): Promise<{user_login:string; actor_role:string; profile_complete:boolean}> {
   const {full_name: _name, person_id: _person, location_id: _location, ...profile} = input.profile;
   const response = await fetch("/api/web/session/register-requester", {
     method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({...profile,first_name:input.first_name,last_name:input.last_name,patronymic:input.patronymic,
-      request_id:input.request_id,password:input.password,password_repeat:input.password_repeat}),
+      request_id:input.request_id,password:input.password,password_repeat:input.password_repeat,
+      inventory_invite_code:input.inventory_invite_code}),
   });
   const payload = await response.json();
   if (!response.ok || payload.status !== "success") throw new RegistrationFieldError(payload.error ?? "Не удалось завершить регистрацию.",response.status,payload.error_code,payload.details);
