@@ -688,6 +688,17 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   Migration `132` owns the partial unique indexes; the test does not substitute
   for actual browser/WSS acceptance.
 
+## Requester inventory projection
+
+- `web_api/inventory_handlers.py`: administrator confirmation/removal and a
+  requester-only inventory read; `registry_inventory_links` stores the
+  approval and last accepted inventory snapshot (migration 159).
+- `registry/inventory_directory.py`: bounded verified HTTPS consumer of the
+  web_ovpn employee and assignment contract. No Endpoint control calls.
+- The requester profile uses the projection for display. Ticket-device access
+  and diagnostic authorization remain on their existing paths. See
+  [staging integration](../../docs/HELPDESK_INVENTORY_STAGING.md).
+
 ## Endpoint operation facade
 
 - `webapp/src/features/queues/api.ts::postSupportTicketToolRun` reuses

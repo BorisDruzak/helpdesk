@@ -116,6 +116,7 @@ from customer_history.handlers import (
     handle_web_support_ticket_history,
     handle_web_support_ticket_llm_context_preview,
 )
+from web_api.inventory_handlers import confirm_inventory_link, read_inventory_devices, remove_inventory_link
 from web_api.requester_handlers import (
     handle_web_requester_bootstrap,
     handle_web_requester_consent_approve,
@@ -833,6 +834,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/ticket-preview', handle_web_requester_scenario_ticket_preview),
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/submit', handle_web_requester_scenario_submit),
         web.get('/api/web/requester/profile', handle_web_requester_profile),
+        web.get('/api/web/requester/inventory-devices', read_inventory_devices),
         web.put('/api/web/requester/profile', handle_web_requester_profile_update),
         web.get('/api/web/requester/consents', handle_web_requester_consents),
         web.get('/api/web/requester/consents/{consent_id}', handle_web_requester_consent_detail),
@@ -893,6 +895,8 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/registry/people/merge', handle_web_admin_registry_people_merge),
         web.post('/api/web/admin/registry/people/{person_id}/archive', handle_web_admin_registry_person_archive),
         web.patch('/api/web/admin/registry/people/{person_id}', handle_web_admin_registry_person_update),
+        web.put('/api/web/admin/registry/people/{person_id}/inventory-link', confirm_inventory_link),
+        web.delete('/api/web/admin/registry/people/{person_id}/inventory-link', remove_inventory_link),
         web.post('/api/web/admin/registry/people/{person_id}/identities', handle_web_admin_registry_person_identity_create),
         web.post('/api/web/admin/registry/ui-users/{user_login}/link-person', handle_web_admin_registry_ui_user_link_person),
         web.post('/api/web/admin/registry/ui-users/{user_login}/disable', handle_web_admin_registry_ui_user_disable),

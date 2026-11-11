@@ -42,6 +42,7 @@ from domain_ports.registry_contracts import DeviceRef, DeviceContextProjection
 from app.services.endpoint_device_reference_service import EndpointDeviceSnapshotV1
 from domain_ports.registry_contracts import EndpointPossessionBindingRequest
 from registry.endpoint_possession_service import EndpointMappingUnavailable
+from registry.inventory_directory import inventory_enabled
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
 from tickets.handlers import (
@@ -933,6 +934,7 @@ async def handle_web_requester_profile(request: web.Request) -> web.Response:
             actor_id=auth_context.actor_id,
             state=request.app.get("state"),
         )
+    payload["inventory_devices_enabled"] = auth_context.actor_role == "user" and inventory_enabled()
     return _success(payload)
 
 

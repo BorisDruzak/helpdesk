@@ -500,7 +500,22 @@ export type RequesterDeviceDetail = {
   recent_tickets?: AuthenticatedRequesterTicket[];
 };
 
+export type RequesterInventoryDevices = {
+  sync_state: "disabled" | "unlinked" | "current" | "stale" | "unavailable";
+  assignments: Array<{
+    assignment_id: string;
+    name?: string | null;
+    inventory_number?: string | null;
+    os_name?: string | null;
+    endpoint_status: "online" | "offline" | "not_detected" | "unknown";
+    endpoint_binding_state: "confirmed" | "review" | "unbound";
+    endpoint_device_id?: string | null;
+    last_seen_at?: string | null;
+  }>;
+};
+
 export type RequesterProfileDetail = {
+  inventory_devices_enabled?: boolean;
   profile?: RequesterProfile | null;
   requester_context?: RequesterContextPreview;
   account_summary?: RequesterAccountSummary;

@@ -23,6 +23,7 @@ import {
   safeNextPath,
   type ProfileMode,
 } from "./profile-workflow";
+import { InventoryComputers } from "./inventory-computers";
 import { Button, InlineAlert } from "../../features/requester/ui/form-controls";
 import {
   ProfileCompletionAlert,
@@ -268,6 +269,10 @@ export function RequesterProfilePage() {
           values={values}
         />
       )}
+      {!isEditing && detail?.inventory_devices_enabled && profile?.person_id ? (
+        <InventoryComputers personId={JSON.stringify([profile.person_id, detail.account_summary?.login])}
+          allowedDevices={(detail.devices ?? []).map((device) => device.device_id)} />
+      ) : null}
     </div>
   );
 }

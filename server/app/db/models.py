@@ -2151,6 +2151,24 @@ class RegistryAsset(Base):
     )
 
 
+
+class RegistryInventoryLink(Base):
+    """Explicit approval for one inventory employee and one Helpdesk account."""
+
+    __tablename__ = "registry_inventory_links"
+
+    person_id: Mapped[str] = mapped_column(
+        String(36), sa.ForeignKey("registry_people.person_id", ondelete=DELETE_CASCADE), primary_key=True,
+    )
+    inventory_person_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    user_login: Mapped[str] = mapped_column(
+        String(100), sa.ForeignKey("ui_users.user_login", ondelete=DELETE_CASCADE), nullable=False, unique=True,
+    )
+    approval_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    observed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+
 class RegistryPersonIdentity(Base):
     """Normalized identity alias for a registry person."""
     __tablename__ = "registry_person_identities"

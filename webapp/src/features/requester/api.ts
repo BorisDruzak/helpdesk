@@ -14,6 +14,7 @@ import type {
   RequesterBootstrap,
   RequesterDeviceDetail,
   RequesterProfileDetail,
+  RequesterInventoryDevices,
   RequesterAttachmentUploadResult,
   RequesterProfileUpdatePayload,
   RequesterProfileUpdateResult,
@@ -218,6 +219,15 @@ export async function fetchRequesterDevice(deviceId: string): Promise<RequesterD
     cache: "no-store",
   });
   return readSuccess<RequesterDeviceDetail>(response, "Не удалось загрузить устройство");
+}
+
+export async function fetchRequesterInventory(signal?: AbortSignal): Promise<RequesterInventoryDevices> {
+  const response = await fetch("/api/web/requester/inventory-devices", {
+    credentials: "same-origin",
+    cache: "no-store",
+    signal,
+  });
+  return readSuccess<RequesterInventoryDevices>(response, "Inventory is unavailable");
 }
 
 export async function fetchRequesterProfile(): Promise<RequesterProfileDetail> {
