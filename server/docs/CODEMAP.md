@@ -704,6 +704,10 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   as unknown. The shared `features/inventory/operator-inventory-devices.tsx`
   component uses the ticket capability readiness API for the exact Endpoint
   target and links to the operator-facing inventory origin.
+- `web_api/inventory_status.py` serves the dedicated bearer-authenticated
+  `POST /api/internal/inventory/v1/helpdesk-account-status` for web_ovpn.
+  The batch query projects only explicitly requested inventory UUIDs whose
+  active account and verified alias still match their approval.
 - `registry/inventory_binding_refresh.py` refreshes linked employee assignments
   at requester bootstrap and every two minutes when the worker is running.
   `registry/inventory_device_binding.py` reconciles confirmed assignments

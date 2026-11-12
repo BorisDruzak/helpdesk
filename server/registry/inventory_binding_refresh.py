@@ -17,11 +17,21 @@ from registry.inventory_device_binding import (
 )
 
 
+def active_inventory_account(person: RegistryPerson | None, account: UiUser | None) -> bool:
+    return bool(person is not None and person.status in {"active", "self_reported"}
+                and not (person.metadata_json or {}).get("merged_into")
+                and account is not None and account.is_active and account.actor_role == "user")
+
+
+def verified_inventory_alias(alias: RegistryPersonIdentity | None, canonical_login: str) -> bool:
+    return bool(alias is not None and normalize_user_login(alias.identifier) == canonical_login
+                and not any((alias.metadata_json or {}).get(key) for key in ("collision_person_id", "merge_conflict")))
+
+
 async def inventory_link_owner(session, person_id: str, login: str) -> bool:
     person = await session.get(RegistryPerson, person_id)
     account = await session.get(UiUser, login)
-    if (person is None or person.status not in {"active", "self_reported"} or (person.metadata_json or {}).get("merged_into")
-            or account is None or not account.is_active or account.actor_role != "user"):
+    if account is None or not active_inventory_account(person, account):
         return False
     canonical = normalize_user_login(account.user_login)
     alias = await session.scalar(select(RegistryPersonIdentity).where(
@@ -30,8 +40,7 @@ async def inventory_link_owner(session, person_id: str, login: str) -> bool:
         RegistryPersonIdentity.normalized_identifier == canonical,
         RegistryPersonIdentity.verified.is_(True),
     ))
-    return bool(alias is not None and normalize_user_login(alias.identifier) == canonical
-                and not any((alias.metadata_json or {}).get(key) for key in ("collision_person_id", "merge_conflict")))
+    return verified_inventory_alias(alias, canonical)
 
 
 async def sync_managed_inventory(session, link, profile, *, missing=False, endpoint=None) -> dict[str, dict]:

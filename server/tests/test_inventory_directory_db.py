@@ -393,3 +393,38 @@ async def test_operator_inventory_uses_ticket_scope_and_redacts_service_fields(t
     assert data["sync_state"] == "stale"
     assert data["assignments"][0]["endpoint_status"] == "unknown"
     assert data["assignments"][0]["diagnostic_target"] is False
+
+
+async def test_service_account_status_only_returns_current_verified_links(test_client, test_engine, monkeypatch):
+    import hashlib
+
+    from app.db.models import RegistryInventoryLink
+
+    key = "inventory-status-fixture-key-with-32-bytes"
+    monkeypatch.setenv("HELPDESK_INVENTORY_STATUS_TOKEN_HASH", hashlib.sha256(key.encode()).hexdigest())
+    ids = [str(uuid4()) for _ in range(4)]
+    accounts = [await create_account(test_engine) for _ in range(3)]
+    async with async_sessionmaker(test_engine).begin() as session:
+        for inventory_id, (person_id, login, _headers) in zip(ids, accounts):
+            session.add(RegistryInventoryLink(person_id=person_id, user_login=login,
+                inventory_person_id=inventory_id, approval_id=str(uuid4())))
+        disabled = await session.get(UiUser, accounts[1][1])
+        disabled.is_active = False
+        alias = await session.scalar(select(RegistryPersonIdentity).where(RegistryPersonIdentity.person_id == accounts[2][0]))
+        alias.metadata_json = {"collision_person_id": str(uuid4())}
+
+    path = "/api/internal/inventory/v1/helpdesk-account-status"
+    payload = {"inventory_person_ids": ids}
+    headers = {"Authorization": f"Bearer {key}"}
+    for unauthorized in (None, ADMIN, accounts[0][2], {"Authorization": "Bearer wrong"}):
+        assert (await test_client.post(path, headers=unauthorized, json=payload)).status == 401
+    assert (await test_client.post(path, headers=headers, json={"inventory_person_ids": [ids[0]] * 2})).status == 400
+    assert (await test_client.post(path, headers=headers, json={"inventory_person_ids": [str(uuid4()) for _ in range(251)]})).status == 400
+    response = await test_client.post(path, headers=headers, json=payload)
+    assert response.status == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert await response.json() == {"linked": [{
+        "inventory_person_id": ids[0], "person_id": accounts[0][0], "user_login": accounts[0][1],
+    }]}
+    monkeypatch.delenv("HELPDESK_INVENTORY_STATUS_TOKEN_HASH")
+    assert (await test_client.post(path, headers=headers, json=payload)).status == 503

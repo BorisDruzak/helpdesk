@@ -79,6 +79,21 @@ for the worker to drain automatic bindings. Verify that no
 releases the primary slot for legacy writes. The downgrade enforces this
 condition before dropping the lease column.
 
+To show Helpdesk account status in web_ovpn, set a second dedicated secret.
+Put only its SHA-256 digest in `HELPDESK_INVENTORY_STATUS_TOKEN_HASH` on
+Helpdesk. Configure `HELPDESK_INVENTORY_STATUS_BASE_URL`,
+`HELPDESK_INVENTORY_STATUS_TOKEN_FILE` and, if needed,
+`HELPDESK_INVENTORY_STATUS_CA_FILE` on web_ovpn. The HTTPS base is also used
+for the operator link to the Helpdesk profile.
+
+`POST /api/internal/inventory/v1/helpdesk-account-status` takes
+`{"inventory_person_ids": [...]}` with 1–250 distinct employee UUIDs.
+The `linked` array contains only requested UUIDs with a verified active
+requester account, along with the Helpdesk person ID and login. Missing
+entries in a successful response indicate no active verified link.
+Authentication, transport or payload failures display unknown status in
+web_ovpn and exclude those rows from the no-account filter.
+
 The operator installation actions still need the existing Windows MSI and
 ALT Linux workflows with verified Endpoint registration and heartbeat on
 the staging test devices.

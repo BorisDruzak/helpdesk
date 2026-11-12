@@ -455,6 +455,9 @@ async def auth_middleware(request: web.Request, handler):
     # Skip authentication for whitelisted endpoints
     if request.path in AUTH_WHITELIST:
         return await handler(request)
+    if request.method == "POST" and request.path == "/api/internal/inventory/v1/helpdesk-account-status":
+        # This route verifies its dedicated server credential before parsing any input.
+        return await handler(request)
     if request.method == "GET" and request.path.startswith("/api/service-catalog"):
         return await handler(request)
     if request.method == "POST" and request.path == "/api/service-catalog/preview":

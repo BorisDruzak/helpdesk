@@ -11,11 +11,14 @@ requester. The administrator profile loads assignments on demand. Readiness
 comes from the existing capabilities API for the ticket's Endpoint target.
 Current State: invitation, automatic binding and operator inventory changes are
 implemented locally. Staging still serves Helpdesk 8045e4bb and has 323 MiB free.
-Next Steps: add Helpdesk link status in web_ovpn and integrate agent install and
-binding actions. Prepare isolated web_ovpn staging and validate both OS flows.
+Helpdesk account status is implemented locally in both repositories. The read
+contract uses a separate scoped credential and exact inventory employee UUIDs.
+Next Steps: integrate agent install and binding actions, prepare isolated
+web_ovpn staging and validate both OS flows.
 Verification: 18 pytest, 20 Vitest and three Chromium scenarios passed. Ticket
 screenshots at 1366 and 1920, user profile at 1366. Webapp build and workspace
-verification passed. Remote end-to-end validation is pending.
+verification passed. Account status passed 15 Helpdesk pytest, eight web_ovpn
+pytest and a local Chromium run. Remote end-to-end validation is pending.
 Handoff: docs/HELPDESK_INVENTORY_STAGING.md.
 
 # 2026-11-06 Requester catalog funnel

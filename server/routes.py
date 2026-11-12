@@ -116,6 +116,7 @@ from customer_history.handlers import (
     handle_web_support_ticket_history,
     handle_web_support_ticket_llm_context_preview,
 )
+from web_api.inventory_status import STATUS_PATH, read_helpdesk_account_status
 from web_api.inventory_handlers import (
     confirm_inventory_link, create_inventory_invitation, preview_inventory_invitation,
     read_inventory_devices, read_registry_inventory_devices, read_ticket_inventory_devices,
@@ -840,6 +841,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/ticket-preview', handle_web_requester_scenario_ticket_preview),
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/submit', handle_web_requester_scenario_submit),
         web.get('/api/web/requester/profile', handle_web_requester_profile),
+        web.post(STATUS_PATH, read_helpdesk_account_status),
         web.get('/api/web/admin/registry/people/{person_id}/inventory-devices', read_registry_inventory_devices),
         web.get('/api/web/requester/inventory-devices', read_inventory_devices),
         web.put('/api/web/requester/profile', handle_web_requester_profile_update),
