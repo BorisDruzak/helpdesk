@@ -695,6 +695,15 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   approval and last accepted inventory snapshot (migration 159).
 - `registry/inventory_directory.py`: bounded verified HTTPS consumer of the
   web_ovpn employee and assignment contract. No Endpoint control calls.
+- `GET /api/web/support/tickets/{ticket_id}/inventory-devices` and
+  `GET /api/web/admin/registry/people/{person_id}/inventory-devices` serve
+  operator views of confirmed assignments from `web_api/inventory_handlers.py`.
+  The ticket read uses the standard queue ACL and ticket requester identity.
+  The administrator read is scoped to the selected Registry person. Both
+  recheck account approval after the provider read and return stale presence
+  as unknown. The shared `features/inventory/operator-inventory-devices.tsx`
+  component uses the ticket capability readiness API for the exact Endpoint
+  target and links to the operator-facing inventory origin.
 - `registry/inventory_binding_refresh.py` refreshes linked employee assignments
   at requester bootstrap and every two minutes when the worker is running.
   `registry/inventory_device_binding.py` reconciles confirmed assignments

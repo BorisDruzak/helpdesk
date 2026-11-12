@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { updateAdminRegistryPerson, type AdminRegistryPayload } from "../admin/api";
+import { OperatorInventoryDevices } from "../inventory/operator-inventory-devices";
 import { registryStatusLabel } from "../admin/registry/registry-utils";
 import { fieldClass, labelClass, type Person } from "./model";
 import { createUserProfile } from "./api";
@@ -41,5 +42,6 @@ export function ProfilePanel({ person, registry }: { person: Person; registry: A
     {saved ? <p role="status" className="text-sm text-emerald-700">Профиль сохранён</p> : null}
     <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">{rows.map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm font-medium text-slate-900">{value || "Не указано"}</dd></div>)}</dl>
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4"><p className="text-xs text-slate-500">{person.primary_device_count ?? 0} личных устройств · {person.active_ticket_count ?? 0} активных заявок</p><Button variant="outline" size="sm" onClick={() => setEditing(true)}>Редактировать профиль</Button></div>
+    <OperatorInventoryDevices key={person.person_id} personId={person.person_id} />
   </div>;
 }

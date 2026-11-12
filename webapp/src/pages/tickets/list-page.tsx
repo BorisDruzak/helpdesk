@@ -2509,7 +2509,7 @@ export function TicketListPage() {
             {selectedTicket && sidebarTab === "context" && viewModel.right.context ? (
               <TicketContextPanel
                 requester={<><TicketRequestContext detail={workspaceQuery.data!.detail} serviceContext={viewModel.right.context.classification} /><TicketRequesterContext requester={viewModel.right.context.requester} /></>}
-                device={<TicketDeviceAgentPanel deviceContext={viewModel.right.context.device} inventoryContext={viewModel.right.inventoryContext} deviceSnapshot={workspaceQuery.data?.detail.snapshot.device} />}
+                device={<TicketDeviceAgentPanel ticketId={selectedTicket.id} deviceContext={viewModel.right.context.device} inventoryContext={viewModel.right.inventoryContext} deviceSnapshot={workspaceQuery.data?.detail.snapshot.device} />}
                 agent={null}
                 observer={<ObserverDiagnosticCard isLightTheme={isLightTheme} observer={viewModel.right.observer} />}
                 criticalSummary={<p className={viewModel.right.observer.errorTraceCount ? "text-sm font-semibold text-rose-600" : "text-sm text-slate-500"}>Observer: {viewModel.right.observer.healthLabel} · Ошибки: {viewModel.right.observer.errorTraceCount}</p>}

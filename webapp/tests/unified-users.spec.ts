@@ -51,9 +51,17 @@ async function installUsersFixture(page: Page) {
     let data: unknown;
     if (path === "/api/web/session/me") data = { user_login: "fixture-admin", actor_role: "admin", auth_type: "ui_token", default_workspace: "admin", available_workspaces: ["admin", "support"], permissions: ["workspace.admin.view", "workspace.support.view", "admin.access.view", "admin.registry.view", "settings.view"] };
     else if (path === "/api/web/session/capabilities") data = { self_registration_enabled: false, sso_enabled: false };
+    else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
     else if (path === "/api/web/notifications/unread_count") return route.fulfill({ json: { status: "ok", unread_count: 0 } });
     else if (path === "/api/web/notifications") data = { items: [], notifications: [], unread_count: 0 };
     else if (path === "/api/web/admin/registry") data = registry();
+    else if (path === `/api/web/admin/registry/people/${marinaId}/inventory-devices`) {
+      data = { sync_state: "current", assignments: [{
+        assignment_id: "fixture-assignment", name: "Компьютер сотрудника", role: "primary",
+        endpoint_binding_state: "confirmed", endpoint_status: "offline", diagnostic_target: false,
+        inventory_url: "https://inventory.invalid/inventory/assets/fixture-pc",
+      }] };
+    }
     else if (path === "/api/web/admin/access/catalog") data = catalog;
     else if (path === "/api/web/admin/access/summary") data = { version: "users-fixture", queues, access_groups: [], notes: [], users: account ? [{ ...account, display_name: "Заваруха Марина", role_label: account.actor_role === "support" ? "Поддержка" : "Пользователь", groups: [], queue_count: account.queue_ids.length }] : [] };
     else if (path === "/api/web/admin/access/audit") data = { items: [] };
@@ -156,6 +164,22 @@ test("person card remains usable on a narrow screen", async ({ page }, info) => 
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await page.screenshot({ path: info.outputPath("users-mobile.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+
+test("person profile shows assigned computers from inventory", async ({ page }, info) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const fixture = await installUsersFixture(page);
+  await page.goto(`/app/admin/users?person=${marinaId}`);
+  const card = page.getByRole("article", { name: "Карточка пользователя" });
+  await card.getByText("Назначенные компьютеры", { exact: true }).click();
+  await expect(card.getByText("Компьютер сотрудника", { exact: true })).toBeVisible();
+  await expect(card.getByText(/Агент не в сети/)).toBeVisible();
+  await expect(card.getByRole("link", { name: "Открыть в инвентаризации" })).toHaveAttribute("href", /fixture-pc$/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath("person-inventory.png"), fullPage: true });
   expect(fixture.errors).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
 });

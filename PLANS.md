@@ -1,3 +1,23 @@
+# 2026-11-12 Unified employee and device inventory
+
+Goal: connect Helpdesk registration and support workflows to verified inventory
+assignments and the existing Endpoint agent lifecycle on staging.
+Scope: web_ovpn employee and asset records, Helpdesk requester and operator
+views, and Windows and ALT Linux install and heartbeat verification.
+Constraints: staging only. Preserve existing registrations, ticket ACL and
+diagnostic consent. Use separate service credentials and the current installers.
+Decisions: ticket inventory reads use the standard queue ACL and the recorded
+requester. The administrator profile loads assignments on demand. Readiness
+comes from the existing capabilities API for the ticket's Endpoint target.
+Current State: invitation, automatic binding and operator inventory changes are
+implemented locally. Staging still serves Helpdesk 8045e4bb and has 323 MiB free.
+Next Steps: add Helpdesk link status in web_ovpn and integrate agent install and
+binding actions. Prepare isolated web_ovpn staging and validate both OS flows.
+Verification: 18 pytest, 20 Vitest and three Chromium scenarios passed. Ticket
+screenshots at 1366 and 1920, user profile at 1366. Webapp build and workspace
+verification passed. Remote end-to-end validation is pending.
+Handoff: docs/HELPDESK_INVENTORY_STAGING.md.
+
 # 2026-11-06 Requester catalog funnel
 
 Goal: continue approved requester improvements and stage verified follow-up.

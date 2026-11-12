@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from typing import Annotated
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from aiohttp import web
@@ -25,6 +27,8 @@ from registry.inventory_device_binding import (
     InventoryDeviceBindingService, fresh_inventory_observation, inventory_ticket_targets,
 )
 from registry.inventory_binding_refresh import inventory_link_owner, sync_managed_inventory
+from tickets.handlers import _get_ticket_or_response
+from tickets.ticket_context import requester_reference_snapshot_from_record
 
 
 class Confirmation(BaseModel):
@@ -170,6 +174,102 @@ async def read_inventory_devices(request: web.Request) -> web.Response:
         return _reply({"sync_state": "unavailable", "assignments": []})
 
 
+
+def _inventory_web_origin() -> str | None:
+    configured = (os.getenv("HELPDESK_INVENTORY_WEB_URL")
+                  or os.getenv("HELPDESK_INVENTORY_BASE_URL", "")).strip()
+    try:
+        origin = urlsplit(configured)
+        if (origin.scheme != "https" or not origin.hostname or origin.username is not None
+                or origin.path not in {"", "/"} or origin.query or origin.fragment
+                or "\\" in origin.netloc or any(ch.isspace() for ch in origin.netloc)):
+            return None
+    except ValueError:
+        return None
+    return f"https://{origin.netloc}"
+
+
+async def _read_operator_inventory(person_id: str | None, *, ticket_endpoint_ref: str | None = None) -> web.Response:
+    if not inventory.inventory_enabled():
+        return _reply({"sync_state": "disabled", "assignments": []})
+    if person_id is None:
+        return _reply({"sync_state": "unlinked", "assignments": []})
+    async with get_session() as session:
+        link = await session.get(RegistryInventoryLink, person_id)
+        if link is None or not await inventory_link_owner(session, person_id, link.user_login):
+            return _reply({"sync_state": "unlinked", "assignments": []})
+        inventory_id = UUID(link.inventory_person_id)
+        approval_id = link.approval_id
+
+    profile = None
+    try:
+        profile = await inventory.fetch_person(inventory_id)
+    except inventory.InventoryPersonMissing:
+        return _reply({"sync_state": "unavailable", "assignments": []})
+    except inventory.InventoryUnavailable:
+        pass
+
+    async with get_session() as session:
+        link = await session.get(RegistryInventoryLink, person_id)
+        if (link is None or link.approval_id != approval_id
+                or not await inventory_link_owner(session, person_id, link.user_login)):
+            return _reply({"sync_state": "unlinked", "assignments": []})
+        if profile is not None and str(profile.inventory_person_id) != link.inventory_person_id:
+            return _reply({"sync_state": "unavailable", "assignments": []})
+        stale = profile is None or not fresh_inventory_observation(profile.observed_at)
+        if link.snapshot and (stale or (link.observed_at and link.observed_at > profile.observed_at)):
+            try:
+                profile = inventory.InventoryProfile.model_validate(link.snapshot)
+            except ValidationError:
+                return _reply({"sync_state": "unavailable", "assignments": []})
+            stale = stale or not fresh_inventory_observation(profile.observed_at)
+        elif stale:
+            return _reply({"sync_state": "unavailable", "assignments": []})
+
+    origin = _inventory_web_origin()
+    assignments = []
+    for assignment in profile.assignments:
+        asset_id = str(assignment.inventory_asset_id)
+        assignments.append({
+            "assignment_id": str(assignment.assignment_id),
+            "name": assignment.name,
+            "inventory_number": assignment.inventory_number,
+            "os_name": assignment.os_name,
+            "role": assignment.role,
+            "endpoint_binding_state": assignment.endpoint_binding_state,
+            "endpoint_status": "unknown" if stale else assignment.endpoint_status,
+            "agent_version": assignment.agent_version,
+            "last_seen_at": assignment.last_seen_at.isoformat() if assignment.last_seen_at else None,
+            "diagnostic_target": bool(not stale and ticket_endpoint_ref and assignment.endpoint_device_id
+                                      and ticket_endpoint_ref == str(assignment.endpoint_device_id)),
+            "inventory_url": f"{origin}/inventory/assets/{asset_id}" if origin else None,
+            "workstation_url": f"{origin}/workstations?inventory_asset_id={asset_id}" if origin else None,
+        })
+    return _reply({"sync_state": "stale" if stale else "current", "assignments": assignments})
+
+
+@require_auth("admin")
+async def read_registry_inventory_devices(request: web.Request) -> web.Response:
+    try:
+        person_id = str(UUID(request.match_info["person_id"]))
+    except ValueError:
+        return _reply({"error": "Invalid registry person"}, 400)
+    return await _read_operator_inventory(person_id)
+
+
+@require_auth("admin", "support")
+async def read_ticket_inventory_devices(request: web.Request) -> web.Response:
+    async with get_session() as session:
+        ticket, error, _repo, _auth = await _get_ticket_or_response(request, session, write=False)
+        if error is not None:
+            return error
+        try:
+            requester, _snapshot = requester_reference_snapshot_from_record(ticket)
+            person_id = requester.external_id if requester is not None else ticket.requester_person_id
+        except (TypeError, ValueError):
+            person_id = None
+        endpoint_ref = ticket.endpoint_device_ref
+    return await _read_operator_inventory(person_id, ticket_endpoint_ref=endpoint_ref)
 
 class InvitationIssue(BaseModel):
     model_config = ConfigDict(extra="forbid")

@@ -524,3 +524,58 @@ test("a stale take refreshes availability and shows the specific server error", 
   await expect(page.getByRole("button", { name: "Взять в работу", exact: true })).toHaveCount(0);
   await expect(page.locator('textarea[aria-label="Сообщение сотруднику"]')).toBeDisabled();
 });
+
+for (const width of [1366, 1920]) {
+  test(`ticket inventory shows the assigned workstation and safe links at ${width}`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 768 });
+    const errors: string[] = [];
+    const failures: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("response", response => {
+      if (/inventory-devices|diagnostics\/capabilities/.test(response.url()) && response.status() >= 400) {
+        failures.push(response.url());
+      }
+    });
+    let unavailable = false;
+    await page.route("**/api/web/support/tickets/ticket-1/diagnostics/capabilities", route => route.fulfill({
+      json: { status: "ok", capabilities: [{ execution_target: "endpoint_operation", readiness: "available" }] },
+    }));
+    await page.route("**/api/web/support/tickets/ticket-1/inventory-devices", route => route.fulfill({
+      json: { status: "success", data: { sync_state: unavailable ? "stale" : "current", assignments: [{
+        assignment_id: "fixture-assignment", name: "Тестовый ПК", role: "shared", os_name: "ALT Linux",
+        endpoint_status: "not_detected", endpoint_binding_state: "unbound", diagnostic_target: false,
+        inventory_url: "https://inventory.invalid/inventory/assets/fixture-pc",
+        workstation_url: "https://inventory.invalid/workstations?inventory_asset_id=fixture-pc",
+      }, {
+        assignment_id: "fixture-diagnostic", name: "ПК с диагностикой", role: "primary", os_name: "Windows",
+        endpoint_status: "online", endpoint_binding_state: "confirmed", diagnostic_target: !unavailable,
+      }] } },
+    }));
+    await login(page);
+    await page.goto("/app/tickets/ticket-1");
+    await openContext(page);
+    const disclosure = page.getByText("Назначенные компьютеры", { exact: true });
+    await disclosure.click();
+    await expect(page.getByText("Тестовый ПК", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Агент не обнаружен/)).toBeVisible();
+    await expect(page.getByText("Инструменты диагностики доступны в заявке", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Открыть в инвентаризации" })).toHaveAttribute("href", /inventory\/assets\/fixture-pc$/);
+    await expect(page.getByRole("link", { name: "Установка и привязка" })).toHaveAttribute("href", /inventory_asset_id=fixture-pc$/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: info.outputPath(`ticket-inventory-${width}.png`), fullPage: true });
+
+    unavailable = true;
+    await disclosure.click();
+    await expect(page.getByText("Тестовый ПК", { exact: true })).toBeHidden();
+    await disclosure.click();
+    await expect(page.getByText(/Инвентаризация сейчас недоступна/)).toBeVisible();
+    await expect(page.getByText("Тестовый ПК", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Установка и привязка" })).toHaveCount(0);
+    await expect(page.getByText("Инструменты диагностики доступны в заявке", { exact: true })).toHaveCount(0);
+    expect(errors).toEqual([]);
+    expect(failures).toEqual([]);
+  });
+}

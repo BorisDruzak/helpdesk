@@ -34,6 +34,17 @@ profile editing remain independent of web_ovpn.
    grant the existing ticket device selection for their validity period.
    Diagnostic actions still require the existing authorization and consent.
 
+6. In a support ticket, open **Сведения**, **Контекст**, and then
+   **Назначенные компьютеры** in the device section. Only operators who can
+   read the ticket can read this list. The requester comes from the ticket
+   record. Diagnostic readiness is read from the existing ticket capabilities
+   API when the confirmed Endpoint UUID matches the ticket's target. The
+   administrator can also open **Назначенные компьютеры** in the selected
+   employee's **Профиль** under **Пользователи**. Set
+   `HELPDESK_INVENTORY_WEB_URL` if the operator-facing HTTPS origin differs
+   from the API origin. The links point to the specific inventory card and
+   the filtered workstation view, where web_ovpn checks its own permissions.
+
 For a new employee, open **Приглашение сотрудника из инвентаризации** in the
 admin Registry. Copy the employee ID from the web_ovpn card, choose the
 corresponding active Helpdesk department, and record why the invitation was

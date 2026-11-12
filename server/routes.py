@@ -118,7 +118,8 @@ from customer_history.handlers import (
 )
 from web_api.inventory_handlers import (
     confirm_inventory_link, create_inventory_invitation, preview_inventory_invitation,
-    read_inventory_devices, remove_inventory_link, revoke_inventory_invitation,
+    read_inventory_devices, read_registry_inventory_devices, read_ticket_inventory_devices,
+    remove_inventory_link, revoke_inventory_invitation,
 )
 from web_api.requester_handlers import (
     handle_web_requester_bootstrap,
@@ -627,6 +628,7 @@ def setup_routes(app: web.Application) -> None:
         web.delete('/api/web/support/queue/saved-views/{view_id}', handle_web_support_queue_saved_view_delete),
         web.get('/api/web/support/people/{person_id}/history', handle_web_support_person_history),
         web.get('/api/web/support/tickets/{ticket_id}/history', handle_web_support_ticket_history),
+        web.get('/api/web/support/tickets/{ticket_id}/inventory-devices', read_ticket_inventory_devices),
         web.get('/api/web/support/tickets/{ticket_id}/context-pack', handle_web_support_ticket_context_pack),
         web.post('/api/web/support/tickets/{ticket_id}/llm-context/preview', handle_web_support_ticket_llm_context_preview),
         web.get('/api/web/support/tickets/{ticket_id}/workspace', handle_web_support_ticket_workspace),
@@ -838,6 +840,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/ticket-preview', handle_web_requester_scenario_ticket_preview),
         web.post('/api/web/requester/request-scenarios/sessions/{identifier}/submit', handle_web_requester_scenario_submit),
         web.get('/api/web/requester/profile', handle_web_requester_profile),
+        web.get('/api/web/admin/registry/people/{person_id}/inventory-devices', read_registry_inventory_devices),
         web.get('/api/web/requester/inventory-devices', read_inventory_devices),
         web.put('/api/web/requester/profile', handle_web_requester_profile_update),
         web.get('/api/web/requester/consents', handle_web_requester_consents),

@@ -1,16 +1,18 @@
 import { Link } from "react-router-dom";
+import { OperatorInventoryDevices } from "../../../features/inventory/operator-inventory-devices";
 import type { SupportTicketDetailPayload, SupportTicketInventoryContext } from "../../../features/queues/api";
 import type { SupportWorkspaceContext } from "../../../features/queues/support-workspace-model";
 import { RegistryContext, contextDate } from "../../../features/admin/endpoint-context-view";
 import { ContextSnapshotContent } from "../../../features/admin/endpoint-profile-content";
 
 type TicketDeviceAgentPanelProps = {
+  ticketId?: string;
   deviceContext?: SupportWorkspaceContext["device"] | null;
   inventoryContext?: SupportTicketInventoryContext | null;
   deviceSnapshot?: SupportTicketDetailPayload["snapshot"]["device"] | null;
 };
 
-export function TicketDeviceAgentPanel({ inventoryContext, deviceContext, deviceSnapshot }: TicketDeviceAgentPanelProps) {
+export function TicketDeviceAgentPanel({ ticketId, inventoryContext, deviceContext, deviceSnapshot }: TicketDeviceAgentPanelProps) {
   const context = inventoryContext?.context;
   const inventory = context?.snapshots.find((snapshot) => snapshot.profile === "inventory_v1");
   const device = context?.device;
@@ -36,5 +38,6 @@ export function TicketDeviceAgentPanel({ inventoryContext, deviceContext, device
       <Link to={`/app/admin/device?device=${encodeURIComponent(context.device.id)}`}>Открыть карточку устройства</Link>
     </> : <p className="mt-3 text-sm text-slate-500">{missingContext}</p>}
     <Link className="mt-3 block" to="/app/admin/inventory">Открыть устройства</Link>
+    {ticketId ? <OperatorInventoryDevices ticketId={ticketId} /> : null}
   </section>;
 }

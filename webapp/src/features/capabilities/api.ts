@@ -51,9 +51,10 @@ export async function listAdminCapabilityProviderConfigs(): Promise<DiagnosticPr
   return assertOk(payload, response, "Unable to load capability provider configs").provider_configs;
 }
 
-export async function listTicketCapabilityReadiness(ticketId: string): Promise<CapabilityDescriptor[]> {
+export async function listTicketCapabilityReadiness(ticketId: string, signal?: AbortSignal): Promise<CapabilityDescriptor[]> {
   const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/diagnostics/capabilities`, {
     credentials: "same-origin",
+    signal,
   });
   const payload = await readJson<ApiOkResponse<{ capabilities: CapabilityDescriptor[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load ticket capability readiness").capabilities;

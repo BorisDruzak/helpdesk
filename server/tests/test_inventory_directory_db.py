@@ -331,3 +331,65 @@ async def test_auto_binding_api_and_worker_revoke_without_profile_open(test_clie
     await inventory_binding_refresh.refresh_inventory_links()
     devices = await test_client.get("/api/web/requester/devices", headers=requester)
     assert (await devices.json())["data"]["devices"][0]["device_id"] == local_device
+
+
+async def test_operator_inventory_uses_ticket_scope_and_redacts_service_fields(test_client, test_engine, monkeypatch):
+    from app.db.models import Ticket
+    from tests.test_ticket_queue_routing_contracts import _seed_queue
+
+    person_id, login, requester = await create_account(test_engine)
+    visible_id, hidden_id, invalid_id = (str(uuid4()) for _ in range(3))
+    fixture = snapshot()
+    fixture["observed_at"] = datetime.now(timezone.utc).isoformat()
+    ref = fixture["assignments"][0]["endpoint_device_id"]
+    asset_id = fixture["assignments"][0]["inventory_asset_id"]
+    available = True
+    reads = []
+
+    async def fetch(person):
+        reads.append(person)
+        if not available:
+            raise inventory_directory.InventoryUnavailable()
+        return inventory_directory.InventoryProfile.model_validate(fixture)
+
+    monkeypatch.setenv("HELPDESK_INVENTORY_BASE_URL", "https://api.fixture.invalid")
+    monkeypatch.setenv("HELPDESK_INVENTORY_WEB_URL", "https://web.fixture.invalid")
+    monkeypatch.setattr(inventory_directory, "fetch_person", fetch)
+    async with async_sessionmaker(test_engine).begin() as session:
+        hidden = await _seed_queue(session, code=f"inventory_{uuid4().hex[:8]}", name="Inventory hidden", members=[])
+        for ticket_id in (visible_id, hidden_id, invalid_id):
+            session.add(Ticket(ticket_id=ticket_id, title="Inventory ticket", description="Fixture",
+                status="queued", requester_id=login, requester_person_id=person_id, endpoint_device_ref=ref,
+                queue_id=hidden.id if ticket_id == hidden_id else None,
+                requester_external_ref=person_id if ticket_id == invalid_id else None))
+
+    link_path = f"/api/web/admin/registry/people/{person_id}/inventory-link"
+    person_path = f"/api/web/admin/registry/people/{person_id}/inventory-devices"
+    ticket_path = "/api/web/support/tickets/{}/inventory-devices"
+    support = {"Authorization": "Bearer test-ui-support-token"}
+    assert (await test_client.put(link_path, headers=ADMIN, json={
+        "inventory_person_id": str(PERSON), "user_login": login, "reason": "Verified fixture",
+    })).status == 200
+    before = len(reads)
+    assert (await test_client.get(ticket_path.format(visible_id), headers=requester)).status == 403
+    assert (await test_client.get(ticket_path.format(hidden_id), headers=support)).status == 403
+    assert (await test_client.get(person_path, headers=support)).status == 403
+    invalid = await test_client.get(ticket_path.format(invalid_id), headers=support)
+    assert (await invalid.json())["data"]["assignments"] == []
+    assert len(reads) == before
+
+    response = await test_client.get(ticket_path.format(visible_id), headers=support)
+    assert response.status == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    row, = (await response.json())["data"]["assignments"]
+    assert row["inventory_url"] == f"https://web.fixture.invalid/inventory/assets/{asset_id}"
+    assert row["workstation_url"] == f"https://web.fixture.invalid/workstations?inventory_asset_id={asset_id}"
+    assert row["diagnostic_target"] is True
+    assert not {"endpoint_binding_id", "endpoint_device_id", "request_device_id"} & row.keys()
+
+    available = False
+    response = await test_client.get(person_path, headers=ADMIN)
+    data = (await response.json())["data"]
+    assert data["sync_state"] == "stale"
+    assert data["assignments"][0]["endpoint_status"] == "unknown"
+    assert data["assignments"][0]["diagnostic_target"] is False
