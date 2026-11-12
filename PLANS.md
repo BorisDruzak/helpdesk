@@ -10,25 +10,28 @@ Decisions: ticket inventory reads use the standard queue ACL and the recorded
 requester. The administrator profile loads assignments on demand. Readiness
 comes from the existing capabilities API for the ticket's Endpoint target.
 Current State: invitation, automatic binding and operator inventory changes are
-implemented locally. Staging still serves Helpdesk 8045e4bb and has 323 MiB free.
+implemented locally. Staging still serves Helpdesk 8045e4bb and has 131 MiB free.
 Helpdesk account status is implemented locally in both repositories. The read
 contract uses a separate scoped credential and exact inventory employee UUIDs.
 PC cards link to the existing Endpoint binding actions and Windows installer
 console. ALT has an inventory-scoped component-plan entry with a fresh identity
 check at both plan and apply.
 The web_ovpn controller catalog includes the signed ALT 3.2.183 native
-kit as a standalone component. The role uses the upstream coordinator
-and requires staged configuration before apply.
-Next Steps: publish the catalog to the isolated controller, wire the protected
-asset-specific installation assignment and Endpoint registration/heartbeat
-receipt, prepare isolated web_ovpn staging and validate both OS flows.
+kit as a standalone component. The ALT plan includes a private installation
+ID bound to the asset and controller machine. A replay of the same request
+reuses the ID. The role uses the upstream coordinator and requires the staging
+CA and service drop-in before apply.
+Next Steps: prepare isolated web_ovpn staging, publish the catalog, enforce
+the installation assignment at Endpoint, consume its registration and
+heartbeat evidence in inventory, and validate the Windows and ALT flows.
 Verification: 18 pytest, 20 Vitest and three Chromium scenarios passed. Ticket
 screenshots at 1366 and 1920, user profile at 1366. Webapp build and workspace
 verification passed. Account status passed 15 Helpdesk pytest, eight web_ovpn
 pytest and a local Chromium run. The signed ALT kit and release manifest
 passed detached signature verification. Linux controller and real Ansible
-fixtures passed 205 tests. The approved ALT test VM did not answer SSH, so
-live agent installation and registration remain pending.
+fixtures passed 236 tests for the scoped plan. The web_ovpn API and panel
+suite passed 39 tests. The approved ALT test VM did not answer SSH, so live
+agent installation and registration remain pending.
 Handoff: docs/HELPDESK_INVENTORY_STAGING.md.
 
 # 2026-11-06 Requester catalog funnel
