@@ -25,6 +25,10 @@ profile editing remain independent of web_ovpn.
    API `GET /api/web/requester/inventory-devices` checks ownership and refreshes
    assignments. If the provider is unreachable, the last confirmed list is
    marked stale and its presence becomes unknown.
+   For an unbound computer with no detected agent, **Запросить установку**
+   opens the request form. After choosing a category, the draft describes the
+   selected computer by name and inventory number when available. The draft
+   starts without a linked Endpoint device and is submitted by the requester.
 5. To test automatic bindings, set `HELPDESK_INVENTORY_AUTO_BIND_ENABLED=true`
    on Helpdesk staging. A confirmed employee/account link, a current confirmed
    assignment and a matching, non-retired Endpoint UUID are required. The

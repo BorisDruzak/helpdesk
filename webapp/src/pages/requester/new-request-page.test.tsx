@@ -28,7 +28,7 @@ function LocationProbe() {
     <button onClick={() => navigate("/app/requester/new")}>Test normal link</button></>;
 }
 
-function renderPage(initialEntry = "/app/requester/new") {
+function renderPage(initialEntry: string | { pathname: string; search: string; state: unknown } = "/app/requester/new") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, refetchOnWindowFocus: false },
@@ -512,6 +512,28 @@ describe("RequesterNewRequestPage", () => {
     expect(screen.queryByLabelText("Что случилось или что нужно?")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByLabelText("Что нужно проверить")).toHaveValue("Нужно проверить владельца устройства"));
     expect(screen.queryByLabelText("Устройство")).not.toBeInTheDocument();
+  });
+
+  it("prefills the installation request for the inventory computer after choosing a form", async () => {
+    const fetchMock = installNewRequestMock({ withNoDeviceManualForm: true });
+    renderPage({ pathname: "/app/requester/new", search: "?intent=endpoint_install",
+      state: { installationComputer: "Fixture unbound (INV-3)" } });
+
+    await chooseCategory("Ручная помощь без устройства");
+
+    const installationText = "Прошу установить Endpoint Agent на компьютер Fixture unbound (INV-3).";
+    const description = await screen.findByLabelText("Описание");
+    await waitFor(() => expect(description).toHaveValue(installationText));
+    expect(screen.getByLabelText("Компьютер для обращения")).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+    await waitFor(() => {
+      const create = fetchMock.mock.calls.find(([url, init]) =>
+        url === "/api/web/requester/tickets" && init?.method === "POST");
+      expect(create).toBeDefined();
+      const payload = JSON.parse(String(create?.[1]?.body));
+      expect(payload).toMatchObject({ device_scope: "none", description: installationText });
+      expect(payload).not.toHaveProperty("device_id");
+    });
   });
 
   it("focuses the first missing dynamic field only after the user tries to continue", async () => {

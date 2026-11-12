@@ -322,11 +322,14 @@ function uniqueMessages(messages: string[]): string[] {
 export function RequesterNewRequestPage() {
   const location = useLocation();
   const parameters = new URLSearchParams(location.search);
+  const intent = parameters.get("intent") || "";
+  const installationComputer = intent === "endpoint_install" ? stringMessage(location.state?.installationComputer) : null;
   // Each URL selection owns its restoration lifecycle and persistence key.
-  return <CatalogFunnel><RequesterNewRequestContent key={JSON.stringify([parameters.get("intent") || "", parameters.get("offering") || "", parameters.get("form") || ""])} /></CatalogFunnel>;
+  const selectionKey = JSON.stringify([intent, parameters.get("offering"), parameters.get("form"), installationComputer]);
+  return <CatalogFunnel><RequesterNewRequestContent key={selectionKey} installationComputer={installationComputer} /></CatalogFunnel>;
 }
 
-function RequesterNewRequestContent() {
+function RequesterNewRequestContent({ installationComputer }: { installationComputer: string | null }) {
   const recordCatalogEvent=useCatalogEvent();
   const { session } = useSession();
   const [createConflict, setCreateConflict] = useState(false);
@@ -349,15 +352,19 @@ function RequesterNewRequestContent() {
   const devices = bootstrap?.devices ?? [];
   const [deviceChoice, setSelectedDeviceId] = useState<string | null>(() => {
     const deviceId = (location.state as { requestDeviceId?: unknown } | null)?.requestDeviceId;
-    return typeof deviceId === "string" ? deviceId : null;
+    return typeof deviceId === "string" ? deviceId : installationComputer ? "" : null;
   });
   const defaultDeviceId = isResolvedPrimaryDeviceStatus(String(bootstrap?.primary_device_resolution?.status ?? ""))
     ? bootstrap?.primary_device?.device_id ?? "" : "";
   const selectedDeviceId = deviceChoice ?? defaultDeviceId;
   const primaryDevice = devices.find((device) => device.device_id === selectedDeviceId) ?? null;
   const hasAgentContext = Boolean(primaryDevice);
-  const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, linkedOffering ? `${requestIntent}:offering:${linkedOffering}` : linkedForm ? `${requestIntent}:form:${linkedForm}` : requestIntent) : null;
-  const [requestSeed, setRequestSeed] = useState(() => (requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : ""));
+  const draftIntent = installationComputer ? `${requestIntent}:${JSON.stringify(installationComputer)}` : requestIntent;
+  const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, linkedOffering ? `${draftIntent}:offering:${linkedOffering}` : linkedForm ? `${draftIntent}:form:${linkedForm}` : draftIntent) : null;
+  const [requestSeed, setRequestSeed] = useState(() => {
+    if (installationComputer) return `Прошу установить Endpoint Agent на компьютер ${installationComputer}.`;
+    return requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : "";
+  });
   const [fieldValues, setFieldValues] = useState<DynamicFormValues>({});
   const [fieldServerErrors, setFieldServerErrors] = useState<Record<string, string>>({});
   const [previousPrefill, setPreviousPrefill] = useState<DynamicFormValues>({});
@@ -679,7 +686,7 @@ function RequesterNewRequestContent() {
       parameters.delete("form");
       if (option?.offering) parameters.set("offering", option.offering.full_code);
       else if (option) parameters.set("form", option.form.key);
-      navigate({ pathname: location.pathname, search: parameters.toString() }, { state: { requestDeviceId: selectedDeviceId } });
+      navigate({ pathname: location.pathname, search: parameters.toString() }, { state: { requestDeviceId: selectedDeviceId, installationComputer } });
       return;
     }
   }
@@ -697,7 +704,7 @@ function RequesterNewRequestContent() {
     parameters.set("offering", offeringCode);
     if (entry) parameters.set("entry", entry);
     else parameters.delete("entry");
-    navigate({ pathname: location.pathname, search: parameters.toString() }, { state: { requestDeviceId: selectedDeviceId } });
+    navigate({ pathname: location.pathname, search: parameters.toString() }, { state: { requestDeviceId: selectedDeviceId, installationComputer } });
   }
 
   async function createTicket() {

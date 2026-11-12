@@ -47,12 +47,13 @@ export function InventoryComputers({ personId }: { personId: string }) {
         <ul className="divide-y divide-slate-200">
           {assignments.map((asset) => {
             const activity = asset.last_seen_at ? new Date(asset.last_seen_at) : null;
+            const name = asset.name || asset.inventory_number || "Рабочий компьютер";
             const authorizedDevice = !uncertain && asset.helpdesk_binding_state !== "conflict"
               ? asset.request_device_id : null;
             return (
               <li className="flex flex-wrap justify-between gap-2 py-3" key={asset.assignment_id}>
                 <div className="min-w-0">
-                  <p className="break-words font-medium">{asset.name || asset.inventory_number || "Рабочий компьютер"}</p>
+                  <p className="break-words font-medium">{name}</p>
                   <p className="text-sm text-slate-700">
                     {[asset.os_name,
                       asset.endpoint_binding_state === "review" || asset.helpdesk_binding_state === "conflict"
@@ -68,7 +69,10 @@ export function InventoryComputers({ personId }: { personId: string }) {
                     onClick={() => void client.invalidateQueries({queryKey: requesterQueryKeys.bootstrap()})}>Создать обращение для компьютера</Link>
                 ) : null}
                 {!uncertain && asset.endpoint_status === "not_detected" && asset.endpoint_binding_state === "unbound" ? (
-                  <Link className="text-sm underline" to="/app/requester/new">Запросить установку</Link>
+                  <Link className="text-sm underline" to="/app/requester/new?intent=endpoint_install"
+                    state={{ installationComputer: asset.name && asset.inventory_number ? `${name} (${asset.inventory_number})` : name }}>
+                    Запросить установку
+                  </Link>
                 ) : null}
               </li>
             );
