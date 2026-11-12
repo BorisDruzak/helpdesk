@@ -42,6 +42,7 @@ from domain_ports.registry_contracts import DeviceRef, DeviceContextProjection
 from app.services.endpoint_device_reference_service import EndpointDeviceSnapshotV1
 from domain_ports.registry_contracts import EndpointPossessionBindingRequest
 from registry.endpoint_possession_service import EndpointMappingUnavailable
+from registry.inventory_binding_refresh import refresh_inventory_for_login
 from registry.inventory_directory import inventory_enabled
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
@@ -843,6 +844,8 @@ def _status_filter(request: web.Request) -> list[str] | None:
 @require_auth("user", "admin")
 async def handle_web_requester_bootstrap(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
+    if auth_context.actor_role == "user":
+        await refresh_inventory_for_login(auth_context.actor_id)
     async with get_session() as session:
         payload = await RequesterIdentityResolver(session, state=request.app.get("state")).build_bootstrap(
             actor_id=auth_context.actor_id,

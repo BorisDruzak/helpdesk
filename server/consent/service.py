@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.repos.inventory_binding_authority import INVENTORY_SOURCE, STORED_ACTIVE_BINDING_STATES, active_binding_condition
 from app.db.models import DeviceUserBinding, Ticket, UserConsentRequest
 from app.repos.operations_repo import OperationsRepo
 from app.repos.endpoint_operation_links_repo import EndpointOperationLinksRepo
@@ -395,8 +396,14 @@ class UserConsentService:
     async def _ensure_active_scope(self, row: UserConsentRequest) -> None:
         if row.requester_binding_id:
             binding = await self.session.get(DeviceUserBinding, row.requester_binding_id)
-            if binding is None or binding.status != "active":
+            if binding is None or binding.status not in STORED_ACTIVE_BINDING_STATES:
                 raise ConsentAccessError("requester binding is not active", error_code="REQUESTER_BINDING_INACTIVE", status=403)
+            if getattr(binding, "source", None) == INVENTORY_SOURCE:
+                active = await self.session.scalar(select(DeviceUserBinding.binding_id).where(
+                    DeviceUserBinding.binding_id == row.requester_binding_id, active_binding_condition(),
+                ))
+                if active is None:
+                    raise ConsentAccessError("requester binding is not active", error_code="REQUESTER_BINDING_INACTIVE", status=403)
             if row.requester_person_id and binding.person_id != row.requester_person_id:
                 raise ConsentAccessError("requester binding mismatch", error_code="REQUESTER_BINDING_MISMATCH", status=403)
             if row.device_id and binding.device_id != row.device_id:

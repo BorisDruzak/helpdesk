@@ -1,4 +1,4 @@
-"""Inventory is a display-only projection of an explicitly approved employee link."""
+"""Requester inventory for explicitly approved employee links."""
 
 from __future__ import annotations
 
@@ -12,8 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 import config as config_module
 from app.db import get_session
-from app.db.models import RegistryInventoryLink, RegistryPerson, RegistryPersonIdentity, UiUser
-from app.repos.ui_users_repo import normalize_user_login
+from app.db.models import RegistryInventoryLink, RegistryPerson
 from auth.inventory_invitation import (
     INVITE_UNAVAILABLE, InventoryInviteError, invalidate_pending_inventory_invite, invite_digest, issue_inventory_invite,
     lock_inventory_identity, read_inventory_invite,
@@ -22,6 +21,10 @@ from auth.middleware import _same_origin_error, require_auth
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from registry import inventory_directory as inventory
 from registry.admin_operations_service import RegistryAdminOperationsService
+from registry.inventory_device_binding import (
+    InventoryDeviceBindingService, fresh_inventory_observation, inventory_ticket_targets,
+)
+from registry.inventory_binding_refresh import inventory_link_owner, sync_managed_inventory
 
 
 class Confirmation(BaseModel):
@@ -40,23 +43,6 @@ def _reply(data: dict, status: int = 200) -> web.Response:
     payload = {"status": "success", "data": data} if status < 400 else {"status": "error", **data}
     return web.json_response(payload, status=status,
                              headers={"Cache-Control": "no-store"})
-
-
-async def _is_owner(session, person_id: str, login: str) -> bool:
-    person = await session.get(RegistryPerson, person_id)
-    account = await session.get(UiUser, login)
-    if (person is None or person.status not in {"active", "self_reported"} or (person.metadata_json or {}).get("merged_into")
-            or account is None or not account.is_active or account.actor_role != "user"):
-        return False
-    canonical = normalize_user_login(account.user_login)
-    alias = await session.scalar(select(RegistryPersonIdentity).where(
-        RegistryPersonIdentity.person_id == person_id,
-        RegistryPersonIdentity.provider == "ui_login",
-        RegistryPersonIdentity.normalized_identifier == canonical,
-        RegistryPersonIdentity.verified.is_(True),
-    ))
-    return bool(alias is not None and normalize_user_login(alias.identifier) == canonical
-                and not any((alias.metadata_json or {}).get(key) for key in ("collision_person_id", "merge_conflict")))
 
 
 async def _audit(session, request, link, event_type: str, reason: str) -> None:
@@ -88,7 +74,7 @@ async def confirm_inventory_link(request: web.Request) -> web.Response:
     async with get_session() as session:
         await lock_inventory_identity(session, str(payload.inventory_person_id))
         await session.scalar(select(RegistryPerson.person_id).where(RegistryPerson.person_id == person_id).with_for_update())
-        if not await _is_owner(session, person_id, payload.user_login):
+        if not await inventory_link_owner(session, person_id, payload.user_login):
             return _reply({"error": "The account must have an active verified requester profile"}, 409)
         existing = await session.get(RegistryInventoryLink, person_id)
         if existing:
@@ -121,6 +107,7 @@ async def remove_inventory_link(request: web.Request) -> web.Response:
         await session.scalar(select(RegistryPerson.person_id).where(RegistryPerson.person_id == person_id).with_for_update())
         row = await session.scalar(select(RegistryInventoryLink).where(RegistryInventoryLink.person_id == person_id).with_for_update())
         if row is not None:
+            await InventoryDeviceBindingService(session, None).revoke_all(person_id, "inventory_link_removed")
             await _audit(session, request, row, "inventory_link_removed", payload.reason)
             await session.delete(row)
             await session.commit()
@@ -135,7 +122,7 @@ async def read_inventory_devices(request: web.Request) -> web.Response:
     query = select(RegistryInventoryLink).where(RegistryInventoryLink.user_login == login)
     async with get_session() as session:
         row = await session.scalar(query)
-        if row is None or not await _is_owner(session, row.person_id, login):
+        if row is None or not await inventory_link_owner(session, row.person_id, login):
             return _reply({"sync_state": "unlinked", "assignments": []})
         approval_id = row.approval_id
         person_id = UUID(row.inventory_person_id)
@@ -151,22 +138,31 @@ async def read_inventory_devices(request: web.Request) -> web.Response:
 
     async with get_session() as session:
         current = await session.scalar(query.where(RegistryInventoryLink.approval_id == approval_id).with_for_update())
-        if current is None or not await _is_owner(session, current.person_id, login):
+        if current is None or not await inventory_link_owner(session, current.person_id, login):
             return _reply({"sync_state": "unlinked", "assignments": []})
+        binding_results = await sync_managed_inventory(session, current, profile, missing=missing)
         if missing:
             current.snapshot = None
             current.observed_at = None
             await session.commit()
             return _reply({"sync_state": "unavailable", "assignments": []})
-        if profile is not None:
-            if current.observed_at is None or profile.observed_at > current.observed_at:
+        if profile is not None and fresh_inventory_observation(profile.observed_at):
+            if not fresh_inventory_observation(current.observed_at) or profile.observed_at > current.observed_at:
                 current.snapshot = profile.model_dump(mode="json")
                 current.observed_at = profile.observed_at
-                await session.commit()
             elif current.snapshot:
                 profile = inventory.InventoryProfile.model_validate(current.snapshot)
+            assignments = inventory.display_assignments(profile, stale=False)
+            await session.flush()
+            ticket_targets = await inventory_ticket_targets(session, current.person_id, profile)
+            for assignment in assignments:
+                assignment_id = assignment["assignment_id"]
+                if result := binding_results.get(assignment_id):
+                    assignment["helpdesk_binding_state"] = result["state"]
+                if assignment_id in ticket_targets and assignment.get("helpdesk_binding_state") != "unavailable":
+                    assignment["request_device_id"] = ticket_targets[assignment_id]
             return _reply({"sync_state": "current", "observed_at": profile.observed_at.isoformat(),
-                           "assignments": inventory.display_assignments(profile, stale=False)})
+                           "assignments": assignments})
         if current.snapshot:
             previous = inventory.InventoryProfile.model_validate(current.snapshot)
             return _reply({"sync_state": "stale", "observed_at": previous.observed_at.isoformat(),

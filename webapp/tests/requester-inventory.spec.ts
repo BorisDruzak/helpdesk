@@ -11,6 +11,9 @@ for (const width of [390, 1366]) {
     const profile = { person_id: "fixture-person", full_name: "Тестовый Сотрудник", department_id: "it", phone: "0000" };
     const completion = { complete: true, required_fields: [], missing_fields: [], blocks: {} };
     let outage = false;
+    await page.route("**/public_api/ticket_forms/current**", (route) => route.fulfill({
+      json: { status: "ok", pack: { key: "request_forms", version: "inventory", forms: [] } },
+    }));
     await page.route("**/api/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
       let data: unknown = {};
@@ -27,7 +30,7 @@ for (const width of [390, 1366]) {
       } else if (path === "/api/web/requester/inventory-devices") {
         data = { sync_state: outage ? "stale" : "current", assignments: [
           { assignment_id: "fixture-offline", name: "Тестовый ПК 1", os_name: "ALT Linux",
-            endpoint_device_id: "fixture-endpoint", endpoint_binding_state: "confirmed",
+            endpoint_device_id: "fixture-endpoint", endpoint_binding_state: "confirmed", request_device_id: "fixture-helpdesk-device",
             endpoint_status: outage ? "unknown" : "offline", last_seen_at: "2026-11-11T10:00:00Z" },
           { assignment_id: "fixture-missing", name: "Тестовый ПК 2", os_name: "Windows",
             endpoint_binding_state: "unbound", endpoint_status: outage ? "unknown" : "not_detected" },
@@ -41,15 +44,21 @@ for (const width of [390, 1366]) {
     await expect(section.getByText("Тестовый ПК 1")).toBeVisible();
     await expect(section.getByText(/Агент не в сети/)).toBeVisible();
     await expect(section.getByText(/Агент не обнаружен/)).toBeVisible();
-    await expect(section.getByRole("link", { name: "Создать обращение для компьютера" })).toHaveCount(0);
+    const createRequest = section.getByRole("link", { name: "Создать обращение для компьютера" });
+    await expect(createRequest).toHaveAttribute("href", "/app/requester/new");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath("inventory-profile.png"), fullPage: true });
 
+    await createRequest.click();
+    await expect(page).toHaveURL(/\/app\/requester\/new$/);
+    expect(await page.evaluate(() => history.state?.usr?.requestDeviceId)).toBe("fixture-helpdesk-device");
+
     outage = true;
-    await page.reload();
+    await page.goto("/app/requester/profile");
     await expect(section.getByText(/Инвентаризация сейчас недоступна/)).toBeVisible();
     await expect(section.getByText("Тестовый ПК 1")).toBeVisible();
     await expect(section.getByText(/Агент не в сети/)).toHaveCount(0);
+    await expect(createRequest).toHaveCount(0);
     expect(errors).toEqual([]);
     expect(failed).toEqual([]);
   });

@@ -270,8 +270,7 @@ export function RequesterProfilePage() {
         />
       )}
       {!isEditing && detail?.inventory_devices_enabled && profile?.person_id ? (
-        <InventoryComputers personId={JSON.stringify([profile.person_id, detail.account_summary?.login])}
-          allowedDevices={(detail.devices ?? []).map((device) => device.device_id)} />
+        <InventoryComputers personId={JSON.stringify([profile.person_id, detail.account_summary?.login])} />
       ) : null}
     </div>
   );

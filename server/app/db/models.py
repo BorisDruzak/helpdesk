@@ -2483,6 +2483,7 @@ class DeviceUserBinding(Base):
         default=lambda: datetime.now(timezone.utc),
     )
     valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    inventory_verified_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     confirmed_by_user_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     confirmed_by_admin: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -2509,7 +2510,7 @@ class DeviceUserBinding(Base):
             name="ck_device_user_bindings_relationship",
         ),
         sa.CheckConstraint(
-            "status IN ('pending', 'active', 'stale', 'revoked', 'transferred')",
+            "status IN ('pending', 'active', 'inventory_active', 'stale', 'revoked', 'transferred')",
             name="ck_device_user_bindings_status",
         ),
         Index("ix_device_user_bindings_device_status", "device_id", "status"),
@@ -2521,7 +2522,7 @@ class DeviceUserBinding(Base):
             "uq_device_user_bindings_active_primary_device",
             "device_id",
             unique=True,
-            postgresql_where=sa.text("status = 'active' AND relationship_type = 'primary_user'"),
+            postgresql_where=sa.text("status IN ('active', 'inventory_active') AND relationship_type = 'primary_user'"),
         ),
     )
 

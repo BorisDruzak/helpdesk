@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 
 from app.db.models import Device, RegistryEndpointDeviceMapping, RegistryPerson
+from app.repos.inventory_binding_authority import INVENTORY_SOURCE
 from app.repos.registration_repo import RegistrationRepo
 from domain_ports.registry_contracts import BindingRef, RegistrationRef, RegistryCommandResult
 from registry.registration_service import RegistrationService, is_person_active
@@ -13,42 +14,43 @@ class EndpointMappingUnavailable(Exception):
     pass
 
 
+async def ensure_verified_endpoint_mapping(session, endpoint_device_ref, *, now, hostname, platform):
+    mapping = await session.get(RegistryEndpointDeviceMapping, endpoint_device_ref)
+    if mapping is not None:
+        return mapping
+    # A diagnostic target on a ticket does not prove that its retired
+    # local device is the same computer. Never derive Registry ownership
+    # from ticket targets, hostname equality or coincident UUIDs.
+    local_id = endpoint_device_ref
+    try:
+        async with session.begin_nested():
+            existing = await session.get(Device, local_id, with_for_update=True)
+            if existing is None:
+                session.add(Device(device_id=local_id, protocol_version="endpoint_projection_v1",
+                    agent_version="unknown", hostname=hostname,
+                    os={"windows": "Windows", "linux": "Linux", "unknown": None}[platform],
+                    capabilities={}, device_metadata={"source": "endpoint_platform"},
+                    first_seen_at=now, last_seen_at=now, last_handshake_at=now))
+                await session.flush()
+            elif existing.protocol_version != "endpoint_projection_v1" or existing.device_metadata != {"source": "endpoint_platform"}:
+                raise EndpointMappingUnavailable()
+            mapping = RegistryEndpointDeviceMapping(endpoint_device_ref=endpoint_device_ref,
+                device_id=local_id, verified_at=now)
+            session.add(mapping)
+            await session.flush()
+    except IntegrityError:
+        mapping = await session.get(RegistryEndpointDeviceMapping, endpoint_device_ref,
+            populate_existing=True)
+        if mapping is None:
+            raise EndpointMappingUnavailable() from None
+    return mapping
+
+
 class EndpointPossessionService:
     def __init__(self, session):
         self.session = session
         self.repo = RegistrationRepo(session)
         self.registration = RegistrationService(session)
-
-    async def _mapping(self, request, now):
-        mapping = await self.session.get(RegistryEndpointDeviceMapping, request.endpoint_device_ref)
-        if mapping is not None:
-            return mapping
-        # A diagnostic target on a ticket does not prove that its retired
-        # local device is the same computer. Never derive Registry ownership
-        # from ticket targets, hostname equality or coincident UUIDs.
-        local_id = request.endpoint_device_ref
-        try:
-            async with self.session.begin_nested():
-                existing = await self.session.get(Device, local_id, with_for_update=True)
-                if existing is None:
-                    self.session.add(Device(device_id=local_id, protocol_version="endpoint_projection_v1",
-                        agent_version="unknown", hostname=request.hostname,
-                        os={"windows": "Windows", "linux": "Linux", "unknown": None}[request.platform],
-                        capabilities={}, device_metadata={"source": "endpoint_platform"},
-                        first_seen_at=now, last_seen_at=now, last_handshake_at=now))
-                    await self.session.flush()
-                elif existing.protocol_version != "endpoint_projection_v1" or existing.device_metadata != {"source": "endpoint_platform"}:
-                    raise EndpointMappingUnavailable()
-                mapping = RegistryEndpointDeviceMapping(endpoint_device_ref=request.endpoint_device_ref,
-                    device_id=local_id, verified_at=now)
-                self.session.add(mapping)
-                await self.session.flush()
-        except IntegrityError:
-            mapping = await self.session.get(RegistryEndpointDeviceMapping, request.endpoint_device_ref,
-                populate_existing=True)
-            if mapping is None:
-                raise EndpointMappingUnavailable() from None
-        return mapping
 
     async def bind(self, request):
         now = datetime.now(timezone.utc)
@@ -57,20 +59,25 @@ class EndpointPossessionService:
         if not is_person_active(person):
             return RegistryCommandResult(operation_id=request.operation_id, status="unavailable",
                 code="registry_person_unavailable", idempotency_status="not_evaluated")
-        mapping = await self._mapping(request, now)
+        mapping = await ensure_verified_endpoint_mapping(
+            self.session, request.endpoint_device_ref, now=now, hostname=request.hostname, platform=request.platform,
+        )
         device = await self.session.get(Device, mapping.device_id, with_for_update=True, populate_existing=True)
         if device is None or device.deleted_at is not None:
             raise EndpointMappingUnavailable()
-        rows = await self.repo.list_active_bindings_for_device(device.device_id)
+        rows = await self.registration.release_expired_inventory_bindings(device.device_id)
         same = next((row for row in rows if row.person_id == person.person_id and row.relationship_type == "primary_user"), None)
-        if same is not None and len(rows) == 1:
+        standalone = same is not None and len(rows) == 1
+        if standalone and same.source != INVENTORY_SOURCE:
             await self.repo.append_event(event_type="endpoint_possession_idempotent", device_id=device.device_id,
                 person_id=person.person_id, binding_id=same.binding_id, actor_id=request.actor_id,
                 actor_role="user", payload={"endpoint_device_ref": request.endpoint_device_ref})
             return RegistryCommandResult(operation_id=request.operation_id, status="replayed",
                 binding=BindingRef(external_id=same.binding_id), idempotency_status="replayed")
-        conflict = "ambiguous_active_relationships" if rows else await self.registration.detect_conflicts(
-            device.device_id, person.person_id, "primary_user")
+        conflict = None
+        if not standalone:
+            conflict = "ambiguous_active_relationships" if rows else await self.registration.detect_conflicts(
+                device.device_id, person.person_id, "primary_user")
         asset = await self.registration._ensure_asset_for_device(device)
         claim = await self.repo.find_pending_claim(device_id=device.device_id, person_id=person.person_id,
             source="endpoint_possession_proof")
@@ -90,6 +97,8 @@ class EndpointPossessionService:
             return RegistryCommandResult(operation_id=request.operation_id, status="accepted",
                 registration=RegistrationRef(external_id=claim.claim_id),
                 code="endpoint_possession_pending_admin_review", idempotency_status="new")
+        if standalone:
+            await self.registration.retire_inventory_binding(same, "endpoint_possession_confirmed")
         binding = await self.repo.create_binding(device_id=device.device_id, asset_id=asset.asset_id,
             person_id=person.person_id, relationship_type="primary_user", status="active",
             source_claim_id=claim.claim_id, source="endpoint_possession_proof", valid_from=now,

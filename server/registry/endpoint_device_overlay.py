@@ -8,6 +8,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.repos.inventory_binding_authority import active_binding_condition
 from app.db.models import (RegistryEndpointDeviceMapping, RegistryAsset, DeviceUserBinding,
     RegistryPerson, RegistryDepartment, RegistryLocation)
 
@@ -69,7 +70,7 @@ async def read_registry_device_overlays(session: AsyncSession, devices: tuple[UU
                 (binding.relationship_type == "responsible", 1), (binding.relationship_type == "owner", 2), else_=3),
                 binding.relationship_type, binding.valid_from.desc(), binding.binding_id)).label("position"),
         func.count().over(partition_by=binding.device_id).label("total"),
-    ).where(binding.device_id.in_(tuple(row["device_id"] for row in rows)), binding.status == "active",
+    ).where(binding.device_id.in_(tuple(row["device_id"] for row in rows)), active_binding_condition(binding),
         binding.valid_from <= now, or_(binding.valid_to.is_(None), binding.valid_to > now)).subquery()
     department, location = aliased(RegistryDepartment), aliased(RegistryLocation)
     bindings = (await session.execute(select(binding.device_id, binding.binding_id, binding.relationship_type,

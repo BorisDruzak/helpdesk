@@ -8,12 +8,14 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    DeviceUserBinding,
     RegistryAudienceGroup,
     RegistryEndpointDeviceMapping,
     RegistryPersonIdentity,
     RegistryQualityIssueOverride,
     UiUser,
 )
+from app.repos.inventory_binding_authority import INVENTORY_ACTIVE, active_binding_condition
 from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import normalize_identifier
 from registry.audience_group_service import RegistryAudienceService
@@ -183,6 +185,17 @@ class RegistrySnapshotService:
         for asset in assets:
             if asset.device_id:
                 bindings.extend(await registration_service.repo.list_bindings_for_device(asset.device_id))
+        effective_inventory = set()
+        if any(binding.status == INVENTORY_ACTIVE for binding in bindings):
+            effective_inventory = set(await self.session.scalars(select(DeviceUserBinding.binding_id).where(
+                DeviceUserBinding.status == INVENTORY_ACTIVE, active_binding_condition(),
+            )))
+
+        def binding_status(binding: DeviceUserBinding) -> str:
+            if binding.status == INVENTORY_ACTIVE:
+                return "active" if binding.binding_id in effective_inventory else "stale"
+            return binding.status
+
         ui_users = list(
             (
                 await self.session.execute(
@@ -222,12 +235,12 @@ class RegistrySnapshotService:
         active_primary_by_device = {
             binding.device_id: binding
             for binding in bindings
-            if binding.status == "active" and binding.relationship_type == "primary_user"
+            if binding_status(binding) == "active" and binding.relationship_type == "primary_user"
         }
         active_owner_by_device = {
             binding.device_id: binding
             for binding in bindings
-            if binding.status == "active" and binding.relationship_type == "owner"
+            if binding_status(binding) == "active" and binding.relationship_type == "owner"
         }
         active_shared_by_device: dict[str, list[Any]] = {}
         active_responsible_by_device: dict[str, Any] = {}
@@ -237,7 +250,7 @@ class RegistrySnapshotService:
         for binding in bindings:
             bindings_by_device.setdefault(binding.device_id, []).append(binding)
             bindings_by_person.setdefault(binding.person_id, []).append(binding)
-            if binding.status != "active":
+            if binding_status(binding) != "active":
                 continue
             active_any_by_device.setdefault(binding.device_id, binding)
             if binding.relationship_type == "shared_user":
@@ -333,7 +346,7 @@ class RegistrySnapshotService:
                     "details": conflict.conflict_reason or asset.name,
                 })
         for binding in bindings:
-            if binding.status == "stale":
+            if binding_status(binding) == "stale":
                 data_quality.append({
                     "kind": "binding_stale",
                     "severity": "warning",
@@ -346,7 +359,7 @@ class RegistrySnapshotService:
                     "description": binding.device_id,
                     "details": binding.device_id,
                 })
-            if binding.status == "active":
+            if binding_status(binding) == "active":
                 person = people_by_id.get(binding.person_id)
                 if person is None or not _is_active_person(person):
                     data_quality.append({
@@ -666,7 +679,7 @@ class RegistrySnapshotService:
                 "person_id": binding.person_id,
                 "person_name": person.display_name if person else None,
                 "relationship_type": binding.relationship_type,
-                "status": binding.status,
+                "status": binding_status(binding),
                 "source": binding.source,
                 "source_claim_id": binding.source_claim_id,
                 "confirmed_at": binding.confirmed_at.isoformat() if binding.confirmed_at else None,
@@ -727,9 +740,9 @@ class RegistrySnapshotService:
                 "registrations_pending": sum(1 for claim in claims if claim.status in {"self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review"}),
                 "registrations_conflicts": sum(1 for claim in claims if claim.status == "conflict"),
                 "unregistered_devices": sum(1 for asset in assets if asset.asset_type == "pc" and not active_any_by_device.get(asset.device_id or "")),
-                "active_bindings": sum(1 for binding in bindings if binding.status == "active"),
-                "bindings_active": sum(1 for binding in bindings if binding.status == "active"),
-                "stale_bindings": sum(1 for binding in bindings if binding.status == "stale"),
+                "active_bindings": sum(1 for binding in bindings if binding_status(binding) == "active"),
+                "bindings_active": sum(1 for binding in bindings if binding_status(binding) == "active"),
+                "stale_bindings": sum(1 for binding in bindings if binding_status(binding) == "stale"),
                 "devices_total": sum(1 for asset in assets if asset.asset_type == "pc"),
                 "devices_registered": sum(1 for asset in assets if asset.asset_type == "pc" and active_any_by_device.get(asset.device_id or "")),
                 "devices_unregistered": sum(1 for asset in assets if asset.asset_type == "pc" and not active_any_by_device.get(asset.device_id or "")),
@@ -834,7 +847,7 @@ class RegistrySnapshotService:
                     "active_bindings": [
                         binding_payload(binding)
                         for binding in bindings_by_device.get(asset.device_id or "", [])
-                        if binding.status == "active"
+                        if binding_status(binding) == "active"
                     ],
                     "active_tickets_count": ticket_counts.get(asset.device_id or "", 0),
                     "can_bind": bool(asset.device_id),
@@ -903,7 +916,7 @@ class RegistrySnapshotService:
                 for vendor in vendors
             ],
             "registration_claims": [claim_payload(claim) for claim in claims],
-            "active_bindings": [binding_payload(binding) for binding in bindings if binding.status == "active"],
+            "active_bindings": [binding_payload(binding) for binding in bindings if binding_status(binding) == "active"],
             "bindings": [binding_payload(binding) for binding in bindings],
             "ui_users": [ui_user_payload(user) for user in ui_users],
             "data_quality": data_quality,

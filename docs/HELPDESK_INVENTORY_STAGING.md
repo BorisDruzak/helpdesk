@@ -15,7 +15,7 @@ profile editing remain independent of web_ovpn.
    (`HELPDESK_INVENTORY_TOKEN_FILE`) and, if needed, the trusted provider CA
    (`HELPDESK_INVENTORY_CA_FILE`). Do not reuse either Endpoint or operator
    credentials. The client rejects redirects, plaintext and untrusted TLS.
-3. Apply migrations through 160 with the normal staged release. An administrator can
+3. Apply migrations through 161 with the normal staged release. An administrator can
    confirm a verified account using
    `PUT /api/web/admin/registry/people/{person_id}/inventory-link`, with
    `inventory_person_id`, `user_login` and a non-empty `reason`. The two IDs
@@ -24,9 +24,15 @@ profile editing remain independent of web_ovpn.
 4. Open `/app/requester/profile` as the linked user. The separate requester
    API `GET /api/web/requester/inventory-devices` checks ownership and refreshes
    assignments. If the provider is unreachable, the last confirmed list is
-   marked stale and its presence becomes unknown. The integration grants no
-   diagnostic or ticket-device permissions. The device action uses only the
-   devices already authorized by the existing profile.
+   marked stale and its presence becomes unknown.
+5. To test automatic bindings, set `HELPDESK_INVENTORY_AUTO_BIND_ENABLED=true`
+   on Helpdesk staging. A confirmed employee/account link, a current confirmed
+   assignment and a matching, non-retired Endpoint UUID are required. The
+   reconciler applies the primary/shared relationship, checks Registry limits
+   and records each activation and revocation. An explicit admin revocation
+   blocks the same assignment evidence on later refreshes. Automatic bindings
+   grant the existing ticket device selection for their validity period.
+   Diagnostic actions still require the existing authorization and consent.
 
 For a new employee, open **Приглашение сотрудника из инвентаризации** in the
 admin Registry. Copy the employee ID from the web_ovpn card, choose the
@@ -48,7 +54,20 @@ changes passwords, identities, devices or bindings. Rolling back the app
 can leave the table in place. The migration rejects dropping a populated
 table.
 
-The remaining work includes the policy that synchronizes effective Endpoint
-bindings with assignment changes and the operator installation actions. Installation must use the existing Windows MSI and
-ALT Linux workflow with a verified Endpoint registration and heartbeat. No
-production endpoint should be used for this staging acceptance.
+The worker refreshes links every two minutes and authorization checks the
+five-minute confirmation deadline on every read. A successful refresh of
+the inventory and Endpoint extends that deadline. Cached assignments remain
+available for display during an outage. An independent six-digit possession
+proof retains its own Registry binding when inventory changes.
+
+Migration 161 stores automatic bindings in the `inventory_active` state.
+Older app versions select `active`, so they do not use inventory grants.
+Before rolling back, disable automatic binding on the new version and wait
+for the worker to drain automatic bindings. Verify that no
+`device_user_bindings` rows have status `inventory_active`. This also
+releases the primary slot for legacy writes. The downgrade enforces this
+condition before dropping the lease column.
+
+The operator installation actions still need the existing Windows MSI and
+ALT Linux workflows with verified Endpoint registration and heartbeat on
+the staging test devices.

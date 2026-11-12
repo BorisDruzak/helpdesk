@@ -319,6 +319,8 @@ async def on_startup(app: web.Application):
     if ENABLE_DB_PERSISTENCE:
         logger.info("🧹 Starting artifacts expired cleanup task...")
         app['artifacts_cleanup_task'] = asyncio.create_task(artifacts_expired_cleanup_task(app))
+        from registry.inventory_binding_refresh import run_inventory_link_refresh
+        app["inventory_link_refresh_task"] = asyncio.create_task(run_inventory_link_refresh())
         logger.success("✅ Artifacts cleanup task started")
 
 
@@ -327,6 +329,13 @@ async def on_cleanup(app: web.Application):
     Обработчик события остановки приложения.
     Закрывает подключение к базе данных.
     """
+    if "inventory_link_refresh_task" in app:
+        refresh_task = app["inventory_link_refresh_task"]
+        refresh_task.cancel()
+        try:
+            await refresh_task
+        except asyncio.CancelledError:
+            pass
     if "web_push_dispatcher" in app:
         await app["web_push_dispatcher"].stop()
     if 'runtime_snapshot_writer' in app:

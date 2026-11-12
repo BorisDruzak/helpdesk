@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -36,6 +37,8 @@ async def test_linked_inventory_projection_remains_scoped_audited_and_available_
     other_url = f"/api/web/admin/registry/people/{second_id}/inventory-link"
     data = {"inventory_person_id": str(PERSON), "user_login": first_login, "reason": "Fixture employee confirmed"}
     fixture = snapshot()
+    now = datetime.now(timezone.utc)
+    fixture["observed_at"] = now.isoformat()
     unavailable = False
 
     async def fetch(person_id):
@@ -67,7 +70,7 @@ async def test_linked_inventory_projection_remains_scoped_audited_and_available_
     assert stale["data"]["sync_state"] == "stale"
     assert stale["data"]["assignments"][0]["endpoint_status"] == "unknown"
     unavailable = False
-    fixture["observed_at"] = "2026-11-11T10:06:00Z"
+    fixture["observed_at"] = (now + timedelta(seconds=1)).isoformat()
     fixture["assignments"] = []
     assert (await (await test_client.get(READ_PATH, headers=first_headers)).json())["data"]["assignments"] == []
     assert (await test_client.delete(url, headers=ADMIN, json={"reason": "fixture ended"})).status == 200
@@ -113,7 +116,7 @@ async def test_inventory_invitation_endpoint_discloses_only_the_selected_employe
 
     async def fetch(person_id):
         assert person_id == PERSON
-        return inventory_directory.InventoryProfile.model_validate(snapshot())
+        return inventory_directory.InventoryProfile.model_validate({**snapshot(), "observed_at": datetime.now(timezone.utc).isoformat()})
 
     monkeypatch.setattr(inventory_directory, "fetch_person", fetch)
     issue_path = "/api/web/admin/registry/inventory-invitations"
@@ -171,3 +174,160 @@ async def test_inventory_invitation_endpoint_discloses_only_the_selected_employe
     result = await test_client.get(READ_PATH, headers={"Authorization": f"Bearer test-ui-user:{requester}"})
     assert result.status == 200
     assert (await result.json())["data"]["assignments"][0]["name"] == "Fixture workstation"
+
+
+async def test_auto_binding_reconciles_authoritative_inventory_without_replacing_manual_owner(test_engine):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from app.db.models import DeviceUserBinding, RegistryInventoryLink, RegistryEndpointDeviceMapping
+    from domain_ports.endpoint import EndpointDeviceProjection
+    from app.repos.inventory_binding_authority import INVENTORY_ACTIVE
+    from registry.inventory_device_binding import InventoryDeviceBindingService, SOURCE
+    from registry.registration_service import RegistrationService
+
+    first, first_login, _ = await create_account(test_engine)
+    second, _, _ = await create_account(test_engine)
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    fixture = snapshot()
+    fixture["observed_at"] = datetime.now(timezone.utc).isoformat()
+    profile = inventory_directory.InventoryProfile.model_validate(fixture)
+    ref = str(profile.assignments[0].endpoint_device_id)
+
+    async def read_device(device):
+        return EndpointDeviceProjection(device=device, display_name="Fixture workstation", retired=False, last_seen_at=None)
+
+    async with maker.begin() as session:
+        link = RegistryInventoryLink(person_id=first, user_login=first_login, inventory_person_id=str(PERSON),
+            approval_id=str(uuid4()))
+        session.add(link)
+        await session.flush()
+        service = InventoryDeviceBindingService(session, SimpleNamespace(read_device=read_device))
+        result = await service.reconcile(link, profile)
+        assert result[str(profile.assignments[0].assignment_id)]["state"] == "bound"
+        assert await session.get(RegistryEndpointDeviceMapping, ref) is not None
+        existing = await session.scalar(select(DeviceUserBinding).where(DeviceUserBinding.device_id == ref))
+        assert existing.source == SOURCE and existing.person_id == first
+        assert existing.status == INVENTORY_ACTIVE
+        legacy = await session.scalar(select(DeviceUserBinding).where(
+            DeviceUserBinding.device_id == ref, DeviceUserBinding.status == "active",
+        ))
+        assert legacy is None
+        original_id = existing.binding_id
+        assert (await service.reconcile(link, profile))[str(profile.assignments[0].assignment_id)]["device_id"] == ref
+        await RegistrationService(session).revoke_binding(original_id, revoked_by="fixture-admin", reason="fixture")
+        assert existing.status == "revoked"
+        assert (await service.reconcile(link, profile))[str(profile.assignments[0].assignment_id)]["state"] == "conflict"
+        manual = DeviceUserBinding(device_id=ref, person_id=second, relationship_type="primary_user",
+                                   status="active", source="admin_manual")
+        session.add(manual)
+        await session.flush()
+        replacement_assignment = profile.assignments[0].model_copy(update={"assignment_id": uuid4()})
+        conflict = await service.reconcile(link, profile.model_copy(update={"assignments": [replacement_assignment]}))
+        assert conflict[str(replacement_assignment.assignment_id)]["state"] == "conflict"
+        assert manual.status == "active" and manual.person_id == second
+        assert await session.get(DeviceUserBinding, original_id) is not None
+
+
+async def test_auto_binding_api_and_worker_revoke_without_profile_open(test_client, test_engine, monkeypatch):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from app.db.models import DeviceUserBinding, RegistryInventoryLink
+    from domain_ports.endpoint import EndpointDeviceProjection
+    from registry import inventory_binding_refresh
+    from app.repos.inventory_binding_authority import INVENTORY_ACTIVE
+
+    monkeypatch.setenv("HELPDESK_INVENTORY_BASE_URL", "https://fixture.invalid")
+    monkeypatch.setenv("HELPDESK_INVENTORY_AUTO_BIND_ENABLED", "true")
+    person_id, login, requester = await create_account(test_engine)
+    fixture = snapshot()
+    full_assignments = fixture["assignments"]
+    unavailable = False
+
+    async def fetch(_):
+        if unavailable:
+            raise inventory_directory.InventoryUnavailable()
+        return inventory_directory.InventoryProfile.model_validate({
+            **fixture, "observed_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    async def read_device(device):
+        return EndpointDeviceProjection(device=device, display_name="Fixture workstation", retired=False, last_seen_at=None)
+
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    @asynccontextmanager
+    async def worker_session():
+        async with maker.begin() as session:
+            yield session
+
+    monkeypatch.setattr(inventory_directory, "fetch_person", fetch)
+    monkeypatch.setattr(inventory_binding_refresh, "get_session", worker_session)
+    monkeypatch.setattr(inventory_binding_refresh, "DomainPortContainer", SimpleNamespace(
+        from_config=lambda **_: SimpleNamespace(endpoint=SimpleNamespace(read_device=read_device)),
+    ))
+    path = f"/api/web/admin/registry/people/{person_id}/inventory-link"
+    confirmed = await test_client.put(path, headers=ADMIN, json={
+        "inventory_person_id": str(PERSON), "user_login": login, "reason": "Fixture verified",
+    })
+    assert confirmed.status == 200
+    response = await test_client.get(READ_PATH, headers=requester)
+    item, = (await response.json())["data"]["assignments"]
+    assert item["helpdesk_binding_state"] == "bound"
+    local_device = item["request_device_id"]
+    from registry.service import RegistrySnapshotService
+    async with maker() as session:
+        snapshot_data = await RegistrySnapshotService(session).build_snapshot()
+        visible = next(binding for binding in snapshot_data["active_bindings"] if binding["device_id"] == local_device)
+        assert visible["source"] == "inventory_assignment"
+    devices = await test_client.get("/api/web/requester/devices", headers=requester)
+    assert (await devices.json())["data"]["devices"][0]["device_id"] == local_device
+
+    fixture["assignments"] = []
+    await inventory_binding_refresh.refresh_inventory_links()
+    devices = await test_client.get("/api/web/requester/devices", headers=requester)
+    assert (await devices.json())["data"]["devices"] == []
+    async with maker.begin() as session:
+        retired = await session.scalar(select(DeviceUserBinding).where(DeviceUserBinding.person_id == person_id))
+        assert retired.status == "revoked"
+
+    fixture["assignments"] = full_assignments
+    assert (await test_client.get("/api/web/requester/bootstrap", headers=requester)).status == 200
+    async with maker.begin() as session:
+        active = await session.scalar(select(DeviceUserBinding).where(
+            DeviceUserBinding.person_id == person_id, DeviceUserBinding.status == INVENTORY_ACTIVE,
+        ))
+        assert active is not None
+        link = await session.get(RegistryInventoryLink, person_id)
+        link.observed_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+        active.inventory_verified_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+    devices = await test_client.get("/api/web/requester/devices", headers=requester)
+    assert (await devices.json())["data"]["devices"] == []
+    unavailable = True
+    await inventory_binding_refresh.refresh_inventory_links()
+    devices = await test_client.get("/api/web/requester/devices", headers=requester)
+    assert (await devices.json())["data"]["devices"] == []
+    response = await test_client.get(READ_PATH, headers=requester)
+    data = (await response.json())["data"]
+    assert data["sync_state"] == "stale"
+    assert data["assignments"][0]["endpoint_status"] == "unknown"
+    assert "request_device_id" not in data["assignments"][0]
+
+
+    from domain_ports.registry_contracts import EndpointPossessionBindingRequest
+    from registry.endpoint_possession_service import EndpointPossessionService
+
+    unavailable = False
+    await inventory_binding_refresh.refresh_inventory_links()
+    async with maker.begin() as session:
+        proof = await EndpointPossessionService(session).bind(EndpointPossessionBindingRequest(
+            operation_id=str(uuid4()), endpoint_device_ref=local_device, person_id=person_id,
+            actor_id=login, hostname="Fixture workstation", platform="windows",
+        ))
+        assert proof.status == "applied"
+        binding = await session.get(DeviceUserBinding, proof.binding.external_id)
+        assert binding.source == "endpoint_possession_proof"
+        assert binding.inventory_verified_until is None
+    fixture["assignments"] = []
+    await inventory_binding_refresh.refresh_inventory_links()
+    devices = await test_client.get("/api/web/requester/devices", headers=requester)
+    assert (await devices.json())["data"]["devices"][0]["device_id"] == local_device

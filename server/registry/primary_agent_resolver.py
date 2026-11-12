@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Device, DeviceUserBinding
+from app.repos.inventory_binding_authority import STORED_ACTIVE_BINDING_STATES
 from app.repos.registration_repo import RegistrationRepo
 from app.repos.registry_repo import RegistryRepo
 from registry.policy_service import RegistryPolicyService
@@ -48,7 +49,7 @@ class PrimaryAgentResolver:
                 normalized_person_id,
                 active_only=True,
             )
-            if str(getattr(binding, "status", "") or "") == "active"
+            if str(getattr(binding, "status", "") or "") in STORED_ACTIVE_BINDING_STATES
         ]
         primary_bindings = [
             binding
@@ -97,7 +98,7 @@ class PrimaryAgentResolver:
 
     async def resolve_selected_for_person(self, person_id: str, device_id: str) -> dict[str, Any]:
         bindings = [binding for binding in await self.registration_repo.list_bindings_for_person(
-            person_id, active_only=True) if binding.device_id == device_id and binding.status == "active"]
+            person_id, active_only=True) if binding.device_id == device_id and binding.status in STORED_ACTIVE_BINDING_STATES]
         if len(bindings) != 1:
             return {"resolved": False, "reason_code": "selected_device_unavailable", "candidate_count": len(bindings)}
         return await self._target_payload(bindings[0], reason_code="selected_device", source="requester_selected_device")

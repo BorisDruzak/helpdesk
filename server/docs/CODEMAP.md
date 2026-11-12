@@ -695,7 +695,13 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   approval and last accepted inventory snapshot (migration 159).
 - `registry/inventory_directory.py`: bounded verified HTTPS consumer of the
   web_ovpn employee and assignment contract. No Endpoint control calls.
-- \`auth/inventory_invitation.py\`: one-time employee invitations tied to
+- `registry/inventory_binding_refresh.py` refreshes linked employee assignments
+  at requester bootstrap and every two minutes when the worker is running.
+  `registry/inventory_device_binding.py` reconciles confirmed assignments
+  with exact Endpoint references and records changes to managed bindings.
+  `app/repos/inventory_binding_authority.py` limits their effective scope to a
+  current employee approval and a five-minute lease (migration 161).
+- `auth/inventory_invitation.py`: one-time employee invitations tied to
   registry department and inventory ID (migration 160). Registration
   commits the new profile, link and invitation consumption together.
   Only a valid invitation can preview a single employee.

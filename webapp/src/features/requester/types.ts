@@ -510,6 +510,8 @@ export type RequesterInventoryDevices = {
     endpoint_status: "online" | "offline" | "not_detected" | "unknown";
     endpoint_binding_state: "confirmed" | "review" | "unbound";
     endpoint_device_id?: string | null;
+    request_device_id?: string | null;
+    helpdesk_binding_state?: "bound" | "conflict" | "unavailable";
     last_seen_at?: string | null;
   }>;
 };

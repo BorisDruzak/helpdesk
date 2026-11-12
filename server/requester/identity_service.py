@@ -18,6 +18,7 @@ from app.db.models import (
     RegistryPersonIdentity,
     Ticket,
 )
+from app.repos.inventory_binding_authority import INVENTORY_ACTIVE
 from app.repos.registration_repo import RegistrationRepo, is_person_active, normalize_identifier
 from app.repos.registry_repo import RegistryRepo
 from consent.service import UserConsentService
@@ -584,7 +585,7 @@ class RequesterIdentityResolver:
             "device_id": binding.device_id,
             "binding_id": binding.binding_id,
             "relationship_type": binding.relationship_type,
-            "binding_status": binding.status,
+            "binding_status": "active" if binding.status == INVENTORY_ACTIVE else binding.status,
             "hostname": getattr(device, "hostname", None) or getattr(asset, "hostname", None),
             "os": getattr(device, "os", None) or ((getattr(asset, "discovery_payload", None) or {}).get("os") if asset else None),
             "agent_version": getattr(device, "agent_version", None)
@@ -695,7 +696,7 @@ class RequesterIdentityResolver:
                 "device_id": binding.device_id,
                 "binding_id": binding.binding_id,
                 "relationship_type": binding.relationship_type,
-                "binding_status": binding.status,
+                "binding_status": "active" if binding.status == INVENTORY_ACTIVE else binding.status,
                 "label": device_label,
                 "hostname": getattr(device, "hostname", None) or getattr(asset, "hostname", None),
                 "os": getattr(device, "os", None) or ((getattr(asset, "discovery_payload", None) or {}).get("os") if asset else None),

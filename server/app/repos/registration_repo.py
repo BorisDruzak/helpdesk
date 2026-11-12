@@ -16,6 +16,8 @@ from app.db.models import (
     RegistryPersonIdentity,
 )
 
+from app.repos.inventory_binding_authority import STORED_ACTIVE_BINDING_STATES, active_binding_condition
+
 
 PENDING_CLAIM_STATUSES = {
     "self_reported",
@@ -64,7 +66,7 @@ class RegistrationRepo:
             .join(RegistryPerson, RegistryPerson.person_id == DeviceUserBinding.person_id)
             .where(
                 DeviceUserBinding.device_id == str(device_id),
-                DeviceUserBinding.status == "active",
+                active_binding_condition(),
                 DeviceUserBinding.relationship_type == "primary_user",
                 _active_person_condition(),
             )
@@ -80,7 +82,7 @@ class RegistrationRepo:
             .where(
                 DeviceUserBinding.device_id == str(device_id),
                 DeviceUserBinding.binding_id == str(binding_id),
-                DeviceUserBinding.status == "active",
+                active_binding_condition(),
                 DeviceUserBinding.relationship_type.in_(["primary_user", "shared_user", "responsible"]),
                 _active_person_condition(),
             )
@@ -94,17 +96,18 @@ class RegistrationRepo:
             .join(RegistryPerson, RegistryPerson.person_id == DeviceUserBinding.person_id)
             .where(
                 DeviceUserBinding.device_id == str(device_id),
-                DeviceUserBinding.status == "active",
+                active_binding_condition(),
                 _active_person_condition(),
             )
             .order_by(desc(DeviceUserBinding.created_at))
         )
         return list(result.scalars().all())
 
-    async def list_bindings_for_device(self, device_id: str, active_only: bool = False) -> list[DeviceUserBinding]:
+    async def list_bindings_for_device(self, device_id: str, active_only: bool = False, *, include_expired_inventory: bool = False) -> list[DeviceUserBinding]:
         stmt = select(DeviceUserBinding).where(DeviceUserBinding.device_id == str(device_id))
         if active_only:
-            stmt = stmt.where(DeviceUserBinding.status == "active")
+            condition = DeviceUserBinding.status.in_(STORED_ACTIVE_BINDING_STATES) if include_expired_inventory else active_binding_condition()
+            stmt = stmt.where(condition)
         result = await self.session.execute(stmt.order_by(desc(DeviceUserBinding.created_at)))
         return list(result.scalars().all())
 
@@ -113,7 +116,7 @@ class RegistrationRepo:
         if active_only:
             stmt = (
                 stmt.join(RegistryPerson, RegistryPerson.person_id == DeviceUserBinding.person_id)
-                .where(DeviceUserBinding.status == "active", _active_person_condition())
+                .where(active_binding_condition(), _active_person_condition())
             )
         result = await self.session.execute(stmt.order_by(desc(DeviceUserBinding.created_at)))
         return list(result.scalars().all())

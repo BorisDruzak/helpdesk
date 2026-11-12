@@ -13,10 +13,12 @@ from app.db.models import (
     Device,
     DeviceRegistrationClaim,
     DeviceRegistrationEvent,
+    DeviceUserBinding,
     RegistryAsset,
     RegistryPerson,
     Ticket,
 )
+from app.repos.inventory_binding_authority import INVENTORY_ACTIVE, INVENTORY_ACTOR, INVENTORY_SOURCE
 from app.repos.registration_repo import RegistrationRepo, is_person_active, normalize_identifier
 from app.repos.registry_repo import RegistryRepo
 from registry.policy_service import RegistryPolicyService
@@ -215,9 +217,13 @@ class RegistrationService:
     async def _get_device(self, device_id: str) -> Device | None:
         return await self.session.get(Device, str(device_id))
 
-    async def _require_device(self, device_id: str) -> Device:
+    async def _require_device(self, device_id: str, *, lock: bool = False) -> Device:
         normalized = _validate_device_id(device_id)
         device = await self._get_device(normalized)
+        if device is not None and lock:
+            device = await self.session.get(Device, device.device_id, with_for_update=True, populate_existing=True)
+            if device is not None and device.deleted_at is not None:
+                device = None
         if device is None:
             raise RegistrationValidationError("device not found")
         return device
@@ -474,7 +480,7 @@ class RegistrationService:
         reviewed_by: str | None = None,
         reason: str | None = None,
     ) -> dict[str, Any]:
-        device = await self._require_device(device_id)
+        device = await self._require_device(device_id, lock=True)
         person = await self.registry_repo.get_person(person_id)
         if person is None:
             raise RegistrationValidationError("person not found")
@@ -486,9 +492,13 @@ class RegistrationService:
         if relationship_type == "responsible" and not bool(policy.get("allow_responsible_binding", True)):
             raise RegistrationConflictError("responsible bindings are disabled by policy")
         asset = await self._ensure_asset_for_device(device)
-        active_bindings = await self.repo.list_active_bindings_for_device(device.device_id)
+        active_bindings = await self.release_expired_inventory_bindings(device.device_id)
         for existing in active_bindings:
             if existing.person_id == person.person_id and existing.relationship_type == relationship_type:
+                if existing.source == INVENTORY_SOURCE:
+                    await self.retire_inventory_binding(existing, "admin_binding_confirmed")
+                    active_bindings.remove(existing)
+                    break
                 await self._reconcile_open_agent_claims_for_binding(
                     device_id=device.device_id,
                     binding=existing,
@@ -570,12 +580,16 @@ class RegistrationService:
     ) -> dict[str, Any]:
         if old_binding_action not in {"transferred", "revoked", "keep_as_shared"}:
             raise RegistrationValidationError("invalid old_binding_action")
-        device = await self._require_device(device_id)
+        device = await self._require_device(device_id, lock=True)
         person = await self.registry_repo.get_person(new_person_id)
         if person is None:
             raise RegistrationValidationError("person not found")
         asset = await self._ensure_asset_for_device(device)
+        await self.release_expired_inventory_bindings(device.device_id)
         active_primary = await self.repo.get_active_primary_binding(device.device_id)
+        if active_primary and active_primary.person_id == person.person_id and active_primary.source == INVENTORY_SOURCE:
+            await self.retire_inventory_binding(active_primary, "admin_binding_confirmed")
+            active_primary = None
         if active_primary and active_primary.person_id == person.person_id:
             return {
                 **self._operation_result(
@@ -591,6 +605,10 @@ class RegistrationService:
         previous_primary_status = active_primary.status if active_primary else None
         if active_primary:
             if old_binding_action == "keep_as_shared":
+                if active_primary.source == INVENTORY_SOURCE:
+                    active_primary.status = "active"
+                    active_primary.source = "admin_manual"
+                    active_primary.inventory_verified_until = None
                 active_primary.relationship_type = "shared_user"
                 active_primary.updated_at = datetime.now(timezone.utc)
                 await self.repo.append_event(
@@ -1226,7 +1244,15 @@ class RegistrationService:
             await self.session.flush()
             raise RegistrationConflictError("user confirmation required before approval", claim_id=claim.claim_id)
 
+        await self._require_device(claim.device_id, lock=True)
+        await self.release_expired_inventory_bindings(claim.device_id)
         active_primary = await self.repo.get_active_primary_binding(claim.device_id)
+        if (
+            active_primary and claim.relationship_type == "primary_user"
+            and active_primary.person_id == claim.person_id and active_primary.source == INVENTORY_SOURCE
+        ):
+            await self.retire_inventory_binding(active_primary, "independent_claim_approved")
+            active_primary = None
         if active_primary and claim.relationship_type == "primary_user" and active_primary.person_id == claim.person_id:
             now = datetime.now(timezone.utc)
             claim.status = "approved"
@@ -1344,7 +1370,7 @@ class RegistrationService:
             "asset_id": binding.asset_id,
             "person_id": binding.person_id,
             "relationship_type": binding.relationship_type,
-            "status": binding.status,
+            "status": "active" if binding.status == INVENTORY_ACTIVE else binding.status,
             "confirmed_at": binding.confirmed_at.isoformat() if binding.confirmed_at else None,
         }
         return payload
@@ -1373,13 +1399,39 @@ class RegistrationService:
         asset = await self.registry_repo.get_asset(claim.asset_id)
         return self._build_submit_payload(person=person, asset=asset, claim=claim)
 
+    async def retire_inventory_binding(self, binding: DeviceUserBinding, reason: str) -> None:
+        """Release a managed relationship while holding the device row lock."""
+        await self.repo.revoke_binding(binding.binding_id, revoked_by=INVENTORY_ACTOR, reason=reason)
+        await self.repo.append_event(
+            event_type="inventory_binding_revoked", device_id=binding.device_id, person_id=binding.person_id,
+            binding_id=binding.binding_id, actor_id=INVENTORY_ACTOR, actor_role="service",
+            payload={"reason": reason, **(binding.metadata_json or {})},
+        )
+
+    async def release_expired_inventory_bindings(self, device_id: str) -> list[DeviceUserBinding]:
+        active = await self.repo.list_active_bindings_for_device(device_id)
+        current_ids = {binding.binding_id for binding in active}
+        stored = await self.repo.list_bindings_for_device(device_id, active_only=True, include_expired_inventory=True)
+        for binding in stored:
+            if binding.status == INVENTORY_ACTIVE and binding.binding_id not in current_ids:
+                await self.retire_inventory_binding(binding, "inventory_authority_expired")
+        return active
+
     async def revoke_binding(self, binding_id: str, *, revoked_by: str | None = None, reason: str | None = None) -> dict[str, Any]:
+        device_id = await self.session.scalar(select(DeviceUserBinding.device_id).where(
+            DeviceUserBinding.binding_id == str(binding_id),
+        ))
+        if device_id is None:
+            raise ValueError("registration binding not found")
+        await self.session.get(Device, device_id, with_for_update=True)
+        await self.session.get(DeviceUserBinding, str(binding_id), with_for_update=True, populate_existing=True)
         binding = await self.repo.revoke_binding(binding_id, revoked_by=revoked_by, reason=reason)
-        replacement = await self.repo.get_active_primary_binding(binding.device_id)
-        if replacement:
-            await self.sync_asset_from_active_binding(replacement)
-        else:
-            await self.clear_registration_assignment_for_binding(binding, changed_by=revoked_by)
+        if binding.source != INVENTORY_SOURCE:
+            replacement = await self.repo.get_active_primary_binding(binding.device_id)
+            if replacement is not None and replacement.source != INVENTORY_SOURCE:
+                await self.sync_asset_from_active_binding(replacement)
+            else:
+                await self.clear_registration_assignment_for_binding(binding, changed_by=revoked_by)
         await self.repo.append_event(
             event_type="binding_revoked",
             binding_id=binding.binding_id,
@@ -1396,6 +1448,8 @@ class RegistrationService:
         }
 
     async def sync_asset_from_active_binding(self, binding: Any) -> None:
+        if getattr(binding, "source", None) == INVENTORY_SOURCE:
+            return
         asset = await self.registry_repo.get_asset(binding.asset_id)
         person = await self.registry_repo.get_person(binding.person_id)
         if not asset or not person:

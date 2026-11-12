@@ -8,6 +8,7 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.db import get_session
+from app.repos.inventory_binding_authority import STORED_ACTIVE_BINDING_STATES
 from app.db.models import DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from auth.middleware import ensure_server_request_id, require_auth
@@ -957,7 +958,7 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
                 await session.execute(
                     select(DeviceUserBinding).where(
                         DeviceUserBinding.person_id == person.person_id,
-                        DeviceUserBinding.status == "active",
+                        DeviceUserBinding.status.in_(STORED_ACTIVE_BINDING_STATES),
                     )
                 )
             ).scalars().all()
@@ -1043,7 +1044,7 @@ async def handle_web_admin_registry_person_archive(request: web.Request) -> web.
             await session.execute(
                 select(DeviceUserBinding).where(
                     DeviceUserBinding.person_id == person.person_id,
-                    DeviceUserBinding.status == "active",
+                    DeviceUserBinding.status.in_(STORED_ACTIVE_BINDING_STATES),
                 )
             )
         ).scalars().all()

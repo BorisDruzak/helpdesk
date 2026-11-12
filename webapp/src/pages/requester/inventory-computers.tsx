@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { fetchRequesterInventory } from "../../features/requester/api";
+import { requesterQueryKeys } from "../../features/requester/queries";
 
 const presenceLabels = {
   online: "Агент в сети",
@@ -12,7 +13,8 @@ const presenceLabels = {
 
 const lastActivityFormat = new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeStyle: "short" });
 
-export function InventoryComputers({ personId, allowedDevices }: { personId: string; allowedDevices: string[] }) {
+export function InventoryComputers({ personId }: { personId: string }) {
+  const client = useQueryClient();
   const query = useQuery({
     queryKey: ["requester", "inventory-computers", personId],
     queryFn: ({ signal }) => fetchRequesterInventory(signal),
@@ -45,15 +47,16 @@ export function InventoryComputers({ personId, allowedDevices }: { personId: str
         <ul className="divide-y divide-slate-200">
           {assignments.map((asset) => {
             const activity = asset.last_seen_at ? new Date(asset.last_seen_at) : null;
-            const authorizedDevice = !uncertain && asset.endpoint_device_id && allowedDevices.includes(asset.endpoint_device_id)
-              ? asset.endpoint_device_id : null;
+            const authorizedDevice = !uncertain && asset.helpdesk_binding_state !== "conflict"
+              ? asset.request_device_id : null;
             return (
               <li className="flex flex-wrap justify-between gap-2 py-3" key={asset.assignment_id}>
                 <div className="min-w-0">
                   <p className="break-words font-medium">{asset.name || asset.inventory_number || "Рабочий компьютер"}</p>
                   <p className="text-sm text-slate-700">
                     {[asset.os_name,
-                      asset.endpoint_binding_state === "review" ? "Привязка требует проверки" : null,
+                      asset.endpoint_binding_state === "review" || asset.helpdesk_binding_state === "conflict"
+                        ? "Привязка требует проверки" : null,
                       presenceLabels[uncertain ? "unknown" : asset.endpoint_status]].filter(Boolean).join(" · ")}
                   </p>
                   {activity && Number.isFinite(activity.getTime()) ? (
@@ -61,7 +64,8 @@ export function InventoryComputers({ personId, allowedDevices }: { personId: str
                   ) : null}
                 </div>
                 {authorizedDevice ? (
-                  <Link className="text-sm underline" state={{ requestDeviceId: authorizedDevice }} to="/app/requester/new">Создать обращение для компьютера</Link>
+                  <Link className="text-sm underline" state={{ requestDeviceId: authorizedDevice }} to="/app/requester/new"
+                    onClick={() => void client.invalidateQueries({queryKey: requesterQueryKeys.bootstrap()})}>Создать обращение для компьютера</Link>
                 ) : null}
                 {!uncertain && asset.endpoint_status === "not_detected" && asset.endpoint_binding_state === "unbound" ? (
                   <Link className="text-sm underline" to="/app/requester/new">Запросить установку</Link>
