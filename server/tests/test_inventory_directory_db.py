@@ -383,7 +383,7 @@ async def test_operator_inventory_uses_ticket_scope_and_redacts_service_fields(t
     assert response.headers["Cache-Control"] == "no-store"
     row, = (await response.json())["data"]["assignments"]
     assert row["inventory_url"] == f"https://web.fixture.invalid/inventory/assets/{asset_id}"
-    assert row["workstation_url"] == f"https://web.fixture.invalid/workstations?inventory_asset_id={asset_id}"
+    assert row["workstation_url"] == f"https://web.fixture.invalid/inventory/assets/{asset_id}#endpoint-heading"
     assert row["diagnostic_target"] is True
     assert not {"endpoint_binding_id", "endpoint_device_id", "request_device_id"} & row.keys()
 

@@ -43,7 +43,7 @@ profile editing remain independent of web_ovpn.
    employee's **Профиль** under **Пользователи**. Set
    `HELPDESK_INVENTORY_WEB_URL` if the operator-facing HTTPS origin differs
    from the API origin. The links point to the specific inventory card and
-   the filtered workstation view, where web_ovpn checks its own permissions.
+   the agent section on that card, where web_ovpn checks its own permissions.
 
 For a new employee, open **Приглашение сотрудника из инвентаризации** in the
 admin Registry. Copy the employee ID from the web_ovpn card, choose the

@@ -243,7 +243,7 @@ async def _read_operator_inventory(person_id: str | None, *, ticket_endpoint_ref
             "diagnostic_target": bool(not stale and ticket_endpoint_ref and assignment.endpoint_device_id
                                       and ticket_endpoint_ref == str(assignment.endpoint_device_id)),
             "inventory_url": f"{origin}/inventory/assets/{asset_id}" if origin else None,
-            "workstation_url": f"{origin}/workstations?inventory_asset_id={asset_id}" if origin else None,
+            "workstation_url": f"{origin}/inventory/assets/{asset_id}#endpoint-heading" if origin else None,
         })
     return _reply({"sync_state": "stale" if stale else "current", "assignments": assignments})
 

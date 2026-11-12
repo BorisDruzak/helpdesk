@@ -13,8 +13,12 @@ Current State: invitation, automatic binding and operator inventory changes are
 implemented locally. Staging still serves Helpdesk 8045e4bb and has 323 MiB free.
 Helpdesk account status is implemented locally in both repositories. The read
 contract uses a separate scoped credential and exact inventory employee UUIDs.
-Next Steps: integrate agent install and binding actions, prepare isolated
-web_ovpn staging and validate both OS flows.
+PC cards link to the existing Endpoint binding actions and Windows installer
+console. ALT has an inventory-scoped component-plan entry with a fresh identity
+check at both plan and apply.
+Next Steps: publish and verify the native ALT component, wire the protected
+asset-specific installation assignment and Endpoint registration/heartbeat
+receipt, prepare isolated web_ovpn staging and validate both OS flows.
 Verification: 18 pytest, 20 Vitest and three Chromium scenarios passed. Ticket
 screenshots at 1366 and 1920, user profile at 1366. Webapp build and workspace
 verification passed. Account status passed 15 Helpdesk pytest, eight web_ovpn
