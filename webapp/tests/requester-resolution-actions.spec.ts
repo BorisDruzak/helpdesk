@@ -29,6 +29,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
       if (path === "/api/web/session/me") data = { user_login: "synthetic-employee", actor_role: "user", default_workspace: "requester", available_workspaces: ["requester"], permissions: ["workspace.requester.view"] };
       else if (path === "/api/web/session/capabilities") data = {};
       else if (path === "/api/web/notifications/unread_count") return route.fulfill({ json: { status: "ok", unread_count: 0 } });
+      else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
       else if (path === "/api/web/requester/consents") data = { consents: [] };
       else if (path === "/api/web/requester/tickets") data = { tickets: [ticket()] };
       else if (path === `/api/web/requester/tickets/${code}/close` || path === `/api/web/requester/tickets/${code}/reopen`) {

@@ -42,6 +42,8 @@ for (const [index, viewport] of [{ width: 1366, height: 768 }, { width: 1920, he
         if (path === "/api/web/session/me") data = { user_login: "optional-employee", actor_role: "user", default_workspace: "requester", available_workspaces: ["requester"], permissions: ["workspace.requester.view"] };
         else if (path === "/api/web/session/capabilities") data = {};
         else if (path === "/api/web/notifications/unread_count") return route.fulfill({ json: { status: "ok", unread_count: 0 } });
+        else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
+        else if (path === "/api/web/requester/catalog-events" && req.method() === "POST") return route.fulfill({ status: 204 });
         else if (path === "/api/web/requester/bootstrap") data = { workspace: "requester", profile: { person_id: "optional-employee", display_name: "Тестовый сотрудник", full_name: "Тестовый сотрудник", department_id: "it", phone: "0000" }, profile_completion: { complete: true, blocks: {} }, devices: [], feature_flags: { requester_ticket_create: true, requester_no_device_create: true } };
         else if (path === "/api/web/requester/tickets") { if (req.method() === "POST") writes++; data = { tickets: [] }; }
         else if (path === "/api/service-catalog/current") return route.fulfill({ json: { status: "ok", services: [{ service_code: "other", title: "Другое", offerings: [{ full_code: "other.legacy", offering_code: "legacy", title: "Другая проблема или вопрос", request_template_key: "general", guided_scenario_enabled: true, catalog_items: [{ key: "not_found", entry_point_key: "not_found", title: "Не нашёл свою проблему" }] }] }] } });

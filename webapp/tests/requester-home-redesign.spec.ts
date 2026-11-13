@@ -16,6 +16,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("503")) errors.push(message.text()); });
     await page.route("**/api/**", async (route) => {
       const req = route.request(); const path = new URL(req.url()).pathname;
+      if (path === "/api/web/requester/catalog-events" && req.method() === "POST") return route.fulfill({ status: 204 });
       if (req.method() !== "GET") writes++;
       let data: unknown = {};
       const completion = { complete, setup_path: "/app/requester/profile/setup", missing_fields: complete ? [] : [{ key: "phone", label: "Телефон" }], blocks: { ticket_create: !complete } };
@@ -29,6 +30,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       else if (path === "/api/service-catalog/current") return route.fulfill({ json: { status: "ok", services: [{ service_code: "ownership", title: "Устройства", offerings: [{ offering_code: "device_owner_change", full_code: "ownership.device_owner_change", title: "Проверка владельца устройства", request_template_key: "device_owner_change" }] }] } });
       else if (path === "/api/web/requester/tickets") data = { tickets: empty ? [] : tickets };
       else if (path === "/api/web/notifications/unread_count") return route.fulfill({ json: { status: "ok", unread_count: 0 } });
+      else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
       else { unexpected.push(path); return route.fulfill({ status: 404, json: { status: "error" } }); }
       return route.fulfill({ json: { status: "success", data } });
     });
