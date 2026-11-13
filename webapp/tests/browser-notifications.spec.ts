@@ -11,6 +11,10 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("helpdesk-notification-intro-v1:support", "1"));
 });
 
+test.afterEach(async ({ request }) => {
+  await request.delete("/__fixtures/notifications");
+});
+
 test("read-all empties the bell and remains empty after reopening", async ({ page, context }) => {
   await context.request.post("/__fixtures/notifications", { data: { notifications: events } });
   await context.request.post("/api/web/session/login", { data: { login: "support", password: "secret" } });

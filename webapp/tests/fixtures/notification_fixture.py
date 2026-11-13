@@ -7,8 +7,13 @@ def state(request):
 
 
 async def control(request):
+    if request.method == "DELETE":
+        request.app.pop("notification_fixture_configured", None)
+        request.app.pop("notification_fixture", None)
+        return web.Response(status=204)
     if request.method == "POST":
         data = await request.json()
+        request.app["notification_fixture_configured"] = True
         request.app["notification_fixture"] = {"notifications": data.get("notifications", []), "shown": [], "subscribed": False, "invalid_read_response": data.get("invalid_read_response", False)}
     return web.json_response(state(request))
 
@@ -38,10 +43,12 @@ async def read(request):
 
 async def push(request):
     action = request.match_info["action"]
-    current = state(request)
     if action == "config":
+        if not request.app.get("notification_fixture_configured", False):
+            return web.json_response({"status": "ok", "enabled": False, "public_key": None})
         # Public P-256 generator point; no private key or external transport.
         return web.json_response({"status": "ok", "enabled": True, "public_key": "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"})
+    current = state(request)
     if action in {"subscribe", "unsubscribe"}:
         current["subscribed"] = action == "subscribe"
     if action == "acknowledge":
@@ -55,6 +62,7 @@ async def push(request):
 def install(app):
     app.router.add_routes([
         web.get("/__fixtures/notifications", control), web.post("/__fixtures/notifications", control),
+        web.delete("/__fixtures/notifications", control),
         web.get("/api/web/notifications/unread_count", unread),
         web.post("/api/web/notifications/read_all", read),
         web.post("/api/web/notifications/read_ticket", read),

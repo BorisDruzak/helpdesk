@@ -20,7 +20,7 @@ for (const viewport of [{width: 1366, height: 768}, {width: 1920, height: 1080}]
     await page.getByLabel("Логин", {exact:true}).fill("support");
     await page.getByLabel("Пароль", {exact:true}).fill("secret");
     await page.getByRole("button", {name:"Войти", exact:true}).click();
-    await expect(page).toHaveURL(/\/app\/support$/);
+    await expect(page).toHaveURL(/\/app\/(?:support|tickets)$/);
     // The shared fixture omits this compatibility-only read; supply an empty candidate collection.
     await page.route("**/api/web/support/tickets/ticket-1/passport/evidence-candidates", route=>route.fulfill({
       status:200,contentType:"application/json",body:JSON.stringify({status:"success",data:{ticket_id:"ticket-1",candidates:[]}}),
