@@ -19,6 +19,7 @@ export async function installStudioV3Fixture(page: Page) {
     const request = route.request(), path = new URL(request.url()).pathname;
     let data: unknown = {};
     if (path.endsWith("/session/me")) data = { user_login: "studio-fixture@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view"] };
+    else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
     else if (path.endsWith("/request-studio/catalog")) data = { categories: [], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.print", service_code: "it", public_title: definition.title, request_template_key: "print" }], scenarios: [{ id: "v3", title: definition.title, schema_version: 3, status: "draft", offering_full_code: "it.print", issues: [] }], total: 1, offset: 0, limit: 100 };
     else if (path.endsWith("/helpdesk-model/policies")) data = { policies: {} };
     else if (path === "/api/web/settings") data = { queues: [{ id: 1, code: "support", name: "Поддержка рабочих мест", is_active: true }, { id: 2, code: "network", name: "Сетевые администраторы", is_active: true }, { id: 3, code: "retired", name: "Отключённая очередь", is_active: false }], calendars: [{ id: 8, code: "week", name: "Рабочая неделя", is_active: true }] };

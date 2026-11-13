@@ -28,8 +28,9 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     }
     await drag(node.locator('.react-flow__handle[data-handleid="answer-1"]'));
     await expect(node.locator('.react-flow__handle[data-handleid="route-1"]')).toHaveCount(1);
-    await drag(node.locator('.react-flow__handle[data-handleid="route-0"]'));
-    await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
+    await page.getByRole("button", { name: "Вся карта", exact: true }).click();
+    const existingRoute = page.getByTestId("rf__node-studio:link:route:logic:0");
+    await drag(existingRoute.locator('.react-flow__handle[data-handleid="out"]'));
     await expect.poll(() => state.definition().blocks![1].transitions![0].to).toBe("no");
     expect(state.definition().blocks![1].transitions).toEqual([
       { to: "no", when: { source: "answer", field: "working", op: "eq", value: true }, priority: 7, processing: { route: "support", sla_profile: "urgent" } },
@@ -64,7 +65,13 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     phase = "open original map";
     await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
     const library = page.getByRole("list", { name: "Блоки сценария", exact: true });
-    await library.getByRole("button", { name: "Условие", exact: true }).click();
+    async function editCondition() {
+      await library.getByRole("button", { name: "Условие", exact: true }).click();
+      const edit = page.getByRole("button", { name: "Редактировать выбранный блок", exact: true });
+      if (!(await edit.isVisible())) await page.getByText("Ещё", { exact: true }).click();
+      await edit.click();
+    }
+    await editCondition();
     const branches = page.getByRole("region", { name: "Ветвление по ответам", exact: true });
     await expect(branches.getByRole("combobox", { name: "Вопрос для ветвления", exact: true })).toHaveValue("working");
     await expect(branches.getByRole("group", { name: "Ответ «Да»", exact: true })).toBeVisible();
@@ -74,16 +81,9 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await page.getByRole("button", { name: "Добавить шаг для «Да» после «Условие»", exact: true }).click();
     await page.getByRole("dialog", { name: "Что добавить дальше?", exact: true }).getByRole("button", { name: /^Показать инструкцию/ }).click();
     await expect(page.getByRole("textbox", { name: "Текст инструкции", exact: true })).toBeVisible();
-    await library.getByRole("button", { name: "Условие", exact: true }).click();
+    await editCondition();
     // A second independent target is created from the inspector.
     await branches.getByRole("button", { name: "Добавить шаг для «Нет»", exact: true }).click();
-    await page.getByRole("dialog", { name: "Что добавить дальше?", exact: true }).getByRole("button", { name: /^Спросить сотрудника/ }).click();
-    await expect(page.getByRole("textbox", { name: "Что спросить?", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Отменить изменение", exact: true }).click();
-    await expect(library.getByRole("button")).toHaveCount(3);
-    await page.getByRole("button", { name: "Повторить изменение", exact: true }).click();
-    await expect(library.getByRole("button")).toHaveCount(4);
-    phase = "save constructed branches";
     let finalSaveReceived = false;
     const savedResponse = page.waitForResponse(response => {
       const request = response.request();
@@ -92,7 +92,13 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
       return true;
     });
     const refreshedCatalog = page.waitForResponse(response => finalSaveReceived && isCatalog(response.url()) && response.request().method() === "GET");
-    await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
+    await page.getByRole("dialog", { name: "Что добавить дальше?", exact: true }).getByRole("button", { name: /^Спросить сотрудника/ }).click();
+    await expect(page.getByRole("textbox", { name: "Что спросить?", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Отменить изменение", exact: true }).click();
+    await expect(library.getByRole("button")).toHaveCount(3);
+    await page.getByRole("button", { name: "Повторить изменение", exact: true }).click();
+    await expect(library.getByRole("button")).toHaveCount(4);
+    phase = "save constructed branches";
     const saved = await savedResponse, refreshed = await refreshedCatalog;
     expect(saved.status()).toBe(200); expect(refreshed.status()).toBe(200);
     expect(await saved.finished()).toBeNull(); expect(await refreshed.finished()).toBeNull();
@@ -116,12 +122,12 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await page.getByRole("region", { name: "Каталог услуг", exact: true }).getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true }).click();
     phase = "open restored map";
     await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
-    await library.getByRole("button", { name: "Условие", exact: true }).click();
+    await editCondition();
     await expect(branches.getByRole("group", { name: "Ответ «Да»", exact: true }).getByRole("combobox", { name: "Следующий шаг", exact: true })).toHaveValue(yes.to);
     await expect(branches.getByRole("group", { name: "Ответ «Нет»", exact: true }).getByRole("combobox", { name: "Следующий шаг", exact: true })).toHaveValue(no.to);
     const canvas = page.getByLabel("Визуальная карта сценария", { exact: true });
-    await expect(canvas.getByText("Работает принтер? равно «Да»", { exact: true })).toBeVisible();
-    await expect(canvas.getByText("Работает принтер? равно «Нет»", { exact: true })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Работает принтер? равно «Да»", exact: true })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Работает принтер? равно «Нет»", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${viewport.width}-answer-branches.png`) });
     await expect.poll(() => pendingCatalog.size).toBe(0);

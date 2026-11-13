@@ -5,9 +5,6 @@ for (const width of [1366, 1920]) {
   test(`explains Else and draft rejection without losing edits ${width}`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: width === 1366 ? 768 : 1080 });
     const state = await installStudioV3Fixture(page);
-    await page.route("**/api/web/notifications/push/config", route => route.fulfill({ json: {
-      status: "ok", enabled: false, public_key: null,
-    } }));
     const decision = state.definition().blocks!.find(block => block.id === "logic")!;
     decision.transitions = decision.transitions!.filter(edge => edge.when);
     let rejectSave = true;
@@ -32,14 +29,12 @@ for (const width of [1366, 1920]) {
     await expect(page.getByText(/Ветки по ответам сохранятся/)).toBeVisible();
     const title = page.getByLabel("Название блока", { exact: true });
     await title.fill("Проверить настройки чата");
-    const save = page.getByRole("button", { name: "Сохранить черновик", exact: true });
-    if (await save.isEnabled()) await save.click();
     await expect(page.getByRole("alert").filter({ hasText: "Черновик не сохранён" })).toContainText("Название шага: Сократите текст: не более 300 символов.");
     await expect(title).toHaveValue("Проверить настройки чата");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath("draft-reason.png") });
     rejectSave = false;
-    await save.click();
+    await page.getByRole("button", { name: "Повторить автосохранение", exact: true }).click();
     await expect(page.getByText(/Черновик сохранён. Ревизия 2/)).toBeVisible();
     expect(state.definition().blocks![3].transitions).toHaveLength(1);
     expect(state.unexpected).toEqual([]);
