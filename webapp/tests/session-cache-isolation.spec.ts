@@ -32,6 +32,7 @@ test("logout and a new requester login never reuse private profile data", async 
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     const requestKey = `${route.request().method()} ${path}`;
+    if (requestKey === "GET /api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
     const allowedCalls = new Set([
       "GET /api/web/session/me",
       "GET /api/web/session/capabilities",
@@ -90,6 +91,7 @@ test("logout and a new requester login never reuse private profile data", async 
 
   await page.goto("/app/requester/profile");
   await expect(page.getByText("Private Person A").first()).toBeVisible();
+  await page.getByLabel("Меню профиля", { exact: true }).click();
   await page.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(page.getByLabel("Логин", { exact: true })).toBeVisible();
   await page.getByLabel("Логин", { exact: true }).fill("requester-b");

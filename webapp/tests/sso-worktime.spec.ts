@@ -20,7 +20,7 @@ test("domain entry uses a fixed server document route and preserves password log
   await page.goto("/app/login?next=https://untrusted.test");
   await expect(page.getByLabel("Логин", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Войти", exact: true })).toBeVisible();
-  const entry = page.getByRole("link", { name: "Войти с доменной учётной записью" });
+  const entry = page.getByRole("link", { name: "Войти через AD", exact: true });
   await expect(entry).toHaveAttribute("href", "/api/web/session/oidc/login");
   await entry.click();
   await expect(page.getByRole("heading", { name: "Доменный вход" })).toBeVisible();
@@ -32,7 +32,7 @@ test("SSO policy failure retains ordinary login and offers no broken SSO entry",
   await page.route("**/api/web/session/capabilities", route => route.fulfill({ status: 503, json: { status: "error" } }));
   await page.goto("/app/login");
   await expect(page.getByRole("status")).toContainText("Самостоятельная регистрация недоступна");
-  await expect(page.getByRole("link", { name: "Войти с доменной учётной записью" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Войти через AD", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Войти", exact: true })).toBeVisible();
 });
 
@@ -76,6 +76,7 @@ test(`employee navigation links to ${new URL(target).hostname} and SSO logout po
   expect(portalReferer).toBeUndefined();
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Мои обращения" })).toBeVisible();
+  await page.getByLabel("Меню профиля", { exact: true }).click();
   await page.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Добро пожаловать" })).toBeVisible();
   expect(logoutMethod).toBe("POST");
