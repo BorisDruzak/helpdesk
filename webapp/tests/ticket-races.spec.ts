@@ -4,19 +4,22 @@ async function prepareWorkspace(page: Page) {
   await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
   await page.route("**/api/web/support/tickets/*/timeline?*", route => route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", filter: "all", items: [], total: 0, limit: 200 } } }));
   await page.route("**/api/web/support/tickets/*/workspace", async route => {
-    const response = await route.fetch();
+    const response = await page.request.get(route.request().url());
+    expect(response.ok()).toBe(true);
     const payload = await response.json();
+    await response.dispose();
     payload.data.detail.ticket.status = "in_progress";
     payload.data.detail.ticket.assignee_id = "support";
     payload.data.detail.actions.can_send_public_message = true;
-    await route.fulfill({ response, json: payload });
+    await route.fulfill({ json: payload });
   });
-  await page.goto("/app/login");
+  const ticket = "/app/tickets/ticket-1?advanced=1";
+  await page.goto("/app/login?next=" + encodeURIComponent(ticket));
   await page.getByLabel("Логин").fill("support");
   await page.getByLabel("Пароль").fill("secret");
   await page.getByRole("button", { name: "Войти", exact: true }).click();
-  await expect(page).not.toHaveURL(/\/app\/login/);
-  await page.goto("/app/tickets/ticket-1?advanced=1");
+  await expect(page).toHaveURL(url => url.pathname === "/app/tickets/ticket-1");
+  await expect(page.getByTestId("support-workspace-root")).toHaveAttribute("data-mode", "ticket");
   await expect(page.getByTestId("support-reply-composer")).toBeVisible();
 }
 

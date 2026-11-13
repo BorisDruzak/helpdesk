@@ -8,8 +8,10 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/web/support/tickets/*/read", route => route.fulfill({ json: { status: "success", data: { last_read_event_id: 0 } } }));
   await page.route("**/api/web/support/tickets/*/timeline?*", async route => {
     const url = new URL(route.request().url());
-    const response = await route.fetch({ url: url.origin + url.pathname.replace(/\/timeline$/, "/workspace") });
+    const response = await page.request.get(url.origin + url.pathname.replace(/\/timeline$/, "/workspace"));
+    expect(response.ok()).toBe(true);
     const payload = await response.json();
+    await response.dispose();
     const filter = url.searchParams.get("filter");
     const items = (payload.data.detail.timeline ?? []).filter((item: { event_type: string; visibility: string }) => filter === "all" ||
       (filter === "messages" ? item.event_type === "chat_message" && item.visibility === "public" : filter === "internal" ? item.visibility === "internal" : item.event_type !== "chat_message"));
