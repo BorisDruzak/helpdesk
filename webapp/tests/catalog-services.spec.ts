@@ -62,14 +62,19 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:8
   await page.getByRole("button",{name:"Каталог",exact:true}).click();await expect(page.getByRole("button",{name:"Создать услугу",exact:true})).toBeVisible();await expect(page.getByLabel("Визуальная карта сценария",{exact:true})).toHaveCount(0);
   await expect(tree.getByRole("button",{name:"Принтеры и МФУ",exact:true})).toBeVisible();
   await openMap(page);await editEntrance(page,"Бумага застряла в принтере");
-  await page.getByText("Поиск в каталоге",{exact:true}).click();await page.getByRole("textbox",{name:"Дополнительные поисковые выражения",exact:true}).fill("замятие\nпечать");await saveMap(page,4);
-  expect(state.writes[1].body.definition.offering_full_code).toBe("work.print");expect(state.writes[1].body.definition.entry_points[0]).toMatchObject({title:"Бумага застряла в принтере",description:"Замятие в принтере",target_block_id:"q",synonyms:["замятие","печать"]});
+  await page.getByText("Поиск в каталоге",{exact:true}).click();
+  await page.getByRole("textbox",{name:"Дополнительные поисковые выражения",exact:true}).fill("замятие\nпечать");
+  await expect.poll(()=>state.writes.at(-1)?.body.definition.entry_points[0]).toMatchObject({title:"Бумага застряла в принтере",description:"Замятие в принтере",target_block_id:"q",synonyms:["замятие","печать"]});
+  const savedEntrance=state.writes.at(-1)!;
+  expect(savedEntrance.body.definition.offering_full_code).toBe("work.print");
+  await saveMap(page,savedEntrance.body.revision+1);
   await page.getByRole("button",{name:"Каталог",exact:true}).click();await page.reload();await expect(tree.getByRole("button",{name:"↳ Бумага застряла в принтере",exact:true})).toBeVisible();
   await page.getByRole("button",{name:"Настроить услугу Общая диагностика печати",exact:true}).click();
   if(viewport.width>1100){const resize=page.getByRole("separator",{name:"Ширина структуры каталога"});await resize.focus();await page.keyboard.press("ArrowRight");}
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.getByRole("heading",{name:"Каталог услуг",exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath(`catalog-${viewport.width}.png`),fullPage:viewport.width<1100});
-  expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);expect(state.writes).toHaveLength(2);
+  expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
+  expect(state.writes.every(write=>write.path.endsWith("/scenarios/s1/draft"))).toBe(true);
  });
 }
 test("create another entrance on the service map without creating another Offering",async({page})=>{
