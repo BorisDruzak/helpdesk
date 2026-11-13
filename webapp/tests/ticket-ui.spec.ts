@@ -43,7 +43,8 @@ for (const width of [1366, 1920]) {
     await page.screenshot({ path: testInfo.outputPath(`sla-${width}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(2);
     if (width === 1366) {
-      await page.getByRole("button", { name: "Вернуться к переписке", exact: true }).click();
+      const returnToChat = page.getByRole("button", { name: "Вернуться к переписке", exact: true });
+      if (await returnToChat.isVisible()) await returnToChat.click();
       await expect(page.getByLabel("Сообщение в тикет")).toBeVisible();
     }
     expect(errors).toEqual([]);

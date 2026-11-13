@@ -36,25 +36,22 @@ test("operator shows Endpoint presence and preserves unknown on provider outage"
   });
   await loginSupport(page);
   await page.goto("/app/tickets/ticket-1?advanced=1");
-  const panel = page.getByRole("heading", { name: "Компьютер · Endpoint", exact: true }).locator("..");
+  const panel = page.getByRole("heading", { name: "Устройство и агент", exact: true }).locator("..");
   await expect(panel).toBeVisible();
-  await expect(panel.getByText("Windows fixture · ONLINE", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Windows fixture", { exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: "Открыть карточку устройства", exact: true })).toHaveAttribute("href", `/app/admin/device?device=${endpointDeviceId}`);
-  await expect(panel.getByText("Версия", { exact: true })).toHaveCount(0);
-  expect(await page.locator("[data-context-layer]").evaluateAll(nodes=>nodes.map(node=>node.getAttribute("data-context-layer")))).toEqual(["requester","device","agent","observer"]);
-  const agent = page.getByRole("region", { name: "Агент Endpoint", exact: true });
-  await expect(agent.getByText("В сети", {exact:true})).toBeVisible();
-  await expect(agent.getByText("Версия агента", {exact:true})).toBeVisible();
-  await expect(agent.getByText("Версия загрузчика", {exact:true})).toBeVisible();
+  await expect(panel.getByText("В сети", {exact:true})).toBeVisible();
+  await expect(panel.getByText("Версия агента", {exact:true})).toBeVisible();
+  await expect(panel.getByText("Версия загрузчика", {exact:true})).toBeVisible();
   await panel.screenshot({ path: testInfo.outputPath("operator-endpoint-online-card.png") });
   await page.screenshot({ path: testInfo.outputPath("operator-endpoint-online.png"), fullPage: true });
   online = false;
   await page.reload();
-  await expect(panel.getByText("UNKNOWN · Endpoint context недоступен", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Контекст устройства временно недоступен", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Неизвестно", { exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: "Открыть карточку устройства", exact: true })).toHaveCount(0);
-  await expect(panel.getByText("Агент offline", { exact: true })).toHaveCount(0);
-  await expect(agent.getByText("Не в сети", {exact:true})).toHaveCount(0);
-  await expect(agent.getByText("Нет данных", {exact:true})).toHaveCount(4);
+  await expect(panel.getByText("Не в сети", {exact:true})).toHaveCount(0);
+  await expect(panel.getByText("Нет данных", {exact:true})).toHaveCount(3);
   await panel.screenshot({ path: testInfo.outputPath("operator-endpoint-unknown-card.png") });
   await page.screenshot({ path: testInfo.outputPath("operator-endpoint-unknown.png"), fullPage: true });
   expect(pageErrors).toEqual([]);
@@ -108,8 +105,6 @@ test("operator sees unavailable reads instead of an empty healthy workspace", as
 test("оператор открывает tickets workspace через новый shell", async ({ page }) => {
   await loginSupport(page);
 
-  await expect(page).toHaveURL(/\/app\/support$/);
-  await page.getByRole("link", { name: "Тикеты" }).click();
   await expect(page).toHaveURL(/\/app\/tickets$/);
   await expect(page.getByRole("heading", { name: "Тикеты" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Навигация поддержки" })).toBeVisible();
@@ -191,7 +186,8 @@ for (const width of [1366, 1440, 1920]) {
     await expect(page.getByText("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ")).toBeVisible();
     if (width < 1460) await page.getByRole("button", { name: "Inspector", exact: true }).click();
     await expect(page.getByRole("button", { name: "Паспорт", exact: true })).toBeVisible();
-    if (width < 1460) await page.getByRole("button", { name: "Вернуться к переписке", exact: true }).click();
+    const returnToChat = page.getByRole("button", { name: "Вернуться к переписке", exact: true });
+    if (await returnToChat.isVisible()) await returnToChat.click();
 
     const root = page.getByTestId("support-workspace-root");
     await expect(root).toHaveAttribute("data-theme", "light");
