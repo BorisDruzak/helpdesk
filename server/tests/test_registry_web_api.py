@@ -358,6 +358,11 @@ async def test_registry_options_available_to_agent_request_forms_without_full_sn
     device_id = str(uuid.uuid4())
 
     async with session_maker() as session:
+        repo = RegistryRepo(session)
+        await repo.get_or_create_department(name="ИТ", source="test", status="active")
+        await repo.get_or_create_location(building="Здание 4", room="214", source="test", status="active")
+        await repo.get_or_create_department(name="Ожидает проверки", source="test", status="pending")
+        await repo.get_or_create_location(building="Ожидает проверки", source="test", status="pending")
         session.add(
             Device(
                 device_id=device_id,
@@ -404,3 +409,5 @@ async def test_registry_options_available_to_agent_request_forms_without_full_sn
     assert any(item["label"] == "Иван Иванов" for item in data["users"])
     assert any(item["label"] == "ИТ" for item in data["departments"])
     assert any(item["label"] == "Здание 4 / 214" for item in data["locations"])
+    assert all(item["label"] != "Ожидает проверки" for item in data["departments"])
+    assert all(item["label"] != "Ожидает проверки" for item in data["locations"])
