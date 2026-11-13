@@ -2321,6 +2321,33 @@ async def handle_support_ticket_workspace(request: web.Request) -> web.Response:
     return json_success(build_ticket_workspace(state, ticket_id))
 
 
+async def handle_support_ticket_timeline(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    ticket = request.app["fixture_state"]["tickets"].get(ticket_id)
+    if ticket is None:
+        raise web.HTTPNotFound()
+
+    timeline_filter = request.query.get("filter", "all")
+    events = ticket["timeline"]
+    if timeline_filter == "messages":
+        events = [event for event in events if event["event_type"] == "chat_message" and event.get("visibility") == "public"]
+    elif timeline_filter == "internal":
+        events = [event for event in events if event.get("visibility") == "internal"]
+    elif timeline_filter != "all":
+        events = [event for event in events if event["event_type"] != "chat_message"]
+
+    return json_success({
+        "ticket_id": ticket_id,
+        "filter": timeline_filter,
+        "items": deepcopy(events[:200]),
+        "total": len(events),
+        "limit": 200,
+    })
+
+
 def _diagnostic_overview_fixture(ticket_id: str) -> dict:
     return {
         "ticket_id": ticket_id,
@@ -3104,6 +3131,7 @@ def build_app() -> web.Application:
             web.put("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_update),
             web.delete("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_delete),
             web.get("/api/web/support/tickets/{ticket_id}/workspace", handle_support_ticket_workspace),
+            web.get("/api/web/support/tickets/{ticket_id}/timeline", handle_support_ticket_timeline),
             web.get("/api/web/support/tickets/{ticket_id}/diagnostics/overview", handle_support_ticket_diagnostics_overview),
             web.get("/api/web/support/tickets/{ticket_id}/diagnostics/capabilities", handle_support_ticket_diagnostics_capabilities),
             web.get(

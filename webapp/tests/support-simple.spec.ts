@@ -1,22 +1,10 @@
 import { expect, test, type Page } from "playwright/test";
 
-// The fixture's workspace owns its current timeline; these two live routes are
-// absent from that fixture. Keep the browser exercising the real filtered reads.
+// These two auxiliary routes are absent from the fixture server.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("helpdesk-notification-intro-v1:support", "1"));
   await page.route("**/api/web/problems?ticket_id=*", route => route.fulfill({ json: { status: "ok", items: [] } }));
   await page.route("**/api/web/support/tickets/*/read", route => route.fulfill({ json: { status: "success", data: { last_read_event_id: 0 } } }));
-  await page.route("**/api/web/support/tickets/*/timeline?*", async route => {
-    const url = new URL(route.request().url());
-    const response = await page.request.get(url.origin + url.pathname.replace(/\/timeline$/, "/workspace"));
-    expect(response.ok()).toBe(true);
-    const payload = await response.json();
-    await response.dispose();
-    const filter = url.searchParams.get("filter");
-    const items = (payload.data.detail.timeline ?? []).filter((item: { event_type: string; visibility: string }) => filter === "all" ||
-      (filter === "messages" ? item.event_type === "chat_message" && item.visibility === "public" : filter === "internal" ? item.visibility === "internal" : item.event_type !== "chat_message"));
-    await route.fulfill({ json: { status: "success", data: { items, total: items.length, limit: 200, filter } } });
-  });
 });
 
 test("inspector becomes a drawer when expanded navigation narrows the workspace at 1280", async ({ page }, info) => {

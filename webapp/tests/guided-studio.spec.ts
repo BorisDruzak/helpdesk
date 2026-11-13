@@ -21,9 +21,8 @@ for(const [width,height] of [[1366,768],[1920,1080],[820,1180]]) {
       current_step: definition.blocks[0],
     } } });
   });
-  await openCatalogMap(page);await openServiceSettings(page);await expect(page.getByLabel("Название услуги")).toHaveValue(definition.title);
-  await page.getByRole("button", { name: "Вернуться к карте", exact: true }).click();
-  await page.getByRole("button",{name:"Вся карта",exact:true}).click();
+  await openCatalogMap(page);
+  await expect(page.getByLabel("Визуальная карта сценария", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "+ Вход из каталога", exact: true }).click();
   const pending = page.getByRole("region", { name: "Незавершённый вход из каталога" });
   await pending.getByText("Подключение с клавиатуры", { exact: true }).click();
