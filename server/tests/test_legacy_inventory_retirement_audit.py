@@ -1,6 +1,7 @@
 """Audit privacy and PostgreSQL read-only transaction safety."""
 import importlib.util
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import sys
@@ -54,6 +55,7 @@ def test_redaction_handles_api_keys_and_sensitive_dictionary_keys():
 
 def test_private_export_rejects_tracked_source_directory():
     root = source.parents[1]
-    assert audit.validate_private_output(root / ".git/admin-cutover-retirement-audit").is_relative_to(root / ".git")
+    git_dir = Path(subprocess.check_output(["git", "rev-parse", "--absolute-git-dir"], cwd=root, text=True).strip()).resolve()
+    assert audit.validate_private_output(git_dir / "admin-cutover-retirement-audit").is_relative_to(git_dir)
     with pytest.raises(ValueError, match="ignored"):
         audit.validate_private_output(root / "docs")
