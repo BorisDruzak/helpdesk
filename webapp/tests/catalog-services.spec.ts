@@ -37,7 +37,7 @@ async function editEntrance(page:Page,title:string){
   if(await collapseLibrary.isVisible()) await collapseLibrary.click();
  }
  await page.getByRole("button",{name:"Ко входам",exact:true}).click();
- await page.getByRole("button",{name:"Редактировать вход",exact:true}).click();
+ await page.getByRole("button",{name:"Редактировать вход",exact:true}).press("Enter");
  await page.getByLabel("Название входа",{exact:true}).fill(title);
 }
 for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:820,height:1180}]){

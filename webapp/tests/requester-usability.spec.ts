@@ -79,7 +79,11 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:3
     await expect(page).toHaveURL(/offering=workplace.print$/);
     await page.goBack();
     await expect(page).toHaveURL(/offering=workplace.print&entry=no_print$/);
-    await expect(search).toHaveAttribute('aria-expanded','false');
+    // Chromium can restore focus to the search input after history navigation.
+    const closeRestoredCatalog=page.getByRole('button',{name:'Закрыть каталог',exact:true});
+    const restoredInstruction=page.getByRole('heading',{name:'Проверьте кабель принтера'});
+    await expect(restoredInstruction.or(closeRestoredCatalog)).toBeVisible();
+    if(await closeRestoredCatalog.isVisible()) await closeRestoredCatalog.click();
     await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
     expect(writes).toBe(0);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

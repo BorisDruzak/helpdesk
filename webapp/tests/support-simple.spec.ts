@@ -294,16 +294,20 @@ test("waiting for the requester sends a separate public message with the status"
   const commands: unknown[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
-  await page.route("**/api/web/support/tickets/ticket-1/workspace", async route => {
-    const response = await route.fetch();
-    const payload = await response.json();
+  await login(page);
+  const workspace = "/api/web/support/tickets/ticket-1/workspace";
+  const response = await page.request.get(workspace);
+  expect(response.ok()).toBe(true);
+  const initialWorkspace = await response.json();
+  await page.route(`**${workspace}`, async route => {
+    const payload = structuredClone(initialWorkspace);
     const { ticket, actions } = payload.data.detail;
     ticket.status = currentStatus;
     ticket.status_label = currentStatus === "in_progress" ? "В работе" : "Ждём пользователя";
     ticket.assignee_id = "support";
     actions.can_send_public_message = true;
     actions.status_options = currentStatus === "in_progress" ? [{ value: "waiting_on_user", label: "Ждём пользователя" }] : [];
-    await route.fulfill({ response, json: payload });
+    await route.fulfill({ json: payload });
   });
   await page.route("**/api/web/support/tickets/ticket-1/status", async route => {
     commands.push(route.request().postDataJSON());
@@ -311,7 +315,6 @@ test("waiting for the requester sends a separate public message with the status"
     await route.fulfill({ json: { status: "success", data: { ticket_id: "ticket-1", status: currentStatus, status_label: "Ждём пользователя" } } });
   });
 
-  await login(page);
   await page.goto("/app/tickets/ticket-1");
   await page.getByText("Действия ▾", { exact: true }).click();
   await page.getByRole("button", { name: "Ожидать ответа сотрудника" }).click();
