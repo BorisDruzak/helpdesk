@@ -658,12 +658,18 @@ def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 178
-    assert full_tables[:11] == (
+    assert len(full_tables) == 188
+    assert full_tables[:17] == (
+        "worktime_session_leases",
+        "worktime_authorization_codes",
+        "web_requester_registrations",
         "oidc_sessions",
         "oidc_flows",
         "identity_migration_candidates",
         "confirmed_identity_bindings",
+        "request_studio_fragment_assets",
+        "request_studio_fragments",
+        "request_studio_assets",
         "request_studio_sessions",
         "request_studio_publish_tokens",
         "requester_ticket_create_requests",
@@ -674,8 +680,12 @@ def test_full_cleanup_profile_preserves_current_table_scope():
     )
     assert {
         "endpoint_tool_runs",
+        "registry_inventory_invites",
+        "registry_inventory_links",
         "registry_person_identities",
         "registry_endpoint_device_mappings",
+        "web_push_deliveries",
+        "web_push_subscriptions",
         "ticket_kb_links",
         "ticket_admin_audit_archive",
         "ticket_events_archive",

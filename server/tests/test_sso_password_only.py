@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, create_autospec
 
 from aiohttp.test_utils import make_mocked_request
 from cryptography.fernet import Fernet
@@ -38,7 +38,8 @@ def authority(monkeypatch):
     monkeypatch.setattr(oidc, "IdentityService", lambda session: identity)
     claims = dict(iss=binding.issuer, sub=binding.subject, ad_object_guid=binding.ad_object_guid,
                   sid="session", exp=(datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp())
-    monkeypatch.setattr(oidc, "validate_id_token", lambda *a: claims)
+    validate_token = create_autospec(oidc.validate_id_token, return_value=claims)
+    monkeypatch.setattr(oidc, "validate_id_token", validate_token)
     introspect = AsyncMock(return_value=True)
     monkeypatch.setattr(oidc, "_introspect", introspect)
     flow = SimpleNamespace(nonce="nonce", verifier_encrypted=oidc._cipher().encrypt(b"verifier").decode())
@@ -50,7 +51,7 @@ def authority(monkeypatch):
         yield session
     monkeypatch.setattr(oidc, "get_session", sessions)
     return SimpleNamespace(binding=binding, user=user, identity=identity, claims=claims, session=session,
-                           rows=rows, introspect=introspect)
+                           rows=rows, introspect=introspect, validate_token=validate_token)
 
 
 async def test_login_does_not_request_mfa_even_with_legacy_acr_config(authority):
@@ -106,6 +107,10 @@ async def test_session_and_refresh_do_not_require_mfa(authority, monkeypatch, ro
     assert await oidc.validate_oidc_session(authority.session, SimpleNamespace(token_hash="hash"), authority.user)
     authority.introspect.assert_awaited_once()
     assert client.refresh_token.await_count == int(refresh)
+    if refresh:
+        authority.validate_token.assert_called_once_with("signed", {}, "nonce", "renewed", refresh=True)
+    else:
+        authority.validate_token.assert_not_called()
 
 
 async def test_password_only_session_still_rejects_revoked_upstream(authority):
