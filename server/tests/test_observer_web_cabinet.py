@@ -1153,7 +1153,7 @@ async def test_web_cabinet_integrity_recomputes_profile_completion_when_ticket_l
     assert event is not None
     assert event.severity == "high"
     assert event.evidence_json["profile_completion_source"] == "registry_recomputed"
-    assert set(event.evidence_json["missing_field_keys"]) >= {"department_id", "location_id", "phone"}
+    assert set(event.evidence_json["missing_field_keys"]) == {"department_id", "phone"}
 
 
 @pytest.mark.asyncio
