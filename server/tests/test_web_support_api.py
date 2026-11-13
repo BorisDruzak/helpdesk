@@ -3466,6 +3466,7 @@ async def test_web_support_resolved_status_respects_confirmation_required_false(
             title="Resolve without requester confirmation",
             description="Closure policy disables requester confirmation.",
             status="in_progress",
+            assignee_id="support-test",
             requester_id="user-status",
             queue_id=queue.id,
             custom_fields={
@@ -3549,6 +3550,7 @@ async def test_web_support_status_action_reports_workflow_gate_block(test_client
             title="Проверка workflow gate",
             description="Переход должен быть заблокирован по роли.",
             status="in_progress",
+            assignee_id="support-test",
             requester_id="user-status",
             queue_id=queue.id,
             ticket_type="incident",
