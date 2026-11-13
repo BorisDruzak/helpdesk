@@ -3,10 +3,7 @@ import { installStudioV3Fixture } from "./fixtures/studio-v3";
 
 async function evidence(page: Page, info: TestInfo, name: string) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect.poll(async () => {
-    const action = await page.getByRole("button", { name: "Сохранить черновик", exact: true }).boundingBox();
-    return !!action && action.y >= 0 && action.y + action.height <= page.viewportSize()!.height;
-  }).toBe(true);
+  await expect(page.getByRole("button", { name: /^(Опубликовать|Вернуться к карте)$/ })).toBeVisible();
   await page.screenshot({ path: info.outputPath(`${page.viewportSize()!.width}-${name}.png`) });
 }
 async function simulationAnswers(page: Page, scope: string) {
@@ -23,7 +20,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
   await page.goto("/app/admin/request-template-studio");
   await page.getByRole("region", { name: "Каталог услуг", exact: true }).getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true }).click();
   await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
-  await page.getByText("Иначе", { exact: true }).click();
+  await page.getByTestId("rf__node-studio:link:route:logic:0").getByRole("button", { name: "Редактировать переход", exact: true }).click();
   const rule = page.getByRole("group", { name: "Условие перехода", exact: true });
   await rule.getByRole("button", { name: "Добавить условие", exact: true }).click();
   await expect(rule.getByRole("combobox", { name: "Правило", exact: true })).toHaveValue("eq");
@@ -43,7 +40,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
   await expect(value.getByRole("option", { name: "Да", exact: true })).toHaveCount(1);
   await expect(value.getByRole("option", { name: "Нет", exact: true })).toHaveCount(1);
   await evidence(page, info, "connected-question-choices");
-  expect(state.writes).toEqual([]);
+  await expect.poll(() => state.definition().blocks?.find(block => block.id === "logic")?.transitions?.[0].when).toMatchObject({ field: "work" });
+  expect(state.writes.every(write => write === "draft")).toBe(true);
   expect(state.errors).toEqual([]);
   expect(state.unexpected).toEqual([]);
  });
@@ -52,21 +50,27 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
   await page.goto("/app/admin/request-template-studio");
   await page.getByRole("region", { name: "Каталог услуг", exact: true }).getByRole("button", { name: "Настроить услугу Проблемы с печатью", exact: true }).click();
   await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
-  await page.getByRole("button", { name: "Обработка услуги", exact: true }).click();
+  await page.getByText("Ещё", { exact: true }).click();
+  await page.getByRole("button", { name: "Правила услуги на публикации", exact: true }).click();
+  await page.getByRole("button", { name: "Настроить направления и профили карты", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Куда направлять обращения", exact: true })).toBeVisible();
   await page.getByRole("combobox", { name: /^Очередь Helpdesk/ }).selectOption("network");
   await expect(page.getByRole("option", { name: "Отключённая очередь", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Профили сроков карты", exact: true }).click();
+  await page.getByRole("combobox", { name: "Профиль для редактирования", exact: true }).selectOption("urgent");
   const urgent = page.getByRole("group", { name: "Срочный", exact: true });
   await urgent.getByRole("combobox", { name: /^Единица срока решения/ }).selectOption("60");
   await urgent.getByLabel("Срок решения", { exact: true }).fill("2");
   await urgent.getByRole("combobox", { name: /^Учёт времени/ }).selectOption("business");
   await urgent.getByRole("combobox", { name: /^Рабочий календарь/ }).selectOption("8");
-  await page.getByRole("combobox", { name: /^Направление по умолчанию/ }).selectOption("support");
-  await page.getByRole("combobox", { name: /^Профиль SLA по умолчанию/ }).selectOption("standard");
+  await page.getByRole("combobox", { name: "Резервное направление", exact: true }).selectOption("support");
+  await page.getByRole("combobox", { name: "Резервный профиль сроков для сотрудника", exact: true }).selectOption("standard");
   await evidence(page, info, "map-local-sla");
   await urgent.getByRole("combobox", { name: /^Рабочий календарь/ }).scrollIntoViewIfNeeded();
   await evidence(page, info, "working-calendar");
+  await page.getByRole("button", { name: "Вернуться к карте", exact: true }).click();
   await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Выбрать обработку", exact: true }).click();
+  await page.getByRole("button", { name: "Редактировать выбранный блок", exact: true }).click();
   await expect(page.getByText(/Ответы могут отсутствовать.*Что не работает.*Кого затронуло/)).toBeVisible();
   await page.getByRole("button", { name: /Ветвь 1/ }).click();
   const condition = page.getByRole("group", { name: "Если", exact: true });
@@ -83,13 +87,13 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
   await page.getByRole("combobox", { name: /^Профиль SLA ветки/ }).selectOption("urgent");
   await page.getByLabel("Приоритет ветви", { exact: true }).fill("5");
   await evidence(page, info, "nested-rule-branch");
-  const save = page.getByRole("button", { name: "Сохранить черновик", exact: true }); if (await save.isEnabled()) await save.click();
   await expect.poll(() => state.definition().blocks?.find(block => block.id === "logic")?.transitions?.[0].priority).toBe(5);
   expect(state.definition().processing?.sla_profiles.urgent).toMatchObject({ resolution_minutes: 120, time_basis: "business", calendar_id: 8 });
   await page.getByRole("button", { name: "Тестировать", exact: true }).click(); await page.getByRole("button", { name: "Начать проверку", exact: true }).click();
   await simulationAnswers(page, "Весь отдел");
   await expect(page.getByText("Приоритет: P1", { exact: true })).toBeVisible(); await expect(page.getByText(/Ответить до:/)).toBeVisible();
-  expect(await page.getByRole("complementary", { name: "Контекстный инспектор", exact: true }).evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  const result = page.getByRole("region", { name: "Результат серверной проверки обработки", exact: true });
+  expect(await result.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await page.getByText(/Выбрать обработку · ветвь 1.*выбрана/).click();
   await expect(page.getByText("Все условия (И)", { exact: false })).toBeVisible();
   await expect(page.getByText("✓ Выполнено", { exact: true })).toHaveCount(4);
