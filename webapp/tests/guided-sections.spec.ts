@@ -1,7 +1,7 @@
 import { expect, test } from "playwright/test";
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }]) {
-  test(`32 questions retain one editor and requester section preview ${viewport.width}`, async ({ page }, info) => {
+  test(`32 questions retain section grouping and requester preview ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const errors: string[] = []; const unexpected: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -15,7 +15,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.route("**/api/web/**", async route => {
       const path = new URL(route.request().url()).pathname; let data: unknown = {};
       if (path === "/api/web/session/me") data = { user_login: "studio-test@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view"] };
+      else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
+      else if (path === "/api/web/settings") data = { queues: [], calendars: [] };
       else if (path.endsWith("/request-studio/catalog")) data = { categories: [], services: [{ code: "workplace", public_title: "Рабочее место" }], offerings: [{ full_code: "workplace.printer_issue", service_code: "workplace", public_title: "Не печатает", request_template_key: "printer" }], scenarios: [{ id: "s1", title: definition.title, status: "draft", offering_full_code: "workplace.printer_issue", issues: [] }], total: 1, offset: 0, limit: 100 };
+      else if (path.endsWith("/scenarios/s1/publish-preview")) data = { revision: 3, health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [] }, diff: [], outcomes: [], confirmation_token: null };
       else if (path.endsWith("/scenarios/s1")) data = { scenario: { id: "s1", archived: false }, draft: { revision: 3, definition } };
       else if (path.endsWith("/scenarios/s1/simulate")) {
         const steps = route.request().postDataJSON().steps;
@@ -31,14 +34,16 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.getByRole("button", { name: "Настроить услугу Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
     await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Вопросы о печати", exact: true }).click();
-    const questions = page.getByRole("list", { name: "Вопросы страницы", exact: true });
-    const questionListSize = await questions.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }));
-    expect(questionListSize.height).toBeLessThanOrEqual(200);
-    expect(questionListSize.content).toBeGreaterThan(questionListSize.height);
-    const last = page.getByRole("button", { name: "Вопрос 32", exact: true });
-    await last.focus(); await page.keyboard.press("Enter");
-    await expect(page.getByRole("group", { name: "Редактор вопроса", exact: true })).toHaveCount(1);
-    await expect(page.getByRole("textbox", { name: "Что спросить?", exact: true })).toHaveValue("Вопрос 32");
+    await page.getByText("Ещё", { exact: true }).click();
+    await page.getByRole("button", { name: "Редактировать выбранный блок", exact: true }).click();
+    const questions = page.getByLabel("Вопросы страницы", { exact: true });
+    const device = questions.getByRole("group", { name: "Устройство", exact: true });
+    const impact = questions.getByRole("group", { name: "Влияние", exact: true });
+    await expect(device.getByRole("article")).toHaveCount(16);
+    await expect(impact.getByRole("article")).toHaveCount(16);
+    const last = impact.getByRole("article", { name: "Вопрос 32", exact: true });
+    await last.getByRole("button", { name: "Переместить вопрос 32", exact: true }).focus();
+    await expect(last.getByRole("textbox", { name: "Что спросить?", exact: true })).toHaveValue("Вопрос 32");
     await page.getByRole("button", { name: "Тестировать", exact: true }).click();
     await expect(page.getByRole("button", { name: "Начать проверку", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Начать проверку", exact: true }).click();
