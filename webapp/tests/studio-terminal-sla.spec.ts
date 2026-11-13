@@ -13,7 +13,10 @@ for (const width of [1366,1920]) test(`publication metadata and terminal SLA ${w
   await page.getByRole("button",{name:"Настройки услуги",exact:true}).click();
   await page.getByText("Раздел и категория",{exact:true}).click();
   await expect(page.getByRole("combobox",{name:"Раздел каталога",exact:true})).toBeVisible();
-  await page.getByRole("button",{name:"Вернуться к карте",exact:true}).click();
+  const publication = page.getByRole("region", { name: "Публикация сценария", exact: true });
+  await expect(publication.getByText("В этой проверке используется только редактор карты.").first()).toBeVisible();
+  await publication.getByRole("button", { name: "Вернуться к карте", exact: true }).click();
+  await expect(publication).toBeHidden();
   await expect(page.locator('[data-scenario-edge="studio:entry-point:special"]')).toBeVisible();
   await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Передать в поддержку",exact:true}).click();
   await page.locator('[data-id="end"]').getByRole("button",{name:"Редактировать",exact:true}).click();

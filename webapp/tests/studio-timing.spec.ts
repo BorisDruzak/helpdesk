@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import { dragStudioHandles } from "./fixtures/studio-map-gestures";
 import { installStudioV3Fixture } from "./fixtures/studio-v3";
 
 for (const width of [1366, 1920]) test(`unified Russian deadlines and terminal override ${width}`, async ({page}, info) => {
@@ -18,10 +19,9 @@ for (const width of [1366, 1920]) test(`unified Russian deadlines and terminal o
  await page.getByRole("combobox",{name:"Применять к блоку",exact:true}).selectOption("q1");
  await page.getByRole("button",{name:"Свернуть редактор",exact:true}).click();
  await page.getByRole("button",{name:"Вся карта",exact:true}).click();
- const source=await card.getByLabel("Подключить настройку «Сроки обработки» к блоку",{exact:true}).boundingBox();
- const target=await page.locator('[data-id="end"]').getByLabel("Вход блока «Передать в поддержку»",{exact:true}).boundingBox();
- expect(source).toBeTruthy();expect(target).toBeTruthy();
- await page.mouse.move(source!.x+source!.width/2,source!.y+source!.height/2);await page.mouse.down();await page.mouse.move(target!.x+target!.width/2,target!.y+target!.height/2,{steps:24});await page.mouse.up();
+ const source = card.getByLabel("Подключить настройку «Сроки обработки» к блоку", { exact: true });
+ const target = page.locator('[data-id="end"]').getByLabel("Вход блока «Передать в поддержку»", { exact: true });
+ await dragStudioHandles(page, source, target);
  await expect.poll(()=>state.definition().blocks!.find(b=>b.kind==="sla_attachment")?.attached_to).toBe("end");
  expect(state.definition().blocks!.find(b=>b.kind==="sla_attachment")?.transitions).toBeUndefined();
  await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Передать в поддержку",exact:true}).click();

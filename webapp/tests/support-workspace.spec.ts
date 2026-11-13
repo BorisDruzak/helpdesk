@@ -138,7 +138,7 @@ test("оператор видит безопасное состояние диа
       const failure = `${response.status()} ${response.request().method()} ${response.url()}`;
       if (response.url().includes("/diagnostics/")) {
         failedDiagnosticsRequests.push(failure);
-      } else if (response.url().includes("/timeline?") || response.url().endsWith("/read")) {
+      } else if (response.url().endsWith("/read")) {
         knownFixtureFailures.push(failure);
       } else {
         unexpectedFailedRequests.push(failure);
@@ -159,11 +159,9 @@ test("оператор видит безопасное состояние диа
   expect(failedDiagnosticsRequests).toEqual([]);
   expect(unexpectedFailedRequests).toEqual([]);
   expect(knownFixtureFailures).toEqual([
-    `404 GET ${new URL(page.url()).origin}/api/web/support/tickets/ticket-1/timeline?filter=all`,
     `404 POST ${new URL(page.url()).origin}/api/web/support/tickets/ticket-1/read`,
   ]);
   expect(consoleErrors).toEqual([
-    "Failed to load resource: the server responded with a status of 404 (Not Found)",
     "Failed to load resource: the server responded with a status of 404 (Not Found)",
   ]);
 
