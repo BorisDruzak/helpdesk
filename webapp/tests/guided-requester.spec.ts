@@ -1,4 +1,9 @@
-import { expect, test } from "playwright/test";
+import { expect, test, type Request } from "playwright/test";
+
+function isAbortedCatalogMetric(request: Request) {
+  return request.method() === "POST" && new URL(request.url()).pathname === "/api/web/requester/catalog-events"
+    && request.failure()?.errorText === "net::ERR_ABORTED";
+}
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 820, height: 1180 }, { width: 390, height: 768 }]) {
   for (const mode of viewport.width === 390 ? ["long-submit", "long-form"] : ["self-service", "ticket", "escape-ticket", ...(viewport.width === 1366 || viewport.width === 820 ? ["blocked-ticket", "double-ticket"] : []), ...(viewport.width === 1366 ? ["long-submit", "closed-result", "long-form"] : [])]) {
@@ -9,7 +14,9 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     page.on("pageerror", error => errors.push(error.message));
     page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
     page.on("response", response => { if (response.status() >= 400) failures.push(response.url()); });
-    page.on("requestfailed", request => failures.push(request.url()));
+    page.on("requestfailed", request => {
+      if (!isAbortedCatalogMetric(request)) failures.push(request.url());
+    });
     let revision = 1;
     let current = "questions";
     let answer = "";
@@ -43,6 +50,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       const method = route.request().method();
       let data: unknown;
       if (path === "/api/web/session/me") data = { user_login: "guided@example.test", actor_role: "user", auth_type: "web_session", default_workspace: "requester", available_workspaces: ["requester"], permissions: ["workspace.requester.view"] };
+      else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
+      else if (path === "/api/web/requester/catalog-events" && method === "POST") return route.fulfill({ status: 204 });
       else if (path.endsWith("/requester/bootstrap")) data = { profile: { person_id: "p1", display_name: "Сотрудник" }, account_summary: { linked_profile: true }, profile_completion: { complete: true, required_fields: [], missing_fields: [], blocks: {} }, devices: [], feature_flags: { requester_ticket_create: true, requester_no_device_create: true }, policies: {} };
       else if (path === "/api/web/requester/consents" && method === "GET") data = { consents: [] };
       else if (path === "/api/web/requester/tickets/test-ticket" && method === "GET" && created) {
@@ -77,7 +86,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       return route.fulfill({ json: { status: "ok", catalog_version: "test", services: [{ service_code: "workplace", title: "Рабочее место", offerings: [{ offering_code: "printer", full_code: "workplace.printer", title: "Не печатает", request_template_key: "printer", guided_scenario_enabled: true, ...(mode === "ticket" ? { catalog_items: [{ key: "paper", title: "Бумага застряла", description: "Помощь с бумагой", synonyms: ["замятие"], entry_point_key: "paper", scenario_key: "printer", version_id: "v1", target_block_id: "questions" }] } : {}) }] }] } });
     });
     await page.goto(mode === "escape-ticket" ? "/app/requester/new/?offering=workplace.printer" : "/app/requester/new");
-    if (["self-service", "blocked-ticket", "double-ticket", "long-submit", "closed-result", "long-form"].includes(mode)) await page.getByRole("combobox", { name: "Категория обращения" }).selectOption({ label: "Не печатает" });
+    if (mode !== "escape-ticket" && mode !== "ticket") {
+      await page.getByRole("button", { name: "Все услуги", exact: true }).click();
+      await page.getByRole("button", { name: "Не печатает", exact: true }).click();
+    }
     if (mode === "ticket") {
       await page.getByRole("searchbox", { name: "Найти проблему во всём каталоге" }).fill("замятие");
       const result = page.getByRole("button", { name: /Бумага застряла/ });
@@ -247,6 +259,7 @@ test("guided conditional Other projects the latest focused input before Continue
   page.on("response", response => { if (response.status() >= 400) failures.push(`${response.status()} ${new URL(response.url()).pathname}`); });
   page.on("requestfailed", request => {
     // Replacing a pending projection intentionally aborts that read, never a lifecycle command.
+    if (isAbortedCatalogMetric(request)) return;
     if (new URL(request.url()).pathname.endsWith("/step-preview") && request.failure()?.errorText === "net::ERR_ABORTED") return;
     failures.push(`${request.method()} ${new URL(request.url()).pathname}`);
   });
@@ -265,6 +278,8 @@ test("guided conditional Other projects the latest focused input before Continue
     const path = new URL(route.request().url()).pathname, method = route.request().method();
     let data: unknown;
     if (path === "/api/web/session/me") data = { user_login: "conditional@example.test", actor_role: "user", auth_type: "web_session", default_workspace: "requester", available_workspaces: ["requester"], permissions: ["workspace.requester.view"] };
+    else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
+    else if (path === "/api/web/requester/catalog-events" && method === "POST") return route.fulfill({ status: 204 });
     else if (path === "/api/web/requester/bootstrap") data = { profile: { person_id: "p1", display_name: "Сотрудник" }, account_summary: { linked_profile: true }, profile_completion: { complete: true, required_fields: [], missing_fields: [], blocks: {} }, devices: [], feature_flags: { requester_ticket_create: true, requester_no_device_create: true }, policies: {} };
     else if (path === "/api/web/notifications/unread_count") { await route.fulfill({ json: { status: "ok", unread_count: 0 } }); return; }
     else if (path === "/api/web/requester/request-scenarios/sessions" && method === "POST") data = step();
