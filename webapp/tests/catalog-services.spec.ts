@@ -33,9 +33,10 @@ async function saveMap(page:Page,revision:number){
 }
 async function editEntrance(page:Page,title:string){
  if ((page.viewportSize()?.width ?? 0) <= 900) {
-  await page.getByRole("button",{name:"Свернуть библиотеку",exact:true}).click();
-  await page.getByRole("button",{name:"Ко входам",exact:true}).click();
+  const collapseLibrary=page.getByRole("button",{name:"Свернуть библиотеку",exact:true});
+  if(await collapseLibrary.isVisible()) await collapseLibrary.click();
  }
+ await page.getByRole("button",{name:"Ко входам",exact:true}).click();
  await page.getByRole("button",{name:"Редактировать вход",exact:true}).click();
  await page.getByLabel("Название входа",{exact:true}).fill(title);
 }

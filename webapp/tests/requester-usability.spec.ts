@@ -78,6 +78,8 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:3
     await page.getByRole('region',{name:'Печать',exact:true}).getByRole('button',{name:'Все проблемы услуги',exact:true}).click();
     await expect(page).toHaveURL(/offering=workplace.print$/);
     await page.goBack();
+    await expect(page).toHaveURL(/offering=workplace.print&entry=no_print$/);
+    await expect(search).toHaveAttribute('aria-expanded','false');
     await expect(page.getByRole('heading',{name:'Проверьте кабель принтера'})).toBeVisible();
     expect(writes).toBe(0);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

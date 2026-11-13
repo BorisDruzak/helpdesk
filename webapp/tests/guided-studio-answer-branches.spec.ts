@@ -19,6 +19,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     const node = page.locator('.react-flow__node[data-id="logic"]');
     const destination = page.locator('.react-flow__node[data-id="no"] .react-flow__handle.target');
     async function drag(handle: ReturnType<typeof page.locator>) {
+      await expect(handle).toBeInViewport();
+      await expect(destination).toBeInViewport();
+      await handle.click({ trial: true });
+      await destination.click({ trial: true });
       const source = await handle.boundingBox(), target = await destination.boundingBox();
       expect(source).not.toBeNull(); expect(target).not.toBeNull();
       await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2);
@@ -28,6 +32,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     }
     await drag(node.locator('.react-flow__handle[data-handleid="answer-1"]'));
     await expect(node.locator('.react-flow__handle[data-handleid="route-1"]')).toHaveCount(1);
+    await expect.poll(() => state.definition().blocks![1].transitions!.length).toBe(2);
     await page.getByRole("button", { name: "Вся карта", exact: true }).click();
     const existingRoute = page.getByTestId("rf__node-studio:link:route:logic:0");
     await drag(existingRoute.locator('.react-flow__handle[data-handleid="out"]'));
