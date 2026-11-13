@@ -13,25 +13,31 @@ pytestmark = [pytest.mark.db_cleanup("full"), pytest.mark.light_app]
 
 
 @pytest.mark.asyncio
-async def test_candidate_cannot_publish_private_offering_unpublished_parent_or_invalid_catalog(test_client_light, test_engine):
+@pytest.mark.parametrize(
+    ("problem", "code"),
+    [("retired", "offering_unavailable"), ("parent", "service_unavailable"), ("type", "offering_not_ready")],
+)
+async def test_candidate_rejects_retired_offering_unpublished_parent_or_invalid_catalog(
+    test_client_light, test_engine, problem, code
+):
     identifier, definition = await ready(test_engine)
     url = BASE + "/scenarios/" + identifier
     response = await test_client_light.put(url + "/draft", headers=ADMIN, json={"revision": 1, "definition": dict(definition, publish_offering=True)})
     assert response.status == 200, await response.text()
-    for problem, code in (("private", "offering_unavailable"), ("parent", "service_unavailable"), ("type", "offering_not_ready")):
-        async with async_sessionmaker(test_engine)() as session:
-            offering = await session.scalar(select(HelpdeskServiceOffering).where(HelpdeskServiceOffering.full_code == definition["offering_full_code"]))
-            service = await session.scalar(select(HelpdeskService).where(HelpdeskService.code == definition["service_code"]))
-            offering.lifecycle_status = "draft"
-            offering.visibility = "internal" if problem == "private" else "public"
-            offering.request_type = None if problem == "type" else "incident"
-            service.lifecycle_status = "draft" if problem == "parent" else "published"
-            await session.commit()
-        response = await test_client_light.post(url + "/publish-preview", headers=ADMIN, json={"revision": 2})
-        assert response.status == 200, await response.text()
-        data = (await response.json())["data"]
-        assert not data["readiness"]["can_publish"] and data["confirmation_token"] is None
-        assert any(issue["code"] == code for issue in data["readiness"]["issues"]), data["readiness"]
+    async with async_sessionmaker(test_engine)() as session:
+        offering = await session.scalar(select(HelpdeskServiceOffering).where(HelpdeskServiceOffering.full_code == definition["offering_full_code"]))
+        service = await session.scalar(select(HelpdeskService).where(HelpdeskService.code == definition["service_code"]))
+        offering.lifecycle_status = "retired" if problem == "retired" else "draft"
+        offering.visibility = "public"
+        offering.request_type = None if problem == "type" else "incident"
+        service.lifecycle_status = "draft" if problem == "parent" else "published"
+        await session.commit()
+    response = await test_client_light.post(url + "/publish-preview", headers=ADMIN, json={"revision": 2})
+    assert response.status == 200, await response.text()
+    data = (await response.json())["data"]
+    assert not data["readiness"]["can_publish"] and data["confirmation_token"] is None, data["readiness"]
+    assert any(issue["code"] == code for issue in data["readiness"]["issues"]), data["readiness"]
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("audit_failure", [False, True])
