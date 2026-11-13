@@ -2321,6 +2321,17 @@ async def handle_support_ticket_workspace(request: web.Request) -> web.Response:
     return json_success(build_ticket_workspace(state, ticket_id))
 
 
+async def handle_support_ticket_read(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    if ticket_id not in request.app["fixture_state"]["tickets"]:
+        raise web.HTTPNotFound()
+    payload = await request.json()
+    return web.json_response({"status": "ok", "last_read_event_id": payload["last_read_event_id"]})
+
+
 async def handle_support_ticket_timeline(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -3132,6 +3143,7 @@ def build_app() -> web.Application:
             web.delete("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_delete),
             web.get("/api/web/support/tickets/{ticket_id}/workspace", handle_support_ticket_workspace),
             web.get("/api/web/support/tickets/{ticket_id}/timeline", handle_support_ticket_timeline),
+            web.post("/api/web/support/tickets/{ticket_id}/read", handle_support_ticket_read),
             web.get("/api/web/support/tickets/{ticket_id}/diagnostics/overview", handle_support_ticket_diagnostics_overview),
             web.get("/api/web/support/tickets/{ticket_id}/diagnostics/capabilities", handle_support_ticket_diagnostics_capabilities),
             web.get(

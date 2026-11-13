@@ -471,18 +471,24 @@ test("queue and card explain an unavailable take before sending a command", asyn
   const reason = "Вы не состоите в очереди обращения. Назначить исполнителем можно участника этой очереди.";
   const availability = { allowed: false, reason_code: "ASSIGNEE_NOT_IN_QUEUE", reason };
   let commands = 0;
-  await page.route("**/api/web/support/queue?*", async (route) => {
-    const response = await route.fetch(); const payload = await response.json();
-    for (const ticket of payload.data.tickets) ticket.take_in_work = availability;
-    await route.fulfill({ response, json: payload });
-  });
-  await page.route("**/api/web/support/tickets/ticket-1/workspace", async (route) => {
-    const response = await route.fetch(); const payload = await response.json();
-    payload.data.detail.actions.take_in_work = availability;
-    await route.fulfill({ response, json: payload });
-  });
+  const ticketPath = "/api/web/support/tickets/ticket-1/workspace";
+  await page.goto("/app/login");
+  const loginResponse = await page.request.post("/api/web/session/login", { data: { login: "support", password: "secret" } });
+  expect(loginResponse.ok()).toBe(true);
+  const [queueResponse, ticketResponse] = await Promise.all([
+    page.request.get("/api/web/support/queue"),
+    page.request.get(ticketPath),
+  ]);
+  expect(queueResponse.ok()).toBe(true);
+  expect(ticketResponse.ok()).toBe(true);
+  const queue = await queueResponse.json();
+  const workspace = await ticketResponse.json();
+  for (const ticket of queue.data.tickets) ticket.take_in_work = availability;
+  workspace.data.detail.actions.take_in_work = availability;
+  await page.route("**/api/web/support/queue?*", route => route.fulfill({ json: queue }));
+  await page.route("**/api/web/support/tickets/ticket-1/workspace", route => route.fulfill({ json: workspace }));
   await page.route("**/api/web/support/tickets/ticket-1/status", (route) => { commands++; return route.abort(); });
-  await login(page);
+  await page.goto("/app/tickets");
   const row = page.getByRole("row", { name: /T-200001/ });
   await expect(row.getByRole("button", { name: "Взять в работу", exact: true })).toHaveCount(0);
   await expect(page.getByRole("columnheader",{name:"Действие",exact:true})).toHaveCount(0);

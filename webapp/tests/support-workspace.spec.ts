@@ -127,23 +127,14 @@ test("оператор открывает tickets workspace через новы�
 
 test("оператор видит безопасное состояние диагностики Endpoint Platform", async ({ page }, testInfo) => {
   const consoleErrors: string[] = [];
-  const failedDiagnosticsRequests: string[] = [];
-  const knownFixtureFailures: string[] = [];
-  const unexpectedFailedRequests: string[] = [];
+  const failedRequests: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
   page.on("response", (response) => {
-    if (response.status() >= 400) {
-      const failure = `${response.status()} ${response.request().method()} ${response.url()}`;
-      if (response.url().includes("/diagnostics/")) {
-        failedDiagnosticsRequests.push(failure);
-      } else if (response.url().endsWith("/read")) {
-        knownFixtureFailures.push(failure);
-      } else {
-        unexpectedFailedRequests.push(failure);
-      }
-    }
+    if (response.status() >= 400) failedRequests.push(
+      [response.status(), response.request().method(), new URL(response.url()).pathname].join(" "),
+    );
   });
 
   await loginSupport(page);
@@ -156,14 +147,8 @@ test("оператор видит безопасное состояние диа
   await expect(page.getByText("Поставлено в очередь Endpoint")).toBeVisible();
   await expect(page.getByText("Операция поставлена в очередь и будет доставлена при подключении агента.")).toBeVisible();
   await expect(page.getByText("Для обращения не определено устройство Endpoint Platform.")).toBeVisible();
-  expect(failedDiagnosticsRequests).toEqual([]);
-  expect(unexpectedFailedRequests).toEqual([]);
-  expect(knownFixtureFailures).toEqual([
-    `404 POST ${new URL(page.url()).origin}/api/web/support/tickets/ticket-1/read`,
-  ]);
-  expect(consoleErrors).toEqual([
-    "Failed to load resource: the server responded with a status of 404 (Not Found)",
-  ]);
+  expect(failedRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 
   await page.setViewportSize({ width: 1366, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(2);
