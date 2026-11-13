@@ -18,7 +18,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       const path = new URL(route.request().url()).pathname;
       let data: unknown;
       if (path === "/api/web/session/me") data = { user_login: "studio-test@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view"] };
+      else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
+      else if (path === "/api/web/settings") data = { queues: [], calendars: [] };
       else if (path.endsWith("/request-studio/catalog")) data = { categories: [], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [{ id: "s1", title: definition.title, status: "draft", offering_full_code: "it.printer", issues: [] }], total: 1, offset: 0, limit: 100 };
+      else if (path.endsWith("/scenarios/s1/publish-preview")) data = { revision: 3, health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [] }, diff: [], outcomes: [], confirmation_token: null };
       else if (path.endsWith("/scenarios/s1/simulate")) {
         expect(route.request().postDataJSON()).toEqual({ revision: 3, steps: [], diagnostic_outcomes: { diagnostic: "timeout" } });
         data = { state: { revision: 1, results: { diagnostic: { status: "timeout", reason: "simulated_timeout", simulated: true, operation_created: false, consent_required: true } } }, current_step: { id: "review", kind: "review", title: "Проверьте данные", answers: [] } };
@@ -31,8 +34,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.goto("/app/admin/request-template-studio");
     await page.getByRole("region", { name: "Каталог услуг", exact: true }).getByRole("button", { name: "Настроить услугу Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Перевести карту на единую модель", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Включить новые возможности карты", exact: true })).toBeVisible();
     await page.getByRole("list", { name: "Блоки сценария" }).getByRole("button", { name: "Проверка принтера", exact: true }).click();
+    await page.getByText("Ещё", { exact: true }).click();
+    await page.getByRole("button", { name: "Редактировать выбранный блок", exact: true }).click();
     await expect(page.getByText("Согласие хранится как настройка. В симуляции реального разрешения нет.", { exact: true })).toBeVisible();
     await expect(page.getByText(/Запасной шаг: Проверьте данные/)).toBeVisible();
     await page.getByRole("button", { name: "Тестировать", exact: true }).click();
