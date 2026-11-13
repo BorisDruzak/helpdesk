@@ -223,7 +223,8 @@ async def test_local_adapter_audience_projection_exposes_only_opaque_audience_re
         include_children=False,
     )
     session = _SequencedSession(
-        _Result(rows=[]),
+        _Result(rows=[]),  # No UI account aliases for this support actor.
+        _Result(rows=[]),  # No access-group memberships.
         _Result(rows=[(group, membership)]),
         get_rows={"registry-ref-opaque-person-1": _person()},
     )
