@@ -34,6 +34,13 @@ npm run build
 npm run test:e2e -- tests/detail-compatibility.spec.ts tests/requester-workspace.spec.ts -g "compatibility ticket detail|saved checkbox"
 ```
 
+In fixture browser tests for settings and chat, start with the notification
+introduction dismissed for the synthetic account. The notification suite
+covers first-time dismissal separately. Check notification preferences in
+`/app/settings` and service alerts in `/app/admin/settings` under system status.
+Studio draft tests follow the publication settings flow and wait for the
+revision-bound autosave response.
+
 Screenshots and traces go to the disposable Playwright output directory. These
 fixture tests check rendered behavior, not live deployment or DB persistence;
 use the isolated PostgreSQL API layer for persistence acceptance.

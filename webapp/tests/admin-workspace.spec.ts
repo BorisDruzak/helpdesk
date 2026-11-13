@@ -1,6 +1,11 @@
 import { expect, type Page, test } from "playwright/test";
 import { endpointDeviceId, mockEndpointFleet } from "./fixtures/endpoint-context";
 
+test.beforeEach(async ({ page }) => {
+  // These tests start after the notification onboarding covered in its own suite.
+  await page.addInitScript(() => localStorage.setItem("helpdesk-notification-intro-v1:admin", "1"));
+});
+
 async function loginAsAdmin(page: Page) {
   await page.goto("/app/admin");
   if (page.url().includes("/app/admin/inventory")) {
@@ -70,16 +75,21 @@ test("admin opens the exact Endpoint device without retired API traffic and keep
   expect(retiredRequests).toEqual([]);
 
   const prefsResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/web/notifications/preferences") && response.status() === 200
+    new URL(response.url()).pathname === "/api/web/notifications/preferences" && response.status() === 200
   );
-  const alertsResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/web/admin/tech/alerts") && response.status() === 200
-  );
-  await page.goto("/app/admin/settings");
-  await page.getByRole("main").getByRole("button", { name: "Уведомления" }).click();
+  await page.goto("/app/settings");
+  await expect(page.getByRole("heading", { name: "Мои настройки" })).toBeVisible();
   await prefsResponse;
+
+  await page.goto("/app/admin/settings");
+  await expect(page.getByRole("heading", { name: "Настройки службы" })).toBeVisible();
+  const alertsResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === "/api/web/admin/tech/alerts" && response.status() === 200
+  );
+  await page.getByRole("button", { name: "Состояние системы" }).click();
   await alertsResponse;
-  await expect(page.getByText("env_uuid-дубли")).toBeVisible();
+  const system = page.getByRole("region", { name: "Состояние системы" });
+  await expect(system.getByText("Техническое событие", { exact: true })).toBeVisible();
 });
 
 for (const viewport of [{width: 1366, height: 768}, {width: 1920, height: 1080}]) {

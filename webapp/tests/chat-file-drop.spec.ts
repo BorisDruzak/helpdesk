@@ -2,6 +2,8 @@ import { expect, test, type Page } from "playwright/test";
 
 type Actor = "requester" | "support";
 async function fixture(page: Page, actor: Actor, rejectFile = false) {
+  const login = actor === "requester" ? "fixture.requester" : "support";
+  await page.addInitScript((user) => localStorage.setItem(`helpdesk-notification-intro-v1:${user}`, "1"), login);
   const uploads: string[] = []; const sent: Record<string, unknown>[] = []; const messages: Record<string, unknown>[] = [];
   const attachments = new Map<string, Record<string, unknown>>();
   await page.route("**/api/web/notifications/unread_count", route => route.fulfill({json: {status: "ok", unread_count: 0}}));
