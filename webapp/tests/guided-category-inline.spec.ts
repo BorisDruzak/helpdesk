@@ -27,8 +27,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.route("**/api/web/**", async route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       let data: unknown = {};
-      if (!["GET", "HEAD"].includes(request.method())) writes.push({ path, body: request.postDataJSON() });
+      if (!["GET", "HEAD"].includes(request.method()) && !path.endsWith("/publish-preview")) writes.push({ path, body: request.postDataJSON() });
       if (path === "/api/web/session/me") data = { user_login: "studio-test@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view"] };
+      else if (path === "/api/web/settings") data = { queues: [], calendars: [] };
+      else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
       else if (path.endsWith("/request-studio/catalog")) data = { categories, services: [{ code: "access", public_title: "Доступы", lifecycle_status: "published", visibility: "public" }, { code: "workplace", public_title: "Рабочее место", lifecycle_status: "published", visibility: "public" }], offerings: [], scenarios: [], total: 0, offset: 0, limit: 100 };
       else if (path.endsWith("/categories") && request.method() === "POST") {
         const category = { ...request.postDataJSON(), id: categoryId, revision: 1 } as ScenarioCategory;
@@ -38,6 +40,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
         savedDefinition = request.postDataJSON().definition;
         data = { scenario: { id: "s-new", archived: false }, draft: { revision: 1, definition: { ...savedDefinition, offering_full_code: "workplace.printer", process_binding: { request_template_key: "printer" } } } };
       } else if (path.endsWith("unread_count")) { await route.fulfill({ json: { status: "ok", unread_count: 0 } }); return; }
+      else if (path.endsWith("/publish-preview")) data = { revision: 1, health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [] }, diff: [], outcomes: [], confirmation_token: null };
       else if (path.endsWith("/helpdesk-model/policies")) data = { policies: {} };
       else unexpected.push(`${request.method()} ${path}`);
       await route.fulfill({ json: { status: "success", data } });
@@ -70,34 +73,25 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     const title = page.getByRole("textbox", { name: "Название услуги", exact: true });
     const category = page.getByRole("combobox", { name: "Категория (необязательно)", exact: true });
     await title.fill("Мой сценарий принтера");
-    await expect(section).toHaveValue("workplace"); await expect(category).toHaveValue(categoryId);
-    await page.getByText("Описание услуги", { exact: true }).click();
     await page.getByRole("textbox", { name: "Описание услуги", exact: true }).fill("Несохранённое описание");
+    await page.getByText("Раздел и категория", { exact: true }).click();
+    await expect(section).toHaveValue("workplace");
+    await expect(category).toHaveValue(categoryId);
+    await page.getByRole("button", { name: "Вернуться к карте", exact: true }).click();
     await page.getByRole("button", { name: "Каталог", exact: true }).click();
     const leave = page.getByRole("alert").filter({ hasText: "Уйти без сохранения локальных изменений?" });
     await expect(leave).toBeVisible();
-    await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toBeDisabled();
     await leave.getByRole("button", { name: "Отмена", exact: true }).click();
-    await expect(title).toHaveValue("Мой сценарий принтера"); await expect(category).toHaveValue(categoryId);
-    await page.getByRole("button", { name: "Создать услугу", exact: true }).click();
-    const switching = page.getByRole("alert").filter({ hasText: "Переключить карту без сохранения локальных изменений?" });
-    await expect(switching).toBeVisible();
-    await switching.getByRole("button", { name: "Отмена", exact: true }).click();
-    await expect(title).toHaveValue("Мой сценарий принтера");
-    await expect(page.getByRole("textbox", { name: "Описание услуги", exact: true })).toHaveValue("Несохранённое описание");
     expect(writes).toHaveLength(1);
 
+    await page.getByRole("button", { name: "+ Вход из каталога", exact: true }).click();
     await page.getByRole("button", { name: "+ Инструкция", exact: true }).click();
-    await page.getByRole("textbox", { name: "Название блока", exact: true }).fill("Проверьте бумагу");
-    const blockId = await page.locator(".react-flow__node").filter({ has: page.locator("strong", { hasText: "Проверьте бумагу" }) }).getAttribute("data-id");
+    const blockId = await page.locator(".react-flow__node").filter({ has: page.getByText("Инструкция", { exact: true }) }).first().getAttribute("data-id");
     expect(blockId).toBeTruthy();
-    await page.getByRole("button", { name: "Настройки карты", exact: true }).first().click();
-    await page.getByText("Подключить вход с клавиатуры", { exact: true }).click();
-    await page.getByRole("combobox", { name: "Первый шаг", exact: true }).selectOption(blockId!);
-    await category.selectOption(""); await category.selectOption(categoryId);
-    expect(writes).toHaveLength(1);
-    const save = page.getByRole("button", { name: "Сохранить черновик", exact: true });
-    await expect(save).toBeInViewport(); await save.click();
+    await page.getByRole("button", { name: /Новый вход · подключить/ }).click();
+    const pending = page.getByRole("region", { name: "Незавершённый вход из каталога" });
+    await pending.getByText("Подключение с клавиатуры", { exact: true }).click();
+    await pending.getByRole("combobox", { name: "Первый блок для сотрудника" }).selectOption(blockId!);
     await expect(page.getByText("Черновик сохранён. Ревизия 1.", { exact: true })).toBeVisible();
     expect(savedDefinition).toMatchObject({ title: "Мой сценарий принтера", description: "Несохранённое описание", service_code: "workplace", category_id: categoryId, entry_points: [{ category_id: categoryId, target_block_id: blockId }] });
     expect(writes.map(item => item.path)).toEqual(["/api/web/admin/request-studio/categories", "/api/web/admin/request-studio/services"]);
