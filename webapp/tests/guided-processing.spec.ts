@@ -19,7 +19,10 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
       const path = new URL(route.request().url()).pathname;
       let data: unknown = {};
       if (path === "/api/web/session/me") data = { user_login: "studio-test@example.test", actor_role: "admin", auth_type: "web_session", default_workspace: "admin", available_workspaces: ["admin"], permissions: ["workspace.admin.view"] };
+      else if (path === "/api/web/notifications/push/config") return route.fulfill({ json: { status: "ok", enabled: false, public_key: null } });
+      else if (path === "/api/web/settings") data = { queues: [], calendars: [] };
       else if (path.endsWith("/request-studio/catalog")) data = { categories: [], services: [{ code: "it", public_title: "ИТ" }], offerings: [{ full_code: "it.printer", service_code: "it", public_title: "Принтер", request_template_key: "printer" }], scenarios: [{ id: "s1", title: definition.title, status: "draft", offering_full_code: "it.printer", issues: [] }], total: 1, offset: 0, limit: 100 };
+      else if (path.endsWith("/scenarios/s1/publish-preview")) data = { revision: selected ? 4 : 3, health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [] }, diff: [], outcomes: [], confirmation_token: null };
       else if (path.endsWith("/helpdesk-model/policies")) {
         if (route.request().method() !== "GET") unsafe.push("registry mutation");
         data = { policies: { routing: [{ code: "printer_route", title: "Поддержка печати", version: "1", is_active: true, published_at: "2026-10-11" }] } };
@@ -48,19 +51,21 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900
     await page.goto("/app/admin/request-template-studio");
     await page.getByRole("region", { name: "Каталог услуг", exact: true }).getByRole("button", { name: "Настроить услугу Не печатает", exact: true }).click();
     await page.getByRole("button", { name: "Открыть карту сценария", exact: true }).click();
-    await page.getByRole("button", { name: "Обработка услуги", exact: true }).click();
+    await page.getByText("Ещё", { exact: true }).click();
+    await page.getByRole("button", { name: "Правила услуги на публикации", exact: true }).click();
     await page.getByRole("combobox", { name: "Маршрут и очередь", exact: true }).selectOption("printer_route");
-    await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
-    await expect(page.getByText("Черновик сохранён. Ревизия 4.", { exact: true })).toBeVisible();
+    await expect.poll(() => selected).toBe(true);
+    await page.getByRole("button", { name: "Вернуться к карте", exact: true }).click();
     await page.getByRole("button", { name: "Тестировать", exact: true }).click();
     const start = page.getByRole("button", { name: "Начать проверку", exact: true });
     await start.focus(); await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: "Кого затронуло?", exact: true })).toBeFocused();
     await page.getByRole("radio", { name: "Весь отдел", exact: true }).check();
     await page.getByRole("button", { name: "Продолжить проверку", exact: true }).click();
-    await expect(page.getByText("Весь отдел", { exact: true })).toBeVisible();
-    await expect(page.getByText("Кого затронуло? → Отправка", { exact: true })).toBeVisible();
-    await expect(page.getByText("При закрытии обязательны итог для сотрудника и код решения.", { exact: true })).toBeVisible();
+    const result = page.getByRole("region", { name: "Результат серверной проверки обработки", exact: true });
+    await expect(result.getByText("Весь отдел", { exact: true })).toBeVisible();
+    await expect(result.getByText("Кого затронуло? → Отправка", { exact: true })).toBeVisible();
+    await expect(result.getByText("При закрытии обязательны итог для сотрудника и код решения.", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${viewport.width}-processing-simulation.png`) });
     expect(selected).toBe(true); expect(answered).toBe(true); expect(errors).toEqual([]); expect(unsafe).toEqual([]);
