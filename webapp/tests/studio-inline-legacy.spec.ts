@@ -27,7 +27,7 @@ test("legacy SLA projection edits original rules without upgrading schema", asyn
   await page.getByRole("button", { name: "Вся карта", exact: true }).click();
   await page.locator('[data-scenario-edge="q2:0"]').click({ button: "right" });
   const menu = page.getByRole("menu", { name: "Действия на карте" });
-  await expect(menu.getByRole("menuitem", { name: "SLA", exact: true })).toBeDisabled();
+  await expect(menu.getByRole("menuitem", { name: "Сроки обработки", exact: true })).toBeDisabled();
   await expect(menu.getByRole("menuitem", { name: "Переходы · кнопки", exact: true })).toBeDisabled();
   expect(state.errors).toEqual([]);
   expect(state.unexpected).toEqual([]);

@@ -96,7 +96,7 @@ for (const width of [1366, 1920]) {
     expect(await popup.locator('.studio-resizable-editor__body').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(popup.getByRole("button", { name: "Закрыть", exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await expect(page.getByRole("button", { name: "Сохранить черновик", exact: true })).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Опубликовать", exact: true })).toBeInViewport();
     await page.screenshot({ path: info.outputPath(`connections-and-popover-${width}.png`), fullPage: true });
     expect(state.errors).toEqual([]);
     expect(state.unexpected).toEqual([]);

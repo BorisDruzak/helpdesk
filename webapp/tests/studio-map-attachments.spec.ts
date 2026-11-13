@@ -49,9 +49,9 @@ for(const width of [1366,1920]) test(`attached policies and direct map editors $
  await expect.poll(async()=>Math.round((await editor.boundingBox())!.width-oldWidth)).toBe(35);
  await page.screenshot({path:info.outputPath(`edge-editor-${width}.png`),fullPage:true});
  await editor.getByRole("button",{name:"Закрыть",exact:true}).click();
- await page.getByRole("button",{name:"+ SLA",exact:true}).click();
+ await page.getByRole("button",{name:"+ Сроки обработки",exact:true}).click();
  await page.getByRole("combobox",{name:"Применять к блоку",exact:true}).selectOption("q1");
- await page.getByRole("combobox",{name:"Профиль SLA",exact:true}).selectOption("urgent");
+ await page.getByRole("combobox",{name:"Профиль сроков для сотрудника",exact:true}).selectOption("urgent");
  await page.getByRole("button",{name:"+ Маршрут",exact:true}).click();
  await page.getByRole("combobox",{name:"Маршрут обработки",exact:true}).selectOption("network");
  await expect.poll(()=>state.definition().blocks?.filter(b=>b.kind==="routing_attachment").length).toBe(1);

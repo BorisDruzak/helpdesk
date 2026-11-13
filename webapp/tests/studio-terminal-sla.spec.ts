@@ -18,11 +18,11 @@ for (const width of [1366,1920]) test(`publication metadata and terminal SLA ${w
   await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Передать в поддержку",exact:true}).click();
   await page.locator('[data-id="end"]').getByRole("button",{name:"Редактировать",exact:true}).click();
   await page.getByRole("button",{name:"Развернуть редактор",exact:true}).click();
-  const final=page.getByRole("region",{name:"SLA завершения",exact:true});
+  const final=page.getByRole("region",{name:"Маршрут и сроки завершения",exact:true});
   await expect(final).toBeVisible();
   await expect(final).toContainText("Срочный");
   await expect(final).toContainText("Стандартный");
-  const choice=final.getByRole("combobox",{name:"SLA при создании обращения",exact:true});
+  const choice=final.getByRole("combobox",{name:"Сроки для сотрудника при создании обращения",exact:true});
   await choice.selectOption("urgent");
   await expect(final).toContainText("Итоговое назначение: Срочный");
   await expect(final).toContainText("решение: 120 мин.");
@@ -41,7 +41,7 @@ for (const width of [1366,1920]) test(`publication metadata and terminal SLA ${w
   await page.getByRole("button",{name:"Продолжить проверку",exact:true}).click();
   await expect(page.getByRole("region",{name:"Результат серверной проверки обработки",exact:true})).toContainText("120 мин.");
   await page.getByRole("button",{name:"Закрыть панель",exact:true}).click();
-  await expect(page.locator('[data-id="end"] [aria-label="Итог завершения"]')).toContainText("SLA проверенного пути");
+  await expect(page.locator('[data-id="end"] [aria-label="Итог завершения"]')).toContainText("Сроки проверенного пути");
   await expect(page.locator('[data-id="end"] [aria-label="Итог завершения"]')).toContainText("Поддержка печати");
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await expect(page.getByRole("button",{name:"Опубликовать",exact:true})).toBeInViewport();

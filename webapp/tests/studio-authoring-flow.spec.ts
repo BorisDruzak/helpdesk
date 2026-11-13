@@ -26,6 +26,10 @@ for (const width of [1366,1920]) test(`new draft autosave, early screenshot and 
  await page.route("**/scenarios/fresh/draft",async r=>{
   const body=r.request().postDataJSON();expect(body.revision).toBe(revision);draft=body.definition;revision++;await r.fulfill(response(detail()));
  });
+ await page.route("**/scenarios/fresh/publish-preview", r => r.fulfill(response({
+  revision, health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [] },
+  diff: [], outcomes: [], confirmation_token: null,
+ })));
  await page.route("**/scenarios/fresh/attachments",async r=>{
   const body=r.request().postDataBuffer()!.toString();const blockId=body.match(/name="block_id"\r\n\r\n([^\r]+)/)![1],fieldKey=body.match(/name="field_key"\r\n\r\n([^\r]+)/)![1];
   expect(draft!.blocks!.some(block=>block.id===blockId&&block.kind==="form_page"&&block.fields.some(field=>field.key===fieldKey))).toBe(true);

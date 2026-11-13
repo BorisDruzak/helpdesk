@@ -166,6 +166,9 @@ test("Studio copy saves materials under the new scenario scope", async ({page}) 
   if (question?.kind !== "form_page") throw new Error("Missing question");
   question.fields = [{key: "summary", type: "textarea", label: "Описание проблемы", help_attachments: [source]}];
   let creates = 0;
+  await page.route("**/api/web/admin/request-studio/scenarios/copy-v3/publish-preview", route => route.fulfill({ json: {
+    status: "success", data: { revision: 1, health: { health_status: "ok" }, readiness: { can_publish: false, variants_checked: 0, issues: [] }, diff: [], outcomes: [], confirmation_token: null },
+  } }));
   await page.route("**/api/web/request-scenario-assets/*/download", route => route.fulfill({contentType: "image/png", body: Buffer.from(png, "base64")}));
   await page.route("**/api/web/admin/request-studio/services", async route => {
     const body = route.request().postDataJSON(); creates++;
@@ -179,8 +182,6 @@ test("Studio copy saves materials under the new scenario scope", async ({page}) 
   });
   await openMap(page);
   await page.getByRole("button", {name: "Создать копию", exact: true}).click();
-  const save = page.getByRole("button", {name: "Сохранить черновик", exact: true});
-  if (await save.isEnabled()) await save.click();
   await expect.poll(() => creates).toBe(1);
   await expect(page.getByText(/Черновик сохранён/).first()).toBeVisible();
   const back = page.getByRole("button", {name: "Вернуться к карте", exact: true});

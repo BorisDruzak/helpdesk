@@ -32,9 +32,9 @@ for(const width of [1366,1920]){
   await expect.poll(()=>prepare.evaluate(e=>{const r=e.getBoundingClientRect(),top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return top===e||!!top&&e.contains(top);})).toBe(true);expect(state.errors).toEqual([]);
  });
  test(`focused route and SLA settings on their own map blocks ${width}`,async({page},info)=>{
-  const{state}=await setup(page,width);await page.getByRole('button',{name:'+ SLA',exact:true}).click();
-  const sla=page.getByRole('group',{name:'Прикреплённая настройка SLA',exact:true});await sla.getByRole('combobox',{name:'Профиль SLA',exact:true}).selectOption('standard');
-  const slaSettings=sla.getByRole('region',{name:'Настройки SLA',exact:true});await expect(slaSettings.getByRole('spinbutton',{name:'Срок решения',exact:true})).toBeVisible();expect(await sla.getByRole('combobox',{name:'Очередь Helpdesk',exact:true}).count()).toBe(0);
+  const{state}=await setup(page,width);await page.getByRole('button',{name:'+ Сроки обработки',exact:true}).click();
+  const sla=page.getByRole('group',{name:'Сроки обработки',exact:true});await sla.getByRole('combobox',{name:'Профиль сроков для сотрудника',exact:true}).selectOption('standard');
+  const slaSettings=sla.getByRole('region',{name:'Настройки сроков для сотрудника',exact:true});await expect(slaSettings.getByRole('spinbutton',{name:'Срок решения',exact:true})).toBeVisible();expect(await sla.getByRole('combobox',{name:'Очередь Helpdesk',exact:true}).count()).toBe(0);
   await slaSettings.getByRole('spinbutton',{name:'Срок решения',exact:true}).fill('420');await expect.poll(()=>state.definition().processing?.sla_profiles.standard.resolution_minutes).toBe(420);
   await page.getByRole('button',{name:'+ Маршрут',exact:true}).click();const route=page.getByRole('group',{name:'Прикреплённая настройка маршрута',exact:true});await route.getByRole('combobox',{name:'Маршрут обработки',exact:true}).selectOption('support');
   const routeSettings=route.getByRole('region',{name:'Настройки направления',exact:true});const queue=routeSettings.getByRole('combobox',{name:'Очередь Helpdesk',exact:true});await expect(queue).toBeVisible();expect(await queue.locator('option').allTextContents()).toEqual(['Выберите действующую очередь','Единая поддержка']);expect(await route.getByRole('spinbutton',{name:'Срок решения',exact:true}).count()).toBe(0);

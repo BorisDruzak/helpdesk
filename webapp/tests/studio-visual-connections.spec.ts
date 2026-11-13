@@ -52,7 +52,7 @@ for(const width of [1366,1920]){
    await page.getByRole('list',{name:'Блоки сценария',exact:true}).getByRole('button',{name:'Тип проблемы',exact:true}).click();const old=state.definition().blocks!.length;
    await dragEmpty(page,port(page,'q1'));await menu.getByRole('menuitem',{name:label,exact:true}).click();await expect.poll(()=>state.definition().blocks?.length).toBe(old+1);expect(state.definition().blocks?.at(-1)?.kind).toBe(kind);
   }
-  for(const [label,kind]of[['SLA','sla_attachment'],['Маршрут','routing_attachment']]){
+  for(const [label,kind]of[['Сроки обработки','sla_attachment'],['Маршрут','routing_attachment']]){
    await page.getByRole('button',{name:`+ ${label}`,exact:true}).click();await expect.poll(()=>state.definition().blocks?.at(-1)?.kind).toBe(kind);const attachment=state.definition().blocks!.at(-1)!,oldTransitions=structuredClone(state.definition().blocks!.find(b=>b.id==='q1')!.transitions);
    if(kind==='sla_attachment'){await dragEmpty(page,port(page,attachment.id,'policy'));await menu.getByRole('menuitem',{name:'Инструкция',exact:true}).click();await expect.poll(()=>state.definition().blocks?.find(b=>b.id===attachment.id)?.kind==='sla_attachment'&&(state.definition().blocks!.find(b=>b.id===attachment.id) as {attached_to?:string}).attached_to).toBeTruthy();}
    else {await page.getByRole('button',{name:'Свернуть редактор',exact:true}).click();await page.getByRole('button',{name:'Вся карта',exact:true}).click();await drag(page,port(page,attachment.id,'policy'),page.locator('.react-flow__handle[data-nodeid="q1"].target'));await expect.poll(()=>(state.definition().blocks!.find(b=>b.id===attachment.id) as {attached_to?:string}).attached_to).toBe('q1');}
