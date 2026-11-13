@@ -9,6 +9,9 @@ from web_api.dto.request_scenario_admin import ScenarioSave
 from pydantic import BaseModel, ValidationError, model_validator
 
 
+pytestmark = pytest.mark.no_db
+
+
 @pytest.mark.asyncio
 async def test_draft_validation_identifies_field_without_echoing_input(monkeypatch):
     @asynccontextmanager
