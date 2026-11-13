@@ -13,6 +13,7 @@ async function fixture(page:Page,archived=false){
   if(path.endsWith("/session/me"))data={user_login:"studio-fixture@example.test",actor_role:"admin",auth_type:"web_session",default_workspace:"admin",available_workspaces:["admin"],permissions:["workspace.admin.view"]};
   else if(path.endsWith("/request-studio/catalog"))data={services:[section],categories:[category],offerings:[offering],scenarios:[map],entries:[{offering,scenarios:[map],active_mode:"form",requester_available:offering.visibility==="public",category_ids:offering.metadata.studio_catalog.category_id?[category.id]:[]}],total:1,limit:100,offset:0};
   else if(path.endsWith("/offerings/save-draft")){const body=route.request().postDataJSON();writes.push({path,body});Object.assign(offering,body);await route.fulfill({json:{status:"ok",offering}});return;}
+  else if(path.endsWith("/web/settings"))data={queues:[],calendars:[]};
   else if(path.endsWith("/helpdesk-model/policies"))data={request_templates:[{template_code:"printer",public_title:"Проблема с принтером",is_active:true,published_at:"2026-10-13T00:00:00Z"}],policies:{}};
   else if(path.endsWith("/draft")){const body=route.request().postDataJSON();expect(body.revision).toBe(revision);writes.push({path,body});definition=body.definition;revision++;data={scenario:map,draft:{revision,definition}};}
   else if(path.endsWith("/scenarios/s1"))data={scenario:map,draft:{revision,definition}};
@@ -23,9 +24,21 @@ async function fixture(page:Page,archived=false){
  return{errors,failures,writes,offering};
 }
 async function openMap(page:Page){await page.getByRole("button",{name:"Настроить услугу Общая диагностика печати",exact:true}).click();await page.getByRole("button",{name:"Открыть карту сценария",exact:true}).click();}
-async function settings(page:Page){await page.getByRole("button",{name:"Настройки карты",exact:true}).first().click();}
-async function saveMap(page:Page,revision:number){const save=page.getByRole("button",{name:"Сохранить черновик",exact:true});if(await save.isEnabled())await save.click();await expect(page.getByText(`Черновик сохранён. Ревизия ${revision}.`,{exact:true})).toBeVisible();}
-async function editEntrance(page:Page,title:string){await page.getByRole("button",{name:"Вся карта",exact:true}).click();await page.getByRole("textbox",{name:"Название входа «Застряла бумага»",exact:true}).click();await page.getByLabel("Название пункта",{exact:true}).fill(title);}
+async function settings(page:Page){
+ await page.getByRole("button",{name:"Опубликовать",exact:true}).click();
+ await page.getByRole("button",{name:"Настройки услуги",exact:true}).click();
+}
+async function saveMap(page:Page,revision:number){
+ await expect(page.getByText(`Черновик сохранён. Ревизия ${revision}.`,{exact:true})).toBeVisible();
+}
+async function editEntrance(page:Page,title:string){
+ if ((page.viewportSize()?.width ?? 0) <= 900) {
+  await page.getByRole("button",{name:"Свернуть библиотеку",exact:true}).click();
+  await page.getByRole("button",{name:"Ко входам",exact:true}).click();
+ }
+ await page.getByRole("button",{name:"Редактировать вход",exact:true}).click();
+ await page.getByLabel("Название входа",{exact:true}).fill(title);
+}
 for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:820,height:1180}]){
  test(`unified catalog service settings and map return ${viewport.width}`,async({page},info)=>{
   await page.setViewportSize(viewport);const state=await fixture(page);await page.goto("/app/admin/request-template-studio");
@@ -38,10 +51,12 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:8
   await expect(page.getByRole("button",{name:"Настроить услугу Застряла бумага",exact:true})).toHaveCount(0);
   await openMap(page);await settings(page);
   await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Общая диагностика печати");
+  await page.getByText("Раздел и категория",{exact:true}).click();
   await page.getByRole("combobox",{name:"Категория (необязательно)",exact:true}).selectOption("10000000-0000-0000-0000-000000000001");
   await saveMap(page,3);
   expect(state.writes[0].body.definition).toMatchObject({offering_full_code:"work.print",category_id:"10000000-0000-0000-0000-000000000001",process_binding:{request_template_key:"printer"},entry_points:[{key:"paper",category_id:"10000000-0000-0000-0000-000000000001",synonyms:["замятие"]}]});
   expect(state.offering.metadata).toEqual({private_note:"preserve",studio_catalog:{synonyms:["принтер"]}});
+  await page.getByRole("button",{name:"Вернуться к карте"}).click();
   await expect(page.getByRole("heading",{name:"Библиотека блоков"})).toBeVisible();await expect(page.getByRole("tab",{name:"Каталог",exact:true})).toHaveCount(0);
   await page.getByRole("button",{name:"Каталог",exact:true}).click();await expect(page.getByRole("button",{name:"Создать услугу",exact:true})).toBeVisible();await expect(page.getByLabel("Визуальная карта сценария",{exact:true})).toHaveCount(0);
   await expect(tree.getByRole("button",{name:"Принтеры и МФУ",exact:true})).toBeVisible();
@@ -57,8 +72,13 @@ for(const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:8
  });
 }
 test("create another entrance on the service map without creating another Offering",async({page})=>{
- const state=await fixture(page);await page.goto("/app/admin/request-template-studio");await openMap(page);await settings(page);
- await page.getByText("Подключить вход с клавиатуры",{exact:true}).click();await page.getByRole("combobox",{name:"Первый шаг",exact:true}).selectOption("done");await saveMap(page,3);
+ const state=await fixture(page);await page.goto("/app/admin/request-template-studio");await openMap(page);
+ await page.getByRole("button",{name:"+ Вход из каталога",exact:true}).click();
+ const pending=page.getByRole("region",{name:"Незавершённый вход из каталога"});
+ const title=pending.getByLabel("Название входа");
+ await title.fill("Готово");await title.press("Enter");
+ await pending.getByText("Подключение с клавиатуры",{exact:true}).click();
+ await pending.getByRole("combobox",{name:"Первый блок для сотрудника"}).selectOption("done");await saveMap(page,3);
  expect(state.writes).toHaveLength(1);expect(state.writes[0].path).toContain("/scenarios/s1/draft");expect(state.writes[0].body.definition.entry_points).toHaveLength(2);expect(state.writes[0].body.definition.entry_points[1]).toMatchObject({title:"Готово",target_block_id:"done"});
  await page.getByRole("button",{name:"Каталог",exact:true}).click();const tree=page.getByRole("navigation",{name:"Категории услуг"});await expect(tree.getByRole("button",{name:"↳ Готово",exact:true})).toBeVisible();await expect(page.getByRole("button",{name:/^Настроить услугу /})).toHaveCount(1);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
 });
@@ -80,7 +100,7 @@ test("a tree entrance opens its own map at its target and asks before discarding
  await tree.getByRole("button",{name:"↳ Застряла бумага",exact:true}).click();
  await expect(page.locator('.react-flow__node[data-id="q"] .studio-map-node')).toHaveClass(/is-selected/);
  await editEntrance(page,"Несохранённая бумага");await page.getByRole("button",{name:"Каталог",exact:true}).click();
- await expect(page.getByText("Уйти без сохранения локальных изменений?",{exact:true})).toBeVisible();await page.getByRole("button",{name:"Отмена",exact:true}).click();await expect(page.getByLabel("Название пункта",{exact:true})).toHaveValue("Несохранённая бумага");
+ await expect(page.getByText("Уйти без сохранения локальных изменений?",{exact:true})).toBeVisible();await page.getByRole("button",{name:"Отмена",exact:true}).click();await expect(page.getByLabel("Название входа",{exact:true})).toHaveValue("Несохранённая бумага");
  await page.getByRole("button",{name:"Каталог",exact:true}).click();await page.getByRole("button",{name:"Уйти без сохранения",exact:true}).click();
  await expect(tree.getByRole("button",{name:"↳ Застряла бумага",exact:true})).toBeVisible();await tree.getByRole("button",{name:"↳ Застряла бумага",exact:true}).click();await editEntrance(page,"Застряла бумага");
  expect(state.writes).toHaveLength(0);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
@@ -97,9 +117,9 @@ test("legacy forms convert to a draft map and new services use only map creation
  });
  await page.goto("/app/admin/request-template-studio");await page.getByRole("button",{name:"Услуга Обычная заявка · Ожидает переноса",exact:true}).click();
  await expect(page.getByRole("button",{name:/Открыть карту сценария/})).toHaveCount(0);
- await page.getByRole("button",{name:"Перенести в сценарий",exact:true}).click();await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Обычная заявка");await page.getByRole("list",{name:"Блоки сценария",exact:true}).getByRole("button",{name:"Вопросы формы",exact:true}).click();await page.getByRole("tab",{name:"Как у сотрудника",exact:true}).click();await expect(page.getByLabel("Опишите проблему",{exact:true})).toBeVisible();
+ await page.getByRole("button",{name:"Перенести в сценарий",exact:true}).click();await settings(page);await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Обычная заявка");await page.getByRole("button",{name:"Вернуться к карте"}).click();await expect(page.getByTestId("rf__node-question").getByText("Опишите проблему",{exact:true})).toBeVisible();
  expect(state.writes).toHaveLength(1);expect(state.writes[0].body).toEqual({apply:true,offering_full_code:"work.form"});
- await page.getByRole("button",{name:"Каталог",exact:true}).click();await page.getByRole("button",{name:"Создать услугу",exact:true}).click();await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Новая услуга");await expect(page.locator(".react-flow__node")).toHaveCount(1);
+ await page.getByRole("button",{name:"Каталог",exact:true}).click();await page.getByRole("button",{name:"Создать услугу",exact:true}).click();await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Новая услуга");await page.getByRole("button",{name:"Вернуться к карте"}).click();await expect(page.getByRole("heading",{name:"Библиотека блоков"})).toBeVisible();
  await expect(page.getByRole("combobox",{name:"Способ помощи",exact:true})).toHaveCount(0);await expect(page.getByRole("link",{name:"Создать шаблон",exact:true})).toHaveCount(0);
  expect(state.writes).toHaveLength(1);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
 });
@@ -113,7 +133,7 @@ test("each service entrance opens its own map instead of another service map",as
  await page.route("**/api/web/admin/request-studio/scenarios/s2",route=>route.fulfill({json:{status:"success",data:{scenario:secondMap,draft:{revision:1,definition:secondDefinition}}}}));
  page.on("request",request=>{if(/\/scenarios\/s[12]$/.test(new URL(request.url()).pathname))opened.push(new URL(request.url()).pathname.split("/").at(-1)!);});
  await page.goto("/app/admin/request-template-studio");const tree=page.getByRole("navigation",{name:"Категории услуг"});await tree.getByRole("button",{name:"↳ Не сканирует",exact:true}).click();
- await expect(page.locator('.react-flow__node[data-id="scan"] .studio-map-node')).toHaveClass(/is-selected/);await settings(page);await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Карта сканирования");
+ await expect(page.locator('.react-flow__node[data-id="scan"] .studio-map-node')).toHaveClass(/is-selected/);await settings(page);await expect(page.getByLabel("Название услуги",{exact:true})).toHaveValue("Карта сканирования");await page.getByRole("button",{name:"Вернуться к карте"}).click();
  await page.getByRole("button",{name:"Каталог",exact:true}).click();await tree.getByRole("button",{name:"↳ Застряла бумага",exact:true}).click();await expect(page.locator('.react-flow__node[data-id="q"] .studio-map-node')).toHaveClass(/is-selected/);
  expect(opened).toEqual(["s2","s1"]);expect(state.writes).toHaveLength(0);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
 });
@@ -134,7 +154,7 @@ test("auditor can open an archived map from service help without edit controls",
  await page.route("**/api/web/admin/request-studio/catalog?**",route=>route.fulfill({json:{status:"success",data:{services:[{code:"work",public_title:"Рабочее место"}],categories:[],offerings:[offering],entries:[{offering,scenarios:[map],active_mode:"form",category_ids:[]}],scenarios:[map],total:1,offset:0,limit:100}}}));
  await page.goto("/app/admin/request-template-studio");await page.getByRole("button",{name:"Настроить услугу Печать",exact:true}).click();
  await expect(page.getByRole("button",{name:"Создать услугу",exact:true})).toHaveCount(0);await page.getByText("Архив карт услуги",{exact:true}).click();await page.getByRole("button",{name:"Открыть архивную карту",exact:true}).click();
- await settings(page);await expect(page.getByLabel("Название услуги",{exact:true})).toBeDisabled();
+ await expect(page.getByRole("button",{name:"Опубликовать",exact:true})).toBeDisabled();
  await expect(page.getByRole("heading",{name:"Библиотека блоков",exact:true})).toBeVisible();await expect(page.getByRole("button",{name:"Сохранить черновик",exact:true})).toHaveCount(0);
  expect(state.writes).toHaveLength(0);expect(state.errors).toEqual([]);expect(state.failures).toEqual([]);
 });
