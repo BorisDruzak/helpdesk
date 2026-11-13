@@ -30,6 +30,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
       const req = route.request(), url = new URL(req.url()), path = url.pathname; let data: unknown = {};
       if (path === "/api/web/session/me") data = { user_login: "employee", actor_role: "user", default_workspace: "requester", available_workspaces: ["requester"], permissions: ["workspace.requester.view"] };
       else if (path === "/api/web/session/capabilities") data = {};
+      else if (path === "/api/web/notifications/push/config") data = { enabled: false, public_key: null };
+      else if (path === "/api/web/requester/catalog-events" && req.method() === "POST") return route.fulfill({ status: 204 });
       else if (path === "/api/web/requester/bootstrap") data = { workspace: "requester", profile, profile_completion: { complete: true, blocks: {} }, devices: [], primary_device: null, feature_flags: { requester_ticket_create: true, requester_no_device_create: true } };
       else if (path === "/api/web/notifications/unread_count") return route.fulfill({ json: { status: "ok", unread_count: 0 } });
       else if (path === "/api/web/requester/tickets") { if (req.method() === "POST") ticketWrites++; data = { tickets: [] }; }
@@ -60,14 +62,14 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await expect(page.getByRole("button", { name: /Принтер не печатает/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Компьютер не включается/ })).toHaveCount(0);
     await search.fill("электронный бюджет");
-    await page.getByRole("button", { name: /^Электронный бюджет.*Услуга/ }).click();
+    await page.getByRole("region", { name: "Электронный бюджет", exact: true }).getByRole("button", { name: "Все проблемы услуги" }).click();
     expect(starts).toEqual([]);
     await expect(page.getByRole("button", { name: "Электронный бюджет: не удаётся войти", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Электронный бюджет: не удаётся войти", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Опишите проблему в системе" })).toBeVisible();
     expect(starts[0]).toMatchObject({ offering_full_code: "systems.budget", entry_point_key: "login" });
     await search.fill("ЕИС");
-    await expect(page.getByRole("button", { name: /^ЕИС.*Услуга/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: /^ЕИС/ }).getByRole("button", { name: "Все проблемы услуги" })).toBeVisible();
     await page.screenshot({ path: info.outputPath("eis-service.png"), fullPage: true });
     await search.fill("совсем неизвестная услуга");
     await expect(page.getByText(/Услуга или проблема не найдена/)).toBeVisible();
