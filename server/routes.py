@@ -120,7 +120,7 @@ from web_api.inventory_status import STATUS_PATH, read_helpdesk_account_status
 from web_api.inventory_handlers import (
     confirm_inventory_link, create_inventory_invitation, preview_inventory_invitation,
     read_inventory_devices, read_registry_inventory_devices, read_ticket_inventory_devices,
-    remove_inventory_link, revoke_inventory_invitation,
+    remove_inventory_link, revoke_inventory_invitation, search_registration_inventory,
 )
 from web_api.requester_handlers import (
     handle_web_requester_bootstrap,
@@ -612,6 +612,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/session/register-requester', handle_web_requester_register),
         web.get('/api/web/session/registration-options', handle_web_registration_options),
         web.post('/api/web/session/registration-invitation', preview_inventory_invitation),
+        web.post('/api/web/session/registration-inventory-search', search_registration_inventory),
         web.get('/api/web/session/capabilities', handle_web_session_capabilities),
         web.post('/api/web/session/password-reset-requests', handle_web_session_password_reset_request),
         web.post('/api/web/session/logout', handle_web_session_logout),

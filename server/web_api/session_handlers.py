@@ -16,7 +16,7 @@ from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
 from observer.web_event_writer import write_web_cabinet_observer_event
-from registry.inventory_directory import inventory_enabled
+from registry.inventory_directory import inventory_enabled, registration_search_enabled
 from registry.password_reset_service import PasswordResetRequestService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
@@ -414,6 +414,8 @@ async def handle_web_registration_options(request):
                 for department in departments if department.status == "active"], "profile_schema": public_schema}
         if inventory_enabled():
             data["inventory_invitation_enabled"] = True
+        if registration_search_enabled():
+            data["inventory_search_enabled"] = True
     response = web.json_response({"status": "success", "data": data})
     response.headers["Cache-Control"] = "no-store"
     return response

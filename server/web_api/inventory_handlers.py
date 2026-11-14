@@ -352,3 +352,31 @@ async def preview_inventory_invitation(request: web.Request) -> web.Response:
     except (ValueError, ValidationError):
         return _reply({"error": INVITE_UNAVAILABLE}, 409)
     return _reply(result)
+
+
+class EmployeeSearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=6, max_length=120)]
+
+
+async def search_registration_inventory(request: web.Request) -> web.Response:
+    if not config_module.WEB_SELF_REGISTRATION_ENABLED or not inventory.registration_search_enabled():
+        return _reply({"error": "Поиск сотрудников недоступен."}, 403)
+    if _same_origin_error(request):
+        return _reply({"error": "Откройте регистрацию на странице Helpdesk."}, 403)
+    if not check_rate_limit("requester_inventory_search", client_ip(request), limit=20, window_seconds=60):
+        return rate_limited_response()
+    try:
+        payload = EmployeeSearch.model_validate(await request.json())
+        query = " ".join(payload.query.split())
+        parts = query.split()
+        if (len(parts) < 2 or len(parts[0]) < 3 or len(parts[1]) < 2
+                or any(not (ch.isalpha() or ch in " -") for ch in query)):
+            raise ValueError("Incomplete name")
+    except (ValueError, ValidationError):
+        return _reply({"error": "Введите фамилию и хотя бы две буквы имени."}, 400)
+    try:
+        results = await inventory.search_registration_people(query)
+    except inventory.InventoryUnavailable:
+        return _reply({"error": "Поиск сотрудников сейчас недоступен."}, 503)
+    return _reply(results.model_dump())

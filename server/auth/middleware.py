@@ -47,6 +47,7 @@ AUTH_WHITELIST = {
     "/api/web/session/register-requester",
     "/api/web/session/registration-options",
     "/api/web/session/registration-invitation",
+    "/api/web/session/registration-inventory-search",
     "/api/web/session/capabilities",
     "/api/web/session/password-reset-requests",
     "/api/web/session/me",

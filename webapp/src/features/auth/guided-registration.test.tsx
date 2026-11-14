@@ -9,7 +9,7 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {status, headers: {"Content-Type":"application/json"}});
 }
 function Home() { const location = useLocation(); return <p data-testid="destination">{location.pathname}</p>; }
-function install(options: { failOnce?: boolean; changedSchema?: boolean; invitation?: boolean; rejectInvite?: boolean } = {}) {
+function install(options: { failOnce?: boolean; changedSchema?: boolean; invitation?: boolean; rejectInvite?: boolean; inventoryAgent?: boolean } = {}) {
   let submissions = 0;
   let optionReads = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -23,10 +23,13 @@ function install(options: { failOnce?: boolean; changedSchema?: boolean; invitat
         {key:"department_id",label:"Отдел",type:"select",required:true},
         {key:"phone",label:"Телефон или внутренний номер",type:"phone",required:true},
       ] : [];
-      return json({status:"success",data:{departments:[{value:"real",label:"Юридический отдел"}],profile_schema:{fields,required_fields:[]},inventory_invitation_enabled:options.invitation}});
+      return json({status:"success",data:{departments:[{value:"real",label:"Юридический отдел"}],profile_schema:{fields,required_fields:[]},inventory_invitation_enabled:options.invitation,inventory_search_enabled:options.inventoryAgent !== undefined}});
     }
     if (url.endsWith("/registration-invitation") && options.invitation)
       return json({status:"success",data:{full_name:"Петров Иван Сергеевич",department:"Юридический отдел",department_id:"real"}});
+    if (url.endsWith("/registration-inventory-search")) return json({status:"success",data:{people:[
+      {full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:options.inventoryAgent},
+    ]}});
     if (url.endsWith("/register-requester")) {
       submissions++;
       if (options.rejectInvite && JSON.parse(String(init?.body)).inventory_invite_code)
@@ -66,6 +69,23 @@ async function password() {
 afterEach(() => {vi.unstubAllGlobals(); sessionStorage.clear();});
 
 describe("guided employee registration", () => {
+  it("fills an inventory match without an agent and submits ordinary registration", async () => {
+    const requests = install({inventoryAgent:false, invitation:true});
+    show();
+    fireEvent.change(await screen.findByLabelText("ФИО"), {target:{value:"Петров Ив"}});
+    fireEvent.click(await screen.findByRole("button", {name:/Петров Иван Сергеевич.*Юридический отдел/}));
+    expect(screen.getByText(/Привязанный агент не найден/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Фамилия")).toHaveValue("Петров");
+    fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
+    expect(screen.getByRole("combobox", {name:"Отдел"})).toHaveValue("Юридический отдел");
+    fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"), {target:{value:"1234"}});
+    fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
+    await password();
+    expect(await screen.findByTestId("destination")).toHaveTextContent("/app/requester");
+    const submission = requests.mock.calls.find(([url]) => String(url).endsWith("/register-requester"));
+    expect(JSON.parse(String(submission?.[1]?.body))).toMatchObject({last_name:"Петров",department_id:"real"});
+    expect(JSON.parse(String(submission?.[1]?.body))).not.toHaveProperty("inventory_invite_code");
+  });
   it("uses one department input for search and explicit keyboard selection", async () => {
     install(); show(); await names();
     const department = screen.getByRole("combobox", { name: "Отдел" });

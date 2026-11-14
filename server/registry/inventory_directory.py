@@ -14,6 +14,7 @@ import aiohttp
 from pydantic import AwareDatetime, BaseModel, Field, StringConstraints, ValidationError, model_validator
 
 MAX_RESPONSE_BYTES = 1024 * 1024
+PEOPLE_PATH = "/api/internal/helpdesk/v1/inventory/people"
 Label = Annotated[str, StringConstraints(max_length=255)]
 
 
@@ -23,6 +24,17 @@ class InventoryUnavailable(RuntimeError):
 
 class InventoryPersonMissing(InventoryUnavailable):
     pass
+
+
+class RegistrationEmployee(BaseModel):
+    full_name: Label
+    department: Label
+    has_agent: bool
+
+
+class RegistrationPeople(BaseModel):
+    people: list[RegistrationEmployee] = Field(max_length=5)
+    refine: bool = False
 
 
 class Assignment(BaseModel):
@@ -104,7 +116,26 @@ def inventory_enabled() -> bool:
     return bool(os.getenv("HELPDESK_INVENTORY_BASE_URL", "").strip())
 
 
+def registration_search_enabled() -> bool:
+    return inventory_enabled() and os.getenv("HELPDESK_INVENTORY_REGISTRATION_SEARCH_ENABLED") == "true"
+
+
 async def fetch_person(person_id: UUID) -> InventoryProfile:
+    status, raw = await _read_people(f"/{person_id}")
+    return decode_response(status, raw, person_id)
+
+
+async def search_registration_people(query: str) -> RegistrationPeople:
+    status, raw = await _read_people("/registration-search", params={"q": query})
+    if status != 200:
+        raise InventoryUnavailable("Inventory registration search is unavailable")
+    try:
+        return RegistrationPeople.model_validate_json(raw)
+    except ValidationError:
+        raise InventoryUnavailable("Inventory returned invalid registration matches") from None
+
+
+async def _read_people(path: str, *, params: dict[str, str] | None = None) -> tuple[int, bytes]:
     """Send the credential only to the configured verified HTTPS origin."""
     base = os.getenv("HELPDESK_INVENTORY_BASE_URL", "").strip()
     token_file = os.getenv("HELPDESK_INVENTORY_TOKEN_FILE", "").strip()
@@ -119,9 +150,10 @@ async def fetch_person(person_id: UUID) -> InventoryProfile:
         if not 32 <= len(token) <= 4096 or not token.isprintable() or any(ch.isspace() for ch in token):
             raise InventoryUnavailable("Inventory service credential is invalid")
         ssl_context = ssl.create_default_context(cafile=ca_file or None)
-        endpoint = f"{base.rstrip('/')}/api/internal/helpdesk/v1/inventory/people/{person_id}"
+        endpoint = f"{base.rstrip('/')}{PEOPLE_PATH}{path}"
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=4)) as http:
-            async with http.get(endpoint, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            async with http.get(endpoint, params=params,
+                                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
                                 ssl=ssl_context, allow_redirects=False) as response:
                 if response.status not in {200, 404} or response.content_type != "application/json":
                     raise InventoryUnavailable("Inventory service did not return a profile")
@@ -130,6 +162,6 @@ async def fetch_person(person_id: UUID) -> InventoryProfile:
                     raw.extend(chunk)
                     if len(raw) > MAX_RESPONSE_BYTES:
                         raise InventoryUnavailable("Inventory response exceeded its size limit")
-                return decode_response(response.status, bytes(raw), person_id)
+                return response.status, bytes(raw)
     except (OSError, ValueError, aiohttp.ClientError, TimeoutError):
         raise InventoryUnavailable("Inventory service unavailable") from None

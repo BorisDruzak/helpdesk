@@ -1,5 +1,38 @@
 import { expect, test } from "playwright/test";
 
+test("registration suggests an employee and shows the assigned agent on mobile", async ({page}) => {
+  await page.setViewportSize({width:390,height:844});
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.route("**/api/web/session/**", async route => {
+    switch (new URL(route.request().url()).pathname) {
+      case "/api/web/session/capabilities":
+        return route.fulfill({json:{status:"success",data:{self_registration_enabled:true}}});
+      case "/api/web/session/me":
+        return route.fulfill({status:401,json:{status:"error"}});
+      case "/api/web/session/registration-options":
+        return route.fulfill({json:{status:"success",data:{departments:[{value:"legal",label:"Юридический отдел"}],
+          profile_schema:{fields:[]},inventory_search_enabled:true,inventory_invitation_enabled:true}}});
+      case "/api/web/session/registration-inventory-search":
+        expect(route.request().postDataJSON()).toEqual({query:"Петров Ив"});
+        return route.fulfill({json:{status:"success",data:{people:[{
+          full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:true,
+        }],refine:false}}});
+      default:
+        throw new Error("Unexpected session request");
+    }
+  });
+  await page.goto("/app/register");
+  await page.getByLabel("ФИО",{exact:true}).fill("Петров Ив");
+  await page.getByRole("button",{name:/Петров Иван Сергеевич.*Юридический отдел/}).click();
+  await expect(page.getByRole("status").filter({hasText:"Найден привязанный агент"})).toBeVisible();
+  await expect(page.getByLabel("Фамилия",{exact:true})).toHaveValue("Петров");
+  await page.getByText("У меня есть приглашение",{exact:true}).click();
+  await expect(page.getByLabel("Код приглашения",{exact:true})).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 for (const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:390,height:844}]) {
   test(`registration completes profile before enabling an explicit request at ${viewport.width}`, async ({page}, info) => {
     await page.setViewportSize(viewport);

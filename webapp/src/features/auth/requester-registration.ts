@@ -4,7 +4,8 @@ import { WebSessionApiError } from "./api";
 const ATTEMPT_KEY = "helpdesk.requester-registration.v1";
 export const REGISTRATION_LOGIN_KEY = "helpdesk.registration-completed-login";
 export type RegistrationAttempt = { request_id: string; user_login?: string; submission?: {names:RegistrationNames;profile:RequesterProfileUpdatePayload; requires_invitation?: boolean} };
-export type RegistrationOptions = { departments: Array<{value:string;label:string}>; profile_schema: RequesterProfileSchema; inventory_invitation_enabled?: boolean };
+export type RegistrationOptions = { departments: Array<{value:string;label:string}>; profile_schema: RequesterProfileSchema; inventory_invitation_enabled?: boolean; inventory_search_enabled?: boolean };
+export type RegistrationEmployee = {full_name: string; department: string; has_agent: boolean};
 export type RegistrationInvitation = {full_name: string; department: string; department_id: string};
 export type RegistrationNames = { first_name: string; last_name: string; patronymic: string };
 
@@ -67,6 +68,18 @@ export async function previewRegistrationInvitation(code: string): Promise<Regis
   const payload = await response.json();
   if (!response.ok || payload.status !== "success") {
     throw new WebSessionApiError(payload.error ?? "Не удалось проверить приглашение.", response.status);
+  }
+  return payload.data;
+}
+
+export async function searchRegistrationEmployees(query: string, signal: AbortSignal): Promise<{people: RegistrationEmployee[]; refine: boolean}> {
+  const response = await fetch("/api/web/session/registration-inventory-search", {
+    method: "POST", credentials: "same-origin", cache: "no-store", signal,
+    headers: {"Content-Type": "application/json"}, body: JSON.stringify({query}),
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.status !== "success") {
+    throw new WebSessionApiError(payload.error ?? "Не удалось найти сотрудника.", response.status);
   }
   return payload.data;
 }

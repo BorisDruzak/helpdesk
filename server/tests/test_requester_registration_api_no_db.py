@@ -8,6 +8,9 @@ from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
 from auth.rate_limit import reset_rate_limits
+from auth.middleware import auth_middleware
+from registry import inventory_directory
+from web_api.inventory_handlers import search_registration_inventory
 import web_api.session_handlers as handlers
 from web_api.dto.session import WebRequesterRegisterRequest
 from pydantic import ValidationError
@@ -17,6 +20,29 @@ pytestmark = pytest.mark.no_db
 
 def valid_payload():
     return {"request_id": str(uuid.uuid4()), "first_name": "Иван", "last_name": "Петров", "department_id": "real", "phone": "1234", "password": "Long-fixture-password-43!", "password_repeat": "Long-fixture-password-43!"}
+
+
+@pytest.mark.asyncio
+async def test_registration_inventory_search_with_real_auth_middleware(monkeypatch):
+    monkeypatch.setattr(handlers.config_module, "WEB_SELF_REGISTRATION_ENABLED", True)
+    monkeypatch.setattr(handlers.config_module, "WEB_CSRF_SAME_ORIGIN_ENABLED", True)
+    monkeypatch.setenv("HELPDESK_INVENTORY_BASE_URL", "https://inventory.example.invalid")
+    monkeypatch.setenv("HELPDESK_INVENTORY_REGISTRATION_SEARCH_ENABLED", "true")
+    reset_rate_limits()
+    employee = {"full_name": "Петров Иван", "department": "Юридический отдел", "has_agent": True}
+    monkeypatch.setattr(inventory_directory, "search_registration_people", AsyncMock(
+        return_value=inventory_directory.RegistrationPeople(people=[employee])))
+    path = "/api/web/session/registration-inventory-search"
+    app = web.Application(middlewares=[auth_middleware])
+    app.router.add_post(path, search_registration_inventory)
+    async with TestClient(TestServer(app)) as client:
+        assert (await client.post(path, json={"query": "Петров Ив"})).status == 403
+        same_origin = {"Origin": str(client.make_url("/").origin())}
+        assert (await client.post(path, json={"query": "Петров"}, headers=same_origin)).status == 400
+        response = await client.post(path, json={"query": "Петров Ив"}, headers=same_origin)
+        assert response.status == 200
+        assert response.headers["Cache-Control"] == "no-store"
+        assert (await response.json())["data"] == {"people": [employee], "refine": False}
 
 
 @pytest.mark.parametrize("field", ["actor_role", "person_id", "login", "location_id"])

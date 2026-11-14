@@ -717,7 +717,9 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 - `auth/inventory_invitation.py`: one-time employee invitations tied to
   registry department and inventory ID (migration 160). Registration
   commits the new profile, link and invitation consumption together.
-  Only a valid invitation can preview a single employee.
+  Valid invitations preview and confirm one employee. The separate optional
+  registration search in `web_api/inventory_handlers.py` reads bounded
+  suggestions through `registry/inventory_directory.py` and grants no access.
 - The requester profile uses the projection for display. Ticket-device access
   and diagnostic authorization remain on their existing paths. See
   [staging integration](../../docs/HELPDESK_INVENTORY_STAGING.md).
