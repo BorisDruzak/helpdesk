@@ -195,7 +195,7 @@ export function RequesterProfilePage() {
             <p className="workspace-boot__eyebrow">Кабинет пользователя</p>
             <h1 className="mt-2 text-2xl font-semibold text-slate-950" id="requester-profile-title">{pageTitle}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Данные профиля помогают поддержке понять, где находится рабочее место и как быстрее связаться с вами.
+              Отдел и контакты помогают поддержке быстрее связаться с вами.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

@@ -647,7 +647,7 @@ describe("AdminRegistryPage", () => {
 
 
     expect(await screen.findByText(/R7 Engineer/)).toBeInTheDocument();
-    expect(screen.getByText(/Desk R7/)).toBeInTheDocument();
+    expect(screen.queryByText(/Desk R7/)).not.toBeInTheDocument();
     expect(screen.getByText(/1234/)).toBeInTheDocument();
     expect(screen.getByText(/R7 Manager/)).toBeInTheDocument();
   });
@@ -666,7 +666,7 @@ describe("AdminRegistryPage", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "Править" }))[0]);
 
     fireEvent.change(await screen.findByLabelText("Должность"), { target: { value: "Lead Engineer" } });
-    fireEvent.change(screen.getByLabelText("Рабочее место"), { target: { value: "Desk 12" } });
+    expect(screen.queryByLabelText("Рабочее место")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Внутренний номер"), { target: { value: "4567" } });
     fireEvent.change(screen.getByLabelText("ID руководителя"), { target: { value: "manager-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
@@ -676,12 +676,13 @@ describe("AdminRegistryPage", () => {
       expect(call).toBeTruthy();
       return call;
     });
-    expect(JSON.parse(String(saveCall?.[1]?.body))).toMatchObject({
+    const payload = JSON.parse(String(saveCall?.[1]?.body));
+    expect(payload).toMatchObject({
       position: "Lead Engineer",
-      workplace_label: "Desk 12",
       internal_extension: "4567",
       manager_person_id: "manager-1",
     });
+    expect(payload).not.toHaveProperty("workplace_label");
   });
 
   it("archives a registry person through an explicit reason dialog", async () => {
