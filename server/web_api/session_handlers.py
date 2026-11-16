@@ -399,9 +399,10 @@ async def handle_web_registration_options(request):
         return _error("Самостоятельная регистрация недоступна.", "SELF_REGISTRATION_DISABLED", status=403)
     from app.repos.registry_repo import RegistryRepo
     from registry.profile_schema_service import RequesterProfileSchemaService
+    from registry.registration_form_service import build_department_options
     from requester.identity_service import RequesterIdentityResolver
     async with get_session() as session:
-        departments = await RegistryRepo(session).list_departments()
+        departments = await build_department_options(RegistryRepo(session))
         schema = await RequesterProfileSchemaService(session).get_schema()
         public_schema = RequesterIdentityResolver(session).serialize_profile_schema_for_requester(schema)
         fields = [field for field in public_schema["fields"]
@@ -410,8 +411,7 @@ async def handle_web_registration_options(request):
         public_schema = {"schema_key": public_schema["schema_key"], "version": public_schema.get("version"),
             "fields": fields, "custom_fields": [field for field in fields if field.get("custom")],
             "required_fields": [{"key": field["key"], "label": field["label"]} for field in fields if field.get("required")]}
-        data = {"departments": [{"value": department.department_id, "label": department.name}
-                for department in departments if department.status == "active"], "profile_schema": public_schema}
+        data = {"departments": departments, "profile_schema": public_schema}
         if inventory_enabled():
             data["inventory_invitation_enabled"] = True
         if registration_search_enabled():

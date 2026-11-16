@@ -24,7 +24,7 @@ async def test_department_publication_archives_only_exact_test_choices_and_prese
     kwargs = dict(synthetic_departments={department_id:"Synthetic staging"}, synthetic_locations={location_id:"Synthetic location fixture"}, isolated_test=True)
     auth = SimpleNamespace(actor_role="admin", actor_id="catalog-fixture")
     plan = await publish_department_catalog(maker, auth, **kwargs)
-    assert len(plan["create"]) == 30 and not plan["applied"]
+    assert len(plan["create"]) == 32 and not plan["applied"]
     async with maker() as session:
         assert (await session.get(RegistryDepartment,department_id)).status == "active"
     await publish_department_catalog(maker, auth, **kwargs, apply=True, expected_fingerprint=plan["fingerprint"])
@@ -37,7 +37,7 @@ async def test_department_publication_archives_only_exact_test_choices_and_prese
         person = await session.get(RegistryPerson,person_id)
         assert (person.department_id,person.location_id,person.metadata_json) == (department_id,location_id,{"preserve":True})
         active = list(await session.scalars(select(RegistryDepartment).where(RegistryDepartment.status=="active")))
-        assert len(active) == 30
+        assert len(active) == 32
     with pytest.raises(ValueError, match="changed since"):
         await publish_department_catalog(maker, auth, **kwargs, apply=True, expected_fingerprint=plan["fingerprint"])
     with pytest.raises(ValueError, match="Exact synthetic"):

@@ -5,10 +5,12 @@ from scripts.helpdesk_requester_departments import load_department_names, requir
 
 def test_names_only_catalog_is_unique_for_both_employee_groups():
     names = load_department_names()
-    assert len(names) == len(set(name.casefold() for name in names)) == 30
+    assert len(names) == len(set(name.casefold() for name in names)) == 32
     assert names.count("Управление муниципальной службы") == 1
     assert names.count("Отдел по делам гражданской обороны, антитеррористическим и чрезвычайным ситуациям") == 1
     assert "Бухгалтерский отдел" in names
+    assert "Методический отдел управления по физической культуре и спорту" in names
+    assert "Сметный отдел" in names
     assert not any("Synthetic" in name or "муниципальных служащих" in name for name in names)
 
 

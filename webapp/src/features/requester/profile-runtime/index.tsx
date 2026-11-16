@@ -23,14 +23,14 @@ export const ALL_REQUESTER_PROFILE_FIELD_TYPES = [
 
 const SUPPORTED_PROFILE_FIELD_TYPES = new Set<string>(ALL_REQUESTER_PROFILE_FIELD_TYPES);
 
+export const HISTORICAL_PROFILE_FIELDS = new Set(["location_id", "workplace_label"]);
+
 const EDITABLE_BUILT_IN_FIELDS = new Set([
   "full_name",
   "department_id",
-  "location_id",
   "phone",
   "internal_extension",
   "position",
-  "workplace_label",
   "preferred_contact_method",
 ]);
 
@@ -128,7 +128,7 @@ export function buildProfileValues(profile?: RequesterProfile | null): Requester
 export function profileFieldsFromSchema(schema?: RequesterProfileSchema | null): RequesterProfileSchemaField[] {
   const fields = schema?.fields ?? [];
   if (fields.length) {
-    return fields.filter(field => isVisible(field) && field.key !== "location_id")
+    return fields.filter(field => isVisible(field) && !HISTORICAL_PROFILE_FIELDS.has(field.key))
       .map(field => field.key === "department_id" ? { ...field, label: "Отдел" } : field);
   }
   return [
@@ -137,7 +137,6 @@ export function profileFieldsFromSchema(schema?: RequesterProfileSchema | null):
     { key: "phone", label: "Телефон или внутренний номер", type: "phone", required: true, visible: true, system: true, editable: true },
     { key: "internal_extension", label: "Внутренний номер", type: "phone", visible: true, editable: true },
     { key: "position", label: "Должность", type: "text", visible: true, editable: true },
-    { key: "workplace_label", label: "Кабинет или рабочее место", type: "text", visible: true, editable: true },
     {
       key: "preferred_contact_method",
       label: "Предпочтительный способ связи",
@@ -168,7 +167,7 @@ export function missingProfileFields(
           label: field.label || field.key,
         })),
       ];
-  return required.filter(item => item.key !== "location_id").filter((item) => {
+  return required.filter(item => !HISTORICAL_PROFILE_FIELDS.has(item.key)).filter((item) => {
     if (item.key === "phone") {
       return !trimText(values.phone) && !trimText(values.internal_extension);
     }
@@ -199,7 +198,7 @@ export function buildProfilePayload(
   if (visibleEditableBuiltIns.has("internal_extension") || trimText(values.internal_extension)) {
     payload.internal_extension = trimText(values.internal_extension);
   }
-  for (const key of ["position", "workplace_label", "preferred_contact_method"] as const) {
+  for (const key of ["position", "preferred_contact_method"] as const) {
     if (visibleEditableBuiltIns.has(key)) {
       payload[key] = trimText(values[key]);
     }

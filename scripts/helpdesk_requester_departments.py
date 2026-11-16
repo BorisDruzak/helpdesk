@@ -7,7 +7,7 @@ from pathlib import Path
 def load_department_names():
     data = json.loads((Path(__file__).resolve().parents[1] / "server/registry/requester_departments_20260831.json").read_text(encoding="utf-8"))
     names = data["departments"]
-    if len(names) != 30 or len({name.casefold() for name in names}) != 30 or any(not isinstance(name, str) or not name.strip() for name in names):
+    if len(names) != 32 or any(not isinstance(name, str) or not name.strip() for name in names) or len({name.casefold() for name in names}) != len(names):
         raise ValueError("Invalid names-only department catalog")
     return names
 

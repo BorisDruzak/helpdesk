@@ -1,3 +1,10 @@
+# 2026-11-16 Shared employee department catalog
+
+The requester and administrator profile forms use the active Helpdesk
+department catalog. Registry quality reports missing and archived departments
+and links to the employee profile. Historical locations and workplaces stay
+available to existing Registry integrations.
+
 # 2026-11-16 Helpdesk registration search
 
 The first step offers a single search field, a selectable result when exactly

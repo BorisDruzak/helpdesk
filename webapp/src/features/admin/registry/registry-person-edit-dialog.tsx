@@ -20,7 +20,6 @@ type Props = {
     email: string;
     phone: string;
     position: string;
-    workplace_label: string;
     internal_extension: string;
     manager_person_id: string;
     status: string;
@@ -34,7 +33,6 @@ export function RegistryPersonEditDialog({ busy, onClose, onSubmit, state }: Pro
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [position, setPosition] = useState("");
-  const [workplaceLabel, setWorkplaceLabel] = useState("");
   const [internalExtension, setInternalExtension] = useState("");
   const [managerPersonId, setManagerPersonId] = useState("");
   const [status, setStatus] = useState("active");
@@ -45,7 +43,6 @@ export function RegistryPersonEditDialog({ busy, onClose, onSubmit, state }: Pro
     setEmail(state?.person?.email ?? "");
     setPhone(state?.person?.phone ?? "");
     setPosition(state?.person?.position ?? "");
-    setWorkplaceLabel(state?.person?.workplace_label ?? "");
     setInternalExtension(state?.person?.internal_extension ?? "");
     setManagerPersonId(state?.person?.manager_person_id ?? "");
     setStatus(state?.person?.status ?? "active");
@@ -68,7 +65,6 @@ export function RegistryPersonEditDialog({ busy, onClose, onSubmit, state }: Pro
           <label className="block text-sm font-medium text-slate-700">Телефон<Input className="mt-2" onChange={(event) => setPhone(event.target.value)} value={phone} /></label>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm font-medium text-slate-700">Должность<Input className="mt-2" onChange={(event) => setPosition(event.target.value)} value={position} /></label>
-            <label className="block text-sm font-medium text-slate-700">Рабочее место<Input className="mt-2" onChange={(event) => setWorkplaceLabel(event.target.value)} value={workplaceLabel} /></label>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm font-medium text-slate-700">Внутренний номер<Input className="mt-2" onChange={(event) => setInternalExtension(event.target.value)} value={internalExtension} /></label>
@@ -94,7 +90,6 @@ export function RegistryPersonEditDialog({ busy, onClose, onSubmit, state }: Pro
                 email: email.trim(),
                 phone: phone.trim(),
                 position: position.trim(),
-                workplace_label: workplaceLabel.trim(),
                 internal_extension: internalExtension.trim(),
                 manager_person_id: managerPersonId.trim(),
                 status,

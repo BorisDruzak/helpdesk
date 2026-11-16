@@ -49,6 +49,14 @@ profile editing remain independent of web_ovpn.
    from the API origin. The links point to the specific inventory card and
    the agent section on that card, where web_ovpn checks its own permissions.
 
+Registration, requester profiles and administrator profile edits use the
+active Helpdesk **Отделы** catalog. In the data-quality view, **Исправить**
+on a missing or archived department opens the employee's **Профиль**.
+Historical location and workplace values remain available in Registry data.
+The checked-in department catalog contains the same 32 names as the web_ovpn
+inventory. Publish missing staging entries with
+`scripts/helpdesk_requester_departments.py` using a reviewed catalog plan.
+
 For a new employee, open **Приглашение сотрудника из инвентаризации** in the
 admin Registry. Copy the employee ID from the web_ovpn card, choose the
 corresponding active Helpdesk department, and record why the invitation was

@@ -29,7 +29,7 @@ export function UsersList({ registry, query, onQueryChange, selection, onPersonS
         const linked = accounts.filter((account) => account.linked_person_id === person.person_id);
         return <button key={person.person_id} className={rowClass(selection === person.person_id)} onClick={() => onPersonSelect(person.person_id)} type="button" aria-pressed={selection === person.person_id}>
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"><UserRound className="h-4 w-4" /></span>
-          <span className="min-w-0"><span className="block break-words text-sm font-semibold text-slate-900">{person.display_name}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{person.department_name || person.email || "Подразделение не указано"}</span>
+          <span className="min-w-0"><span className="block break-words text-sm font-semibold text-slate-900">{person.display_name}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{person.department_name || person.email || "Отдел не указан"}</span>
             <span className={`mt-1 block text-[11px] ${linked.length ? "text-brand-700" : "text-slate-400"}`}>{person.status === "archived" ? "В архиве · " : ""}{linked.length ? linked.map((account) => account.user_login).join(", ") : "Без учётной записи"}</span></span>
         </button>;
       })}

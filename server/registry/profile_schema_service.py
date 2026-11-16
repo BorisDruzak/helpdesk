@@ -97,7 +97,7 @@ DEFAULT_PROFILE_FIELDS: tuple[dict[str, Any], ...] = (
     _optional_field("internal_extension", "Внутренний номер", "phone", "registry_people.metadata_json.internal_extension"),
     _system_field("active_device_links", "Активные привязки устройств", "device_links", "device_user_bindings", required=False, editable=False),
     _optional_field("position", "Должность", "text", "registry_people.metadata_json.position"),
-    _optional_field("workplace_label", "Рабочее место", "text", "registry_people.metadata_json.workplace_label"),
+    {**_optional_field("workplace_label", "Рабочее место", "text", "registry_people.metadata_json.workplace_label"), "visible": False},
     _optional_field("preferred_contact_method", "Предпочтительный способ связи", "select", "registry_people.metadata_json.preferred_contact_method"),
 )
 
@@ -200,10 +200,8 @@ class RequesterProfileSchemaService:
                     details[field_key] = "Настройка поля должна быть объектом."
                 continue
             field = fields[field_key]
-            # Location remains historical Registry context, outside employee onboarding.
-            # Retire old persisted required/visible overrides as well as defaults.
-            if field_key == "location_id":
-                field.update(visible=False, required=False)
+            # Honor the current profile policy even for legacy schema versions.
+            if field_key in {"location_id", "workplace_label"}:
                 continue
             visible = _bool(raw_override.get("visible"), default=bool(field["visible"]))
             required = _bool(raw_override.get("required"), default=bool(field["required"]))

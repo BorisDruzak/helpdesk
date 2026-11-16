@@ -7,6 +7,7 @@ import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import {
+  HISTORICAL_PROFILE_FIELDS,
   RequesterProfileFieldControl,
   buildProfileValues,
   validateRequesterProfileSchema,
@@ -68,7 +69,8 @@ const PREVIEW_PROFILE_VALUES = buildProfileValues({
 });
 
 function cloneSchema(schema: AdminRegistryProfileSchema): AdminRegistryProfileSchema {
-  return JSON.parse(JSON.stringify(schema)) as AdminRegistryProfileSchema;
+  const draft = JSON.parse(JSON.stringify(schema)) as AdminRegistryProfileSchema;
+  return { ...draft, fields: draft.fields.filter((field) => !HISTORICAL_PROFILE_FIELDS.has(field.key)) };
 }
 
 function storageTargetFor(key: string): string {

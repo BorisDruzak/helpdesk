@@ -54,8 +54,7 @@ export function RequesterProfilePage() {
   const departments = useMemo(() => profile?.department_id && !activeDepartments.some(option => option.value === profile.department_id)
     ? [...activeDepartments, {value:profile.department_id,label:detail?.requester_context?.profile?.department || "Ранее указанный отдел",disabled:true}]
     : activeDepartments, [activeDepartments,profile?.department_id,detail?.requester_context?.profile?.department]);
-  const locations = registryOptionsQuery.data?.locations ?? [];
-  const fields = useMemo(() => fieldsWithRuntimeOptions(schema, departments, locations), [departments, locations, schema]);
+  const fields = useMemo(() => fieldsWithRuntimeOptions(schema, departments), [departments, schema]);
   const visibleEditableFields = useMemo(
     () => fields.filter((field) => field.visible !== false && field.editable !== false),
     [fields],

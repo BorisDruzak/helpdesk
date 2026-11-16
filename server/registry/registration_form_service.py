@@ -22,12 +22,20 @@ def _compact_options(items: list[dict[str, str]]) -> list[dict[str, str]]:
     return result
 
 
+async def build_department_options(repo: RegistryRepo) -> list[dict[str, str]]:
+    return _compact_options([
+        _option(department.department_id, department.name or department.code)
+        for department in await repo.list_departments()
+        if getattr(department, "status", "active") == "active"
+    ])
+
+
 async def build_lightweight_registry_options(session: AsyncSession) -> dict[str, list[dict[str, str]]]:
     repo = RegistryRepo(session)
     assets = await repo.list_assets(limit=500)
     people = await repo.list_people(limit=500)
     locations = await repo.list_locations(limit=500)
-    departments = await repo.list_departments()
+    departments = await build_department_options(repo)
     services = await repo.list_services()
 
     return {
@@ -65,13 +73,7 @@ async def build_lightweight_registry_options(session: AsyncSession) -> dict[str,
                 if getattr(location, "status", "active") == "active"
             ]
         ),
-        "departments": _compact_options(
-            [
-                _option(department.department_id, department.name or department.code)
-                for department in departments
-                if getattr(department, "status", "active") == "active"
-            ]
-        ),
+        "departments": departments,
         "services": _compact_options(
             [
                 _option(service.service_id, service.name or service.code)

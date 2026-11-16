@@ -92,15 +92,11 @@ export function setFieldValue(
 export function fieldsWithRuntimeOptions(
   schema: RequesterProfileSchema | null | undefined,
   departments: Array<{ value: string; label: string }>,
-  locations: Array<{ value: string; label: string }>,
 ): RequesterProfileSchemaField[] {
   return profileFieldsFromSchema(schema)
     .map((field) => {
       if (field.key === "department_id") {
         return { ...field, type: "select", options: departments };
-      }
-      if (field.key === "location_id") {
-        return { ...field, type: "select", options: field.options?.length ? field.options : locations };
       }
       if (field.key === "preferred_contact_method" && !(field.options ?? []).length) {
         return {

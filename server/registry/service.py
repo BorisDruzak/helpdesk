@@ -411,17 +411,6 @@ class RegistrySnapshotService:
                     "description": person.display_name,
                     "details": person.display_name,
                 })
-            if not person.location_id:
-                data_quality.append({
-                    "kind": "person_missing_location",
-                    "severity": "warning",
-                    "object_type": "person",
-                    "object_id": person.person_id,
-                    "person_id": person.person_id,
-                    "title": "Person without location",
-                    "description": person.display_name,
-                    "details": person.display_name,
-                })
             if person.department_id:
                 department = departments_by_id.get(person.department_id)
                 if department is not None and department.status == "archived":
@@ -435,20 +424,6 @@ class RegistrySnapshotService:
                         "title": "Person uses archived department",
                         "description": person.display_name,
                         "details": department.name,
-                    })
-            if person.location_id:
-                location = locations_by_id.get(person.location_id)
-                if location is not None and location.status == "archived":
-                    data_quality.append({
-                        "kind": "person_archived_location",
-                        "severity": "warning",
-                        "object_type": "person",
-                        "object_id": person.person_id,
-                        "person_id": person.person_id,
-                        "location_id": person.location_id,
-                        "title": "Person uses archived location",
-                        "description": person.display_name,
-                        "details": location.display_name,
                     })
         for user in ui_users:
             if not user.is_active:

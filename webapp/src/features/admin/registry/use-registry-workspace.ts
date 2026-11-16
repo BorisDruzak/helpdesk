@@ -40,7 +40,7 @@ export type RegistryWorkspaceProps = {
   personMode?: boolean;
   personId?: string | null;
   initialTab?: string | null;
-  onOpenPerson?: (personId: string) => void;
+  onOpenPerson?: (personId: string, section?: "profile") => void;
   onOpenAccount?: (login: string) => void;
 };
 
@@ -254,6 +254,10 @@ export function useRegistryWorkspace({ personMode = false, initialTab, onOpenPer
   };
 
   const handleFixIssue = (issue: AdminRegistryPayload["data_quality"][number]) => {
+    if (["person_missing_department", "person_archived_department"].includes(issue.kind) && issue.person_id && onOpenPerson) {
+      onOpenPerson(issue.person_id, "profile");
+      return;
+    }
     if (!personMode && issue.kind === "ui_user_unlinked_registry_person" && onOpenAccount) {
       onOpenAccount(issue.object_id);
       return;

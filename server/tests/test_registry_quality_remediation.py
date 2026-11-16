@@ -97,10 +97,6 @@ async def test_registry_quality_reports_r7_missing_production_context_gaps(test_
         item for item in issues
         if item["kind"] == "person_missing_department" and item["object_id"] == person_id
     )
-    person_location_issue = next(
-        item for item in issues
-        if item["kind"] == "person_missing_location" and item["object_id"] == person_id
-    )
     device_owner_issue = next(
         item for item in issues
         if item["kind"] == "asset_missing_owner_or_responsible" and item["object_id"] == asset_id
@@ -111,7 +107,7 @@ async def test_registry_quality_reports_r7_missing_production_context_gaps(test_
     )
 
     assert person_department_issue["issue_key"] == f"person_missing_department:person:{person_id}"
-    assert person_location_issue["issue_key"] == f"person_missing_location:person:{person_id}"
+    assert not any(item["kind"] == "person_missing_location" and item["object_id"] == person_id for item in issues)
     assert device_owner_issue["issue_key"] == f"asset_missing_owner_or_responsible:asset:{asset_id}"
     assert device_owner_issue["device_id"] == device_id
     assert department_issue["issue_key"] == f"department_pending_confirmation:department:{department_id}"
@@ -318,7 +314,7 @@ async def test_registry_quality_reports_unlinked_active_ui_user(test_client, tes
 
 
 @pytest.mark.asyncio
-async def test_registry_quality_reports_person_archived_department_and_location(test_client, test_engine):
+async def test_registry_quality_reports_archived_department_only(test_client, test_engine):
     department_id = str(uuid.uuid4())
     location_id = str(uuid.uuid4())
     person_id = str(uuid.uuid4())
@@ -363,15 +359,11 @@ async def test_registry_quality_reports_person_archived_department_and_location(
         item for item in payload["data"]["data_quality"]
         if item["kind"] == "person_archived_department" and item["object_id"] == person_id
     )
-    location_issue = next(
-        item for item in payload["data"]["data_quality"]
-        if item["kind"] == "person_archived_location" and item["object_id"] == person_id
-    )
 
     assert department_issue["issue_key"] == f"person_archived_department:person:{person_id}"
     assert department_issue["department_id"] == department_id
-    assert location_issue["issue_key"] == f"person_archived_location:person:{person_id}"
-    assert location_issue["location_id"] == location_id
+    assert not any(item["kind"] == "person_archived_location" and item["object_id"] == person_id
+                   for item in payload["data"]["data_quality"])
 
 
 @pytest.mark.asyncio

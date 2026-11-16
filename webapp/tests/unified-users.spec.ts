@@ -15,7 +15,7 @@ const person = (id: string, name: string) => ({
 
 type Account = { user_login: string; actor_role: string; is_active: boolean; queue_ids: number[]; group_ids: number[] };
 
-async function installUsersFixture(page: Page) {
+async function installUsersFixture(page: Page, { missingDepartment = false } = {}) {
   let account: Account | null = null;
   const writes: Record<string, unknown>[] = [];
   const unexpected: string[] = [];
@@ -37,10 +37,21 @@ async function installUsersFixture(page: Page) {
       registrations_pending: 0, registrations_conflicts: 0, unregistered_devices: 0,
       active_bindings: 0, stale_bindings: 0, data_quality_issues: 0, suggestions: 0,
       ui_users: account ? 1 : 0, ui_users_linked: account ? 1 : 0, ui_users_unlinked: 0 },
-    people: [person(marinaId, "Заваруха Марина"), person("test-ivan", "Петров Иван")],
-    assets: [], active_bindings: [], bindings: [], registration_claims: [], data_quality: [], suggestions: [],
+    people: [
+      { ...person(marinaId, "Заваруха Марина"), ...(missingDepartment ? { department_id: null, department_name: null } : {}) },
+      person("test-ivan", "Петров Иван"),
+    ],
+    assets: [], active_bindings: [], bindings: [], registration_claims: [], suggestions: [],
+    data_quality: missingDepartment ? [{
+      kind: "person_missing_department", severity: "warning", object_type: "person",
+      object_id: marinaId, person_id: marinaId, issue_key: `person_missing_department:person:${marinaId}`,
+      title: "Person without department", description: "Заваруха Марина",
+    }] : [],
     locations: [{ id: "room", location_id: "room", display_name: "Кабинет 101", building: "Администрация", floor: "1", room: "101", source: "manual", status: "active", users_count: 2, devices_count: 0, updated_at: null }],
-    departments: [{ id: "it", department_id: "it", name: "Информационные технологии", code: "it", source: "manual", status: "active", users_count: 2, devices_count: 0, updated_at: null }],
+    departments: [
+      { id: "it", department_id: "it", name: "Информационные технологии", code: "it", source: "manual", status: "active", users_count: 2, devices_count: 0, updated_at: null },
+      { id: "old", department_id: "old", name: "Архивный отдел", code: "old", source: "manual", status: "archived", users_count: 0, devices_count: 0, updated_at: null },
+    ],
     services: [], vendors: [], ui_users: account ? [{ ...account, failed_attempts: 0, locked_until: null,
       last_login_at: null, created_at: null, updated_at: null, linked_person_id: marinaId,
       linked_person_name: "Заваруха Марина", linked_identity_id: "test-link", linked_identity_verified: true }] : [],
@@ -55,6 +66,12 @@ async function installUsersFixture(page: Page) {
     else if (path === "/api/web/notifications/unread_count") return route.fulfill({ json: { status: "ok", unread_count: 0 } });
     else if (path === "/api/web/notifications") data = { items: [], notifications: [], unread_count: 0 };
     else if (path === "/api/web/admin/registry") data = registry();
+    else if (path === `/api/web/admin/registry/people/${marinaId}` && request.method() === "PATCH") {
+      const body = request.postDataJSON();
+      writes.push(body);
+      missingDepartment = body.department_id !== "it";
+      data = {};
+    }
     else if (path === `/api/web/admin/registry/people/${marinaId}/inventory-devices`) {
       data = { sync_state: "current", assignments: [{
         assignment_id: "fixture-assignment", name: "Компьютер сотрудника", role: "primary",
@@ -81,6 +98,37 @@ async function installUsersFixture(page: Page) {
     return route.fulfill({ json: { status: "success", data } });
   });
   return { writes, unexpected, errors, reject: () => { rejectSave = true; } };
+}
+
+for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
+  test(`the employee profile uses only the active departments at ${viewport.width}`, async ({ page }, info) => {
+    await page.setViewportSize(viewport);
+    const fixture = await installUsersFixture(page, { missingDepartment: true });
+    await page.goto("/app/admin/registry?tab=quality");
+    await page.getByRole("button", { name: "Исправить", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/app/admin/users\\?person=${marinaId}&tab=people$`));
+    await expect(page.getByText("Местоположение", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Редактировать профиль", exact: true }).click();
+    const department = page.getByRole("combobox", { name: "Отдел", exact: true });
+    await expect(department).toHaveValue("");
+    await expect(department.getByRole("option", { name: "Архивный отдел" })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Локация", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("textbox", { name: "Рабочее место", exact: true })).toHaveCount(0);
+    await department.selectOption("it");
+    const save = page.getByRole("button", { name: "Сохранить профиль", exact: true });
+    await save.scrollIntoViewIfNeeded();
+    await expect(save).toBeInViewport();
+    await page.screenshot({ path: info.outputPath("person-department.png"), fullPage: true });
+    await save.click();
+    await expect(page.getByText("Профиль сохранён", { exact: true })).toBeVisible();
+    expect(fixture.writes).toHaveLength(1);
+    expect(fixture.writes[0]).toMatchObject({ department_id: "it" });
+    expect(fixture.writes[0]).not.toHaveProperty("location_id");
+    expect(fixture.writes[0]).not.toHaveProperty("workplace_label");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.unexpected).toEqual([]);
+  });
 }
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {

@@ -29,7 +29,7 @@ export function RegistryPersonTools(props: Props) {
     {person ? <>
       <div className="rounded-lg border border-border p-4">
         <h3 className="font-semibold">{person.full_name ?? person.display_name}</h3>
-        <p className="mt-1 text-sm text-slate-600">{[person.position, person.workplace_label, person.internal_extension, person.manager_name].filter(Boolean).join(" · ")}</p>
+        <p className="mt-1 text-sm text-slate-600">{[person.position, person.department_name, person.internal_extension, person.manager_name].filter(Boolean).join(" · ")}</p>
         {person.profile_completion && !person.profile_completion.complete ? <p className="mt-2 text-sm text-amber-700">Нужно заполнить профиль</p> : null}
         {person.profile_completion?.missing_fields.length ? <p className="text-sm text-slate-600">Не хватает: {person.profile_completion.missing_fields.map(field => field.label).join(", ")}</p> : null}
         <div className="mt-3 flex flex-wrap gap-2">

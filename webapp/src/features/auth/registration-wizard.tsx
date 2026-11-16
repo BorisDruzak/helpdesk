@@ -46,7 +46,7 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   const fullName = [names.last_name,names.first_name,names.patronymic].map(v => v.trim()).filter(Boolean).join(" ");
   const profileValues = {...values,full_name:fullName};
   const departments = options?.departments ?? [];
-  const fields = fieldsWithRuntimeOptions(options?.profile_schema,departments,[])
+  const fields = fieldsWithRuntimeOptions(options?.profile_schema,departments)
     .filter(field => !["full_name","login_identity","active_device_links"].includes(field.key));
 
   useEffect(() => {

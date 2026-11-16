@@ -17,7 +17,7 @@ export function AdminRegistryPage() {
     <InventoryInvitationAdmin />
     <RegistryWorkspace
     initialTab={legacyTab}
-    onOpenPerson={(personId) => navigate(`/app/admin/users?person=${encodeURIComponent(personId)}&tab=operations`)}
+    onOpenPerson={(personId, section) => navigate(`/app/admin/users?person=${encodeURIComponent(personId)}&tab=${section === "profile" ? "people" : "operations"}`)}
     onOpenAccount={login => navigate(`/app/admin/users?login=${encodeURIComponent(login)}`)}
     />
   </>;
