@@ -1,6 +1,5 @@
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
-import { InventoryInvitationAdmin } from "../../features/admin/registry/inventory-invitation-admin";
 import { RegistryWorkspace } from "../../features/admin/registry/registry-workspace";
 
 export function AdminRegistryPage() {
@@ -13,14 +12,11 @@ export function AdminRegistryPage() {
     if (legacyTab === "password_reset" || legacyTab === "profile_schema") target.set("operation_tab", legacyTab);
     return <Navigate replace to={`/app/admin/users?${target}`} />;
   }
-  return <>
-    <InventoryInvitationAdmin />
-    <RegistryWorkspace
+  return <RegistryWorkspace
     initialTab={legacyTab}
     onOpenPerson={(personId, section) => navigate(`/app/admin/users?person=${encodeURIComponent(personId)}&tab=${section === "profile" ? "people" : "operations"}`)}
     onOpenAccount={login => navigate(`/app/admin/users?login=${encodeURIComponent(login)}`)}
-    />
-  </>;
+    />;
 }
 
 export function RegistryPersonOperations({ personId }: { personId: string | null }) {

@@ -53,12 +53,15 @@ Registration, requester profiles and administrator profile edits use the
 active Helpdesk **Отделы** catalog. In the data-quality view, **Исправить**
 on a missing or archived department opens the employee's **Профиль**.
 Historical location and workplace values remain available in Registry data.
+The Registry navigation focuses on departments and daily device operations.
+The admin device list opens with active Helpdesk links; **Весь парк Endpoint**
+opens the provider's technical inventory for troubleshooting.
 The checked-in department catalog contains the same 32 names as the web_ovpn
 inventory. Publish missing staging entries with
 `scripts/helpdesk_requester_departments.py` using a reviewed catalog plan.
 
-For a new employee, open **Приглашение сотрудника из инвентаризации** in the
-admin Registry. Copy the employee ID from the web_ovpn card, choose the
+For a new employee, open **Управление сервисом → Приглашения** at
+`/app/admin/inventory-invitations`. Copy the employee ID from the web_ovpn card, choose the
 corresponding active Helpdesk department, and record why the invitation was
 issued. The code expires after 30 minutes. Issuing a replacement invalidates
 the previous code. An administrator can revoke the pending code. Manual

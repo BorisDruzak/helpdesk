@@ -265,7 +265,7 @@ test("employee selects an inventory invitation at registration", async ({page}, 
 
 
 
-test("administrator issues and revokes a registration invitation from the registry", async ({page}) => {
+test("administrator issues and revokes a registration invitation in Service Management", async ({page}) => {
   const person = "07473193-5bd4-4b38-bbc9-7035d19c6760";
   const code = "synthetic-admin-invitation-".padEnd(43, "x");
   let issued = false;
@@ -299,8 +299,8 @@ test("administrator issues and revokes a registration invitation from the regist
   await page.getByLabel("Пароль",{exact:true}).fill("secret");
   await page.getByRole("button",{name:"Войти",exact:true}).click();
   await expect(page).toHaveURL(/\/app\/admin$/);
-  await page.goto("/app/admin/registry");
-  await page.getByText("Приглашение сотрудника из инвентаризации",{exact:true}).click();
+  await page.goto("/app/admin/inventory-invitations");
+  await expect(page.getByRole("heading",{name:"Приглашения из инвентаризации"})).toBeVisible();
   await page.getByRole("button",{name:"Подготовить приглашение",exact:true}).click();
   await page.getByLabel("ID сотрудника из web_ovpn",{exact:true}).fill(person);
   await page.getByRole("combobox",{name:"Отдел Helpdesk",exact:true}).fill("Юридический");

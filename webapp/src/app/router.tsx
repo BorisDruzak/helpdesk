@@ -1,5 +1,6 @@
 import { AdminTemplateCreatePage } from "../pages/admin/template-create-page";
 import { AdminServiceCreatePage } from "../pages/admin/service-create-page";
+import { AdminInventoryInvitationsPage } from "../pages/admin/inventory-invitations-page";
 import { Suspense, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
@@ -527,6 +528,10 @@ export const appRoutes: RouteObject[] = [
                 <AdminPolicyHealthPage />
               </WorkspaceAccessGate>
             )
+          },
+          {
+            path: "admin/inventory-invitations",
+            element: <WorkspaceAccessGate workspace="admin"><AdminInventoryInvitationsPage /></WorkspaceAccessGate>,
           },
           {
             path: "admin/quality",

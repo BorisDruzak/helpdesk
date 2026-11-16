@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { PageHeading } from "../../components/ui/page-heading";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -8,6 +8,7 @@ import { Select } from "../../components/ui/select";
 import { fetchEndpointFleet, endpointErrorText } from "../../features/admin/endpoint-context-api";
 import type { AdminEndpointFleetItem } from "../../features/admin/endpoint-context-types";
 import { contextBytes, contextDate } from "../../features/admin/endpoint-context-view";
+import { fetchAdminRegistry } from "../../features/admin/api";
 
 const defaultFilters = { platform: "all", location: "all", mapping: "all", binding: "all", freshness: "all", lifecycle: "all" };
 function inventoryObservation(item: AdminEndpointFleetItem, hours: number, now: number) {
@@ -17,6 +18,48 @@ function inventoryObservation(item: AdminEndpointFleetItem, hours: number, now: 
 }
 
 export function AdminInventoryPage() {
+  const [params] = useSearchParams();
+  return params.get("scope") === "endpoint" ? <EndpointFleet /> : <LinkedDevices />;
+}
+
+function LinkedDevices() {
+  const registry = useQuery({ queryKey: ["admin-registry"], queryFn: fetchAdminRegistry, retry: false });
+  const [search, setSearch] = useState("");
+  const represented = new Set(registry.data?.active_bindings.map(binding => binding.device_id));
+  const linked = registry.data?.assets.filter(
+    asset => asset.device_id && represented.has(asset.device_id) && !["archived", "retired", "deleted"].includes(asset.status),
+  ) ?? [];
+  const term = search.trim().toLocaleLowerCase("ru");
+  const devices = linked.filter(asset => !term || [asset.name, asset.hostname, asset.active_person_name, asset.department_name, asset.inventory_number]
+    .some(value => value?.toLocaleLowerCase("ru").includes(term)));
+  return <section className="space-y-5">
+    <PageHeading eyebrow="Администрирование" title="Устройства" description="Компьютеры с действующей привязкой в Helpdesk." actions={
+      <Button variant="outline" onClick={() => void registry.refetch()} disabled={registry.isFetching}>Обновить список</Button>
+    }/>
+    <div className="flex flex-wrap items-center gap-3">
+      <Input className="max-w-sm" aria-label="Поиск по привязанным устройствам" placeholder="Имя, сотрудник или отдел" value={search} onChange={event => setSearch(event.target.value)}/>
+      <Link className="font-semibold text-brand-700 underline" to="?scope=endpoint">Весь парк Endpoint</Link>
+    </div>
+    {registry.isPending ? <p role="status">Загрузка устройств…</p>
+      : registry.isError ? <p role="alert">Не удалось загрузить реестр устройств.</p>
+      : <div className="overflow-x-auto rounded-panel border border-border bg-white">
+        {devices.length ? <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50"><tr>{["Устройство", "Сотрудник", "Отдел"].map(label => <th key={label} className="p-4" scope="col">{label}</th>)}</tr></thead>
+          <tbody>{devices.map(asset => {
+            const name = asset.name || asset.hostname || "Устройство";
+            const ref = asset.endpoint_device_ref;
+            return <tr key={asset.id} className="border-t border-border">
+              <td className="p-4">{ref ? <Link className="font-semibold text-brand-700 underline" to={`/app/admin/device?device=${encodeURIComponent(ref)}`}>{name}</Link> : name}</td>
+              <td className="p-4">{asset.active_person_name || asset.owner_name || "—"}</td>
+              <td className="p-4">{asset.department_name || "—"}</td>
+            </tr>;
+          })}</tbody>
+        </table> : <p className="p-4">{linked.length ? "Поиск не нашёл устройств." : "Устройств с действующей привязкой нет."}</p>}
+      </div>}
+  </section>;
+}
+
+function EndpointFleet() {
   const [cursors, setCursors] = useState<Array<string | null>>([null]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -47,6 +90,7 @@ export function AdminInventoryPage() {
     ["Без Registry-привязки", items.filter(item => item.registry.status === "unmapped").length]] as const;
   return <section className="space-y-6">
     <PageHeading eyebrow="Администрирование" title="Устройства" description="Технические данные Endpoint и подтверждённый бизнес-контекст Registry." actions={<Button variant="outline" onClick={() => void fleet.refetch()} disabled={fleet.isFetching}>Обновить список</Button>}/>
+    <Link className="font-semibold text-brand-700 underline" to="/app/admin/inventory">Привязанные устройства Helpdesk</Link>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{metrics.map(([label, count]) => <div className="rounded-panel border border-border bg-white p-4" key={label}><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold">{fleet.isError ? "UNKNOWN" : fleet.isPending ? "…" : count}</p></div>)}</div>
     <div className="grid gap-3 md:grid-cols-3">
       <Input aria-label="Поиск на странице" placeholder="Имя, UUID, модель, пользователь, инв. номер" value={search} onChange={event => setSearch(event.target.value)}/>

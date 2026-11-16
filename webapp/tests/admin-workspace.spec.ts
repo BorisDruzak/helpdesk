@@ -61,7 +61,7 @@ test("admin opens the exact Endpoint device without retired API traffic and keep
     if (/^\/api\/web\/admin\/(devices|inventory|device-tokens)(\/|$)/.test(path)) retiredRequests.push(path);
   });
   await loginAsAdmin(page);
-  await page.goto("/app/admin/inventory");
+  await page.goto("/app/admin/inventory?scope=endpoint");
   for (const label of ["Платформа", "Расположение", "Связь с Registry", "Связь пользователя", "Актуальность inventory", "Lifecycle устройства", "Порог актуальности inventory"]) {
     await expect(page.getByLabel(label, {exact: true})).toBeVisible();
   }
@@ -111,7 +111,7 @@ for (const viewport of [{width: 1366, height: 768}, {width: 1920, height: 1080}]
     }));
     await mockEndpointFleet(page);
     await loginAsAdmin(page);
-    await page.goto("/app/admin/inventory");
+    await page.goto("/app/admin/inventory?scope=endpoint");
     await expect(page.getByRole("link", {name: "Windows fixture", exact: true})).toBeVisible();
     const filter = page.getByLabel("Статус устройства", {exact: true});
     await expect(filter.locator("option")).toHaveText(["Все статусы", "ONLINE", "OFFLINE"]);

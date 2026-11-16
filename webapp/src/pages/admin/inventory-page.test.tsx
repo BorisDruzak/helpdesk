@@ -5,12 +5,31 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchEndpointFleet, EndpointContextApiError } from "../../features/admin/endpoint-context-api";
 import { AdminInventoryPage } from "./inventory-page";
 import type { AdminEndpointFleetItem } from "../../features/admin/endpoint-context-types";
+import { fetchAdminRegistry, type AdminRegistryPayload } from "../../features/admin/api";
 vi.mock("../../features/admin/endpoint-context-api", async (original) => ({...await original<typeof import("../../features/admin/endpoint-context-api")>(), fetchEndpointFleet: vi.fn()}));
+vi.mock("../../features/admin/api", () => ({ fetchAdminRegistry: vi.fn() }));
 const mocked = vi.mocked(fetchEndpointFleet);
 const id = "b101d111-1a11-4b11-8c11-123456789012";
 const item = {device: {id, device_identifier: "WIN", display_name: "Windows", retired_at: null, last_seen_at: null, online: true}, profiles: [], inventory_summary: null,
   registry: {status: "unmapped" as const, bindings: []}};
-function view() { return render(<QueryClientProvider client={new QueryClient({defaultOptions: {queries: {retry: false}}})}><MemoryRouter><AdminInventoryPage/></MemoryRouter></QueryClientProvider>); }
+function view(path = "/app/admin/inventory?scope=endpoint") { return render(<QueryClientProvider client={new QueryClient({defaultOptions: {queries: {retry: false}}})}><MemoryRouter initialEntries={[path]}><AdminInventoryPage/></MemoryRouter></QueryClientProvider>); }
+
+it("shows linked Helpdesk computers by default and leaves the Endpoint fleet opt-in", async () => {
+  vi.mocked(fetchAdminRegistry).mockResolvedValue({
+    assets: [
+      { id: "linked", device_id: "local", endpoint_device_ref: id, name: "munslu-s2", active_person_name: "Сотрудник" },
+      { id: "unlinked", device_id: "old", endpoint_device_ref: "old", name: "Старый ПК" },
+      { id: "archived", device_id: "archived", endpoint_device_ref: "archive", name: "Архивный ПК", status: "archived" },
+    ],
+    active_bindings: [{device_id: "local"}, {device_id: "archived"}],
+  } as unknown as AdminRegistryPayload);
+  view("/app/admin/inventory");
+  expect(await screen.findByRole("link", {name: "munslu-s2"})).toHaveAttribute("href", `/app/admin/device?device=${id}`);
+  expect(screen.queryByText("Старый ПК")).not.toBeInTheDocument();
+  expect(screen.queryByText("Архивный ПК")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", {name: "Весь парк Endpoint"})).toHaveAttribute("href", "/app/admin/inventory?scope=endpoint");
+  expect(mocked).not.toHaveBeenCalled();
+});
 describe("Endpoint fleet", () => {
   afterEach(() => vi.clearAllMocks());
   it("keeps unmapped devices visible and opens the exact Endpoint UUID", async () => {

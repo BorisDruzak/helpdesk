@@ -751,9 +751,7 @@ describe("AdminRegistryPage", () => {
   });
 
   it("manages audience group members with preview before save", async () => {
-    renderRegistry();
-
-    fireEvent.click(await screen.findByRole("button", { name: /Аудитории/ }));
+    renderRegistry(false, "/app/admin/registry?tab=audience_groups");
     expect(await screen.findByText("ИТ сотрудники")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Тип участника"), { target: { value: "department_tree" } });
@@ -772,11 +770,17 @@ describe("AdminRegistryPage", () => {
     ));
   });
 
-  it("allows adding access groups as audience members", async () => {
+  it("keeps the registry focused on departments and operational tabs", async () => {
     renderRegistry();
+    expect(await screen.findByRole("button", { name: /Отделы/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Локации|Аудитории/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Приглашение сотрудника из инвентаризации")).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(await screen.findByRole("button", { name: /Аудитории/ }));
+  it("allows adding access groups as audience members", async () => {
+    renderRegistry(false, "/app/admin/registry?tab=audience_groups");
     expect(await screen.findByText("ИТ сотрудники")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Название")).toHaveValue("ИТ сотрудники"));
 
     fireEvent.change(screen.getByLabelText("Тип участника"), { target: { value: "access_group" } });
     expect(screen.getByRole("option", { name: "Группа доступа" })).toBeInTheDocument();

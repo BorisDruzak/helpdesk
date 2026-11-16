@@ -73,10 +73,7 @@ export function InventoryInvitationAdmin() {
 
   if (!capabilities?.inventory_invitation_enabled) return null;
   return (
-    <details className="surface-panel mb-4 p-4" onToggle={(event) => {
-      if (!event.currentTarget.open) setIssued(null);
-    }}>
-      <summary className="cursor-pointer font-semibold">Приглашение сотрудника из инвентаризации</summary>
+    <section className="surface-panel max-w-2xl p-4" aria-label="Приглашение сотрудника из инвентаризации">
       {!options ? <Button className="mt-3" type="button" variant="outline" onClick={() => void loadDepartments()}>
         Подготовить приглашение
       </Button> : (
@@ -106,6 +103,6 @@ export function InventoryInvitationAdmin() {
           <Input readOnly value={issued.code} onFocus={(event) => event.target.select()} />
         </label>
       </div> : null}
-    </details>
+    </section>
   );
 }

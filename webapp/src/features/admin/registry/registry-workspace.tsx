@@ -120,7 +120,7 @@ export function RegistryWorkspace(props: RegistryWorkspaceProps) {
             </div> : null}
           </div>
           <div className="flex flex-wrap gap-2">
-            {visibleTabs.map((item) => (
+            {visibleTabs.filter(({ key }) => key !== "locations" && key !== "audience_groups").map((item) => (
               <button
                 className={cn(
                   "rounded-pill px-3 py-2 text-sm font-semibold transition-colors",
