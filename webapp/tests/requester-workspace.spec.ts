@@ -569,12 +569,12 @@ test("requester consent action is ordered by server data and posts approval deci
   await approveRequest;
 });
 
-test("requester profile honors published schema layout and saves safe profile payload", async ({ page }) => {
+test("requester profile saves editable schema fields and omits historical workplace", async ({ page }) => {
   await page.unroute("**/api/web/requester/profile");
   const profileSchema = {
     fields: [
       { key: "full_name", label: "Full name", type: "text", required: true, visible: true, editable: true, section: "identity", order: 1 },
-      { key: "preferred_contact_method", label: "Preferred contact", type: "select", visible: true, editable: true, section: "contact", order: 2, options: [{ value: "chat", label: "Chat" }] },
+      { key: "preferred_contact_method", label: "Preferred contact", type: "select", visible: true, editable: true, section: "contact", order: 2, options: [{ value: "chat", label: "Chat" }, { value: "phone", label: "Phone" }] },
       { key: "workplace_label", label: "Workplace label", type: "text", visible: true, editable: true, section: "work", order: 37 },
     ],
     custom_fields: [],
@@ -589,8 +589,8 @@ test("requester profile honors published schema layout and saves safe profile pa
             person_id: "person-1",
             full_name: "Alex Requester",
             display_name: "Alex Requester",
-            preferred_contact_method: "chat",
-            workplace_label: "Desk 42",
+            preferred_contact_method: "phone",
+            workplace_label: "Desk 17",
             custom_fields: {},
           },
           profile_completion: { complete: true, required_fields: [], missing_fields: [] },
@@ -622,14 +622,16 @@ test("requester profile honors published schema layout and saves safe profile pa
   });
 
   await page.goto("/app/requester/profile");
-  await expect(page.getByText("Workplace label")).toBeVisible();
-  await expect(page.getByText("Desk 17")).toBeVisible();
+  await expect(page.getByText("Preferred contact")).toBeVisible();
+  await expect(page.getByText("Desk 17")).toHaveCount(0);
   await page.getByRole("button", { name: "Редактировать" }).click();
-  await page.getByLabel("Workplace label").fill("Desk 42");
+  await expect(page.getByLabel("Workplace label")).toHaveCount(0);
+  await page.getByLabel("Preferred contact").selectOption("phone");
   const saveRequest = page.waitForRequest((request) => request.method() === "PUT" && request.url().endsWith("/api/web/requester/profile"));
   await page.getByRole("button", { name: "Сохранить профиль" }).click();
   const payload = await saveRequest.then((request) => request.postDataJSON() as Promise<Record<string, unknown>>);
-  expect(payload).toMatchObject({ workplace_label: "Desk 42" });
+  expect(payload).toMatchObject({ preferred_contact_method: "phone" });
+  expect(payload).not.toHaveProperty("workplace_label");
 });
 
 test("requester workspace is not exposed when archived user has no requester workspace", async ({ page }) => {
