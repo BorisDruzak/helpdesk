@@ -27,9 +27,15 @@ function install(options: { failOnce?: boolean; changedSchema?: boolean; invitat
     }
     if (url.endsWith("/registration-invitation") && options.invitation)
       return json({status:"success",data:{full_name:"Петров Иван Сергеевич",department:"Юридический отдел",department_id:"real"}});
-    if (url.endsWith("/registration-inventory-search")) return json({status:"success",data:{people:[
-      {full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:options.inventoryAgent},
-    ]}});
+    if (url.endsWith("/registration-inventory-search")) {
+      const {query} = JSON.parse(String(init?.body));
+      const employee = {full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:options.inventoryAgent};
+      if (query === "Сбой Поиска") return json({status:"error"},503);
+      const people = query === "Петров Ив"
+        ? [employee, {...employee,full_name:"Петров Иван Петрович"}]
+        : query === employee.full_name ? [employee] : [];
+      return json({status:"success",data:{people}});
+    }
     if (url.endsWith("/register-requester")) {
       submissions++;
       if (options.rejectInvite && JSON.parse(String(init?.body)).inventory_invite_code)
@@ -72,12 +78,22 @@ describe("guided employee registration", () => {
   it("fills an inventory match without an agent and submits ordinary registration", async () => {
     const requests = install({inventoryAgent:false, invitation:true});
     show();
-    fireEvent.change(await screen.findByLabelText("ФИО"), {target:{value:"Петров Ив"}});
+    const search = await screen.findByLabelText("Поиск сотрудника");
+    expect(screen.queryByLabelText("Фамилия")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name:"Продолжить"})).toBeDisabled();
+    fireEvent.change(search, {target:{value:"Петров Ив"}});
+    expect(await screen.findByText(/Найдено несколько совпадений/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", {name:/Петров Иван/})).not.toBeInTheDocument();
+    fireEvent.change(search, {target:{value:"Петров Иван Сергеевич"}});
     fireEvent.click(await screen.findByRole("button", {name:/Петров Иван Сергеевич.*Юридический отдел/}));
     expect(screen.getByText(/Привязанный агент не найден/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Фамилия")).toHaveValue("Петров");
+    expect(search).toHaveValue("Петров Иван Сергеевич");
+    expect(screen.queryByLabelText("Фамилия")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
     expect(screen.getByRole("combobox", {name:"Отдел"})).toHaveValue("Юридический отдел");
+    fireEvent.click(screen.getByRole("button", {name:"Назад"}));
+    expect(screen.getByLabelText("Поиск сотрудника")).toHaveValue("Петров Иван Сергеевич");
+    fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
     fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"), {target:{value:"1234"}});
     fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
     await password();
@@ -85,6 +101,33 @@ describe("guided employee registration", () => {
     const submission = requests.mock.calls.find(([url]) => String(url).endsWith("/register-requester"));
     expect(JSON.parse(String(submission?.[1]?.body))).toMatchObject({last_name:"Петров",department_id:"real"});
     expect(JSON.parse(String(submission?.[1]?.body))).not.toHaveProperty("inventory_invite_code");
+  });
+  it.each([
+    ["Новый Сотрудник", "Сотрудник не найден."],
+    ["Сбой Поиска", "Поиск недоступен."],
+  ])("opens manual name entry after searching for %s", async (query, message) => {
+    const requests = install({inventoryAgent:true});
+    show();
+    fireEvent.change(await screen.findByLabelText("Поиск сотрудника"), {target:{value:query}});
+    expect(screen.getByText("Ищем сотрудника…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Фамилия")).not.toBeInTheDocument();
+    expect(await screen.findByText(message,{exact:false})).toBeInTheDocument();
+    expect(screen.getByLabelText("Фамилия")).toHaveValue("");
+    await names();
+    await contacts();
+    await password();
+    expect(await screen.findByTestId("destination")).toHaveTextContent("/app/requester");
+    const submission = requests.mock.calls.find(([url]) => String(url).endsWith("/register-requester"));
+    expect(JSON.parse(String(submission?.[1]?.body))).toMatchObject({last_name:"Петров",first_name:"Иван"});
+    expect(JSON.parse(String(submission?.[1]?.body))).not.toHaveProperty("inventory_invite_code");
+  });
+  it("offers manual entry for a name shorter than the inventory query allows", async () => {
+    const requests = install({inventoryAgent:true});
+    show();
+    fireEvent.change(await screen.findByLabelText("Поиск сотрудника"), {target:{value:"Ли Анна"}});
+    fireEvent.click(screen.getByRole("button", {name:"Ввести ФИО вручную"}));
+    expect(screen.getByLabelText("Фамилия")).toBeVisible();
+    expect(requests.mock.calls.some(([url]) => String(url).endsWith("/registration-inventory-search"))).toBe(false);
   });
   it("uses one department input for search and explicit keyboard selection", async () => {
     install(); show(); await names();

@@ -1,6 +1,6 @@
 import { expect, test } from "playwright/test";
 
-test("registration suggests an employee and shows the assigned agent on mobile", async ({page}) => {
+test("registration suggests an employee and shows the assigned agent on mobile", async ({page}, info) => {
   await page.setViewportSize({width:390,height:844});
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -23,15 +23,69 @@ test("registration suggests an employee and shows the assigned agent on mobile",
     }
   });
   await page.goto("/app/register");
-  await page.getByLabel("ФИО",{exact:true}).fill("Петров Ив");
+  const search = page.getByLabel("Поиск сотрудника",{exact:true});
+  await expect(search).toBeVisible();
+  await expect(page.getByLabel("Фамилия",{exact:true})).toHaveCount(0);
+  await search.fill("Петров Ив");
+  await expect(page.getByRole("button",{name:"Продолжить",exact:true})).toBeDisabled();
   await page.getByRole("button",{name:/Петров Иван Сергеевич.*Юридический отдел/}).click();
   await expect(page.getByRole("status").filter({hasText:"Найден привязанный агент"})).toBeVisible();
-  await expect(page.getByLabel("Фамилия",{exact:true})).toHaveValue("Петров");
+  await expect(search).toHaveValue("Петров Иван Сергеевич");
+  await expect(page.getByLabel("Фамилия",{exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Продолжить",exact:true})).toBeEnabled();
+  await page.screenshot({path:info.outputPath("employee-selected.png"),fullPage:true});
   await page.getByText("У меня есть приглашение",{exact:true}).click();
   await expect(page.getByLabel("Код приглашения",{exact:true})).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+for (const viewport of [{width:1366,height:768},{width:1920,height:1080}]) {
+  test(`registration opens manual fields after an empty search at ${viewport.width}`, async ({page}, info) => {
+    await page.setViewportSize(viewport);
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("requestfailed", request => errors.push(request.url()));
+    await page.route("**/api/web/session/**", async route => {
+      switch (new URL(route.request().url()).pathname) {
+        case "/api/web/session/capabilities":
+          return route.fulfill({json:{status:"success",data:{self_registration_enabled:true}}});
+        case "/api/web/session/me":
+          return route.fulfill({status:401,json:{status:"error"}});
+        case "/api/web/session/registration-options":
+          return route.fulfill({json:{status:"success",data:{
+            departments:[{value:"legal",label:"Юридический отдел"}], profile_schema:{fields:[]},
+            inventory_search_enabled:true, inventory_invitation_enabled:true,
+          }}});
+        case "/api/web/session/registration-inventory-search":
+          expect(route.request().postDataJSON()).toEqual({query:"Новый Сотрудник"});
+          return route.fulfill({json:{status:"success",data:{people:[],refine:false}}});
+        default:
+          throw new Error("Unexpected session request");
+      }
+    });
+    await page.goto("/app/register");
+    const search = page.getByLabel("Поиск сотрудника",{exact:true});
+    const surname = page.getByLabel("Фамилия",{exact:true});
+    const next = page.getByRole("button",{name:"Продолжить",exact:true});
+    await expect(search).toBeVisible();
+    await expect(surname).toHaveCount(0);
+    await expect(next).toBeInViewport();
+    await page.screenshot({path:info.outputPath("employee-search.png"),fullPage:true});
+    await search.fill("Новый Сотрудник");
+    await expect(page.getByText("Сотрудник не найден. Введите ФИО вручную.")).toBeVisible();
+    await expect(surname).toHaveValue("");
+    await expect(next).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({path:info.outputPath("employee-manual-name.png"),fullPage:true});
+    await surname.fill("Новый");
+    await page.getByLabel("Имя",{exact:true}).fill("Сотрудник");
+    await next.click();
+    await page.getByRole("button",{name:"Назад"}).click();
+    await expect(surname).toHaveValue("Новый");
+    expect(errors).toEqual([]);
+  });
+}
 
 for (const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:390,height:844}]) {
   test(`registration completes profile before enabling an explicit request at ${viewport.width}`, async ({page}, info) => {

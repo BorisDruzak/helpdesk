@@ -72,7 +72,10 @@ Helpdesk accepts a surname and at least two given-name letters through
 `POST /api/web/session/registration-inventory-search`. The endpoint uses
 same-origin checks, IP rate limits and no-store responses. It returns at most
 five names with departments and a flag for a confirmed agent on an assigned PC.
-Selecting a result fills the name and an unambiguous active Helpdesk department.
+The form starts with one employee search field. It offers a result for selection
+when exactly one employee matches and asks for more detail when several match.
+A selection fills the name and an unambiguous active Helpdesk department.
+An empty result or unavailable search opens manual name fields.
 An invitation or an administrator confirmation is still required for the
 employee/account link. Ordinary registration remains available if search is
 unavailable, the employee is missing or the employee has no confirmed agent.

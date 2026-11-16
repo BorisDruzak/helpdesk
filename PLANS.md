@@ -1,3 +1,12 @@
+# 2026-11-16 Helpdesk registration search
+
+The first step offers a single search field, a selectable result when exactly
+one employee matches, and manual name fields after an empty result or lookup
+failure. The invitation flow remains available.
+Verified with 12 component tests, nine Chromium tests including widths 390,
+1366 and 1920, and the frontend build. Browser tests used fixture responses.
+Live staging and production deployment are pending.
+
 # 2026-11-12 Unified employee and device inventory
 
 Goal: connect Helpdesk registration and support workflows to verified inventory

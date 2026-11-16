@@ -9,7 +9,7 @@ import { fieldsWithRuntimeOptions } from "../../pages/requester/profile-workflow
 import { WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
 import { RegistrationInvitationField } from "./registration-invitation-field";
-import { RegistrationEmployeeSearch } from "./registration-employee-search";
+import { RegistrationEmployeeSearch, useRegistrationEmployeeSearch } from "./registration-employee-search";
 import { clearRegistrationAttempt, clearPendingRegistrationSubmission, confirmRegistration, fetchRegistrationOptions, registerRequester, registrationAttempt, rememberRegistrationSubmission,
   registrationLoginPreview, RegistrationFieldError, type RegistrationAttempt, type RegistrationEmployee, type RegistrationInvitation, type RegistrationNames, type RegistrationOptions } from "./requester-registration";
 
@@ -26,6 +26,11 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   const [inviteCode,setInviteCode] = useState("");
   const [invitation,setInvitation] = useState<RegistrationInvitation | null>(null);
   const [employee,setEmployee] = useState<RegistrationEmployee | null>(null);
+  const searchEnabled = Boolean(options?.inventory_search_enabled);
+  const employeeSearch = useRegistrationEmployeeSearch(searchEnabled && step === 0 && !employee && !invitation);
+  const manualNameEntry = !employee && (!searchEnabled || Boolean(invitation) ||
+    employeeSearch.status === "missing" || employeeSearch.status === "unavailable" || employeeSearch.status === "manual");
+  const awaitingEmployee = step === 0 && !attempt?.user_login && !invitation && !employee && !manualNameEntry;
   const [canDiscardInvite,setCanDiscardInvite] = useState(false);
   const requiresInvitation = Boolean(attempt?.submission?.requires_invitation);
 
@@ -59,6 +64,7 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   function advance() {
     setError(null);setErrors({});
     if(step === 0) {
+      if (awaitingEmployee) return;
       if (inviteCode.trim() && !invitation) return showErrors("Подтвердите запись сотрудника или очистите поле кода.");
       const details: Record<string,string> = {};
       if(!names.last_name.trim()) details.last_name = "Укажите фамилию.";
@@ -112,16 +118,16 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
     } finally {busy.current=false;setPending(false);}
   }
   function fillEmployeeName(fullName: string) {
-    const parts = fullName.trim().split(/\s+/);
-    if (parts.length === 2 || parts.length === 3) {
-      const [last_name, first_name, patronymic = ""] = parts;
-      setNames({last_name, first_name, patronymic});
-    }
+    const [last_name = "", first_name = "", ...rest] = fullName.trim().split(/\s+/);
+    setNames({last_name, first_name, patronymic: rest.join(" ")});
   }
   function enterEmployeeName(input: string) {
+    employeeSearch.changeInput(input);
+    if (employee) setValues(current => ({...current, department_id: ""}));
     setEmployee(null);
-    const [last_name = "", first_name = "", ...rest] = input.trim().split(/\s+/);
-    setNames({last_name, first_name, patronymic: rest.join(" ")});
+    setNames({last_name:"",first_name:"",patronymic:""});
+    setError(null);
+    setErrors({});
   }
   function selectEmployee(match: RegistrationEmployee) {
     setEmployee(match);
@@ -134,6 +140,7 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
   }
   function selectInvitation(employee: RegistrationInvitation) {
     fillEmployeeName(employee.full_name);
+    employeeSearch.changeInput(employee.full_name);
     setEmployee(null);
     setValues(current => ({...current, department_id: employee.department_id}));
     setInvitation(employee);
@@ -180,16 +187,16 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
     {uncertain && !attempt.user_login ? <p role="status" className="text-sm text-slate-600">Повторите завершение с теми же данными и паролем. Новый аккаунт при повторе не создаётся.</p> : null}
     <fieldset disabled={pending} className="min-w-0 space-y-4">
       {!attempt.user_login && step === 0 && options.inventory_search_enabled && !invitation ? (
-        <RegistrationEmployeeSearch selected={employee} onInput={enterEmployeeName} onSelect={selectEmployee} />
+        <RegistrationEmployeeSearch search={employeeSearch} selected={employee} onInput={enterEmployeeName} onSelect={selectEmployee} />
       ) : null}
+      {!attempt.user_login && step===0 && manualNameEntry ? <div className="space-y-4">{([['last_name','Фамилия'],['first_name','Имя'],['patronymic','Отчество']] as const).map(([key,label]) =>
+        <label key={key} className="block space-y-1 text-sm font-medium">{label}<Input className="w-full" aria-label={label} aria-invalid={errors[key] ? true : undefined} autoComplete={key==='last_name' ? 'family-name' : key==='first_name' ? 'given-name' : 'additional-name'} maxLength={100} value={names[key]} onChange={event => setNames({...names,[key]:event.target.value})}/>{errors[key] ? <span className="block text-rose-700">{errors[key]}</span> : null}</label>)}</div> : null}
       {!attempt.user_login && step === 0 && options.inventory_invitation_enabled ? (
         <RegistrationInvitationField code={inviteCode} onCodeChange={changeInviteCode} selected={invitation} onSelect={selectInvitation} />
       ) : null}
       {!attempt.user_login && step === 2 && requiresInvitation && !invitation ? (
         <RegistrationInvitationField code={inviteCode} onCodeChange={changeInviteCode} selected={null} onSelect={selectInvitation} retry />
       ) : null}
-      {!attempt.user_login && step===0 ? <div className="space-y-4">{([['last_name','Фамилия'],['first_name','Имя'],['patronymic','Отчество']] as const).map(([key,label]) =>
-        <label key={key} className="block space-y-1 text-sm font-medium">{label}<Input className="w-full" aria-label={label} aria-invalid={errors[key] ? true : undefined} autoComplete={key==='last_name' ? 'family-name' : key==='first_name' ? 'given-name' : 'additional-name'} maxLength={100} value={names[key]} onChange={event => setNames({...names,[key]:event.target.value})}/>{errors[key] ? <span className="block text-rose-700">{errors[key]}</span> : null}</label>)}</div> : null}
       {!attempt.user_login && step===1 ? <div className="space-y-4">
         {fields.filter(field => field.required || field.key==='department_id' || field.key==='phone').map(control)}
         {fields.some(field => !field.required && !['department_id','phone'].includes(field.key)) ? <details><summary className="cursor-pointer text-sm font-semibold">Дополнительные сведения (необязательно)</summary><div className="mt-4 space-y-4">{fields.filter(field => !field.required && !['department_id','phone'].includes(field.key)).map(control)}</div></details> : null}
@@ -203,7 +210,7 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
     {preview && !attempt.user_login ? <p className="rounded-xl bg-brand-50 p-3 text-sm">Ваш логин: <strong className="break-all">{preview}</strong><span className="mt-1 block text-xs text-slate-600">Если логин занят, добавится номер. Итоговый логин появится в кабинете.</span></p> : null}
     <div className="flex flex-wrap justify-between gap-3 border-t pt-4">
       {step>0 && !attempt.user_login ? <Button type="button" variant="outline" disabled={pending || uncertain} onClick={() => {setStep(step-1);setError(null);setErrors({});}}>Назад</Button> : <span/>}
-      <Button type="submit" disabled={pending} className="ml-auto">{pending ? "Завершаем…" : attempt.user_login ? "Войти в кабинет" : uncertain ? "Повторить завершение" : step===2 ? "Зарегистрироваться" : "Продолжить"}</Button>
+      <Button type="submit" disabled={pending || awaitingEmployee} className="ml-auto">{pending ? "Завершаем…" : attempt.user_login ? "Войти в кабинет" : uncertain ? "Повторить завершение" : step===2 ? "Зарегистрироваться" : "Продолжить"}</Button>
     </div>
   </form>;
 }
