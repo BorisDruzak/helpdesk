@@ -88,7 +88,7 @@ export function RegistrationEmployeeSearch({ search, selected, onInput, onSelect
             : "Привязанный агент не найден. Можно продолжить обычную регистрацию."}`
           : searchMessage}
       </p>
-      {matches.length > 0 && !selected ? <ul className="space-y-2" aria-label="Найденные сотрудники">
+      {matches.length > 0 && !selected ? <ul className="max-h-52 space-y-2 overflow-y-auto" aria-label="Найденные сотрудники">
         {matches.map((match, index) => <li key={`${match.full_name}:${match.department}:${index}`}>
         <button type="button"
           disabled={match.registered}

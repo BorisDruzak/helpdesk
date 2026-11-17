@@ -21,6 +21,12 @@ test(`registration lists matches and disables existing accounts at ${viewport.wi
           full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:true,registered:false,
         },{
           full_name:"Петров Иван Петрович",department:"Отдел информационных технологий",has_agent:false,registered:true,
+        },{
+          full_name:"Петрова Анна",department:"Юридический отдел",has_agent:false,registered:false,
+        },{
+          full_name:"Петрова Мария",department:"Юридический отдел",has_agent:false,registered:false,
+        },{
+          full_name:"Петрова Ольга",department:"Юридический отдел",has_agent:false,registered:false,
         }],refine:true}}});
       default:
         throw new Error("Unexpected session request");
@@ -36,6 +42,8 @@ test(`registration lists matches and disables existing accounts at ${viewport.wi
   await expect(registered).toBeVisible();
   await expect(registered).toBeDisabled();
   await expect(page.getByText(/Показаны первые совпадения/)).toBeVisible();
+  await expect(page.getByRole("list",{name:"Найденные сотрудники"}).getByRole("button")).toHaveCount(5);
+  await expect(page.getByRole("button",{name:"Продолжить",exact:true})).toBeInViewport();
   await page.screenshot({path:info.outputPath("employee-matches.png"),fullPage:true});
   await page.getByRole("button",{name:/Петров Иван Сергеевич.*Юридический отдел/}).click();
   await expect(page.getByRole("status").filter({hasText:"Найден привязанный агент"})).toBeVisible();
