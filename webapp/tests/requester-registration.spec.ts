@@ -14,7 +14,7 @@ test("registration suggests an employee and shows the assigned agent on mobile",
         return route.fulfill({json:{status:"success",data:{departments:[{value:"legal",label:"Юридический отдел"}],
           profile_schema:{fields:[]},inventory_search_enabled:true,inventory_invitation_enabled:true}}});
       case "/api/web/session/registration-inventory-search":
-        expect(route.request().postDataJSON()).toEqual({query:"Петров Ив"});
+        expect(route.request().postDataJSON()).toEqual({query:"П"});
         return route.fulfill({json:{status:"success",data:{people:[{
           full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:true,
         }],refine:false}}});
@@ -26,7 +26,7 @@ test("registration suggests an employee and shows the assigned agent on mobile",
   const search = page.getByLabel("Поиск сотрудника",{exact:true});
   await expect(search).toBeVisible();
   await expect(page.getByLabel("Фамилия",{exact:true})).toHaveCount(0);
-  await search.fill("Петров Ив");
+  await search.fill("П");
   await expect(page.getByRole("button",{name:"Продолжить",exact:true})).toBeDisabled();
   await page.getByRole("button",{name:/Петров Иван Сергеевич.*Юридический отдел/}).click();
   await expect(page.getByRole("status").filter({hasText:"Найден привязанный агент"})).toBeVisible();

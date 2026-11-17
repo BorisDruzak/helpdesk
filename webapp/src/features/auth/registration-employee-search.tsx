@@ -8,7 +8,7 @@ type SearchOutcome =
   | { kind: "ambiguous" | "missing" | "unavailable" | "manual" };
 
 const messages = {
-  idle: "Введите фамилию и хотя бы две буквы имени.",
+  idle: "Начните вводить имя или фамилию.",
   pending: "Ищем сотрудника…",
   ambiguous: "Найдено несколько совпадений. Уточните ФИО или добавьте отдел.",
   missing: "Сотрудник не найден. Введите ФИО вручную.",
@@ -20,7 +20,7 @@ export function useRegistrationEmployeeSearch(enabled: boolean) {
   const [input, setInput] = useState("");
   const [outcome, setOutcome] = useState<SearchOutcome | null>(null);
   const query = input.normalize("NFC").trim().replace(/\s+/g, " ");
-  const canSearch = /^\p{L}[\p{L}-]{2,} \p{L}[\p{L}-]+(?: [\p{L}-]+)*$/u.test(query);
+  const canSearch = /^\p{L}[\p{L} -]*$/u.test(query);
 
   useEffect(() => {
     if (!enabled || !canSearch || outcome) return;
@@ -53,7 +53,7 @@ export function useRegistrationEmployeeSearch(enabled: boolean) {
     input,
     changeInput,
     outcome,
-    offerManualEntry: !canSearch && query.includes(" ") && !outcome,
+    offerManualEntry: !outcome || outcome.kind === "ambiguous",
     enterManually: () => setOutcome({ kind: "manual" }),
     status,
   };
@@ -75,11 +75,11 @@ export function RegistrationEmployeeSearch({ search, selected, onInput, onSelect
       <label className="block space-y-1 text-sm font-medium">
         Поиск сотрудника
         <Input className="block w-full" autoComplete="off" maxLength={120}
-          value={selected?.full_name ?? search.input} placeholder="Фамилия и первые буквы имени"
+          value={selected?.full_name ?? search.input} placeholder="Имя или фамилия"
           aria-describedby={statusId} onChange={(event) => onInput(event.target.value)} />
       </label>
       <p id={statusId} role="status" className="text-sm text-slate-700">
-        {selected ? `${selected.department}. ${selected.has_agent
+        {selected ? `${selected.department ? `${selected.department}. ` : ""}${selected.has_agent
             ? "Найден привязанный агент. Для доступа к компьютеру подтвердите запись приглашением или обратитесь в техподдержку."
             : "Привязанный агент не найден. Можно продолжить обычную регистрацию."}`
           : search.status === "match" ? "Выберите найденного сотрудника." : messages[search.status]}
@@ -89,7 +89,7 @@ export function RegistrationEmployeeSearch({ search, selected, onInput, onSelect
           className="w-full break-words rounded-xl border px-3 py-2 text-left text-sm hover:bg-slate-50 focus-visible:outline-brand-600"
           onClick={() => onSelect(match)}>
           <span className="block font-medium">{match.full_name}</span>
-          <span className="text-slate-600">{match.department}</span>
+          {match.department ? <span className="text-slate-600">{match.department}</span> : null}
         </button>
       ) : null}
       {search.offerManualEntry && !selected ? (

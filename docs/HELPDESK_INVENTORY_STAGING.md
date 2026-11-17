@@ -79,10 +79,12 @@ To enable suggestions on the registration page, deploy the web_ovpn
 Helpdesk service route `GET /api/internal/helpdesk/v1/inventory/people/registration-search`
 and set `HELPDESK_INVENTORY_REGISTRATION_SEARCH_ENABLED=true` on Helpdesk.
 Keep this off wherever anonymous registration should not reveal employee names.
-Helpdesk accepts a surname and at least two given-name letters through
+Helpdesk searches from the first letter of an employee name through
 `POST /api/web/session/registration-inventory-search`. The endpoint uses
-same-origin checks, IP rate limits and no-store responses. It returns at most
-five names with departments and a flag for a confirmed agent on an assigned PC.
+same-origin checks, IP rate limits and no-store responses. UI_VPN uses the
+employee directory and the name and department entered on unassigned PC cards.
+A unique result can fill the form without a patronymic or a department.
+Only a confirmed assignment can indicate a confirmed Endpoint agent.
 The form starts with one employee search field. It offers a result for selection
 when exactly one employee matches and asks for more detail when several match.
 A selection fills the name and an unambiguous active Helpdesk department.

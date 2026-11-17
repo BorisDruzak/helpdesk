@@ -356,7 +356,7 @@ async def preview_inventory_invitation(request: web.Request) -> web.Response:
 
 class EmployeeSearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=6, max_length=120)]
+    query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 
 
 async def search_registration_inventory(request: web.Request) -> web.Response:
@@ -369,12 +369,10 @@ async def search_registration_inventory(request: web.Request) -> web.Response:
     try:
         payload = EmployeeSearch.model_validate(await request.json())
         query = " ".join(payload.query.split())
-        parts = query.split()
-        if (len(parts) < 2 or len(parts[0]) < 3 or len(parts[1]) < 2
-                or any(not (ch.isalpha() or ch in " -") for ch in query)):
+        if not query[0].isalpha() or any(not (ch.isalpha() or ch in " -") for ch in query):
             raise ValueError("Incomplete name")
     except (ValueError, ValidationError):
-        return _reply({"error": "Введите фамилию и хотя бы две буквы имени."}, 400)
+        return _reply({"error": "Введите имя или фамилию сотрудника."}, 400)
     try:
         results = await inventory.search_registration_people(query)
     except inventory.InventoryUnavailable:

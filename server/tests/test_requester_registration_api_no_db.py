@@ -38,11 +38,12 @@ async def test_registration_inventory_search_with_real_auth_middleware(monkeypat
     async with TestClient(TestServer(app)) as client:
         assert (await client.post(path, json={"query": "Петров Ив"})).status == 403
         same_origin = {"Origin": str(client.make_url("/").origin())}
-        assert (await client.post(path, json={"query": "Петров"}, headers=same_origin)).status == 400
-        response = await client.post(path, json={"query": "Петров Ив"}, headers=same_origin)
+        assert (await client.post(path, json={"query": "123"}, headers=same_origin)).status == 400
+        response = await client.post(path, json={"query": "П"}, headers=same_origin)
         assert response.status == 200
         assert response.headers["Cache-Control"] == "no-store"
         assert (await response.json())["data"] == {"people": [employee], "refine": False}
+        inventory_directory.search_registration_people.assert_awaited_once_with("П")
 
 
 @pytest.mark.parametrize("field", ["actor_role", "person_id", "login", "location_id"])

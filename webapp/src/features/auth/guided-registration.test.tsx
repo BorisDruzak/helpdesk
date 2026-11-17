@@ -31,6 +31,7 @@ function install(options: { failOnce?: boolean; changedSchema?: boolean; invitat
       const {query} = JSON.parse(String(init?.body));
       const employee = {full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:options.inventoryAgent};
       if (query === "Сбой Поиска") return json({status:"error"},503);
+      if (query === "Л") return json({status:"success",data:{people:[{...employee,full_name:"Ли Анна",has_agent:false}]}});
       const people = query === "Петров Ив"
         ? [employee, {...employee,full_name:"Петров Иван Петрович"}]
         : query === employee.full_name ? [employee] : [];
@@ -121,13 +122,21 @@ describe("guided employee registration", () => {
     expect(JSON.parse(String(submission?.[1]?.body))).toMatchObject({last_name:"Петров",first_name:"Иван"});
     expect(JSON.parse(String(submission?.[1]?.body))).not.toHaveProperty("inventory_invite_code");
   });
-  it("offers manual entry for a name shorter than the inventory query allows", async () => {
-    const requests = install({inventoryAgent:true});
+  it("starts on the first letter and fills a result without a patronymic", async () => {
+    const requests = install({inventoryAgent:false});
     show();
-    fireEvent.change(await screen.findByLabelText("Поиск сотрудника"), {target:{value:"Ли Анна"}});
-    fireEvent.click(screen.getByRole("button", {name:"Ввести ФИО вручную"}));
-    expect(screen.getByLabelText("Фамилия")).toBeVisible();
-    expect(requests.mock.calls.some(([url]) => String(url).endsWith("/registration-inventory-search"))).toBe(false);
+    fireEvent.change(await screen.findByLabelText("Поиск сотрудника"), {target:{value:"Л"}});
+    fireEvent.click(await screen.findByRole("button", {name:/Ли Анна.*Юридический отдел/}));
+    fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
+    expect(screen.getByRole("combobox", {name:"Отдел"})).toHaveValue("Юридический отдел");
+    fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"), {target:{value:"1234"}});
+    fireEvent.click(screen.getByRole("button", {name:"Продолжить"}));
+    await password();
+    expect(await screen.findByTestId("destination")).toBeInTheDocument();
+    const submission = requests.mock.calls.find(([url]) => String(url).endsWith("/register-requester"));
+    expect(JSON.parse(String(submission?.[1]?.body))).toMatchObject({
+      last_name:"Ли", first_name:"Анна", patronymic:"", department_id:"real",
+    });
   });
   it("uses one department input for search and explicit keyboard selection", async () => {
     install(); show(); await names();
