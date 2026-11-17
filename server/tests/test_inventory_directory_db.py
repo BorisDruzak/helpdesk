@@ -28,6 +28,43 @@ async def create_account(test_engine, login=None):
     return person_id, login, {"Authorization": f"Bearer {token}"}
 
 
+async def test_registration_search_recognizes_accounts_by_profile_or_confirmed_inventory_id(test_engine, monkeypatch):
+    from contextlib import asynccontextmanager
+    from app.db.models import RegistryDepartment, RegistryInventoryLink
+    from registry import registration_account_status
+
+    profile_id, _, _ = await create_account(test_engine)
+    linked_id, linked_login, _ = await create_account(test_engine)
+    department_id = str(uuid4())
+    inventory_id = uuid4()
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker.begin() as session:
+        session.add(RegistryDepartment(department_id=department_id, name="Юридический отдел", status="active"))
+        await session.flush()
+        profile = await session.get(RegistryPerson, profile_id)
+        profile.full_name = "  ПЕТРОВ  Иван Сергеевич "
+        profile.department_id = department_id
+        session.add(RegistryInventoryLink(person_id=linked_id, user_login=linked_login,
+            inventory_person_id=str(inventory_id), approval_id=str(uuid4())))
+        account = await session.get(UiUser, linked_login)
+        account.is_active = False
+
+    @asynccontextmanager
+    async def sessions():
+        async with maker() as session:
+            yield session
+
+    monkeypatch.setattr(registration_account_status, "get_session", sessions)
+    people = inventory_directory.RegistrationPeople(people=[
+        {"full_name":"Петров Иван Сергеевич", "department":"Юридический отдел", "has_agent":False},
+        {"full_name":"Петров Иван Сергеевич", "department":"Другой отдел", "has_agent":False},
+        {"full_name":"Новое имя", "department":"Новый отдел", "has_agent":True, "inventory_person_id":inventory_id},
+        {"full_name":"Нет учётки", "department":"Юридический отдел", "has_agent":False},
+    ]).people
+    await registration_account_status.mark_registered_employees(people)
+    assert [person.registered for person in people] == [True, False, True, False]
+
+
 async def test_linked_inventory_projection_remains_scoped_audited_and_available_during_outage(
     test_client, test_engine, monkeypatch,
 ):

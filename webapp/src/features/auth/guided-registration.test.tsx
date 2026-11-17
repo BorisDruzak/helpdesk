@@ -9,7 +9,7 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {status, headers: {"Content-Type":"application/json"}});
 }
 function Home() { const location = useLocation(); return <p data-testid="destination">{location.pathname}</p>; }
-function install(options: { failOnce?: boolean; changedSchema?: boolean; invitation?: boolean; rejectInvite?: boolean; inventoryAgent?: boolean } = {}) {
+function install(options: { failOnce?: boolean; changedSchema?: boolean; invitation?: boolean; rejectInvite?: boolean; inventoryAgent?: boolean; registered?: boolean } = {}) {
   let submissions = 0;
   let optionReads = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -29,13 +29,13 @@ function install(options: { failOnce?: boolean; changedSchema?: boolean; invitat
       return json({status:"success",data:{full_name:"Петров Иван Сергеевич",department:"Юридический отдел",department_id:"real"}});
     if (url.endsWith("/registration-inventory-search")) {
       const {query} = JSON.parse(String(init?.body));
-      const employee = {full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:options.inventoryAgent};
+      const employee = {full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:options.inventoryAgent,registered:options.registered};
       if (query === "Сбой Поиска") return json({status:"error"},503);
       if (query === "Л") return json({status:"success",data:{people:[{...employee,full_name:"Ли Анна",has_agent:false}]}});
       const people = query === "Петров Ив"
-        ? [employee, {...employee,full_name:"Петров Иван Петрович"}]
+        ? [employee, {...employee,full_name:"Петров Иван Петрович",registered:true}]
         : query === employee.full_name ? [employee] : [];
-      return json({status:"success",data:{people}});
+      return json({status:"success",data:{people,refine:query === "Петров Ив"}});
     }
     if (url.endsWith("/register-requester")) {
       submissions++;
@@ -83,9 +83,12 @@ describe("guided employee registration", () => {
     expect(screen.queryByLabelText("Фамилия")).not.toBeInTheDocument();
     expect(screen.getByRole("button", {name:"Продолжить"})).toBeDisabled();
     fireEvent.change(search, {target:{value:"Петров Ив"}});
-    expect(await screen.findByText(/Найдено несколько совпадений/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", {name:/Петров Иван/})).not.toBeInTheDocument();
-    fireEvent.change(search, {target:{value:"Петров Иван Сергеевич"}});
+    expect(await screen.findByText(/Показаны первые совпадения/)).toBeInTheDocument();
+    const registered = screen.getByRole("button", {name:/Петров Иван Петрович.*Аккаунт уже создан/});
+    expect(registered).toBeDisabled();
+    fireEvent.click(registered);
+    expect(screen.getByRole("button", {name:"Продолжить"})).toBeDisabled();
+    expect(search).toHaveValue("Петров Ив");
     fireEvent.click(await screen.findByRole("button", {name:/Петров Иван Сергеевич.*Юридический отдел/}));
     expect(screen.getByText(/Привязанный агент не найден/)).toBeInTheDocument();
     expect(search).toHaveValue("Петров Иван Сергеевич");
@@ -102,6 +105,18 @@ describe("guided employee registration", () => {
     const submission = requests.mock.calls.find(([url]) => String(url).endsWith("/register-requester"));
     expect(JSON.parse(String(submission?.[1]?.body))).toMatchObject({last_name:"Петров",department_id:"real"});
     expect(JSON.parse(String(submission?.[1]?.body))).not.toHaveProperty("inventory_invite_code");
+  });
+  it("keeps a single registered employee visible without allowing selection", async () => {
+    install({inventoryAgent:true, registered:true});
+    show();
+    const search = await screen.findByLabelText("Поиск сотрудника");
+    fireEvent.change(search, {target:{value:"Петров Иван Сергеевич"}});
+    const result = await screen.findByRole("button", {name:/Петров Иван Сергеевич.*Аккаунт уже создан/});
+    expect(result).toBeDisabled();
+    fireEvent.click(result);
+    expect(screen.getByRole("button", {name:"Продолжить"})).toBeDisabled();
+    expect(screen.queryByText(/Найден привязанный агент/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Фамилия")).not.toBeInTheDocument();
   });
   it.each([
     ["Новый Сотрудник", "Сотрудник не найден."],

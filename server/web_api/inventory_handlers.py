@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 import config as config_module
 from app.db import get_session
@@ -22,6 +22,7 @@ from auth.inventory_invitation import (
 from auth.middleware import _same_origin_error, require_auth
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from registry import inventory_directory as inventory
+from registry.registration_account_status import mark_registered_employees
 from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.inventory_device_binding import (
     InventoryDeviceBindingService, fresh_inventory_observation, inventory_ticket_targets,
@@ -375,6 +376,9 @@ async def search_registration_inventory(request: web.Request) -> web.Response:
         return _reply({"error": "Введите имя или фамилию сотрудника."}, 400)
     try:
         results = await inventory.search_registration_people(query)
+        await mark_registered_employees(results.people)
     except inventory.InventoryUnavailable:
         return _reply({"error": "Поиск сотрудников сейчас недоступен."}, 503)
+    except SQLAlchemyError:
+        return _reply({"error": "Не удалось проверить учётные записи. Повторите поиск."}, 503)
     return _reply(results.model_dump())

@@ -10,6 +10,7 @@ import pytest
 from auth.rate_limit import reset_rate_limits
 from auth.middleware import auth_middleware
 from registry import inventory_directory
+import web_api.inventory_handlers as inventory_handlers
 from web_api.inventory_handlers import search_registration_inventory
 import web_api.session_handlers as handlers
 from web_api.dto.session import WebRequesterRegisterRequest
@@ -32,6 +33,7 @@ async def test_registration_inventory_search_with_real_auth_middleware(monkeypat
     employee = {"full_name": "Петров Иван", "department": "Юридический отдел", "has_agent": True}
     monkeypatch.setattr(inventory_directory, "search_registration_people", AsyncMock(
         return_value=inventory_directory.RegistrationPeople(people=[employee])))
+    monkeypatch.setattr(inventory_handlers, "mark_registered_employees", AsyncMock())
     path = "/api/web/session/registration-inventory-search"
     app = web.Application(middlewares=[auth_middleware])
     app.router.add_post(path, search_registration_inventory)
@@ -42,8 +44,57 @@ async def test_registration_inventory_search_with_real_auth_middleware(monkeypat
         response = await client.post(path, json={"query": "П"}, headers=same_origin)
         assert response.status == 200
         assert response.headers["Cache-Control"] == "no-store"
-        assert (await response.json())["data"] == {"people": [employee], "refine": False}
+        assert (await response.json())["data"] == {"people": [{**employee, "registered": False}], "refine": False}
         inventory_directory.search_registration_people.assert_awaited_once_with("П")
+
+
+@pytest.mark.asyncio
+async def test_registration_search_marks_existing_accounts_and_hides_inventory_ids(monkeypatch):
+    monkeypatch.setattr(handlers.config_module, "WEB_SELF_REGISTRATION_ENABLED", True)
+    monkeypatch.setattr(inventory_directory, "registration_search_enabled", lambda: True)
+    reset_rate_limits()
+    candidates = inventory_directory.RegistrationPeople(people=[
+        {"full_name": "Петров Иван", "department": "Юридический отдел", "has_agent": True,
+         "inventory_person_id": uuid.uuid4()},
+        {"full_name": "Петров Пётр", "department": "ИТ", "has_agent": False},
+    ], refine=True)
+    async def mark(people):
+        people[0].registered = True
+    monkeypatch.setattr(inventory_directory, "search_registration_people", AsyncMock(return_value=candidates))
+    monkeypatch.setattr(inventory_handlers, "mark_registered_employees", mark)
+    path = "/api/web/session/registration-inventory-search"
+    app = web.Application(middlewares=[auth_middleware])
+    app.router.add_post(path, search_registration_inventory)
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(path, json={"query": "П"}, headers={"Origin": str(client.make_url("/").origin())})
+        assert response.status == 200
+        payload = (await response.json())["data"]
+        assert payload["refine"] is True
+        assert [row["registered"] for row in payload["people"]] == [True, False]
+        assert all(set(row) == {"full_name", "department", "has_agent", "registered"} for row in payload["people"])
+
+
+@pytest.mark.asyncio
+async def test_registration_search_does_not_offer_unchecked_accounts_when_database_is_unavailable(monkeypatch):
+    from sqlalchemy.exc import SQLAlchemyError
+    monkeypatch.setattr(handlers.config_module, "WEB_SELF_REGISTRATION_ENABLED", True)
+    monkeypatch.setattr(inventory_directory, "registration_search_enabled", lambda: True)
+    reset_rate_limits()
+    candidates = inventory_directory.RegistrationPeople(people=[
+        {"full_name":"Петров Иван", "department":"ИТ", "has_agent":False},
+    ])
+    monkeypatch.setattr(inventory_directory, "search_registration_people", AsyncMock(return_value=candidates))
+    monkeypatch.setattr(inventory_handlers, "mark_registered_employees", AsyncMock(side_effect=SQLAlchemyError("private error")))
+    path = "/api/web/session/registration-inventory-search"
+    app = web.Application(middlewares=[auth_middleware])
+    app.router.add_post(path, search_registration_inventory)
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(path, json={"query":"П"}, headers={"Origin":str(client.make_url("/").origin())})
+        assert response.status == 503
+        assert response.headers["Cache-Control"] == "no-store"
+        body = await response.json()
+        assert body["error"] == "Не удалось проверить учётные записи. Повторите поиск."
+        assert "people" not in body and "private" not in str(body)
 
 
 @pytest.mark.parametrize("field", ["actor_role", "person_id", "login", "location_id"])

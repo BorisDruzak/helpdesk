@@ -720,6 +720,10 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   Valid invitations preview and confirm one employee. The separate optional
   registration search in `web_api/inventory_handlers.py` reads bounded
   suggestions through `registry/inventory_directory.py` and grants no access.
+  `registry/registration_account_status.py` marks suggestions with existing
+  accounts using verified login aliases and inventory IDs or name/department;
+  the public response hides the private IDs. Registration lists up to five
+  matches and disables already registered employees.
 - The requester profile uses the projection for display. Ticket-device access
   and diagnostic authorization remain on their existing paths. See
   [staging integration](../../docs/HELPDESK_INVENTORY_STAGING.md).

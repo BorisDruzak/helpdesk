@@ -4,7 +4,7 @@ import { Input } from "../../components/ui/input";
 import { searchRegistrationEmployees, type RegistrationEmployee } from "./requester-registration";
 
 type SearchOutcome =
-  | { kind: "match"; employee: RegistrationEmployee }
+  | { kind: "match"; people: RegistrationEmployee[]; refine: boolean }
   | { kind: "ambiguous" | "missing" | "unavailable" | "manual" };
 
 const messages = {
@@ -29,8 +29,8 @@ export function useRegistrationEmployeeSearch(enabled: boolean) {
       try {
         const result = await searchRegistrationEmployees(query, controller.signal);
         if (controller.signal.aborted) return;
-        if (result.refine || result.people.length > 1) setOutcome({ kind: "ambiguous" });
-        else if (result.people.length === 1) setOutcome({ kind: "match", employee: result.people[0] });
+        if (result.people.length) setOutcome({ kind: "match", people: result.people, refine: result.refine });
+        else if (result.refine) setOutcome({ kind: "ambiguous" });
         else setOutcome({ kind: "missing" });
       } catch {
         if (!controller.signal.aborted) setOutcome({ kind: "unavailable" });
@@ -68,7 +68,11 @@ type Props = {
 
 export function RegistrationEmployeeSearch({ search, selected, onInput, onSelect }: Props) {
   const statusId = useId();
-  const match = search.outcome?.kind === "match" ? search.outcome.employee : null;
+  const matches = search.outcome?.kind === "match" ? search.outcome.people : [];
+  const searchMessage = search.status === "match"
+    ? search.outcome?.kind === "match" && search.outcome.refine ? "Показаны первые совпадения. Уточните ФИО или отдел, если нужного сотрудника нет в списке."
+      : "Выберите сотрудника. Если аккаунт уже создан, войдите в Helpdesk."
+    : messages[search.status];
 
   return (
     <div className="space-y-2">
@@ -82,16 +86,20 @@ export function RegistrationEmployeeSearch({ search, selected, onInput, onSelect
         {selected ? `${selected.department ? `${selected.department}. ` : ""}${selected.has_agent
             ? "Найден привязанный агент. Для доступа к компьютеру подтвердите запись приглашением или обратитесь в техподдержку."
             : "Привязанный агент не найден. Можно продолжить обычную регистрацию."}`
-          : search.status === "match" ? "Выберите найденного сотрудника." : messages[search.status]}
+          : searchMessage}
       </p>
-      {match && !selected ? (
+      {matches.length > 0 && !selected ? <ul className="space-y-2" aria-label="Найденные сотрудники">
+        {matches.map((match, index) => <li key={`${match.full_name}:${match.department}:${index}`}>
         <button type="button"
-          className="w-full break-words rounded-xl border px-3 py-2 text-left text-sm hover:bg-slate-50 focus-visible:outline-brand-600"
-          onClick={() => onSelect(match)}>
+          disabled={match.registered}
+          className="w-full break-words rounded-xl border px-3 py-2 text-left text-sm hover:bg-slate-50 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+          onClick={() => { if (!match.registered) onSelect(match); }}>
           <span className="block font-medium">{match.full_name}</span>
           {match.department ? <span className="text-slate-600">{match.department}</span> : null}
+          {match.registered ? <span className="mt-1 block font-medium">Аккаунт уже создан</span> : null}
         </button>
-      ) : null}
+        </li>)}
+      </ul> : null}
       {search.offerManualEntry && !selected ? (
         <button type="button" className="text-sm font-semibold text-brand-700 underline"
           onClick={search.enterManually}>Ввести ФИО вручную</button>

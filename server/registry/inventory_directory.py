@@ -30,6 +30,8 @@ class RegistrationEmployee(BaseModel):
     full_name: Label
     department: Label
     has_agent: bool
+    registered: bool = False
+    inventory_person_id: UUID | None = Field(default=None, exclude=True)
 
 
 class RegistrationPeople(BaseModel):

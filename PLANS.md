@@ -1,3 +1,14 @@
+# 2026-11-18 Registration search with multiple matches
+
+The registration wizard lists up to five matching employees and asks for a
+more specific name if further results exist. Existing Helpdesk accounts remain
+visible with "Аккаунт уже создан" and cannot be selected. Account hints use
+verified local login aliases; they do not approve inventory ownership.
+Verified with 13 component tests and 11 Chromium scenarios at widths 390,
+1366 and 1920, using fixture responses, plus TypeScript and a production build.
+Seventeen focused API/adapter tests, one isolated PostgreSQL regression and
+workspace verification passed. Live release acceptance remains separate.
+
 # 2026-11-16 Shared employee department catalog
 
 The requester and administrator profile forms use the active Helpdesk

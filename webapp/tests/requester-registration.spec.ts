@@ -1,9 +1,11 @@
 import { expect, test } from "playwright/test";
 
-test("registration suggests an employee and shows the assigned agent on mobile", async ({page}, info) => {
-  await page.setViewportSize({width:390,height:844});
+for (const viewport of [{width:390,height:844},{width:1366,height:768},{width:1920,height:1080}]) {
+test(`registration lists matches and disables existing accounts at ${viewport.width}`, async ({page}, info) => {
+  await page.setViewportSize(viewport);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
+  page.on("requestfailed", request => errors.push(request.url()));
   await page.route("**/api/web/session/**", async route => {
     switch (new URL(route.request().url()).pathname) {
       case "/api/web/session/capabilities":
@@ -16,8 +18,10 @@ test("registration suggests an employee and shows the assigned agent on mobile",
       case "/api/web/session/registration-inventory-search":
         expect(route.request().postDataJSON()).toEqual({query:"П"});
         return route.fulfill({json:{status:"success",data:{people:[{
-          full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:true,
-        }],refine:false}}});
+          full_name:"Петров Иван Сергеевич",department:"Юридический отдел",has_agent:true,registered:false,
+        },{
+          full_name:"Петров Иван Петрович",department:"Отдел информационных технологий",has_agent:false,registered:true,
+        }],refine:true}}});
       default:
         throw new Error("Unexpected session request");
     }
@@ -28,6 +32,11 @@ test("registration suggests an employee and shows the assigned agent on mobile",
   await expect(page.getByLabel("Фамилия",{exact:true})).toHaveCount(0);
   await search.fill("П");
   await expect(page.getByRole("button",{name:"Продолжить",exact:true})).toBeDisabled();
+  const registered = page.getByRole("button",{name:/Петров Иван Петрович.*Аккаунт уже создан/});
+  await expect(registered).toBeVisible();
+  await expect(registered).toBeDisabled();
+  await expect(page.getByText(/Показаны первые совпадения/)).toBeVisible();
+  await page.screenshot({path:info.outputPath("employee-matches.png"),fullPage:true});
   await page.getByRole("button",{name:/Петров Иван Сергеевич.*Юридический отдел/}).click();
   await expect(page.getByRole("status").filter({hasText:"Найден привязанный агент"})).toBeVisible();
   await expect(search).toHaveValue("Петров Иван Сергеевич");
@@ -39,6 +48,7 @@ test("registration suggests an employee and shows the assigned agent on mobile",
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
+}
 
 for (const viewport of [{width:1366,height:768},{width:1920,height:1080}]) {
   test(`registration opens manual fields after an empty search at ${viewport.width}`, async ({page}, info) => {

@@ -83,10 +83,17 @@ Helpdesk searches from the first letter of an employee name through
 `POST /api/web/session/registration-inventory-search`. The endpoint uses
 same-origin checks, IP rate limits and no-store responses. UI_VPN uses the
 employee directory and the name and department entered on unassigned PC cards.
-A unique result can fill the form without a patronymic or a department.
+A result can fill the form without a patronymic or a department.
 Only a confirmed assignment can indicate a confirmed Endpoint agent.
-The form starts with one employee search field. It offers a result for selection
-when exactly one employee matches and asks for more detail when several match.
+The form starts with one employee search field and shows up to five sorted
+matches, including multiple employees. A `refine` hint asks for more detail
+when further matches exist. Results with an existing Helpdesk account remain
+visible with `registered=true` and the disabled label "Аккаунт уже создан".
+`registry/registration_account_status.py` checks actual local accounts through
+verified login aliases, matching either the confirmed inventory employee ID or
+the normalized full name and department. This is an advisory duplicate hint;
+it never confirms ownership or grants device access. Private inventory employee
+IDs supplied by the service provider are excluded from the anonymous response.
 A selection fills the name and an unambiguous active Helpdesk department.
 An empty result or unavailable search opens manual name fields.
 An invitation or an administrator confirmation is still required for the

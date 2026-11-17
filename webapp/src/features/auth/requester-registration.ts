@@ -5,7 +5,7 @@ const ATTEMPT_KEY = "helpdesk.requester-registration.v1";
 export const REGISTRATION_LOGIN_KEY = "helpdesk.registration-completed-login";
 export type RegistrationAttempt = { request_id: string; user_login?: string; submission?: {names:RegistrationNames;profile:RequesterProfileUpdatePayload; requires_invitation?: boolean} };
 export type RegistrationOptions = { departments: Array<{value:string;label:string}>; profile_schema: RequesterProfileSchema; inventory_invitation_enabled?: boolean; inventory_search_enabled?: boolean };
-export type RegistrationEmployee = {full_name: string; department: string; has_agent: boolean};
+export type RegistrationEmployee = {full_name: string; department: string; has_agent: boolean; registered?: boolean};
 export type RegistrationInvitation = {full_name: string; department: string; department_id: string};
 export type RegistrationNames = { first_name: string; last_name: string; patronymic: string };
 

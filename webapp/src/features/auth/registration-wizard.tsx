@@ -130,6 +130,7 @@ export function RegistrationWizard({switchAccount}: {switchAccount:boolean}) {
     setErrors({});
   }
   function selectEmployee(match: RegistrationEmployee) {
+    if (match.registered) return;
     setEmployee(match);
     fillEmployeeName(match.full_name);
     const normalized = match.department.trim().normalize("NFC").toLowerCase();
