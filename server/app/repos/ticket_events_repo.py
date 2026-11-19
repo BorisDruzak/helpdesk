@@ -32,6 +32,7 @@ from app.db.models import (
 )
 from domain_ports.registry import RequesterRef, RequesterSnapshot, requester_persistence_values
 from tickets.statuses import ACTIVE_OPERATOR_STATUSES, TERMINAL_STATUSES
+from tickets.timer_projection import pending_sla_breaches
 from tickets.ticket_context import requester_legacy_scope_clause, requester_neutral_scope_clause
 from app.repos.ui_actor_memberships import ui_actor_membership_ids
 
@@ -1192,35 +1193,30 @@ class TicketEventsRepo:
     ) -> List[Ticket]:
         """
         Тикеты с истёкшим SLA (для watchdog).
-        Учитывает sla_paused_seconds: эффективный due = due_at + paused_seconds.
+        Использует время начала паузы и учитывает накопленные паузы.
         Исключает Resolved/Closed.
         """
-        # Выбираем тикеты не в терминальном статусе с due_at не NULL
         stmt = select(Ticket).where(
             and_(
                 Ticket.status.notin_(list(TERMINAL_STATUSES)),
                 or_(
-                    Ticket.first_response_due_at.isnot(None),
-                    Ticket.resolution_due_at.isnot(None),
+                    and_(
+                        Ticket.first_response_due_at.isnot(None),
+                        Ticket.first_response_at.is_(None),
+                        Ticket.first_response_breached_at.is_(None),
+                    ),
+                    and_(
+                        Ticket.resolution_due_at.isnot(None),
+                        Ticket.resolution_at.is_(None),
+                        Ticket.resolution_breached_at.is_(None),
+                    ),
                 ),
             )
         ).limit(limit * 2)  # берём с запасом, фильтр по времени в Python
         result = await self.session.execute(stmt)
         tickets = list(result.scalars().all())
         now = datetime.now(timezone.utc)
-        out = []
-        for t in tickets:
-            paused = t.sla_paused_seconds or 0
-            if t.first_response_due_at and t.first_response_at is None:
-                effective_fr = t.first_response_due_at + timedelta(seconds=paused)
-                if now >= effective_fr:
-                    out.append(t)
-                    continue
-            if t.resolution_due_at and t.resolution_at is None:
-                effective_res = t.resolution_due_at + timedelta(seconds=paused)
-                if now >= effective_res:
-                    out.append(t)
-        return out[:limit]
+        return [ticket for ticket in tickets if pending_sla_breaches(ticket, now)][:limit]
 
     async def get_tickets_auto_close_candidates(
         self,

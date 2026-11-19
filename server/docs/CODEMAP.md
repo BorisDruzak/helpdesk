@@ -85,6 +85,8 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   resolution. The queue and ticket detail use `tickets/timer_projection.py`
   so the remaining time includes earlier pauses and stays frozen while paused.
   An independent next-action deadline retains precedence in the workspace.
+- The SLA watchdog rechecks an eligible ticket under its row lock and evaluates
+  unfinished timers at the pause timestamp while SLA is frozen.
 - `web_api/support_handlers.py` locks status/ownership before take-in-work and
   public reply. Rejected replies write no event and do not finish first-response
   SLA. `web_api/dto/support.py` projects `actions.can_send_public_message`.

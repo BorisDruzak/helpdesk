@@ -23,6 +23,8 @@ from tickets.sla_service import (
     _sla_policy_metadata,
     _standalone_sla_policy_config,
 )
+from tickets.statuses import TERMINAL_STATUSES
+from tickets.timer_projection import pending_sla_breaches
 
 SLA_REMINDER_INTERVAL_SEC = 60 * 60  # 60 минут
 SLA_LAST_REMINDER_AT_KEY = "sla_last_reminder_at"
@@ -114,32 +116,14 @@ class TicketSlaWatchdog:
                 if not candidates:
                     return
 
-                now = datetime.now(timezone.utc)
-                for ticket in candidates:
+                for candidate in candidates:
+                    ticket_id = candidate.ticket_id
                     try:
-                        # Первый breach: проставить *_breached_at если ещё не проставлено
-                        updates = {}
-                        if (
-                            ticket.first_response_due_at
-                            and ticket.first_response_at is None
-                            and ticket.first_response_breached_at is None
-                        ):
-                            effective_fr = ticket.first_response_due_at + timedelta(
-                                seconds=ticket.sla_paused_seconds or 0
-                            )
-                            if now >= effective_fr:
-                                updates["first_response_breached_at"] = now
-                        if (
-                            ticket.resolution_due_at
-                            and ticket.resolution_at is None
-                            and ticket.resolution_breached_at is None
-                        ):
-                            effective_res = ticket.resolution_due_at + timedelta(
-                                seconds=ticket.sla_paused_seconds or 0
-                            )
-                            if now >= effective_res:
-                                updates["resolution_breached_at"] = now
-
+                        ticket = await repo.get_ticket(ticket_id, for_update=True)
+                        if ticket is None or ticket.status in TERMINAL_STATUSES:
+                            continue
+                        now = datetime.now(timezone.utc)
+                        updates = pending_sla_breaches(ticket, now)
                         if updates:
                             await repo.update_ticket(ticket.ticket_id, **updates)
                             trace_id = str(uuid.uuid4())
@@ -204,7 +188,7 @@ class TicketSlaWatchdog:
                             )
                     except Exception as e:
                         logger.error(
-                            f"[TicketSlaWatchdog] Error processing ticket {ticket.ticket_id}: {e}",
+                            f"[TicketSlaWatchdog] Error processing ticket {ticket_id}: {e}",
                             exc_info=True,
                         )
 

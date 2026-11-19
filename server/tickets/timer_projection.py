@@ -9,6 +9,20 @@ def _aware_datetime(value: datetime | None) -> datetime | None:
     return value
 
 
+def pending_sla_breaches(ticket, now: datetime) -> dict[str, datetime]:
+    """Use the frozen clock for a paused SLA, including already elapsed time."""
+    cutoff = _aware_datetime(getattr(ticket, "sla_paused_at", None)) or now
+    paused = timedelta(seconds=max(0, int(getattr(ticket, "sla_paused_seconds", None) or 0)))
+    breaches = {}
+    for metric in ("first_response", "resolution"):
+        due = _aware_datetime(getattr(ticket, f"{metric}_due_at", None))
+        completed = getattr(ticket, f"{metric}_at", None)
+        marker = f"{metric}_breached_at"
+        if due is not None and completed is None and getattr(ticket, marker, None) is None and due + paused <= cutoff:
+            breaches[marker] = now
+    return breaches
+
+
 def _ticket_timer_status(
     due_at: datetime | None,
     *,
