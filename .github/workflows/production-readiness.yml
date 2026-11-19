@@ -51,7 +51,9 @@ jobs:
       - run: pnpm --dir webapp install --frozen-lockfile
       - run: pnpm --dir webapp exec playwright install --with-deps chromium
       - name: Compile committed Python
-        run: python -m compileall -q server scripts shared
+        run: python -m compileall -q server scripts shared mcp_helpdesk_operator
+      - name: Verify Helpdesk operator MCP transport
+        run: python -m pytest -q mcp_helpdesk_operator/tests
       - name: Canonical full CI with isolated PostgreSQL and fresh migrations
         run: python scripts/run_ci_suite.py --workspace "$GITHUB_WORKSPACE"
       - name: Upload exact-SHA full CI and web bundle

@@ -1,6 +1,7 @@
 # Canonical Helpdesk CI environment.
 
 -r server/requirements.txt
+-r mcp_helpdesk_operator/requirements.txt
 
 aiohttp
 alembic
