@@ -81,6 +81,10 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   available through explicit advanced functions. Terminal public conversations
   omit the unusable editor while authorized internal notes retain drafts.
 - `tickets/smart_views.py` adds server-side operational views before queue limits.
+- Support queue rows expose `sla_timer` for the outstanding first response or
+  resolution. The queue and ticket detail use `tickets/timer_projection.py`
+  so the remaining time includes earlier pauses and stays frozen while paused.
+  An independent next-action deadline retains precedence in the workspace.
 - `web_api/support_handlers.py` locks status/ownership before take-in-work and
   public reply. Rejected replies write no event and do not finish first-response
   SLA. `web_api/dto/support.py` projects `actions.can_send_public_message`.

@@ -9,7 +9,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import cmp_to_key
-from typing import Any
+from typing import Any, Literal
 
 from aiohttp import web
 from loguru import logger
@@ -676,7 +676,9 @@ def _support_dispatch_device_id(ticket: object) -> str:
     return str(resolve_ticket_diagnostic_target(ticket).dispatch_device_id or "").strip()
 
 
-def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
+def _build_ticket_item(
+    ticket_data: dict, *, sla_timer: SupportTicketTimerPayload | None = None,
+) -> SupportQueueTicketItem:
     unread_messages = int(ticket_data.get("support_unread_user_messages") or 0)
     return SupportQueueTicketItem(
         ticket_id=str(ticket_data.get("ticket_id") or ""),
@@ -693,6 +695,7 @@ def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
         first_response_at=ticket_data.get("first_response_at"),
         first_response_due_at=ticket_data.get("first_response_due_at"),
         resolution_due_at=ticket_data.get("resolution_due_at"),
+        sla_timer=sla_timer,
         status_reason=ticket_data.get("status_reason"),
         priority=ticket_data.get("priority"),
         priority_class=ticket_data.get("priority_class"),
@@ -733,28 +736,30 @@ def _ticket_timer_payload(ticket, **kwargs) -> SupportTicketTimerPayload:
     return SupportTicketTimerPayload(**project_ticket_timer(ticket, **kwargs))
 
 
+def _support_sla_timer(
+    ticket, metric: Literal["first_response", "resolution"], now: datetime,
+) -> SupportTicketTimerPayload:
+    completed_attr = "first_response_at"
+    if metric == "resolution":
+        completed_attr = None
+        if getattr(ticket, "status", None) in {"resolved", "closed"}:
+            completed_attr = "resolution_at" if getattr(ticket, "resolution_at", None) is not None else "resolved_at"
+    return _ticket_timer_payload(
+        ticket,
+        due_attr=f"{metric}_due_at",
+        breached_attr=f"{metric}_breached_at",
+        paused_attr="sla_paused_at",
+        paused_seconds_attr="sla_paused_seconds",
+        completed_attr=completed_attr,
+        now=now,
+    )
+
+
 def _build_support_sla_ola_payload(ticket, now: datetime | None = None) -> SupportTicketSlaOlaPayload:
     now = _aware_datetime(now) or datetime.now(timezone.utc)
     return SupportTicketSlaOlaPayload(
-        first_response=_ticket_timer_payload(
-            ticket,
-            due_attr="first_response_due_at",
-            breached_attr="first_response_breached_at",
-            paused_attr="sla_paused_at",
-            paused_seconds_attr="sla_paused_seconds",
-            completed_attr="first_response_at",
-            now=now,
-        ),
-        resolution=_ticket_timer_payload(
-            ticket,
-            due_attr="resolution_due_at",
-            breached_attr="resolution_breached_at",
-            paused_attr="sla_paused_at",
-            paused_seconds_attr="sla_paused_seconds",
-            completed_attr=("resolution_at" if getattr(ticket, "resolution_at", None) is not None else "resolved_at")
-            if getattr(ticket, "status", None) in {"resolved", "closed"} else None,
-            now=now,
-        ),
+        first_response=_support_sla_timer(ticket, "first_response", now),
+        resolution=_support_sla_timer(ticket, "resolution", now),
         ola_ack=_ticket_timer_payload(
             ticket,
             due_attr="ola_ack_due_at",
@@ -1046,6 +1051,7 @@ async def _load_support_queue_state(
 
     accessible_entries: list[tuple[dict, SupportQueueTicketItem]] = []
     take_projector = _SupportTakeProjector(session, repo, auth_context)
+    now = datetime.now(timezone.utc)
     for ticket in tickets:
         ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
         _apply_support_workspace_visibility(ticket_data, ticket)
@@ -1064,7 +1070,13 @@ async def _load_support_queue_state(
             }
         )
         ticket_data["take_in_work"] = (await take_projector.project(ticket)).model_dump()
-        accessible_entries.append((ticket_data, _build_ticket_item(ticket_data)))
+        metric = (
+            "first_response"
+            if ticket_data.get("first_response_due_at") and not ticket_data.get("first_response_at")
+            else "resolution"
+        )
+        item = _build_ticket_item(ticket_data, sla_timer=_support_sla_timer(ticket, metric, now))
+        accessible_entries.append((ticket_data, item))
 
     return SupportQueueState(
         active_queues=active_queues,

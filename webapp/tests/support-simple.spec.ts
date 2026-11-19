@@ -325,6 +325,45 @@ test("waiting for the requester sends a separate public message with the status"
   expect(errors).toEqual([]);
 });
 
+test("queue shows paused SLA separately from a real breach", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("response", response => {
+    if (response.url().includes("/api/web/support/queue") && response.status() >= 400) {
+      errors.push(`Queue HTTP ${response.status()}`);
+    }
+  });
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.route("**/api/web/notifications/unread_count", route => route.fulfill({ json: { status: "ok", unread_count: 0 } }));
+  await login(page);
+  const due = new Date(Date.now() - 90 * 60_000).toISOString();
+  await page.route(/\/api\/web\/support\/queue(?:\?|$)/, async route => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    if (payload.data.tickets.length < 2) {
+      await route.fulfill({ response, json: payload });
+      return;
+    }
+    payload.data.tickets.slice(0, 2).forEach((row: Record<string, unknown>, index: number) => {
+      Object.assign(row, {
+        status: index === 0 ? "waiting_on_user" : "in_progress",
+        status_label: index === 0 ? "Ожидает пользователя" : "В работе",
+        next_action_due_at: null,
+        first_response_at: due,
+        resolution_due_at: due,
+        sla_timer: { due_at: due, remaining_seconds: index === 0 ? 3690 : -900, status: index === 0 ? "paused" : "breached" },
+      });
+    });
+    await route.fulfill({ response, json: payload });
+  });
+
+  await page.goto("/app/tickets/ticket-1");
+  const queue = page.locator(".simple-queue");
+  await expect(queue.getByText("На паузе · 1 ч 01 мин", { exact: true })).toBeVisible();
+  await expect(queue.getByText("Просрочено на 15 мин", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("explicit confirmation policy keeps separate resolution without a completion flag", async ({ page }) => {
   let currentStatus = "in_progress";
   const commands: unknown[] = [];

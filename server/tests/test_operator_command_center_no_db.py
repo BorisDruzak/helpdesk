@@ -6,7 +6,7 @@ import pytest
 
 from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.support import SupportQueueTicketItem
-from web_api.support_handlers import _build_ticket_item
+from web_api.support_handlers import _build_support_sla_ola_payload, _build_ticket_item, _support_sla_timer
 
 
 def item(ticket_id: str, title: str, **overrides) -> SupportQueueTicketItem:
@@ -34,6 +34,28 @@ def item(ticket_id: str, title: str, **overrides) -> SupportQueueTicketItem:
     }
     data.update(overrides)
     return SupportQueueTicketItem(**data)
+
+
+@pytest.mark.no_db
+def test_queue_and_ticket_detail_use_the_same_paused_sla():
+    now = datetime(2026, 5, 19, 14, 22, tzinfo=timezone.utc)
+    due_at = now - timedelta(minutes=88)
+    ticket = SimpleNamespace(
+        created_at=due_at - timedelta(hours=3),
+        status="waiting_on_user",
+        resolution_due_at=due_at,
+        sla_paused_at=now - timedelta(minutes=4),
+        sla_paused_seconds=8740,
+    )
+    queue_item = _build_ticket_item(
+        {"status": ticket.status, "resolution_due_at": due_at.isoformat()},
+        sla_timer=_support_sla_timer(ticket, "resolution", now),
+    )
+    detail_timer = _build_support_sla_ola_payload(ticket, now).resolution
+
+    assert queue_item.sla_timer == detail_timer
+    assert detail_timer.status == "paused"
+    assert detail_timer.remaining_seconds == 3700
 
 
 @pytest.mark.no_db

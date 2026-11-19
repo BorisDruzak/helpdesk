@@ -71,6 +71,17 @@ class SupportTakeInWorkAvailability(BaseModel):
     reason: str | None = None
 
 
+class SupportTicketTimerPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    due_at: str | None = None
+    remaining_seconds: int | None = None
+    target_seconds: int | None = None
+    completed_at: str | None = None
+    completed_within_target: bool | None = None
+    status: str = "unknown"
+
+
 class SupportQueueTicketItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +99,7 @@ class SupportQueueTicketItem(BaseModel):
     first_response_at: str | None = None
     first_response_due_at: str | None = None
     resolution_due_at: str | None = None
+    sla_timer: SupportTicketTimerPayload | None = None
     status_reason: str | None
     priority: str | None = None
     priority_class: str | None = None
@@ -1323,17 +1335,6 @@ class SupportTicketKnowledgeSuggestionsPayload(BaseModel):
     requester_attempts: list[SupportKnowledgeRequesterAttempt] = Field(default_factory=list)
     ai_summary: SupportKnowledgeAiSummary = Field(default_factory=SupportKnowledgeAiSummary)
     diagnostics: SupportKnowledgeDiagnostics = Field(default_factory=SupportKnowledgeDiagnostics)
-
-
-class SupportTicketTimerPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    due_at: str | None = None
-    remaining_seconds: int | None = None
-    target_seconds: int | None = None
-    completed_at: str | None = None
-    completed_within_target: bool | None = None
-    status: str = "unknown"
 
 
 class SupportTicketSlaOlaPayload(BaseModel):

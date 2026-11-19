@@ -129,6 +129,62 @@ describe("mapWorkspaceTools", () => {
 });
 
 describe("mapWorkspaceTicketItems", () => {
+  it("freezes the SLA countdown while waiting for a requester", () => {
+    const queue = queuePayload();
+    Object.assign(queue.tickets[0], {
+      status: "waiting_on_user",
+      next_action_owner: "requester",
+      next_action_due_at: null,
+      first_response_at: "2026-05-05T08:00:00+05:00",
+      resolution_due_at: "2026-05-05T08:30:00+05:00",
+      sla_timer: {
+        due_at: "2026-05-05T08:30:00+05:00",
+        remaining_seconds: 3690,
+        status: "paused",
+      },
+    });
+
+    const [ticket] = mapWorkspaceTicketItems(queue, "ticket-1", NOW);
+
+    expect(ticket.nextDueLabel).toBe("На паузе · 1 ч 01 мин");
+    expect(ticket.slaRisk).toBe(false);
+  });
+
+  it("shows an actual SLA breach from the server", () => {
+    const queue = queuePayload();
+    Object.assign(queue.tickets[0], {
+      next_action_due_at: null,
+      first_response_at: "2026-05-05T08:00:00+05:00",
+      resolution_due_at: "2026-05-05T08:30:00+05:00",
+      sla_timer: {
+        due_at: "2026-05-05T08:30:00+05:00",
+        remaining_seconds: -900,
+        status: "breached",
+      },
+    });
+
+    const [ticket] = mapWorkspaceTicketItems(queue, "ticket-1", NOW);
+
+    expect(ticket.nextDueLabel).toBe("Просрочено на 15 мин");
+    expect(ticket.slaRisk).toBe(true);
+  });
+
+  it("keeps a separate next-action deadline while SLA is paused", () => {
+    const queue = queuePayload();
+    const row = queue.tickets[0];
+    row.sla_timer = {
+      due_at: "2026-05-05T08:30:00+05:00",
+      remaining_seconds: 3690,
+      target_seconds: 10800,
+      status: "paused",
+    };
+
+    const [ticket] = mapWorkspaceTicketItems(queue, "ticket-1", NOW);
+
+    expect(ticket.nextDueLabel).toBe("28 мин");
+    expect(ticket.slaRisk).toBe(true);
+  });
+
   it("uses SLA due dates when compact queue payload has no next action due date", () => {
     const queue = queuePayload();
     queue.tickets[0].next_action_due_at = null;

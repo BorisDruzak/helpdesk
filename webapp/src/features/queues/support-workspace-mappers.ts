@@ -320,6 +320,16 @@ function timerTone(status: SupportWorkspaceTimer["status"]): TicketBadgeTone {
   return "neutral";
 }
 
+function formatTimerRemaining(seconds: number | null, status: SupportWorkspaceTimer["status"]): string {
+  if (status === "paused") {
+    return seconds !== null && seconds >= 0 ? `На паузе · ${formatRemainingSeconds(seconds)}` : "На паузе";
+  }
+  if (status === "breached" && (seconds === null || seconds >= 0)) {
+    return "Просрочено";
+  }
+  return formatRemainingSeconds(seconds);
+}
+
 const activeOperationStatuses = new Set(["accepted", "in_progress", "queued", "running", "sent", "waiting_consent"]);
 
 function operationStatusLabel(status: string | null | undefined): string {
@@ -481,9 +491,14 @@ export function mapWorkspaceTicketItems(
       statusReason: ticket.status_reason,
     });
     const firstResponseDueAt = ticket.first_response_at ? null : ticket.first_response_due_at;
-    const dueAt = ticket.next_action_due_at || firstResponseDueAt || ticket.resolution_due_at || null;
-    const remainingSeconds = secondsUntil(dueAt, now);
-    const status = timerStatus(remainingSeconds);
+    const nextActionDueAt = ticket.first_response_at && ticket.next_action_due_at === ticket.first_response_due_at
+      ? null
+      : ticket.next_action_due_at;
+    const sla = ticket.sla_timer;
+    const useSla = sla && (!nextActionDueAt || nextActionDueAt === sla.due_at);
+    const dueAt = nextActionDueAt || firstResponseDueAt || ticket.resolution_due_at || null;
+    const remainingSeconds = useSla ? sla.remaining_seconds ?? null : secondsUntil(dueAt, now);
+    const status = useSla ? normalizeTimerPayloadStatus(sla.status) : timerStatus(remainingSeconds);
     const priority = normalizePriority(ticket.priority_class ?? ticket.priority);
     return {
       id: ticket.ticket_id,
@@ -498,7 +513,7 @@ export function mapWorkspaceTicketItems(
       assigneeLabel: ticket.assignee_display_name ?? ticket.assignee_id ?? "Не назначен",
       updatedLabel: formatDateTime(ticket.updated_at ?? ticket.created_at),
       unread: ticket.unread_user_messages > 0,
-      nextDueLabel: formatRemainingSeconds(remainingSeconds),
+      nextDueLabel: formatTimerRemaining(remainingSeconds, status),
       slaRisk: status === "at_risk" || status === "breached",
       hiddenFromWorkspace: Boolean(ticket.hidden_from_workspace),
       archivedAt: ticket.archived_at ?? null,
@@ -551,7 +566,8 @@ function buildCompactTimer(
     label,
     dueAt: timer.due_at ?? null,
     remainingSeconds,
-    remainingLabel: completed ? (key === "first_response" ? "Ответ получен" : "Завершено") : formatRemainingSeconds(remainingSeconds),
+    remainingLabel: completed ? (key === "first_response" ? "Ответ получен" : "Завершено")
+      : formatTimerRemaining(remainingSeconds, normalizeTimerPayloadStatus(timer.status)),
     status: completed && timer.completed_within_target === false ? "completed_late" : normalizeTimerPayloadStatus(timer.status),
     progress: completed ? 100 : progress,
     completedAt: timer.completed_at ?? null,
@@ -581,10 +597,12 @@ export function mapNextAction(
   const nextActionDueAt =
     firstResponseSatisfied && ticket.next_action_due_at === ticket.first_response_due_at ? null : ticket.next_action_due_at;
   const firstResponseDueAt = firstResponseSatisfied ? null : ticket.first_response_due_at;
-  const dueAt = nextActionDueAt || firstResponseDueAt || ticket.resolution_due_at || null;
-  const remainingSeconds = secondsUntil(dueAt, now);
-  const status = timerStatus(remainingSeconds);
-  const timerType = timers.some((timer) => timer.key.startsWith("ola") && timer.dueAt === dueAt) ? "ola" : dueAt ? "sla" : "none";
+  const sla = timers.find((timer) => timer.key === (firstResponseDueAt ? "first_response" : "resolution"));
+  const dueAt = nextActionDueAt || (sla ? sla.dueAt : firstResponseDueAt || ticket.resolution_due_at) || null;
+  const selectedTimer = timers.find((timer) => dueAt && timer.dueAt === dueAt);
+  const remainingSeconds = selectedTimer ? selectedTimer.remainingSeconds : secondsUntil(dueAt, now);
+  const status = selectedTimer ? selectedTimer.status : timerStatus(remainingSeconds);
+  const timerType = selectedTimer?.key.startsWith("ola") ? "ola" : dueAt ? "sla" : "none";
   const presentation = getTicketStatusPresentation({
     status: ticket.status,
     statusLabel: ticket.status_label,
@@ -603,7 +621,7 @@ export function mapNextAction(
     hint,
     dueAt,
     remainingSeconds,
-    remainingLabel: formatRemainingSeconds(remainingSeconds),
+    remainingLabel: formatTimerRemaining(remainingSeconds, status),
     timerType,
     tone: timerTone(status),
   };

@@ -65,6 +65,7 @@ export type SupportQueuePayload = {
     first_response_at?: string | null;
     first_response_due_at?: string | null;
     resolution_due_at?: string | null;
+    sla_timer?: SupportTicketSlaOlaTimerPayload | null;
     status_reason?: string | null;
     priority?: string | null;
     priority_class?: string | null;

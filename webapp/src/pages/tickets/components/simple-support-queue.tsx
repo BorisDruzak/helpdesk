@@ -32,7 +32,7 @@ export function SimpleSupportQueue(props: SimpleSupportQueueProps) {
       <strong><span>{ticket.code}</span>{ticket.unread ? <span className="simple-queue__mini-unread" aria-label="Есть непрочитанные сообщения" title="Есть непрочитанные сообщения" /> : ticket.active ? <Check size={12} aria-hidden /> : null}</strong>
       <span className="simple-queue__mini-subject">{ticket.subject}</span>
       <span className="simple-badge" data-tone={ticket.statusTone}>{ticket.statusLabel}</span>
-      <span className="simple-queue__mini-sla" data-risk={ticket.slaRisk} data-overdue={ticket.nextDueLabel.startsWith("Просрочено")} data-empty={ticket.nextDueLabel === "Нет срока"}><Clock3 size={11} aria-hidden />{ticket.slaRisk ? ticket.nextDueLabel.startsWith("Просрочено") ? "SLA нарушен" : "SLA скоро срок" : ticket.nextDueLabel === "Нет срока" ? "SLA: нет данных" : "SLA в норме"}</span>
+      <span className="simple-queue__mini-sla" data-risk={ticket.slaRisk} data-overdue={ticket.nextDueLabel.startsWith("Просрочено")} data-empty={ticket.nextDueLabel === "Нет срока"}><Clock3 size={11} aria-hidden />{ticket.slaRisk ? ticket.nextDueLabel.startsWith("Просрочено") ? "SLA нарушен" : "SLA скоро срок" : ticket.nextDueLabel === "Нет срока" ? "SLA: нет данных" : ticket.nextDueLabel.startsWith("На паузе") ? "SLA на паузе" : "SLA в норме"}</span>
     </button>)}</div>
   </section>;
   return <section className={`simple-queue${compact ? " simple-queue--compact" : ""}`} aria-label={compact ? "Моя рабочая очередь" : "Очередь обращений"}>
