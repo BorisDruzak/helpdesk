@@ -43,6 +43,7 @@ def remote_install_command(
     release_id: str | None = None,
     archive_sha256: str | None = None,
     expected_current_sha: str | None = None,
+    expected_current_release_id: str | None = None,
 ) -> str:
     release = release_path(profile, commit, release_id=release_id)
     deployment_root = Path(profile.root).parent.as_posix()
@@ -64,10 +65,18 @@ def remote_install_command(
     )
     digest_check = []
     current_check = []
+    if expected_current_release_id is not None and expected_current_sha is None:
+        raise ValueError("expected current release ID requires an exact SHA")
     if expected_current_sha is not None:
         if not re.fullmatch(r"[0-9a-f]{40}", expected_current_sha):
             raise ValueError("expected current release must be an exact SHA")
-        current_check = [f'test "$(sudo readlink -f {profile.root})" = {release_path(profile, expected_current_sha)}']
+        expected_release = release_path(profile, expected_current_sha, release_id=expected_current_release_id)
+        current_check = [f'test "$(sudo readlink -f {profile.root})" = {expected_release}']
+        if expected_current_release_id is not None:
+            code = 'import json, sys; sys.exit(json.load(open(sys.argv[1], encoding="utf-8")).get("helpdesk_git_sha") != sys.argv[2])'
+            current_check.append(
+                f"python3 -I -c {shlex.quote(code)} {shlex.quote(expected_release + '/release-identity.json')} {expected_current_sha}"
+            )
     if archive_sha256 is not None:
         if not re.fullmatch(r"[0-9a-f]{64}", archive_sha256):
             raise ValueError("release archive digest must be SHA-256")
@@ -185,6 +194,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", help="Committed Git revision to deploy (defaults to HEAD).")
     parser.add_argument("--expected-current-sha", help="Refuse activation if another release replaced this exact current SHA.")
+    parser.add_argument(
+        "--expected-current-release-id",
+        help="Exact installed directory identifier when it differs from the SHA, such as <sha>-ci.",
+    )
     parser.add_argument("--remote", help="SSH destination override.")
     parser.add_argument("--environment-file", type=Path, help="Reviewed local production config, never archived")
     parser.add_argument("--risk-audit", type=Path)
@@ -278,8 +291,13 @@ def main() -> None:
         [
             *_ssh_base(profile),
             remote,
-            remote_install_command(profile, commit, remote_archive, release_id=release_id, archive_sha256=archive_sha256,
-                **({"expected_current_sha": args.expected_current_sha} if getattr(args, "expected_current_sha", None) else {})),
+            remote_install_command(
+                profile, commit, remote_archive, release_id=release_id, archive_sha256=archive_sha256,
+                **({"expected_current_sha": args.expected_current_sha}
+                   if getattr(args, "expected_current_sha", None) else {}),
+                **({"expected_current_release_id": args.expected_current_release_id}
+                   if getattr(args, "expected_current_release_id", None) else {}),
+            ),
         ],
         cwd=WORKSPACE,
         check=True,

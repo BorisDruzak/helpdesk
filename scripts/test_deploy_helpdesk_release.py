@@ -18,6 +18,27 @@ def test_expected_current_release_is_checked_before_stopping_staging_services():
     assert command.startswith("set -eu ; sudo flock --exclusive --timeout 300 /run/lock/helpdesk-staging.service.deploy.lock bash -c ")
 
 
+def test_expected_current_ci_release_checks_selector_and_identity():
+    from scripts.helpdesk_remote_profile import RemoteProfile
+
+    profile = RemoteProfile.from_environment({
+        "HELPDESK_REMOTE_ROOT": "/opt/helpdesk-staging/current",
+        "HELPDESK_SERVER_SERVICE": "helpdesk-staging.service",
+        "HELPDESK_CONTROL_SERVICE": "",
+    })
+    previous = "1" * 40
+    ci_release = previous + "-ci"
+    command = remote_install_command(
+        profile, "2" * 40, "/tmp/candidate.tar",
+        expected_current_sha=previous, expected_current_release_id=ci_release,
+    )
+    release = f"/opt/helpdesk-staging/releases/helpdesk-{ci_release}"
+    assert command.count(f'test "$(sudo readlink -f {profile.root})" = {release}') == 3
+    assert command.count(f"{release}/release-identity.json") == 3
+    assert command.count('helpdesk_git_sha') == 3
+    assert command.rindex('helpdesk_git_sha') < command.index('sudo ln -sfn')
+
+
 def test_remote_install_lock_serializes_competing_selector_changes(tmp_path):
     import shutil
     import subprocess
