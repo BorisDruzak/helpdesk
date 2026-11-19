@@ -539,10 +539,15 @@ async def test_operator_stdio_reads_and_advances_fixture_through_real_helpdesk(
 
 
 @pytest.mark.asyncio
-async def test_operator_device_and_attachment_are_bound_to_the_ticket(test_client, test_engine, monkeypatch, tmp_path):
+@pytest.mark.parametrize("inventory_lease_seconds", [None, 60, -60], ids=["manual", "inventory", "expired-inventory"])
+async def test_operator_device_and_attachment_are_bound_to_the_ticket(
+    test_client, test_engine, monkeypatch, tmp_path, inventory_lease_seconds,
+):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
+    from app.db.models import RegistryInventoryLink, RegistryPersonIdentity
+    from app.repos.inventory_binding_authority import INVENTORY_ACTIVE, INVENTORY_SOURCE
     from auth import middleware as auth_middleware
     from domain_ports.endpoint import EndpointDeviceProjection, EndpointDeviceRef
     from uploads import handlers as upload_handlers
@@ -554,6 +559,18 @@ async def test_operator_device_and_attachment_are_bound_to_the_ticket(test_clien
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
     person_id, device_id, endpoint_ref, artifact_id, other_artifact_id = (str(uuid.uuid4()) for _ in range(5))
     now = datetime.now(timezone.utc)
+    binding_fields = {}
+    if inventory_lease_seconds is not None:
+        monkeypatch.setenv("HELPDESK_INVENTORY_BASE_URL", "https://inventory.example")
+        monkeypatch.setenv("HELPDESK_INVENTORY_AUTO_BIND_ENABLED", "true")
+        inventory_person_id, approval_id = str(uuid.uuid4()), str(uuid.uuid4())
+        requester_login = f"inventory-user-{uuid.uuid4().hex}"
+        binding_fields = {
+            "status": INVENTORY_ACTIVE,
+            "source": INVENTORY_SOURCE,
+            "inventory_verified_until": now + timedelta(seconds=inventory_lease_seconds),
+            "metadata_json": {"approval_id": approval_id, "inventory_person_id": inventory_person_id},
+        }
     async with maker() as session:
         ticket = await session.get(Ticket, ticket_id)
         ticket.requester_person_id = person_id
@@ -562,8 +579,21 @@ async def test_operator_device_and_attachment_are_bound_to_the_ticket(test_clien
             Device(device_id=device_id, protocol_version="3", agent_version="3", hostname="fixture-printer-host"),
         ])
         await session.flush()
+        if inventory_lease_seconds is not None:
+            session.add(UiUser(user_login=requester_login, password_hash="fixture", actor_role="user", is_active=True))
+            await session.flush()
+            session.add_all([
+                RegistryInventoryLink(
+                    person_id=person_id, inventory_person_id=inventory_person_id,
+                    approval_id=approval_id, user_login=requester_login, observed_at=now,
+                ),
+                RegistryPersonIdentity(
+                    person_id=person_id, provider="ui_login", identifier=requester_login,
+                    normalized_identifier=requester_login, verified=True, source="fixture",
+                ),
+            ])
         session.add_all([
-            DeviceUserBinding(person_id=person_id, device_id=device_id, confirmed_at=now),
+            DeviceUserBinding(person_id=person_id, device_id=device_id, confirmed_at=now, **binding_fields),
             RegistryEndpointDeviceMapping(device_id=device_id, endpoint_device_ref=endpoint_ref, verified_at=now),
             Artifact(artifact_id=artifact_id, ticket_id=ticket_id, original_name="screen.png", storage_path="screen.png",
                      mime_type="image/png", size_bytes=7, sha256=hashlib.sha256(b"fixture").hexdigest()),
@@ -583,8 +613,8 @@ async def test_operator_device_and_attachment_are_bound_to_the_ticket(test_clien
     ref = EndpointDeviceRef(external_id=endpoint_ref)
     read_device = AsyncMock(return_value=EndpointDeviceProjection(device=ref, display_name="Fixture printer host",
                                                                     retired=False, last_seen_at=now))
-    monkeypatch.setattr(operator_handlers.DomainPortContainer, "from_config", lambda: SimpleNamespace(
-        endpoint=SimpleNamespace(read_device=read_device),
+    monkeypatch.setattr(operator_handlers, "DomainPortContainer", SimpleNamespace(
+        from_config=lambda: SimpleNamespace(endpoint=SimpleNamespace(read_device=read_device)),
     ))
     headers = {"Authorization": f"Bearer {token}"}
     path = f"/api/web/support/tickets/{ticket_id}"
@@ -601,6 +631,20 @@ async def test_operator_device_and_attachment_are_bound_to_the_ticket(test_clien
     invalid = await test_client.post(f"{path}/diagnostic-device", headers=headers, json={"device_id": str(uuid.uuid4())})
     assert invalid.status == 409
     read_device.assert_not_awaited()
+
+    detail = await test_client.get(path, headers=headers)
+    assert detail.status == 200, await detail.text()
+    data = (await detail.json())["data"]
+    if inventory_lease_seconds == -60:
+        assert data["requester_devices"] == []
+        assert data["can_select_diagnostic_device"] is False
+        expired = await test_client.post(f"{path}/diagnostic-device", headers=headers, json={"device_id": device_id})
+        assert expired.status == 409
+        read_device.assert_not_awaited()
+        return
+
+    assert data["requester_devices"] == [{"device_id": device_id, "display_name": "fixture-printer-host"}]
+    assert data["can_select_diagnostic_device"] is True
     selected = await test_client.post(f"{path}/diagnostic-device", headers=headers, json={"device_id": device_id})
     assert selected.status == 200, await selected.text()
     assert (await selected.json())["data"]["diagnostic_device_ref"] == endpoint_ref

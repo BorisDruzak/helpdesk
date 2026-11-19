@@ -57,8 +57,9 @@ that Helpdesk origin's TLS certificate. Stdout is reserved for MCP messages.
   For `ask_user` the message and status commit together. For `resolve` Helpdesk
   enforces the closure policy and reports whether confirmation was requested.
 - If a diagnostic target is missing, `ticket_device_select` accepts a confirmed
-  requester device from `ticket_get`. An existing different target requires the
-  normal administrative mapping workflow.
+  requester device from `ticket_get`. An approved inventory assignment with a
+  current lease also qualifies. An existing different target requires the normal
+  administrative mapping workflow.
 - `ticket_tools`, `ticket_tool_run`, and `ticket_tool_result` reuse the published
   Endpoint Tools catalog, admission and result projection through Helpdesk.
   Run with the device reference, module key and version returned by the

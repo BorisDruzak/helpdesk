@@ -7,6 +7,8 @@
   for operator credentials in the shared ticket authorization path.
 - `web_api/operator_handlers.py` projects ticket actions and confirmed requester
   devices, reads ordered event pages, and persists verified diagnostic targets.
+  Device selection uses the Registry's active binding predicate, including
+  approved inventory assignments with a current lease.
   `uploads/handlers.py` delegates ticket-scoped attachments to the shared artifact
   authorization service.
 - `web_api/support_handlers.py` handles exact ticket lookup, replies and status

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from access_control.service import can
 from app.db import get_session
 from app.db.models import Device, DeviceUserBinding, RegistryEndpointDeviceMapping, RegistryPerson, TicketAdminAudit
+from app.repos.inventory_binding_authority import active_binding_condition
 from app.repos.registration_repo import _active_person_condition
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService, EndpointDeviceSnapshotV1
 from auth.context import AuthType
@@ -46,7 +47,7 @@ async def _confirmed_devices(session, ticket, *, selected_id: str | None = None)
         .join(Device, Device.device_id == DeviceUserBinding.device_id)
         .where(
             DeviceUserBinding.person_id == person_id,
-            DeviceUserBinding.status == "active",
+            active_binding_condition(),
             DeviceUserBinding.valid_to.is_(None),
             Device.deleted_at.is_(None),
             _active_person_condition(),
