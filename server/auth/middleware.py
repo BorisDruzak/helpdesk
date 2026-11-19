@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 import uuid
 import config
 from auth.context import AuthContext, AuthType
+from auth.operator_tokens import TOKEN_PREFIX, authenticate_operator
 from auth.service import AuthService
 from app.db import get_session
 from app.db.models import UiUserAudit
@@ -291,6 +292,8 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     token = web_session_token or extract_token_from_header(request)
     if not token:
         return None
+    if token.startswith(TOKEN_PREFIX):
+        return await authenticate_operator(request, token) if not web_session_token else None
     
     state = request.app.get('state')
     if not state:
@@ -513,7 +516,10 @@ async def auth_middleware(request: web.Request, handler):
         f"actor_id={auth_context.actor_id}, actor_role={auth_context.actor_role}"
     )
     
-    return await handler(request)
+    response = await handler(request)
+    if auth_context.auth_type == AuthType.OPERATOR_TOKEN and not response.prepared:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def require_auth(*allowed_roles: str):

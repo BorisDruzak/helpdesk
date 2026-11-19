@@ -213,6 +213,7 @@ from tickets.handlers import (
 from playbook_handlers import handle_start_playbook_run
 from websocket.ui_handler import websocket_ui_handler
 from uploads.handlers import handle_upload, handle_artifact_download
+from web_api.operator_handlers import handle_operator_ticket_device, handle_operator_ticket_events
 from static_pages.handlers import (
     handle_index,
     handle_admin_page,
@@ -635,7 +636,10 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/llm-context/preview', handle_web_support_ticket_llm_context_preview),
         web.get('/api/web/support/tickets/{ticket_id}/workspace', handle_web_support_ticket_workspace),
         web.get('/api/web/support/tickets/{ticket_id}/timeline', handle_web_support_ticket_timeline),
-        web.get('/api/web/support/tickets/{ticket_id}', handle_web_support_ticket_detail),
+        web.get('/api/web/support/tickets/{ticket_id}', handle_web_support_ticket_detail, name='operator_ticket_detail'),
+        web.get('/api/web/support/tickets/{ticket_id}/events', handle_operator_ticket_events, name='operator_ticket_events'),
+        web.get('/api/web/support/tickets/{ticket_id}/attachments/{artifact_id}', handle_artifact_download, name='operator_ticket_attachment'),
+        web.post('/api/web/support/tickets/{ticket_id}/diagnostic-device', handle_operator_ticket_device, name='operator_ticket_device'),
         web.get('/api/web/support/tickets/{ticket_id}/passport', handle_web_support_ticket_passport),
         web.post('/api/web/support/tickets/{ticket_id}/passport/generate', handle_web_support_ticket_passport_generate),
         web.patch('/api/web/support/tickets/{ticket_id}/passport', handle_web_support_ticket_passport_patch),
@@ -645,10 +649,10 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/passport/evidence', handle_web_support_ticket_passport_evidence),
         web.get('/api/web/support/tickets/{ticket_id}/diagnostics/overview', handle_web_support_ticket_diagnostics_overview),
         web.get('/api/web/support/tickets/{ticket_id}/diagnostics/capabilities', handle_ticket_diagnostics_capabilities),
-        web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools', handle_tool_catalog),
-        web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs', handle_tool_run_create),
+        web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools', handle_tool_catalog, name='operator_ticket_tool_catalog'),
+        web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs', handle_tool_run_create, name='operator_ticket_tool_run'),
         web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs', handle_tool_runs_list),
-        web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs/{run_id}', handle_tool_run_get),
+        web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs/{run_id}', handle_tool_run_get, name='operator_ticket_tool_result'),
         web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/runs/{run_id}/passport-evidence', handle_tool_attach),
         web.post('/api/web/support/tickets/{ticket_id}/endpoint-tools/collections', handle_tool_batch_create),
         web.get('/api/web/support/tickets/{ticket_id}/endpoint-tools/collections/{run_id}', handle_tool_batch_get),
@@ -672,9 +676,9 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/worklogs', handle_web_support_ticket_worklog),
         web.get('/api/web/support/tickets/{ticket_id}/tools', handle_web_support_ticket_tools),
         web.get('/api/web/support/tickets/{ticket_id}/playbooks', handle_web_support_ticket_playbooks),
-        web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message),
+        web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message, name='operator_ticket_reply'),
         web.post('/api/web/support/tickets/{ticket_id}/read', handle_ticket_mark_read),
-        web.post('/api/web/support/tickets/{ticket_id}/status', handle_web_support_change_status),
+        web.post('/api/web/support/tickets/{ticket_id}/status', handle_web_support_change_status, name='operator_ticket_status'),
         web.post('/api/web/support/tickets/{ticket_id}/assign', handle_web_support_assign_ticket),
         web.post('/api/web/support/tickets/{ticket_id}/queue', handle_web_support_change_queue),
         web.post('/api/web/support/tickets/{ticket_id}/priority', handle_web_support_change_priority),

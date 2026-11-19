@@ -22,6 +22,12 @@ evidence and fail-closed gate in
 The canonical diagnostic and cancellation contract is
 [server/docs/ENDPOINT_OPERATION_CONTRACT.md](../server/docs/ENDPOINT_OPERATION_CONTRACT.md).
 
+The operator MCP authenticates to Helpdesk with a revocable, expiring
+operator grant. It goes through the same ticket workflow and operation
+facade as the support workspace. Operator grants cover an explicit set of
+HTTP routes and remain subject to current staff permissions, queue access,
+and assignee checks. See the [operator HTTP contract](../mcp_helpdesk_operator/README.md).
+
 ## Diagnostic UI availability
 
 For an Endpoint-backed diagnostic, Helpdesk must not use the legacy inventory

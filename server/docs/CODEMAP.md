@@ -1,5 +1,21 @@
 # Helpdesk server code map
 
+## Helpdesk operator MCP
+
+- `auth/operator_tokens.py` checks the revocable grant file, live staff identity
+  and exact HTTP route scope. `tickets/handlers.py` checks queue membership
+  for operator credentials in the shared ticket authorization path.
+- `web_api/operator_handlers.py` projects ticket actions and confirmed requester
+  devices, reads ordered event pages, and persists verified diagnostic targets.
+  `uploads/handlers.py` delegates ticket-scoped attachments to the shared artifact
+  authorization service.
+- `web_api/support_handlers.py` handles exact ticket lookup, replies and status
+  commands. `tickets/transition_idempotency.py` persists replay receipts in the
+  same transaction and reads archived receipts. `tickets/operator_feed.py` defines
+  the events serialized per ticket before ID allocation.
+- `mcp_helpdesk_operator/server.py` is the stdio HTTP client. See the
+  [operator MCP setup and HTTP contract](../../mcp_helpdesk_operator/README.md).
+
 ## Credential-safe HTTP diagnostics
 
 - `observability/access_log.py` provides the path-only JSON logger wired by

@@ -1,3 +1,5 @@
+import asyncio
+import hashlib
 import uuid
 import json
 from datetime import datetime, timedelta, timezone
@@ -25,6 +27,7 @@ from app.db.models import (
     PlaybookVersion,
     HelpdeskPolicyAudit,
     RegistryAsset,
+    RegistryEndpointDeviceMapping,
     RegistryDepartment,
     RegistryLocation,
     RegistryPerson,
@@ -32,9 +35,11 @@ from app.db.models import (
     ReportingPolicy,
     SupportQueueSavedView,
     Ticket,
+    TicketAdminAudit,
     TicketApproval,
     TicketEvent,
     TicketNotification,
+    DeviceUserBinding,
     UiUser,
     UserConsentRequest,
 )
@@ -42,6 +47,7 @@ from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
+from auth.middleware import extract_auth_context as real_extract_auth_context
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from registry.registration_service import RegistrationService
 from registry.service import RegistryIngestionService
@@ -385,6 +391,228 @@ async def _seed_support_ticket(
         session.add(ticket)
         await session.commit()
         return ticket_id
+
+
+@pytest.mark.asyncio
+async def test_operator_ticket_lookup_reply_and_transition_are_scoped_and_retry_safe(
+    test_client, test_engine, monkeypatch, tmp_path,
+):
+    from auth import middleware as auth_middleware
+
+    monkeypatch.setattr(auth_middleware, "extract_auth_context", real_extract_auth_context)
+    ticket_id = await _seed_support_ticket(test_engine)
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket_code = ticket.ticket_code
+        outside_queue = await _seed_queue(session, code=f"outside_{uuid.uuid4().hex[:8]}", name="Outside", members=[])
+        other_ticket = Ticket(ticket_id=str(uuid.uuid4()), title="Other", description="", status="in_progress",
+                              assignee_id="support-test", queue_id=outside_queue.id)
+        session.add(other_ticket)
+        await session.commit()
+
+    fake_token = "hdo_" + "a" * 43
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    grants_file = tmp_path / "operator-grants.json"
+    grant = {"operator": "support-test", "sha256": hashlib.sha256(fake_token.encode()).hexdigest(),
+             "expires_at": expires_at.isoformat(), "scopes": ["tickets.read", "tickets.reply", "tickets.transition"]}
+    grants_file.write_text(json.dumps([grant]), encoding="utf-8")
+    monkeypatch.setenv("HELPDESK_OPERATOR_GRANTS_FILE", str(grants_file))
+    headers = {"Authorization": f"Bearer {fake_token}"}
+    base = f"/api/web/support/tickets/{ticket_id}"
+    lookup = await test_client.get(f"/api/web/support/tickets/{ticket_code.lower()}", headers=headers)
+    assert lookup.status == 200, await lookup.text()
+    detail = (await lookup.json())["data"]
+    assert detail["ticket"]["ticket_id"] == ticket_id
+    assert detail["ticket"]["assignee_id"] == "support-test"
+    assert "waiting_on_user" in {option["value"] for option in detail["actions"]["status_options"]}
+    assert (await test_client.get(f"/api/web/support/tickets/{other_ticket.ticket_id}", headers=headers)).status == 403
+    assert (await test_client.get(f"{base}/endpoint-tools", headers=headers)).status == 401
+    assert (await test_client.post(f"{base}/assign", headers=headers, json={})).status == 401
+
+    note = {"visibility": "internal", "text": "Private note", "message_id": str(uuid.uuid4())}
+    note_response = await test_client.post(f"{base}/messages", json=note, headers=headers)
+    assert note_response.status == 200, await note_response.text()
+    note_id = (await note_response.json())["data"]["message"]["event_id"]
+
+    transition = {"to_status": "waiting_on_user", "public_comment": "Which queue?", "operation_id": str(uuid.uuid4())}
+    first, retry = await asyncio.gather(*(
+        test_client.post(f"{base}/status", json=transition, headers=headers) for _ in range(2)
+    ))
+    assert first.status == retry.status == 200, (await first.text(), await retry.text())
+    assert (await first.json()) == (await retry.json())
+    changed = await test_client.post(f"{base}/status", json={**transition, "public_comment": "Different"}, headers=headers)
+    assert changed.status == 409
+    assert (await changed.json())["error_code"] == "TRANSITION_RETRY_PAYLOAD_CONFLICT"
+
+    page = await test_client.get(f"{base}/events?after={note_id}&limit=1", headers=headers)
+    assert page.status == 200, await page.text()
+    first_page = (await page.json())["data"]
+    assert first_page["has_more"] is True
+    assert [event["event_type"] for event in first_page["items"]] == ["status_changed"]
+    next_page = await test_client.get(f"{base}/events?after={first_page['next_cursor']}", headers=headers)
+    items = (await next_page.json())["data"]["items"]
+    assert len(items) == 1 and items[0]["text"] == "Which queue?"
+    async with maker() as session:
+        receipt = await session.scalar(select(TicketAdminAudit).where(
+            TicketAdminAudit.entity_id == ticket_id, TicketAdminAudit.action == "support_transition_receipt",
+        ))
+        assert receipt.actor_id == "support-test"
+        assert receipt.after_json["source"] == "helpdesk_operator"
+        assert "Which queue?" not in json.dumps(receipt.after_json)
+
+    grants_file.write_text("[]", encoding="utf-8")
+    assert (await test_client.get(base, headers=headers)).status == 401
+    grant["expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    grants_file.write_text(json.dumps([grant]), encoding="utf-8")
+    assert (await test_client.get(base, headers=headers)).status == 401
+
+
+@pytest.mark.asyncio
+async def test_operator_stdio_reads_and_advances_fixture_through_real_helpdesk(
+    test_client, test_engine, monkeypatch, tmp_path,
+):
+    pytest.importorskip("mcp")
+    import sys
+    from pathlib import Path
+
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    from auth import middleware as auth_middleware
+
+    monkeypatch.setattr(auth_middleware, "extract_auth_context", real_extract_auth_context)
+    ticket_id = await _seed_support_ticket(test_engine, status="queued", assignee_id=None)
+    async with async_sessionmaker(test_engine)() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket_code = ticket.ticket_code
+
+    token = "hdo_" + "s" * 43
+    token_file = tmp_path / "operator.token"
+    token_file.write_text(token, encoding="ascii")
+    grant_file = tmp_path / "grants.json"
+    grant_file.write_text(json.dumps([{
+        "operator": "support-test",
+        "sha256": hashlib.sha256(token.encode("ascii")).hexdigest(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        "scopes": ["tickets.read", "tickets.reply", "tickets.transition"],
+    }]), encoding="utf-8")
+    monkeypatch.setenv("HELPDESK_OPERATOR_GRANTS_FILE", str(grant_file))
+    parameters = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "mcp_helpdesk_operator.server"],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            "HELPDESK_OPERATOR_BASE_URL": str(test_client.make_url("/")),
+            "HELPDESK_OPERATOR_TOKEN_FILE": str(token_file),
+        },
+    )
+    async with stdio_client(parameters) as (reader, writer):
+        async with ClientSession(reader, writer) as client:
+            await client.initialize()
+
+            async def call(tool, arguments):
+                result = await client.call_tool(tool, arguments)
+                assert not result.isError, result.structuredContent
+                return result.structuredContent["data"]
+
+            detail = await call("ticket_get", {"ticket": ticket_code})
+            assert detail["ticket"]["ticket_id"] == ticket_id
+            assert detail["actions"]["take_in_work"]["allowed"] is True
+            started = await call("ticket_start", {"ticket": ticket_id, "operation_id": str(uuid.uuid4())})
+            assert started["status"] == "in_progress"
+            note = await call("ticket_reply", {
+                "ticket": ticket_id, "message_id": str(uuid.uuid4()),
+                "text": "Внутренняя заметка", "visibility": "internal",
+            })
+            assert note["message"]["visibility"] == "internal"
+            cursor = note["message"]["event_id"]
+            ask = {"ticket": ticket_id, "operation_id": str(uuid.uuid4()), "action": "ask_user", "text": "Укажите имя очереди."}
+            first = await call("ticket_transition", ask)
+            assert first["status"] == "waiting_on_user"
+            assert await call("ticket_transition", ask) == first
+            events = await call("ticket_events", {"ticket": ticket_id, "after": cursor})
+            assert [event["event_type"] for event in events["items"]] == ["status_changed", "chat_message"]
+            assert events["items"][1]["text"] == ask["text"]
+            assert events["next_cursor"] == events["items"][-1]["event_id"]
+            assert not events["has_more"]
+
+
+@pytest.mark.asyncio
+async def test_operator_device_and_attachment_are_bound_to_the_ticket(test_client, test_engine, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from auth import middleware as auth_middleware
+    from domain_ports.endpoint import EndpointDeviceProjection, EndpointDeviceRef
+    from uploads import handlers as upload_handlers
+    from web_api import operator_handlers
+
+    monkeypatch.setattr(auth_middleware, "extract_auth_context", real_extract_auth_context)
+    monkeypatch.setattr(upload_handlers, "UPLOAD_DIR", tmp_path)
+    ticket_id = await _seed_support_ticket(test_engine, status="queued", assignee_id=None)
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    person_id, device_id, endpoint_ref, artifact_id, other_artifact_id = (str(uuid.uuid4()) for _ in range(5))
+    now = datetime.now(timezone.utc)
+    async with maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.requester_person_id = person_id
+        session.add_all([
+            RegistryPerson(person_id=person_id, display_name="Fixture requester"),
+            Device(device_id=device_id, protocol_version="3", agent_version="3", hostname="fixture-printer-host"),
+        ])
+        await session.flush()
+        session.add_all([
+            DeviceUserBinding(person_id=person_id, device_id=device_id, confirmed_at=now),
+            RegistryEndpointDeviceMapping(device_id=device_id, endpoint_device_ref=endpoint_ref, verified_at=now),
+            Artifact(artifact_id=artifact_id, ticket_id=ticket_id, original_name="screen.png", storage_path="screen.png",
+                     mime_type="image/png", size_bytes=7, sha256=hashlib.sha256(b"fixture").hexdigest()),
+            Artifact(artifact_id=other_artifact_id, ticket_id=str(uuid.uuid4()), original_name="other.png",
+                     storage_path="screen.png", mime_type="image/png", size_bytes=7, sha256=hashlib.sha256(b"fixture").hexdigest()),
+        ])
+        await session.commit()
+    (tmp_path / "screen.png").write_bytes(b"fixture")
+    token = "hdo_" + "b" * 43
+    grant_file = tmp_path / "grant.json"
+    grant_file.write_text(json.dumps([{
+        "operator": "support-test", "sha256": hashlib.sha256(token.encode()).hexdigest(),
+        "expires_at": (now + timedelta(hours=1)).isoformat(),
+        "scopes": ["tickets.read", "tickets.transition", "diagnostics.run"],
+    }]), encoding="utf-8")
+    monkeypatch.setenv("HELPDESK_OPERATOR_GRANTS_FILE", str(grant_file))
+    ref = EndpointDeviceRef(external_id=endpoint_ref)
+    read_device = AsyncMock(return_value=EndpointDeviceProjection(device=ref, display_name="Fixture printer host",
+                                                                    retired=False, last_seen_at=now))
+    monkeypatch.setattr(operator_handlers.DomainPortContainer, "from_config", lambda: SimpleNamespace(
+        endpoint=SimpleNamespace(read_device=read_device),
+    ))
+    headers = {"Authorization": f"Bearer {token}"}
+    path = f"/api/web/support/tickets/{ticket_id}"
+    assert (await test_client.get(f"{path}/attachments/{other_artifact_id}", headers=headers)).status == 403
+    image = await test_client.get(f"{path}/attachments/{artifact_id}", headers={**headers, "Range": "bytes=0-99"})
+    assert image.status == 206 and await image.read() == b"fixture"
+    assert image.headers["Cache-Control"] == "no-store"
+
+    denied = await test_client.post(f"{path}/diagnostic-device", headers=headers, json={"device_id": device_id})
+    assert denied.status == 403
+    start = await test_client.post(f"{path}/status", headers=headers,
+                                   json={"to_status": "in_progress", "operation_id": str(uuid.uuid4())})
+    assert start.status == 200, await start.text()
+    invalid = await test_client.post(f"{path}/diagnostic-device", headers=headers, json={"device_id": str(uuid.uuid4())})
+    assert invalid.status == 409
+    read_device.assert_not_awaited()
+    selected = await test_client.post(f"{path}/diagnostic-device", headers=headers, json={"device_id": device_id})
+    assert selected.status == 200, await selected.text()
+    assert (await selected.json())["data"]["diagnostic_device_ref"] == endpoint_ref
+    repeated = await test_client.post(f"{path}/diagnostic-device", headers=headers, json={"device_id": device_id})
+    assert (await selected.json()) == (await repeated.json())
+    read_device.assert_awaited_once_with(ref)
+    resolution = await test_client.post(f"{path}/status", headers=headers, json={
+        "to_status": "resolved", "operation_id": str(uuid.uuid4()),
+        "resolution_code": "fixed_remote", "requester_resolution_summary": "Queue ready",
+    })
+    assert resolution.status == 200, await resolution.text()
+    assert (await resolution.json())["data"]["requester_confirmation_requested"] is True
 
 
 async def _grant_auditor_permissions(test_engine, permissions: list[str]) -> None:

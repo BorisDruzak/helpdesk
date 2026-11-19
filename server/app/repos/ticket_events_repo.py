@@ -216,6 +216,12 @@ class TicketEventsRepo:
                 )
                 return None
         
+        from tickets.operator_feed import OPERATOR_FEED_EVENT_TYPES
+
+        # IDs are allocated before commit. Serialize feed writes for each ticket
+        # so a lower event ID cannot become visible after a higher one.
+        if event_type in OPERATOR_FEED_EVENT_TYPES:
+            await self.session.execute(select(Ticket.ticket_id).where(Ticket.ticket_id == ticket_id).with_for_update())
         resolved_trace_id = await self.resolve_ticket_trace_id(
             ticket_id,
             trace_id=trace_id,
@@ -987,6 +993,10 @@ class TicketEventsRepo:
         
         return ticket
 
+    async def get_ticket_by_code(self, ticket_code: str) -> Optional[Ticket]:
+        result = await self.session.execute(select(Ticket).where(Ticket.ticket_code == ticket_code))
+        return result.scalar_one_or_none()
+
     async def ticket_contains_artifact(self, ticket_id: str, artifact_id: str) -> bool:
         """
         Проверяет, есть ли в тикете событие с данным artifact_id:
@@ -1432,7 +1442,9 @@ class TicketEventsRepo:
         self,
         ticket_id: str,
         since_event_id: int,
-        limit: int = 500
+        limit: int = 500,
+        *,
+        event_types: frozenset[str] | None = None,
     ) -> List[TicketEvent]:
         """
         Get ticket events with id > since_event_id.
@@ -1456,6 +1468,8 @@ class TicketEventsRepo:
             .order_by(TicketEvent.id.asc())
             .limit(limit)
         )
+        if event_types is not None:
+            stmt = stmt.where(TicketEvent.event_type.in_(event_types))
         result = await self.session.execute(stmt)
         events = result.scalars().all()
         

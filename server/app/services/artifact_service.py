@@ -42,6 +42,8 @@ class ArtifactService:
         artifact_id: str,
         auth_context: AuthContext,
         ticket_id_from_request: Optional[str] = None,
+        *,
+        require_exact_ticket: bool = False,
     ) -> Tuple[Optional[Artifact], Optional[str]]:
         """
         Возвращает артефакт и причину отказа (если доступ запрещён).
@@ -59,7 +61,8 @@ class ArtifactService:
             return None, NOT_FOUND
 
         now = datetime.now(timezone.utc)
-        if artifact.expires_at is not None and artifact.expires_at < now:
+        expired = artifact.expires_at is not None and artifact.expires_at < now
+        if expired and not require_exact_ticket:
             return None, EXPIRED
 
         if auth_context.auth_type == AuthType.AGENT_TOKEN:
@@ -67,7 +70,11 @@ class ArtifactService:
                 return None, FORBIDDEN
             return artifact, None
 
-        if auth_context.auth_type in {AuthType.UI_TOKEN, AuthType.PUBLIC_TICKET_TOKEN}:
+        if auth_context.auth_type in {AuthType.UI_TOKEN, AuthType.PUBLIC_TICKET_TOKEN, AuthType.OPERATOR_TOKEN}:
+            if require_exact_ticket and (
+                not ticket_id_from_request or (artifact.ticket_id and artifact.ticket_id != ticket_id_from_request)
+            ):
+                return None, FORBIDDEN
             target_ticket_id = artifact.ticket_id or ticket_id_from_request
             if not target_ticket_id:
                 logger.warning(
@@ -88,12 +95,23 @@ class ArtifactService:
                     )
                     return None, FORBIDDEN
             if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
-                return (artifact, None) if auth_context.ticket_scope == target_ticket_id else (None, FORBIDDEN)
+                if auth_context.ticket_scope != target_ticket_id:
+                    return None, FORBIDDEN
+                return (None, EXPIRED) if expired else (artifact, None)
+            if auth_context.auth_type == AuthType.OPERATOR_TOKEN:
+                from access_control.service import can
+
+                if not require_exact_ticket or not await can(self.session, auth_context, "ticket.detail.view"):
+                    return None, FORBIDDEN
+                if auth_context.actor_role != "admin" and not await self._ticket_repo.is_actor_in_queue(
+                    ticket.queue_id, auth_context.actor_id,
+                ):
+                    return None, FORBIDDEN
             if auth_context.actor_role in {"admin", "support", "auditor"}:
                 from tickets.handlers import can_read_ui_ticket
 
                 if await can_read_ui_ticket(self._ticket_repo, ticket, auth_context):
-                    return artifact, None
+                    return (None, EXPIRED) if expired else (artifact, None)
             if auth_context.actor_role == "user":
                 from requester.identity_service import RequesterIdentityResolver
 
@@ -101,7 +119,7 @@ class ArtifactService:
                     actor_id=auth_context.actor_id, ticket_id=target_ticket_id,
                 )
                 if owned_ticket is not None:
-                    return artifact, None
+                    return (None, EXPIRED) if expired else (artifact, None)
             logger.warning(
                 f"[ArtifactService] FORBIDDEN: actor_role={auth_context.actor_role} cannot download artifact {artifact_id}"
             )

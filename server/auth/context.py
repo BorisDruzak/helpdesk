@@ -14,6 +14,7 @@ class AuthType(str, Enum):
     """Type of authentication."""
     AGENT_TOKEN = "agent_token"
     UI_TOKEN = "ui_token"
+    OPERATOR_TOKEN = "operator_token"
     PUBLIC_TICKET_TOKEN = "public_ticket_token"
     SESSION = "session"  # For Phase 2
     SYSTEM = "system"  # Internal system actions
@@ -32,6 +33,7 @@ class AuthContext:
     auth_type: AuthType
     token: Optional[str] = None  # Raw token (for logging/audit, not stored in DB)
     ticket_scope: Optional[str] = None  # For public ticket tokens
+    operator_scopes: frozenset[str] = frozenset()
     
     def __repr__(self) -> str:
         return (

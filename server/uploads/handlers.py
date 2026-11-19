@@ -416,8 +416,13 @@ async def handle_artifact_download(request: web.Request) -> web.StreamResponse:
 
     async with get_session() as session:
         service = ArtifactService(session)
-        ticket_id_from_request = request.query.get("ticket_id")
-        artifact, reason = await service.get_artifact_for_download(artifact_id, auth_context, ticket_id_from_request=ticket_id_from_request)
+        scoped_ticket_id = request.match_info.get("ticket_id")
+        if scoped_ticket_id and auth_context.actor_role not in {"support", "admin"}:
+            return web.json_response({"status": "error", "error": "Access denied"}, status=403)
+        artifact, reason = await service.get_artifact_for_download(
+            artifact_id, auth_context, ticket_id_from_request=scoped_ticket_id or request.query.get("ticket_id"),
+            require_exact_ticket=scoped_ticket_id is not None,
+        )
         if artifact is not None and auth_context.auth_type == AuthType.AGENT_TOKEN:
             target_ticket_id = artifact.ticket_id or ticket_id_from_request
             if target_ticket_id:

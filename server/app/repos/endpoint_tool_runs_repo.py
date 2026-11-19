@@ -6,7 +6,7 @@ import json
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from sqlalchemy import select, or_
-from app.db.models import EndpointToolRun, EndpointOperationLink, Operation, Ticket, DiagnosticSession, DiagnosticStep
+from app.db.models import EndpointToolRun, EndpointOperationLink, Operation, Ticket, DiagnosticSession, DiagnosticStep, TicketAdminAudit
 from app.repos.operations_repo import OperationsRepo
 from domain_ports.endpoint_tools import ToolRunRequestV1
 from domain_ports.endpoint import EndpointDeviceRef
@@ -84,7 +84,8 @@ class EndpointToolRunsRepo:
         rows = (await self.session.execute(query.order_by(EndpointToolRun.created_at.desc(), EndpointToolRun.run_id).limit(limit))).all()
         return [self._stored(*row) for row in rows]
 
-    async def create_pending(self, request, *, actor_id, ticket_id, device_ref, caller_key, batch_id=None, actor_role="support"):
+    async def create_pending(self, request, *, actor_id, ticket_id, device_ref, caller_key, batch_id=None,
+                             actor_role="support", via_operator_mcp=False):
         request = ToolRunRequestV1.model_validate(request)
         if not isinstance(caller_key, str) or not 1 <= len(caller_key) <= 128 or any(ord(c) < 33 or ord(c) > 126 for c in caller_key):
             raise ValueError("invalid caller key")
@@ -94,7 +95,9 @@ class EndpointToolRunsRepo:
         ticket = await self.session.get(Ticket, ticket_id, with_for_update=True)
         if ticket is None: raise LookupError("ticket not found")
         if ticket.endpoint_device_ref != device_ref: raise ToolRunConflict("ticket device changed during admission")
-        if actor_role == "support" and ticket.queue_id is not None and ticket.assignee_id != actor_id:
+        if via_operator_mcp and ticket.assignee_id != actor_id:
+            raise PermissionError("ticket assignee changed")
+        if actor_role == "support" and (via_operator_mcp or (ticket.queue_id is not None and ticket.assignee_id != actor_id)):
             from app.repos.ticket_events_repo import TicketEventsRepo
             if not await TicketEventsRepo(self.session).is_actor_in_queue(ticket.queue_id, actor_id):
                 raise PermissionError("ticket queue access changed")
@@ -130,6 +133,12 @@ class EndpointToolRunsRepo:
             safe_module_snapshot_json=snapshot["recipe"], context_profile=request.profile)
         link.diagnostic_session_id, link.diagnostic_step_id = session_id, run_id
         self.session.add_all([marker, link])
+        if via_operator_mcp:
+            self.session.add(TicketAdminAudit(
+                entity_type="ticket", entity_id=ticket_id, action="endpoint_tool_run_created",
+                actor_id=actor_id, actor_role=actor_role,
+                after_json={"run_id": run_id, "capability": CAPABILITIES[request.kind], "source": "helpdesk_operator"},
+            ))
         await self.session.flush()
         return self._stored(marker, link)
 

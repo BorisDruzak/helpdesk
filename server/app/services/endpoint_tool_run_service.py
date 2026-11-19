@@ -1,6 +1,7 @@
 """Ticket-facing tool orchestration; admission precedes durable intent creation."""
 from uuid import uuid5, NAMESPACE_URL
 from app.repos.endpoint_tool_runs_repo import EndpointToolRunsRepo, TERMINAL, canonical_json
+from auth.context import AuthType
 from domain_ports.endpoint import EndpointDeviceRef, EndpointDevicePresenceProjection, EndpointFailureOutcome
 from domain_ports.endpoint_context import SAFE_CONTEXT_PROFILES
 from domain_ports.endpoint_modules import EndpointDeviceModulesPageV1, ModuleCapabilityCatalogV1, ModuleVersionViewV1
@@ -64,7 +65,8 @@ class EndpointToolRunService:
         async with self.sessions() as session:
             async with session.begin():
                 return await EndpointToolRunsRepo(session).create_pending(intent, actor_id=str(actor.actor_id),
-                    actor_role=actor.actor_role, ticket_id=ticket_id, device_ref=device.external_id, caller_key=caller_key, batch_id=batch_id)
+                    actor_role=actor.actor_role, ticket_id=ticket_id, device_ref=device.external_id, caller_key=caller_key, batch_id=batch_id,
+                    via_operator_mcp=getattr(actor, "auth_type", None) == AuthType.OPERATOR_TOKEN)
 
     async def create_context_batch(self, actor, ticket_id, caller_key, *, expected_device_ref):
         device = await self._device(actor, ticket_id, expected_device_ref)

@@ -45,6 +45,9 @@ class _IntegrityConflictSession:
         self.execute_count += 1
         if self.execute_count == 1:
             return _NoDuplicateResult()
+        if self.execute_count == 2:
+            assert statement._for_update_arg is not None
+            return _ExecuteResult()
         raise IntegrityError(
             statement="INSERT INTO ticket_events",
             params={},

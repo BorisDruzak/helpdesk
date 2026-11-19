@@ -50,6 +50,8 @@ from app.services.operation_service import OperationService
 from app.repos.ui_actor_memberships import ui_actor_membership_ids
 from app.services.playbook_engine import start_run
 from auth.middleware import ensure_server_request_id, require_auth
+from auth.context import AuthType
+from tickets.transition_idempotency import read_transition_receipt, store_transition_receipt, transition_intent
 from consent.operation_consent import create_operation_user_consent
 from consent.service import ConsentAccessError
 from customer_history.context_builder import CustomerHistoryContextBuilder
@@ -1477,6 +1479,7 @@ def _timeline_event_label(event_type: str) -> str:
         "classification_changed": "Classification changed",
         "requester_profile_changed": "Requester changed",
         "device_changed": "Device changed",
+        "diagnostic_device_selected": "Цель диагностики выбрана",
         "worklog_added": "Worklog added",
         "diagnostic_result_classified": "Diagnostic result classified",
         "routing_applied": "Routing applied",
@@ -2464,7 +2467,8 @@ async def _write_support_web_observer_event(
                 person_id=person_id,
                 result=result,
                 error_code=error_code,
-                payload=payload,
+                payload={**(payload or {}), "action_source": "helpdesk_operator"}
+                if auth_context.auth_type == AuthType.OPERATOR_TOKEN else payload,
             )
     except Exception as exc:
         logger.warning(f"[support_observer] failed to write {source}.{event_type}: {exc}")
@@ -4787,10 +4791,14 @@ async def _build_support_inventory_context(
 async def handle_web_support_ticket_detail(request: web.Request):
     try:
         async with get_session() as session:
-            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, allow_ticket_code=True)
             if error:
                 return error
             payload = await _build_support_detail_payload(request, session, ticket, repo, auth_context)
+            if auth_context.auth_type == AuthType.OPERATOR_TOKEN:
+                from web_api.operator_handlers import operator_ticket_detail
+
+                return web.json_response({"status": "success", "data": await operator_ticket_detail(session, ticket, auth_context, payload)})
     except Exception as exc:
         logger.warning(
             f"[web_support_ticket_detail] DB unavailable for ticket detail: "
@@ -5402,6 +5410,13 @@ async def handle_web_support_send_message(request: web.Request):
             status=400,
         )
 
+    operator = request["auth_context"].auth_type == AuthType.OPERATOR_TOKEN
+    if operator and (
+        not isinstance(data.get("text"), str) or not 1 <= len(data["text"].strip()) <= 12000
+        or data.get("visibility") not in ("public", "internal") or not isinstance(data.get("message_id"), str)
+        or set(data) != {"text", "visibility", "message_id"}
+    ):
+        return _support_json_error("Укажите текст, видимость и UUID сообщения", error_code="VALIDATION_ERROR")
     text = str(data.get("text") or "").strip()
     try:
         attachment_refs = _normalize_attachment_refs(data.get("attachment_refs"))
@@ -5428,8 +5443,8 @@ async def handle_web_support_send_message(request: web.Request):
         )
 
     try:
-        message_id = normalize_chat_message_id(data.get("message_id"))
-    except ChatMessageIdError as exc:
+        message_id = str(uuid.UUID(data["message_id"])) if operator else normalize_chat_message_id(data.get("message_id"))
+    except (ChatMessageIdError, ValueError) as exc:
         return web.json_response(
             {
                 "status": "error",
@@ -5457,11 +5472,14 @@ async def handle_web_support_send_message(request: web.Request):
             ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
+            previous = await repo.get_chat_message_by_message_id(ticket.ticket_id, message_id) if operator else None
             if visibility == "public":
+                if operator and previous is None and ticket.assignee_id != auth_context.actor_id:
+                    return _support_json_error("Ответ может отправить исполнитель", status=403, error_code="ASSIGNEE_CONFLICT")
                 reply_error = _support_public_reply_error(
                     ticket, actor_id=auth_context.actor_id, is_admin=auth_context.actor_role == "admin",
                 )
-                if reply_error:
+                if reply_error and previous is None:
                     code, message = reply_error
                     return _support_json_error(message, status=403 if code == "ASSIGNEE_CONFLICT" else 409, error_code=code)
 
@@ -5499,7 +5517,9 @@ async def handle_web_support_send_message(request: web.Request):
                 payload["attachment_refs"] = attachment_refs
                 payload["attachments"] = attachments
             payload = enrich_chat_payload_with_requester_name(ticket, payload)
-            result = await repo.add_event(
+            if operator:
+                payload["source"] = "helpdesk_operator"
+            result = None if previous is not None else await repo.add_event(
                 ticket_id=ticket.ticket_id,
                 device_id=ticket.device_id,
                 agent_seq=None,
@@ -5509,7 +5529,7 @@ async def handle_web_support_send_message(request: web.Request):
             )
             inserted_message = result is not None
             if not inserted_message:
-                existing_message = await repo.get_chat_message_by_message_id(ticket.ticket_id, message_id)
+                existing_message = previous or await repo.get_chat_message_by_message_id(ticket.ticket_id, message_id)
                 if existing_message is None:
                     return web.json_response(
                         {
@@ -5521,7 +5541,10 @@ async def handle_web_support_send_message(request: web.Request):
                     )
                 result = (existing_message.id, existing_message.created_at)
                 existing_payload = existing_message.payload if isinstance(existing_message.payload, dict) else {}
-                if not chat_message_retry_payload_matches(existing_payload, payload):
+                if (
+                    (operator and existing_payload.get("sender_actor_id") != auth_context.actor_id)
+                    or not chat_message_retry_payload_matches(existing_payload, payload)
+                ):
                     return web.json_response(
                         {
                             "status": "error",
@@ -5628,6 +5651,28 @@ async def handle_web_support_change_status(request: web.Request):
             return _support_json_error("Сообщение заявителю должно быть текстом", status=400, error_code="VALIDATION_ERROR")
         requester_message = public_comment = public_comment.strip() or None
 
+    operator = request["auth_context"].auth_type == AuthType.OPERATOR_TOKEN
+    source = "helpdesk_operator" if operator else "web_support_api"
+    intent = None
+    if operator or "operation_id" in data:
+        try:
+            intent = transition_intent(data)
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return _support_json_error("Укажите UUID операции", error_code="INVALID_OPERATION_ID")
+    if operator:
+        fields = {
+            "in_progress": {"to_status", "operation_id"},
+            "waiting_on_user": {"to_status", "operation_id", "public_comment"},
+            "resolved": {"to_status", "operation_id", "requester_resolution_summary", "resolution_code", "close_after_resolve"},
+        }.get(to_status)
+        reply_text = data.get("requester_resolution_summary") if to_status == "resolved" else requester_message
+        if fields is None or set(data) - fields or (
+            to_status != "in_progress" and (not isinstance(reply_text, str) or not 1 <= len(reply_text.strip()) <= 12000)
+        ) or (
+            "resolution_code" in data and (not isinstance(data["resolution_code"], str) or len(data["resolution_code"]) > 100)
+        ):
+            return _support_json_error("Оператору доступно начало работы, уточнение и решение с текстом", error_code="VALIDATION_ERROR")
+
     try:
         async with get_session() as session:
             ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
@@ -5644,10 +5689,22 @@ async def handle_web_support_change_status(request: web.Request):
             ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
-            if requester_message:
+            if requester_message or (operator and to_status == "resolved"):
                 denied = await _require_permission(session, auth_context, "ticket.comment.public")
                 if denied:
                     return denied
+            if intent is not None:
+                key, fingerprint = intent
+                original = await read_transition_receipt(session, ticket_id=ticket.ticket_id, actor_id=auth_context.actor_id, key=key)
+                if original is not None:
+                    if original["fingerprint"] != fingerprint:
+                        return _support_json_error("UUID операции уже использован с другими параметрами", status=409, error_code="TRANSITION_RETRY_PAYLOAD_CONFLICT")
+                    return web.json_response({"status": "success", "data": original["result"]})
+            if operator:
+                allowed_assignees = (None, auth_context.actor_id) if to_status == "in_progress" else (auth_context.actor_id,)
+                if ticket.assignee_id not in allowed_assignees:
+                    return _support_json_error("Действие доступно исполнителю", status=403, error_code="ASSIGNEE_CONFLICT")
+            if requester_message:
                 reply_error = _support_public_reply_error(
                     ticket, actor_id=auth_context.actor_id, is_admin=auth_context.actor_role == "admin",
                 )
@@ -5705,7 +5762,7 @@ async def handle_web_support_change_status(request: web.Request):
                     root_cause=data.get("root_cause"),
                     public_comment=public_comment,
                     internal_comment=data.get("internal_comment"),
-                    source="web_support_api",
+                    source=source,
                     close_after_resolve=close_after_resolve,
                 )
             except WorkflowTransitionConflict as exc:
@@ -5833,6 +5890,8 @@ async def handle_web_support_change_status(request: web.Request):
                     "text": requester_message,
                     "visibility": "public",
                 }
+                if operator:
+                    followup_payload["source"] = source
                 followup_result = await repo.add_event(
                     ticket_id=ticket.ticket_id,
                     device_id=ticket.device_id,
@@ -5899,6 +5958,19 @@ async def handle_web_support_change_status(request: web.Request):
                     ),
                 )
 
+            response_data = SupportStatusActionResult(
+                ticket_id=ticket.ticket_id, status=to_status, status_label=status_label_ru(to_status),
+            ).model_dump(mode="json")
+            if intent is not None:
+                response_data.update(
+                    status_event_id=result["event_result"][0] if result.get("event_result") else None,
+                    message_event_id=followup_result[0] if followup_result else None,
+                    requester_confirmation_requested=requester_confirmation_requested,
+                )
+                store_transition_receipt(
+                    session, actor=auth_context, key=key, fingerprint=fingerprint,
+                    source=source, result=response_data,
+                )
             await session.commit()
 
         for preceding in result.get("preceding_transitions", []):
@@ -5913,15 +5985,7 @@ async def handle_web_support_change_status(request: web.Request):
         if followup_result and followup_payload:
             await _push_ticket_event(request, ticket.ticket_id, followup_result, "chat_message", followup_payload)
 
-        return json_model_response(
-            SuccessResponse[SupportStatusActionResult](
-                data=SupportStatusActionResult(
-                    ticket_id=ticket.ticket_id,
-                    status=to_status,
-                    status_label=status_label_ru(to_status),
-                )
-            )
-        )
+        return web.json_response({"status": "success", "data": response_data})
     except Exception as exc:
         logger.warning(
             f"[web_support_change_status] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"

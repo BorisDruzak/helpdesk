@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from tickets.queue_mode import unified_queue_enabled, unified_queue_code
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -360,13 +361,27 @@ async def _get_ticket_or_response(
     session: Any,
     *,
     write: bool = False,
+    allow_ticket_code: bool = False,
 ) -> tuple[Any, Optional[web.Response], TicketEventsRepo, AuthContext]:
     ticket_id = request.match_info.get("ticket_id")
     auth_context = _auth(request)
     ticket_repo = TicketEventsRepo(session)
-    ticket = await ticket_repo.get_ticket(ticket_id)
+    if allow_ticket_code and isinstance(ticket_id, str) and re.fullmatch(r"T-[0-9]{6,18}", ticket_id.upper()):
+        ticket = await ticket_repo.get_ticket_by_code(ticket_id.upper())
+    else:
+        ticket = await ticket_repo.get_ticket(ticket_id)
     if not ticket:
         return None, _json_error("ticket_not_found", status=404), ticket_repo, auth_context
+    if auth_context.auth_type == AuthType.OPERATOR_TOKEN:
+        from access_control.service import can
+
+        queue_id = getattr(ticket, "queue_id", None)
+        if (
+            not await can(session, auth_context, "ticket.detail.view")
+            or (auth_context.actor_role != "admin" and not await ticket_repo.is_actor_in_queue(queue_id, auth_context.actor_id))
+            or (write and auth_context.actor_id != getattr(ticket, "assignee_id", None))
+        ):
+            return None, _json_error("forbidden", status=403), ticket_repo, auth_context
     if auth_context.actor_role == "support":
         if not await can_read_ui_ticket(ticket_repo, ticket, auth_context):
             return None, _json_error("forbidden", status=403), ticket_repo, auth_context
