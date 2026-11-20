@@ -140,8 +140,9 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   It locks expired rows, uses the ordinary workflow transition, and clears
   pending state with an audited system decision. `requester_confirmation_required`
   explains the waiting step in the support UI; resolved requester handling points
-  the next action to the requester while confirmation is pending. The reviewed
-  `scripts/helpdesk_requester_confirmation.py` publishes ordinary1.0.3, with a
+  the next action to the requester while confirmation is pending. The support
+  observer records the presence of the hour-based timeout as a boolean.
+  The reviewed `scripts/helpdesk_requester_confirmation.py` publishes ordinary 1.0.3 with a
   content-bound plan, audited policy version, and reconciliation
   of newly affected resolved tickets to pending confirmation. Existing decisions
   and special policies are preserved. Support queue and detail suppress the

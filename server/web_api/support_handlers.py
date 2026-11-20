@@ -2576,7 +2576,9 @@ def _support_confirmation_observer_payload(
     return {
         "to_status": to_status,
         "confirmation_request_present": isinstance(confirmation_request, dict) and bool(confirmation_request),
-        "auto_close_policy_present": policy.get("auto_close_after_days") is not None,
+        "auto_close_policy_present": (
+            policy.get("auto_close_after_hours") is not None or policy.get("auto_close_after_days") is not None
+        ),
         "reopen_on_negative_feedback_policy_present": policy.get("reopen_on_negative_feedback") is not None,
     }
 

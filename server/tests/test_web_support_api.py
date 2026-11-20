@@ -1060,7 +1060,7 @@ async def test_web_support_resolve_writes_status_and_confirmation_observer_event
     assert confirmation_span.attrs_json["payload"] == {
         "to_status": "resolved",
         "confirmation_request_present": True,
-        "auto_close_policy_present": False,
+        "auto_close_policy_present": True,
         "reopen_on_negative_feedback_policy_present": False,
     }
     serialized = json.dumps(
