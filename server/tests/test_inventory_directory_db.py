@@ -65,6 +65,31 @@ async def test_registration_search_recognizes_accounts_by_profile_or_confirmed_i
     assert [person.registered for person in people] == [True, False, True, False]
 
 
+async def test_admin_inventory_search_only_offers_pickable_employee_records(test_client, test_engine, monkeypatch):
+    _, _, requester = await create_account(test_engine)
+    url = "/api/web/admin/registry/inventory-people/search"
+    monkeypatch.setenv("HELPDESK_INVENTORY_BASE_URL", "https://fixture.invalid")
+
+    async def search(query):
+        assert query == "Иванов Иван"
+        return inventory_directory.RegistrationPeople(people=[
+            {"full_name": query, "department": "Отдел", "has_agent": True, "inventory_person_id": PERSON},
+            {"full_name": query, "department": "Только карточка ПК", "has_agent": False},
+        ], refine=True)
+
+    monkeypatch.setattr(inventory_directory, "search_registration_people", search)
+    assert (await test_client.post(url, json={"query": "Иванов Иван"}, headers=requester)).status == 403
+    assert (await test_client.post(url, json={"query": "123"}, headers=ADMIN)).status == 400
+    result = await test_client.post(url, json={"query": "  Иванов  Иван "}, headers=ADMIN)
+    assert result.status == 200
+    assert result.headers["Cache-Control"] == "no-store"
+    assert (await result.json())["data"] == {
+        "people": [{"inventory_person_id": str(PERSON), "full_name": "Иванов Иван",
+                    "department": "Отдел", "has_agent": True}],
+        "refine": True,
+    }
+
+
 async def test_linked_inventory_projection_remains_scoped_audited_and_available_during_outage(
     test_client, test_engine, monkeypatch,
 ):

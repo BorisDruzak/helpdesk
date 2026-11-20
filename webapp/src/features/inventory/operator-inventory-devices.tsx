@@ -1,10 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { Button } from "../../components/ui/button";
 import { listTicketCapabilityReadiness } from "../capabilities/api";
 import { contextDate } from "../admin/endpoint-context-view";
+import { InventoryLinkForm, type LinkableProfile } from "./inventory-link-form";
 
-type Props = { ticketId: string; personId?: never } | { personId: string; ticketId?: never };
+type Props = { ticketId: string; personId?: never; linkableProfile?: never }
+  | { personId: string; ticketId?: never; linkableProfile?: LinkableProfile };
 
 type Assignment = {
   assignment_id: string;
@@ -33,7 +36,9 @@ const presenceLabel = {
   not_detected: "Агент не обнаружен",
 };
 
-function InventoryAssignments({ personId, ticketId }: Props) {
+function InventoryAssignments({ personId, ticketId, linkableProfile }: Props) {
+  const [linking, setLinking] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const url = ticketId
     ? `/api/web/support/tickets/${encodeURIComponent(ticketId)}/inventory-devices`
     : `/api/web/admin/registry/people/${encodeURIComponent(personId!)}/inventory-devices`;
@@ -72,10 +77,23 @@ function InventoryAssignments({ personId, ticketId }: Props) {
 
   if (inventory.isPending) return <p className="mt-2 text-sm" role="status">Загружаем назначения…</p>;
   return <>
+    {confirmed ? <p className="mt-2 text-sm text-emerald-700" role="status">Связь с инвентаризацией подтверждена.</p> : null}
     {inventory.isError || inventory.isPaused || data?.sync_state === "stale" || data?.sync_state === "unavailable"
       ? <p className="mt-2 text-sm" role="status">Инвентаризация сейчас недоступна. Статус агентов неизвестен.</p> : null}
     {data?.sync_state === "disabled" ? <p className="mt-2 text-sm">Интеграция с инвентаризацией отключена.</p> : null}
     {data?.sync_state === "unlinked" ? <p className="mt-2 text-sm">Профиль сотрудника ещё не связан с инвентаризацией.</p> : null}
+    {data?.sync_state === "unlinked" && personId && linkableProfile ? (
+      linkableProfile.logins.length === 0
+        ? <p className="mt-2 text-sm">Для привязки нужен активный подтверждённый логин сотрудника в Helpdesk.</p>
+        : linking
+          ? <InventoryLinkForm personId={personId} profile={linkableProfile} onCancel={() => setLinking(false)}
+            onConfirmed={async () => {
+              setConfirmed(true);
+              await inventory.refetch();
+              setLinking(false);
+            }} />
+          : <Button className="mt-2" type="button" variant="outline" size="sm" onClick={() => setLinking(true)}>Связать с инвентаризацией</Button>
+    ) : null}
     {fresh && !data?.assignments.length ? <p className="mt-2 text-sm">За сотрудником пока нет назначенных компьютеров.</p> : null}
     {data?.assignments.length ? <ul className="mt-2 space-y-2 text-sm">
       {data.assignments.map(row => <li className="space-y-1 break-words border-t border-current/10 pt-2" key={row.assignment_id}>

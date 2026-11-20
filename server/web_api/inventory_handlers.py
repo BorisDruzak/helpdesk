@@ -359,6 +359,33 @@ class EmployeeSearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 
+    def normalized_query(self) -> str:
+        query = " ".join(self.query.split())
+        if not query[0].isalpha() or any(not (ch.isalpha() or ch in " -") for ch in query):
+            raise ValueError("Invalid employee name")
+        return query
+
+
+@require_auth("admin")
+async def search_admin_inventory_people(request: web.Request) -> web.Response:
+    if not inventory.inventory_enabled():
+        return _reply({"error": "Интеграция с инвентаризацией отключена."}, 503)
+    try:
+        query = EmployeeSearch.model_validate(await request.json()).normalized_query()
+    except (ValueError, ValidationError):
+        return _reply({"error": "Введите имя или фамилию сотрудника."}, 400)
+    try:
+        results = await inventory.search_registration_people(query)
+    except inventory.InventoryUnavailable:
+        return _reply({"error": "Инвентаризация сейчас недоступна."}, 503)
+    people = [
+        {"inventory_person_id": str(person.inventory_person_id), "full_name": person.full_name,
+         "department": person.department, "has_agent": person.has_agent}
+        for person in results.people
+        if person.inventory_person_id is not None
+    ]
+    return _reply({"people": people, "refine": results.refine})
+
 
 async def search_registration_inventory(request: web.Request) -> web.Response:
     if not config_module.WEB_SELF_REGISTRATION_ENABLED or not inventory.registration_search_enabled():
@@ -368,10 +395,7 @@ async def search_registration_inventory(request: web.Request) -> web.Response:
     if not check_rate_limit("requester_inventory_search", client_ip(request), limit=20, window_seconds=60):
         return rate_limited_response()
     try:
-        payload = EmployeeSearch.model_validate(await request.json())
-        query = " ".join(payload.query.split())
-        if not query[0].isalpha() or any(not (ch.isalpha() or ch in " -") for ch in query):
-            raise ValueError("Incomplete name")
+        query = EmployeeSearch.model_validate(await request.json()).normalized_query()
     except (ValueError, ValidationError):
         return _reply({"error": "Введите имя или фамилию сотрудника."}, 400)
     try:

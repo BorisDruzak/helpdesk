@@ -712,9 +712,13 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
 
 ## Requester inventory projection
 
-- `web_api/inventory_handlers.py`: administrator confirmation/removal and a
+- `web_api/inventory_handlers.py`: administrator search, confirmation/removal and a
   requester-only inventory read; `registry_inventory_links` stores the
   approval and last accepted inventory snapshot (migration 159).
+- `POST /api/web/admin/registry/inventory-people/search` exposes selectable
+  inventory employee records only to administrators. The profile form
+  `features/inventory/inventory-link-form.tsx` confirms the selected record
+  through the existing audited `PUT .../people/{person_id}/inventory-link`.
 - `registry/inventory_directory.py`: bounded verified HTTPS consumer of the
   web_ovpn employee and assignment contract. No Endpoint control calls.
 - `GET /api/web/support/tickets/{ticket_id}/inventory-devices` and

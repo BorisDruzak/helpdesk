@@ -44,7 +44,13 @@ profile editing remain independent of web_ovpn.
    record. Diagnostic readiness is read from the existing ticket capabilities
    API when the confirmed Endpoint UUID matches the ticket's target. The
    administrator can also open **Назначенные компьютеры** in the selected
-   employee's **Профиль** under **Пользователи**. Set
+   employee's **Профиль** under **Пользователи**. For an unlinked profile with
+   an active verified requester login, open **Связать с инвентаризацией**,
+   check the name and department, select the employee record, provide the
+   reason and click **Подтвердить связь**. The list refreshes after confirmation.
+   The admin-only search uses `POST /api/web/admin/registry/inventory-people/search`
+   and returns selectable employee records with inventory IDs. A search
+   match alone creates no link. Set
    `HELPDESK_INVENTORY_WEB_URL` if the operator-facing HTTPS origin differs
    from the API origin. The links point to the specific inventory card and
    the agent section on that card, where web_ovpn checks its own permissions.

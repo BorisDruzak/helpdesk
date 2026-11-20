@@ -44,11 +44,16 @@ export function ProfilePanel({ person, registry }: { person: Person; registry: A
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
   if (editing) return <PersonProfileForm person={person} registry={registry} onClose={() => setEditing(false)} onSaved={() => setSaved(true)} />;
+  const logins = (registry.ui_users ?? []).filter((account) => account.linked_person_id === person.person_id
+    && account.linked_identity_verified && account.is_active && account.actor_role === "user").map((account) => account.user_login);
+  const linkableProfile = ["active", "self_reported"].includes(person.status)
+    ? { name: person.full_name || person.display_name, department: person.department_name, logins }
+    : undefined;
   const rows = [["Полное имя", person.full_name], ["Отдел", person.department_name], ["Должность", person.position], ["Электронная почта", person.email], ["Телефон", person.phone], ["Руководитель", person.manager_name], ["Статус профиля", registryStatusLabel(person.status)]];
   return <div className="space-y-4">
     {saved ? <p role="status" className="text-sm text-emerald-700">Профиль сохранён</p> : null}
     <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">{rows.map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm font-medium text-slate-900">{value || "Не указано"}</dd></div>)}</dl>
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4"><p className="text-xs text-slate-500">{person.primary_device_count ?? 0} личных устройств · {person.active_ticket_count ?? 0} активных заявок</p><Button variant="outline" size="sm" onClick={() => setEditing(true)}>Редактировать профиль</Button></div>
-    <OperatorInventoryDevices key={person.person_id} personId={person.person_id} />
+    <OperatorInventoryDevices key={person.person_id} personId={person.person_id} linkableProfile={linkableProfile} />
   </div>;
 }

@@ -120,7 +120,7 @@ from web_api.inventory_status import STATUS_PATH, read_helpdesk_account_status
 from web_api.inventory_handlers import (
     confirm_inventory_link, create_inventory_invitation, preview_inventory_invitation,
     read_inventory_devices, read_registry_inventory_devices, read_ticket_inventory_devices,
-    remove_inventory_link, revoke_inventory_invitation, search_registration_inventory,
+    remove_inventory_link, revoke_inventory_invitation, search_admin_inventory_people, search_registration_inventory,
 )
 from web_api.requester_handlers import (
     handle_web_requester_bootstrap,
@@ -909,6 +909,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/registry/people/merge', handle_web_admin_registry_people_merge),
         web.post('/api/web/admin/registry/people/{person_id}/archive', handle_web_admin_registry_person_archive),
         web.patch('/api/web/admin/registry/people/{person_id}', handle_web_admin_registry_person_update),
+        web.post('/api/web/admin/registry/inventory-people/search', search_admin_inventory_people),
         web.put('/api/web/admin/registry/people/{person_id}/inventory-link', confirm_inventory_link),
         web.post('/api/web/admin/registry/inventory-invitations', create_inventory_invitation),
         web.delete('/api/web/admin/registry/inventory-invitations/{inventory_person_id}', revoke_inventory_invitation),

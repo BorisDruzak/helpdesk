@@ -15,8 +15,13 @@ const person = (id: string, name: string) => ({
 
 type Account = { user_login: string; actor_role: string; is_active: boolean; queue_ids: number[]; group_ids: number[] };
 
-async function installUsersFixture(page: Page, { missingDepartment = false } = {}) {
-  let account: Account | null = null;
+const inventoryPersonId = "b28a9001-f19b-4960-8db8-57d631064a08";
+
+async function installUsersFixture(page: Page, { missingDepartment = false, unlinkedInventory = false } = {}) {
+  let account: Account | null = unlinkedInventory
+    ? { user_login: "fixture-employee", actor_role: "user", is_active: true, queue_ids: [], group_ids: [] }
+    : null;
+  let inventoryLinked = !unlinkedInventory;
   const writes: Record<string, unknown>[] = [];
   const unexpected: string[] = [];
   const errors: string[] = [];
@@ -73,11 +78,24 @@ async function installUsersFixture(page: Page, { missingDepartment = false } = {
       data = {};
     }
     else if (path === `/api/web/admin/registry/people/${marinaId}/inventory-devices`) {
-      data = { sync_state: "current", assignments: [{
+      data = inventoryLinked ? { sync_state: "current", assignments: [{
         assignment_id: "fixture-assignment", name: "Компьютер сотрудника", role: "primary",
         endpoint_binding_state: "confirmed", endpoint_status: "offline", diagnostic_target: false,
         inventory_url: "https://inventory.invalid/inventory/assets/fixture-pc",
-      }] };
+      }] } : { sync_state: "unlinked", assignments: [] };
+    }
+    else if (path === "/api/web/admin/registry/inventory-people/search" && request.method() === "POST") {
+      expect(request.postDataJSON()).toEqual({ query: "Заваруха Марина" });
+      data = { people: [{
+        inventory_person_id: inventoryPersonId, full_name: "Заваруха Марина",
+        department: "Информационные технологии", has_agent: true,
+      }], refine: false };
+    }
+    else if (path === `/api/web/admin/registry/people/${marinaId}/inventory-link` && request.method() === "PUT") {
+      const body = request.postDataJSON();
+      writes.push(body);
+      inventoryLinked = true;
+      data = { inventory_person_id: body.inventory_person_id, user_login: body.user_login };
     }
     else if (path === "/api/web/admin/access/catalog") data = catalog;
     else if (path === "/api/web/admin/access/summary") data = { version: "users-fixture", queues, access_groups: [], notes: [], users: account ? [{ ...account, display_name: "Заваруха Марина", role_label: account.actor_role === "support" ? "Поддержка" : "Пользователь", groups: [], queue_count: account.queue_ids.length }] : [] };
@@ -99,6 +117,28 @@ async function installUsersFixture(page: Page, { missingDepartment = false } = {
   });
   return { writes, unexpected, errors, reject: () => { rejectSave = true; } };
 }
+
+test("an admin explicitly confirms the employee inventory link from the profile", async ({ page }) => {
+  const fixture = await installUsersFixture(page, { unlinkedInventory: true });
+  await page.goto(`/app/admin/users?person=${marinaId}`);
+  await page.getByText("Назначенные компьютеры", { exact: true }).click();
+  await page.getByRole("button", { name: "Связать с инвентаризацией" }).click();
+  const confirm = page.getByRole("button", { name: "Подтвердить связь", exact: true });
+  await expect(confirm).toBeDisabled();
+  await page.getByRole("radio", { name: /Заваруха Марина.*Информационные технологии/ }).check();
+  await expect(confirm).toBeDisabled();
+  await page.getByRole("textbox", { name: "Причина подтверждения" }).fill("Сверены сотрудник и назначение в инвентаризации");
+  expect(fixture.writes).toEqual([]);
+  await confirm.click();
+  await expect(page.getByText("Компьютер сотрудника", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Связать с инвентаризацией" })).toHaveCount(0);
+  expect(fixture.writes).toEqual([{
+    inventory_person_id: inventoryPersonId, user_login: "fixture-employee",
+    reason: "Сверены сотрудник и назначение в инвентаризации",
+  }]);
+  expect(fixture.unexpected).toEqual([]);
+  expect(fixture.errors).toEqual([]);
+});
 
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
   test(`the employee profile uses only the active departments at ${viewport.width}`, async ({ page }, info) => {
