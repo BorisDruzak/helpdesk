@@ -492,6 +492,8 @@ class TicketSlaService:
         *,
         status: str | None = None,
         trigger: str = "status_changed",
+        awaiting_confirmation: bool = False,
+        completed_at: datetime | None = None,
     ) -> bool:
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         if not ticket or ticket.resolution_at is not None:
@@ -500,7 +502,7 @@ class TicketSlaService:
         config = _sla_policy_config(policy)
         stop_conditions = (config.get("stop_conditions") or {}).get("resolution")
         effective_status = status or ticket.status
-        if not _conditions_allow(
+        if not awaiting_confirmation and not _conditions_allow(
             stop_conditions,
             ticket=ticket,
             trigger=trigger,
@@ -508,7 +510,7 @@ class TicketSlaService:
             default=_normalized_status(effective_status) in (TERMINAL_STATUSES | {"resolved", "closed"}),
         ):
             return False
-        now = datetime.now(timezone.utc)
+        now = completed_at or datetime.now(timezone.utc)
         await self.ticket_repo.update_ticket(ticket_id, resolution_at=now)
         await self._add_sla_event(
             ticket,

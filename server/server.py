@@ -254,7 +254,7 @@ async def on_startup(app: web.Application):
             app['ticket_sla_watchdog'] = sla_watchdog
             logger.success("✅ Ticket SLA watchdog started")
 
-            # Stage 3: Ticket Auto-Close Watchdog (Resolved -> Closed после TICKET_AUTO_CLOSE_HOURS)
+            # Close expired requester confirmations after TICKET_AUTO_CLOSE_HOURS.
             from app.services.ticket_auto_close_watchdog import get_ticket_auto_close_watchdog
             auto_close_watchdog = get_ticket_auto_close_watchdog(state=app['state'])
             await auto_close_watchdog.start()

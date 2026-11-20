@@ -1224,7 +1224,7 @@ class TicketEventsRepo:
         limit: int = 100,
     ) -> List[Ticket]:
         """
-        Тикеты в статусе Resolved с resolved_at <= resolved_before (для auto-close watchdog).
+        Просроченные ожидания подтверждения, заблокированные до конца транзакции.
         Рекомендуется индекс (status, resolved_at) для производительности.
         """
         stmt = (
@@ -1234,9 +1234,12 @@ class TicketEventsRepo:
                     Ticket.status == "resolved",
                     Ticket.resolved_at.isnot(None),
                     Ticket.resolved_at <= resolved_before,
+                    Ticket.custom_fields["resolution_confirmation"]["pending"].as_string() == "true",
                 )
             )
+            .order_by(Ticket.resolved_at, Ticket.ticket_id)
             .limit(limit)
+            .with_for_update(skip_locked=True)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

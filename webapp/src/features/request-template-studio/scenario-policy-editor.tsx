@@ -31,9 +31,6 @@ export function ScenarioPolicyEditor({ kind, serviceTitle, source, disabled, onR
   function check() {
     setError("");
     if (!title.trim()) { setError("Укажите название правила."); return; }
-    const confirmation = config.requester_confirmation as Record<string, unknown> | undefined;
-    const days = confirmation?.auto_close_after_days;
-    if (kind === "closure" && days != null && (!Number.isInteger(Number(days)) || Number(days) < 0)) { setError("Срок автозакрытия должен быть целым числом от 0 дней. 0 отключает автозакрытие."); return; }
     setReview(true);
   }
   async function publish() {

@@ -480,7 +480,10 @@ class TicketWorkflowService:
                 }
 
 
-    async def _persist_transition_and_finalize(self, *, ticket_id, current_device_id, from_status, to_status, actor_id, actor_role, reason, now, updates, event_payload, side_effect_correlation_id):
+    async def _persist_transition_and_finalize(
+        self, *, ticket_id, current_device_id, from_status, to_status, actor_id, actor_role,
+        reason, now, updates, event_payload, side_effect_correlation_id, awaiting_confirmation,
+    ):
         await self._sync_wait_ledger(
             ticket_id=ticket_id,
             from_status=from_status,
@@ -507,6 +510,8 @@ class TicketWorkflowService:
                     ticket_id,
                     status=to_status,
                     trigger="status_changed",
+                    awaiting_confirmation=awaiting_confirmation,
+                    completed_at=now if awaiting_confirmation else updates.get("resolution_at"),
                 ),
                 event_payload=event_payload,
                 correlation_id=side_effect_correlation_id,
@@ -704,6 +709,7 @@ class TicketWorkflowService:
                 )
             event_payload["approval_policy"] = approval_decision
 
+        awaiting_confirmation = False
         if to_status == "resolved":
             closure_decision = await validate_closure_policy(
                 self.session,
@@ -713,13 +719,14 @@ class TicketWorkflowService:
                 resolution_summary=resolution_summary,
                 requester_resolution_summary=requester_resolution_summary,
             )
+            confirmation_policy = closure_decision.get("requester_confirmation") or {}
             if closure_decision.get("applied"):
                 event_payload["closure_policy"] = closure_decision
-                confirmation_policy = closure_decision.get("requester_confirmation")
                 if isinstance(confirmation_policy, dict) and confirmation_policy:
                     custom_fields = dict(getattr(ticket, "custom_fields", None) or {})
                     custom_fields["resolution_confirmation_policy"] = confirmation_policy
                     updates["custom_fields"] = custom_fields
+            awaiting_confirmation = not close_after_resolve and confirmation_policy.get("required") is not False
             if not await legacy_resolution_evidence_satisfied(self.session, ticket):
                 raise ValueError(
                     "Для решения тикета требуется подтверждение: "
@@ -773,6 +780,7 @@ class TicketWorkflowService:
             updates=updates,
             event_payload=event_payload,
             side_effect_correlation_id=side_effect_correlation_id,
+            awaiting_confirmation=awaiting_confirmation,
         )
 
         ticket = await self.ticket_repo.get_ticket(ticket_id)
@@ -930,7 +938,11 @@ def _build_transition_timestamps(ticket, from_status: str, to_status: str, now: 
         updates["closed_at"] = now
         # Acceptance closes the ticket; it must not restart an already stopped SLA.
         if getattr(ticket, "resolution_at", None) is None:
-            updates["resolution_at"] = now
+            fields = getattr(ticket, "custom_fields", None) or {}
+            confirmation = fields.get("resolution_confirmation") if isinstance(fields, dict) else None
+            was_awaiting = from_status == "resolved" and isinstance(confirmation, dict) and confirmation.get("pending")
+            resolved_at = getattr(ticket, "resolved_at", None) if was_awaiting else None
+            updates["resolution_at"] = resolved_at or now
 
     if to_status == "canceled":
         updates["canceled_at"] = now

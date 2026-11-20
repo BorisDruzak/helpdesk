@@ -1549,7 +1549,6 @@ export function buildClosurePreset(): string {
     },
     requester_confirmation: {
       required: true,
-      auto_close_after_days: 3,
       reopen_on_negative_feedback: true,
     },
     allowed_resolution_codes: ["fixed_remote", "workaround_provided", "external_issue", "user_error"],
@@ -2085,7 +2084,6 @@ export function ClosurePolicyControls({
   runtimeDefaults?: boolean;
   friendly?: boolean;
 }) {
-  const helpId = useId();
   const before = nestedObject(config.before_resolved);
   const evidence = nestedObject(config.evidence);
   const confirmation = nestedObject(config.requester_confirmation);
@@ -2147,24 +2145,9 @@ export function ClosurePolicyControls({
       <JsonLinkedCheckbox
         checked={Boolean(Object.hasOwn(confirmation, "required") ? confirmation.required : runtimeDefaults ? config.auto_close_after_days != null : true)}
         label={friendly ? "Сотрудник должен подтвердить решение" : "Подтверждение пользователя"}
-        helpText={friendly ? "После предложения решения сотрудник должен подтвердить, что проблема устранена. Срок ожидания задаётся ниже." : undefined}
+        helpText={friendly ? "Если сотрудник не ответит, Helpdesk закроет заявку по общему сроку ожидания. По умолчанию это 24 часа." : undefined}
         onChange={(checked) => onChange({ ...config, requester_confirmation: { ...confirmation, required: checked } })}
       />
-      <label className="space-y-2 text-sm font-medium text-slate-800">
-        <span>{friendly ? "Закрыть автоматически через (дней)" : "Автозакрытие через дней"}</span>
-        <input
-          className="field-base h-11 w-full px-4 text-sm"
-          aria-label={friendly ? "Закрыть автоматически через (дней)" : undefined}
-          aria-describedby={friendly ? `${helpId}-days` : undefined}
-          min={0}
-          onChange={(event) =>
-            onChange({ ...config, requester_confirmation: { ...confirmation, auto_close_after_days: Number(event.currentTarget.value || 0) } })
-          }
-          type="number"
-          value={Number(value(confirmation, "auto_close_after_days", runtimeDefaults ? 0 : 3))}
-        />
-        {friendly && <span id={`${helpId}-days`} className="block text-xs text-slate-600">Сколько дней ждать после предложения решения, прежде чем закрыть обращение автоматически. 0 отключает автозакрытие.</span>}
-      </label>
       <JsonLinkedCheckbox
         checked={Boolean(confirmation.reopen_on_negative_feedback ?? true)}
         label={friendly ? "Вернуть в работу, если решение не помогло" : "Открывать при отрицательном отзыве"}

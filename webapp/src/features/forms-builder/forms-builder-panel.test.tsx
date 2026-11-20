@@ -1658,7 +1658,6 @@ describe("FormsBuilderPanel", () => {
     fireEvent.click(templateControl("Worklog обязателен"));
     fireEvent.click(templateControl("Evidence для P2"));
     fireEvent.click(templateControl("Подтверждение пользователя"));
-    fireEvent.change(templateControl("Автозакрытие через дней"), { target: { value: "5" } });
     fireEvent.click(templateControl("Открывать при отрицательном отзыве"));
     fireEvent.change(templateControl("Допустимые коды решения (необязательно)"), { target: { value: "fixed_remote, duplicate, cannot_reproduce" } });
 
@@ -1691,7 +1690,6 @@ describe("FormsBuilderPanel", () => {
       },
       requester_confirmation: {
         required: false,
-        auto_close_after_days: 5,
         reopen_on_negative_feedback: false,
       },
       allowed_resolution_codes: ["fixed_remote", "duplicate", "cannot_reproduce"],

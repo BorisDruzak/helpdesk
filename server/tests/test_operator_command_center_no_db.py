@@ -59,6 +59,27 @@ def test_queue_and_ticket_detail_use_the_same_paused_sla():
 
 
 @pytest.mark.no_db
+def test_waiting_for_confirmation_has_no_running_first_response_sla():
+    now = datetime(2026, 5, 19, 14, 22, tzinfo=timezone.utc)
+    resolved = now - timedelta(hours=2)
+    ticket = SimpleNamespace(
+        status="resolved", resolved_at=resolved, first_response_at=None,
+        first_response_due_at=resolved - timedelta(minutes=15),
+        first_response_breached_at=resolved - timedelta(minutes=14),
+        resolution_due_at=resolved + timedelta(minutes=10), resolution_at=None,
+        custom_fields={"resolution_confirmation": {"pending": True}},
+    )
+    first_response = _support_sla_timer(ticket, "first_response", now)
+    assert first_response.status == "paused"
+    assert first_response.due_at is None
+    assert first_response.remaining_seconds is None
+    assert ticket.first_response_breached_at == resolved - timedelta(minutes=14)
+    resolution = _support_sla_timer(ticket, "resolution", now)
+    assert resolution.status == "completed"
+    assert resolution.completed_at == resolved.isoformat()
+
+
+@pytest.mark.no_db
 def test_command_center_aggregates_compact_ticket_signals_without_db():
     now = datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc)
     queue_item = item(

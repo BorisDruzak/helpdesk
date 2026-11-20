@@ -372,6 +372,11 @@ test("explicit confirmation policy keeps separate resolution without a completio
     const response = await route.fetch(); const payload = await response.json(); const detail = payload.data.detail;
     detail.ticket.status = currentStatus; detail.ticket.status_label = currentStatus === "resolved" ? "Решена" : "В работе";
     detail.ticket.assignee_id = "support";
+    detail.actions.requester_confirmation_required = true;
+    if (currentStatus === "resolved") {
+      detail.ticket.next_action_owner = "requester";
+      detail.ticket.next_action_due_at = new Date(Date.now() - 60 * 60_000).toISOString();
+    }
     detail.actions.can_resolve_and_close = false;
     detail.actions.status_options = currentStatus === "resolved" ? [] : [{ value: "resolved", label: "Решена" }];
     detail.actions.closure_requirements = [{ key: "public_summary", label: "Итог для сотрудника", met: false }];
@@ -391,7 +396,10 @@ test("explicit confirmation policy keeps separate resolution without a completio
   const dialog = page.getByRole("dialog", { name: "Решить обращение", exact: true });
   await dialog.getByLabel("Итог для сотрудника").fill("Решение ожидает подтверждения сотрудника.");
   await dialog.getByRole("button", { name: "Решить обращение", exact: true }).click();
-  await expect(page.getByText("Решение отправлено сотруднику. Закрытие выполняется по действующей политике.", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Ожидаем подтверждение/)).toBeVisible();
+  const next = page.getByRole("region", { name: "Следующее действие" });
+  await expect(next).toContainText("Ждать подтверждение результата");
+  await expect(next).toHaveAttribute("data-tone", "neutral");
   await expect(page.getByText("Обращение закрыто. Переписка и история доступны для просмотра.", { exact: true })).toHaveCount(0);
   expect(commands).toHaveLength(1);
 });

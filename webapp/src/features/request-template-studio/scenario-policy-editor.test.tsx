@@ -56,7 +56,7 @@ it("preserves source policy extras and reports server errors without losing edit
   fireEvent.click(await screen.findByRole("button", { name: "Настроить выбранное правило: Закрытие обращения" }));
   expect(screen.queryByLabelText("Результат решения обязателен")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Сотрудник должен подтвердить решение")).not.toBeChecked();
-  expect(screen.getByLabelText("Закрыть автоматически через (дней)")).toHaveValue(0);
+  expect(screen.queryByLabelText("Закрыть автоматически через (дней)")).not.toBeInTheDocument();
   fireEvent.click(screen.getByLabelText("Описание решения для сотрудника обязательно"));
   fireEvent.click(screen.getByRole("button", { name: "Проверить и продолжить" }));
   fireEvent.click(screen.getByRole("button", { name: "Опубликовать правило" }));
@@ -91,7 +91,8 @@ it("shows legacy closure requirements using the same defaults as the runtime", a
   expect(screen.queryByLabelText("Результат решения обязателен")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Описание решения для сотрудника обязательно")).not.toBeChecked();
   expect(screen.getByLabelText("Сотрудник должен подтвердить решение")).toBeChecked();
-  expect(screen.getByLabelText("Закрыть автоматически через (дней)")).toHaveValue(7);
+  expect(screen.getByText(/по общему сроку ожидания. По умолчанию это 24 часа/)).toBeVisible();
+  expect(screen.queryByLabelText("Закрыть автоматически через (дней)")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Подтверждение решения для приоритета P0")).toBeChecked();
   expect(screen.getByLabelText("Подтверждение решения для приоритета P1")).toBeChecked();
   fireEvent.click(screen.getByLabelText("Подтверждение решения для приоритета P1"));

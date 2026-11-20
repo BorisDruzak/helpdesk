@@ -739,6 +739,9 @@ def _ticket_timer_payload(ticket, **kwargs) -> SupportTicketTimerPayload:
 def _support_sla_timer(
     ticket, metric: Literal["first_response", "resolution"], now: datetime,
 ) -> SupportTicketTimerPayload:
+    if (metric == "first_response" and getattr(ticket, "first_response_at", None) is None
+            and getattr(ticket, "status", None) == "resolved" and _resolution_confirmation_pending(ticket)):
+        return SupportTicketTimerPayload(status="paused")
     completed_attr = "first_response_at"
     if metric == "resolution":
         completed_attr = None
@@ -5856,13 +5859,7 @@ async def handle_web_support_change_status(request: web.Request):
                 confirmation_required = bool(requester_confirmation_policy.get("required"))
 
             if to_status == "resolved" and is_staff and confirmation_required:
-                confirmation_request = _build_resolution_confirmation_request()
-                if isinstance(requester_confirmation_policy, dict) and requester_confirmation_policy:
-                    confirmation_request["policy"] = {
-                        key: requester_confirmation_policy.get(key)
-                        for key in ("auto_close_after_days", "reopen_on_negative_feedback")
-                        if requester_confirmation_policy.get(key) is not None
-                    }
+                confirmation_request = _build_resolution_confirmation_request(requester_confirmation_policy)
                 confirmation_request_payload = confirmation_request
                 requester_confirmation_requested = True
                 ticket = await _store_resolution_confirmation_state(

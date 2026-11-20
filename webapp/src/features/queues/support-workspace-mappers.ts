@@ -490,13 +490,15 @@ export function mapWorkspaceTicketItems(
       nextActionOwner: ticket.next_action_owner,
       statusReason: ticket.status_reason,
     });
+    const awaitingConfirmation = ticket.status === "resolved"
+      && (ticket.next_action_owner || getNextActionOwnerForStatus(ticket.status)) === "requester";
     const firstResponseDueAt = ticket.first_response_at ? null : ticket.first_response_due_at;
     const nextActionDueAt = ticket.first_response_at && ticket.next_action_due_at === ticket.first_response_due_at
       ? null
       : ticket.next_action_due_at;
     const sla = ticket.sla_timer;
-    const useSla = sla && (!nextActionDueAt || nextActionDueAt === sla.due_at);
-    const dueAt = nextActionDueAt || firstResponseDueAt || ticket.resolution_due_at || null;
+    const useSla = !awaitingConfirmation && sla && (!nextActionDueAt || nextActionDueAt === sla.due_at);
+    const dueAt = awaitingConfirmation ? null : nextActionDueAt || firstResponseDueAt || ticket.resolution_due_at || null;
     const remainingSeconds = useSla ? sla.remaining_seconds ?? null : secondsUntil(dueAt, now);
     const status = useSla ? normalizeTimerPayloadStatus(sla.status) : timerStatus(remainingSeconds);
     const priority = normalizePriority(ticket.priority_class ?? ticket.priority);
@@ -513,7 +515,7 @@ export function mapWorkspaceTicketItems(
       assigneeLabel: ticket.assignee_display_name ?? ticket.assignee_id ?? "Не назначен",
       updatedLabel: formatDateTime(ticket.updated_at ?? ticket.created_at),
       unread: ticket.unread_user_messages > 0,
-      nextDueLabel: formatTimerRemaining(remainingSeconds, status),
+      nextDueLabel: awaitingConfirmation ? "Ожидает подтверждения" : formatTimerRemaining(remainingSeconds, status),
       slaRisk: status === "at_risk" || status === "breached",
       hiddenFromWorkspace: Boolean(ticket.hidden_from_workspace),
       archivedAt: ticket.archived_at ?? null,
@@ -593,12 +595,13 @@ export function mapNextAction(
 ): SupportWorkspaceNextAction {
   const owner = ticket.next_action_owner || getNextActionOwnerForStatus(ticket.status);
   const ownerLabel = getNextActionOwnerLabel(owner);
+  const awaitingConfirmation = ticket.status === "resolved" && owner === "requester";
   const firstResponseSatisfied = Boolean(ticket.first_response_at);
   const nextActionDueAt =
     firstResponseSatisfied && ticket.next_action_due_at === ticket.first_response_due_at ? null : ticket.next_action_due_at;
   const firstResponseDueAt = firstResponseSatisfied ? null : ticket.first_response_due_at;
   const sla = timers.find((timer) => timer.key === (firstResponseDueAt ? "first_response" : "resolution"));
-  const dueAt = nextActionDueAt || (sla ? sla.dueAt : firstResponseDueAt || ticket.resolution_due_at) || null;
+  const dueAt = awaitingConfirmation ? null : nextActionDueAt || (sla ? sla.dueAt : firstResponseDueAt || ticket.resolution_due_at) || null;
   const selectedTimer = timers.find((timer) => dueAt && timer.dueAt === dueAt);
   const remainingSeconds = selectedTimer ? selectedTimer.remainingSeconds : secondsUntil(dueAt, now);
   const status = selectedTimer ? selectedTimer.status : timerStatus(remainingSeconds);

@@ -406,7 +406,7 @@ TICKET_FSM_MODE = os.getenv("TICKET_FSM_MODE", "soft")
 # Принимать from_role/closed_by_role в body, но не использовать для прав; возвращать deprecation_warnings
 TICKET_LEGACY_ROLE_FIELDS = os.getenv("TICKET_LEGACY_ROLE_FIELDS", "true").lower() == "true"
 # Часы после resolved_at для авто-закрытия (Resolved -> Closed)
-TICKET_AUTO_CLOSE_HOURS = int(os.getenv("TICKET_AUTO_CLOSE_HOURS", "72"))# Stage 5: Resolution policy (warn | enforce)
+TICKET_AUTO_CLOSE_HOURS = int(os.getenv("TICKET_AUTO_CLOSE_HOURS", "24"))
 TICKET_RESOLUTION_VALIDATION_MODE = os.getenv("TICKET_RESOLUTION_VALIDATION_MODE", "warn")
 # Priorities that require root_cause when enforcing (comma-separated, e.g. P1,P2)
 TICKET_REQUIRE_ROOT_CAUSE_PRIORITIES = os.getenv("TICKET_REQUIRE_ROOT_CAUSE_PRIORITIES", "P1,P2")

@@ -1,18 +1,16 @@
-"""Ticket auto-close watchdog driven by closure policy metadata."""
+"""Close expired requester confirmations."""
 
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from loguru import logger
-from sqlalchemy import select
-
 from app.db import get_session
-from app.db.models import Ticket
 from app.repos.ticket_events_repo import TicketEventsRepo
+from config import TICKET_AUTO_CLOSE_HOURS
 from tickets.workflow_service import TicketWorkflowService
 
-AUTO_CLOSE_INTERVAL_SEC = 3600  # hourly heartbeat
+AUTO_CLOSE_INTERVAL_SEC = 60
 
 
 class TicketAutoCloseWatchdog:
@@ -25,82 +23,38 @@ class TicketAutoCloseWatchdog:
         self._state = state
         self._session_factory = session_factory
 
-    @staticmethod
-    def _confirmation_policy(ticket: Ticket) -> dict:
-        custom_fields = getattr(ticket, "custom_fields", None) or {}
-        if not isinstance(custom_fields, dict):
-            return {}
-        policy = custom_fields.get("resolution_confirmation_policy")
-        return dict(policy) if isinstance(policy, dict) else {}
-
-    @staticmethod
-    def _confirmation_pending(ticket: Ticket) -> bool:
-        custom_fields = getattr(ticket, "custom_fields", None) or {}
-        if not isinstance(custom_fields, dict):
-            return False
-        state = custom_fields.get("resolution_confirmation")
-        return bool(isinstance(state, dict) and state.get("pending"))
-
-    @staticmethod
-    def _auto_close_days(policy: dict) -> int | None:
-        raw = policy.get("auto_close_after_days")
-        if raw in (None, ""):
-            return None
-        try:
-            days = int(raw)
-        except (TypeError, ValueError):
-            return None
-        return days if days > 0 else None
-
     async def process_once(self, *, now: datetime | None = None, limit: int = 100) -> int:
-        """Close resolved tickets whose closure policy auto-close deadline passed."""
+        """Close only unresolved confirmations that reached the configured deadline."""
         effective_now = now or datetime.now(timezone.utc)
+        resolved_before = effective_now - timedelta(hours=TICKET_AUTO_CLOSE_HOURS)
         session_factory = self._session_factory or get_session
         closed_count = 0
         async with session_factory() as session:
-            result = await session.execute(
-                select(Ticket)
-                .where(
-                    Ticket.status == "resolved",
-                    Ticket.resolved_at.isnot(None),
-                )
-                .order_by(Ticket.resolved_at.asc())
-                .limit(limit)
-            )
             repo = TicketEventsRepo(session)
             workflow = TicketWorkflowService(session, repo)
-            for ticket in result.scalars().all():
-                policy = self._confirmation_policy(ticket)
-                if not policy or not bool(policy.get("required")):
+            for ticket in await repo.get_tickets_auto_close_candidates(resolved_before, limit=limit):
+                ticket_id = ticket.ticket_id
+                try:
+                    async with session.begin_nested():
+                        await workflow.apply_status_transition(
+                            ticket_id=ticket_id,
+                            from_status="resolved",
+                            to_status="closed",
+                            actor_id="system",
+                            actor_role="system",
+                            reason="requester_confirmation_auto_close",
+                            source="closure_policy_auto_close",
+                        )
+                        custom_fields = dict(ticket.custom_fields or {})
+                        confirmation = dict(custom_fields["resolution_confirmation"])
+                        confirmation.update(pending=False, responded_option_id="auto_close",
+                                            auto_closed_at=effective_now.isoformat())
+                        custom_fields["resolution_confirmation"] = confirmation
+                        custom_fields["resolution_confirmation_pending"] = False
+                        await repo.update_ticket(ticket_id, custom_fields=custom_fields)
+                except ValueError:
+                    logger.warning(f"[TicketAutoCloseWatchdog] transition rejected ticket_id={ticket_id}")
                     continue
-                auto_close_days = self._auto_close_days(policy)
-                if auto_close_days is None or not self._confirmation_pending(ticket):
-                    continue
-                resolved_at = ticket.resolved_at
-                if resolved_at is None:
-                    continue
-                if resolved_at.tzinfo is None:
-                    resolved_at = resolved_at.replace(tzinfo=timezone.utc)
-                if resolved_at + timedelta(days=auto_close_days) > effective_now:
-                    continue
-                await workflow.apply_status_transition(
-                    ticket_id=ticket.ticket_id,
-                    from_status=ticket.status,
-                    to_status="closed",
-                    actor_id="system",
-                    actor_role="system",
-                    reason="requester_confirmation_auto_close",
-                    source="closure_policy_auto_close",
-                )
-                refreshed = await repo.get_ticket(ticket.ticket_id)
-                custom_fields = dict(getattr(refreshed, "custom_fields", None) or {})
-                confirmation = dict(custom_fields.get("resolution_confirmation") or {})
-                confirmation["pending"] = False
-                confirmation["responded_option_id"] = "auto_close"
-                confirmation["auto_closed_at"] = effective_now.isoformat()
-                custom_fields["resolution_confirmation"] = confirmation
-                custom_fields["resolution_confirmation_pending"] = False
-                await repo.update_ticket(ticket.ticket_id, custom_fields=custom_fields)
                 closed_count += 1
             await session.commit()
         if closed_count:

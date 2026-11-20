@@ -134,16 +134,19 @@ See [review evidence](../../docs/PROJECT_REVIEW_2026_10_26.md).
   optional stored classification metadata is preserved.
 - Required requester acceptance filters staff `closed` status actions and is
   checked again by `TicketWorkflowService` under the ticket lock. Direct staff
-  closure returns409 `REQUESTER_CONFIRMATION_REQUIRED`; the owner's requester
-  confirmation remains the closing authority. `requester_confirmation_required`
+  closure returns HTTP 409 with `REQUESTER_CONFIRMATION_REQUIRED`. The owner may confirm
+  immediately and `app/services/ticket_auto_close_watchdog.py` closes pending
+  confirmations once their configured deadline passes (24 hours by default).
+  It locks expired rows, uses the ordinary workflow transition, and clears
+  pending state with an audited system decision. `requester_confirmation_required`
   explains the waiting step in the support UI; resolved requester handling points
   the next action to the requester while confirmation is pending. The reviewed
   `scripts/helpdesk_requester_confirmation.py` publishes ordinary1.0.3, with a
-  content-bound plan, audited policy version, no automatic expiry, and reconciliation
+  content-bound plan, audited policy version, and reconciliation
   of newly affected resolved tickets to pending confirmation. Existing decisions
-  and special policies are preserved; pending ordinary expiry is cleared without
-  replacing its request ID. Pending acceptance can be rejected independently of
-  the optional rating window. See the support workspace procedure.
+  and special policies are preserved. Support queue and detail suppress the
+  active SLA deadline while waiting for confirmation. Rejection and rating are
+  separate actions. See the support workspace procedure.
 - Requester message/confirm/feedback/reopen reuse requester identity scope for
   users and administrators, rereading ownership under the ticket lock. Public
   result views use `requester_resolution_summary`; internal results stay private.

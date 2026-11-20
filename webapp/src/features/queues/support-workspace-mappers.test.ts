@@ -11,6 +11,7 @@ import type {
 } from "./api";
 import {
   formatRemainingSeconds,
+  mapNextAction,
   mapSupportWorkspaceViewModel,
   mapWorkspaceTools,
   mapWorkspaceTicketItems,
@@ -129,6 +130,24 @@ describe("mapWorkspaceTools", () => {
 });
 
 describe("mapWorkspaceTicketItems", () => {
+  it("shows confirmation waiting without a stale SLA deadline", () => {
+    const queue = queuePayload();
+    Object.assign(queue.tickets[0], {
+      status: "resolved", next_action_owner: "requester", first_response_at: null,
+      next_action_due_at: "2026-05-05T08:30:00+05:00", resolution_due_at: "2026-05-05T09:00:00+05:00",
+      sla_timer: { due_at: "2026-05-05T08:30:00+05:00", remaining_seconds: -900, status: "breached" },
+    });
+    const [ticket] = mapWorkspaceTicketItems(queue, "ticket-1", NOW);
+    expect(ticket.nextDueLabel).toBe("Ожидает подтверждения");
+    expect(ticket.slaRisk).toBe(false);
+    const detail = detailPayload("resolved");
+    detail.ticket.next_action_owner = "requester";
+    detail.ticket.next_action_due_at = "2026-05-05T08:30:00+05:00";
+    expect(mapNextAction(detail.ticket, [], NOW)).toMatchObject({
+      dueAt: null, remainingSeconds: null, timerType: "none", tone: "neutral",
+    });
+  });
+
   it("freezes the SLA countdown while waiting for a requester", () => {
     const queue = queuePayload();
     Object.assign(queue.tickets[0], {

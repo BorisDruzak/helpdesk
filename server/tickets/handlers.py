@@ -28,6 +28,7 @@ from app.repos import (
 )
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from auth.context import AuthContext, AuthType
+from config import TICKET_AUTO_CLOSE_HOURS
 from tickets.assignment_service import (
     MAX_ACTIVE_TICKETS_PER_OPERATOR,
     TicketAssignmentError,
@@ -80,7 +81,10 @@ HISTORY_EVENT_TYPES = {
 }
 
 PINNED_STUB_META_KEY = "agent_stub_reply_to_message"
-RESOLUTION_CONFIRMATION_TEXT = "Проблема решена. Для подтверждения используйте одну из кнопок ниже."
+RESOLUTION_CONFIRMATION_TEXT = (
+    "Проблема решена. Для подтверждения используйте одну из кнопок ниже. "
+    f"Если ответа не будет, заявка закроется автоматически через {TICKET_AUTO_CLOSE_HOURS} ч."
+)
 RESOLUTION_CONFIRMATION_MESSAGE = "Если проблема решена, нажмите «Подтверждаю». Если нет, выберите «Не принято»."
 
 
@@ -230,12 +234,18 @@ def _resolution_confirmation_policy(ticket: Any) -> Dict[str, Any]:
     return dict(policy) if isinstance(policy, dict) else {}
 
 
-def _build_resolution_confirmation_request() -> Dict[str, Any]:
+def _build_resolution_confirmation_request(policy: dict | None = None) -> Dict[str, Any]:
     request_id = str(uuid.uuid4())
+    runtime_policy: dict[str, Any] = {"auto_close_after_hours": TICKET_AUTO_CLOSE_HOURS}
+    if TICKET_AUTO_CLOSE_HOURS % 24 == 0:
+        runtime_policy["auto_close_after_days"] = TICKET_AUTO_CLOSE_HOURS // 24
+    if isinstance(policy, dict) and policy.get("reopen_on_negative_feedback") is not None:
+        runtime_policy["reopen_on_negative_feedback"] = policy["reopen_on_negative_feedback"]
     return {
         "request_id": request_id,
         "kind": "ticket_resolution",
         "message": RESOLUTION_CONFIRMATION_MESSAGE,
+        "policy": runtime_policy,
         "options": [
             {"option_id": "confirm", "label": "Подтверждаю"},
             {"option_id": "reject", "label": "Не принято"},
@@ -1892,13 +1902,7 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
         if isinstance(requester_confirmation_policy, dict) and "required" in requester_confirmation_policy:
             requires_requester_confirmation = bool(requester_confirmation_policy.get("required"))
         if to_status == "resolved" and is_support_or_admin and requires_requester_confirmation:
-            confirmation_request = _build_resolution_confirmation_request()
-            if isinstance(requester_confirmation_policy, dict) and requester_confirmation_policy:
-                confirmation_request["policy"] = {
-                    key: requester_confirmation_policy.get(key)
-                    for key in ("auto_close_after_days", "reopen_on_negative_feedback")
-                    if requester_confirmation_policy.get(key) is not None
-                }
+            confirmation_request = _build_resolution_confirmation_request(requester_confirmation_policy)
             ticket = await _store_resolution_confirmation_state(
                 repo,
                 ticket,

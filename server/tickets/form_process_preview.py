@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config import TICKET_AUTO_CLOSE_HOURS
 from tickets.form_business_validation import (
     FormBusinessValidationContext,
     validate_form_pack_business,
@@ -395,6 +396,8 @@ def _closure_preview(form: dict[str, Any], priority_class: str) -> dict[str, Any
     evidence = _as_dict(policy.get("evidence"))
     confirmation = _as_dict(policy.get("requester_confirmation"))
     evidence_priorities = {str(item or "").strip().upper() for item in _as_list(evidence.get("require_evidence_for_priorities"))}
+    confirmation_required = _truthy(confirmation.get("required"))
+    auto_close_days = TICKET_AUTO_CLOSE_HOURS // 24 if confirmation_required and TICKET_AUTO_CLOSE_HOURS % 24 == 0 else None
     return {
         "policy_ref": _policy_ref(form, "closure"),
         "requires_resolution_code": False,
@@ -402,8 +405,8 @@ def _closure_preview(form: dict[str, Any], priority_class: str) -> dict[str, Any
         "requires_internal_summary": _truthy(before.get("require_internal_summary") or policy.get("require_internal_summary")),
         "requires_worklog": _truthy(before.get("require_worklog") or policy.get("require_worklog")),
         "requires_evidence": priority_class in evidence_priorities or _truthy(evidence.get("required")) or _truthy(policy.get("require_evidence")),
-        "requester_confirmation_required": _truthy(confirmation.get("required")),
-        "auto_close_after_days": confirmation.get("auto_close_after_days") or policy.get("auto_close_after_days"),
+        "requester_confirmation_required": confirmation_required,
+        "auto_close_after_days": auto_close_days,
     }
 
 

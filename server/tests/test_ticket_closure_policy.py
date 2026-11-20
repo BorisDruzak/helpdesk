@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -464,7 +465,9 @@ async def test_closure_policy_records_requester_confirmation_metadata(test_engin
 
 
 @pytest.mark.asyncio
-async def test_closure_policy_auto_close_uses_policy_days(test_engine) -> None:
+@pytest.mark.parametrize("policy_days", [None, 1, 3])
+async def test_pending_confirmation_closes_after_24_hours(test_engine, policy_days) -> None:
+    nonpending_id = await _seed_ticket(test_engine, closure_policy={})
     ticket_id = await _seed_ticket(
         test_engine,
         closure_policy={
@@ -474,7 +477,7 @@ async def test_closure_policy_auto_close_uses_policy_days(test_engine) -> None:
             },
             "requester_confirmation": {
                 "required": True,
-                "auto_close_after_days": 1,
+                "auto_close_after_days": policy_days,
                 "reopen_on_negative_feedback": True,
             },
         },
@@ -488,9 +491,17 @@ async def test_closure_policy_auto_close_uses_policy_days(test_engine) -> None:
     )
 
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
     async with session_maker() as session:
+        older = await session.get(Ticket, nonpending_id)
+        older.status = "resolved"
+        older.resolved_at = now - timedelta(days=5)
+        older.custom_fields = {"resolution_confirmation": {"pending": False, "responded_option_id": "reject"}}
         ticket = await session.get(Ticket, ticket_id)
-        ticket.resolved_at = datetime.now(timezone.utc) - timedelta(days=2)
+        assert ticket.resolution_at == ticket.resolved_at
+        ticket.resolved_at = now - timedelta(hours=24)
+        # Historical data may lack the earlier resolution SLA timestamp.
+        ticket.resolution_at = None
         custom_fields = dict(ticket.custom_fields or {})
         custom_fields["resolution_confirmation"] = {
             "pending": True,
@@ -501,12 +512,18 @@ async def test_closure_policy_auto_close_uses_policy_days(test_engine) -> None:
         await session.commit()
 
     watchdog = TicketAutoCloseWatchdog(session_factory=session_maker)
-    closed_count = await watchdog.process_once(now=datetime.now(timezone.utc), limit=10)
-
-    assert closed_count == 1
+    assert await watchdog.process_once(now=now - timedelta(seconds=1), limit=1) == 0
+    closed = await asyncio.gather(
+        watchdog.process_once(now=now, limit=1),
+        watchdog.process_once(now=now, limit=1),
+    )
+    assert sum(closed) == 1
+    assert await watchdog.process_once(now=now + timedelta(minutes=1), limit=1) == 0
     async with session_maker() as session:
         ticket = await session.get(Ticket, ticket_id)
         assert ticket.status == "closed"
+        assert ticket.resolution_at == ticket.resolved_at
+        assert (await session.get(Ticket, nonpending_id)).status == "resolved"
         confirmation = (ticket.custom_fields or {}).get("resolution_confirmation") or {}
         assert confirmation.get("pending") is False
         assert confirmation.get("responded_option_id") == "auto_close"
